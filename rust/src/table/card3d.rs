@@ -485,18 +485,6 @@ impl Card3D {
         self.refresh_labels();
     }
 
-    /// Kann die Karte per Maus-Raycast getroffen (gehovert/angeklickt) werden?
-    /// Die Zone setzt das beim Anordnen (z. B. nur die oberste Karte des Stacks).
-    pub fn set_pickable(&mut self, pickable: bool) {
-        let layer = if pickable { CARD_LAYER } else { 0 };
-        if self.base().get_collision_layer() != layer {
-            self.base_mut().set_collision_layer(layer);
-            if !pickable {
-                self.set_hovered(false);
-            }
-        }
-    }
-
     /// Bleibende Boni/Verbindungen zurücksetzen (Karte verlässt das Spielfeld).
     pub fn reset_on_leave(&mut self) {
         self.equip_attack = 0;

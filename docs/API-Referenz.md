@@ -233,7 +233,8 @@ Steuert die Partie: Rundenablauf als State Machine (Enttappen → Auffrischung �
 | `phase_delay_scale` | `float` | Faktor für alle automatischen Phasen-Verzögerungen. |
 | `stack_manager` | `StackManager` | Stack mit Prioritätsschleife für Zauber und Fähigkeiten. |
 | `stack_zone` | `Zone` | Zone, in der Zauberkarten liegen, solange sie auf dem Stack sind. |
-| `priority_delay` | `float` | Bedenkzeit, bevor automatisch gepasst wird (Mensch ohne Antwortmöglichkeit, KI). |
+| `priority_delay` | `float` | Bedenkzeit der KI, bevor sie passt oder antwortet (Sekunden). |
+| `auto_pass_human` | `bool` | Passt der Mensch automatisch, wenn er keinen spielbaren Sofortzauber hat? Standard aus: Der Stack läuft, bis der Mensch „Weiter“ drückt. |
 
 ### Funktionen
 

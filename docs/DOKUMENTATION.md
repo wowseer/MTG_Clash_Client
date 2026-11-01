@@ -79,7 +79,8 @@ In Test-Builds hängt der `TableController` zusätzlich ein `DebugPanel` an (nic
 | Angreifer-Phase: Klick auf Kreaturen | als Angreifer markieren (rot) |
 | Blocker-Phase: eigene Kreatur, dann Angreifer | Blocker zuweisen (gelb → blau) |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
-| Button „Nächste Phase“ / „Passen“ bzw. Leertaste | Phase beenden bzw. Priorität abgeben |
+| Button „Nächste Phase“ / „Weiter (passen)“ bzw. Leertaste | Phase beenden bzw. bei belegtem Stack Priorität abgeben |
+| Maus über eine Karte der großen Stack-Anzeige | holt sie nach vorn (auch tiefer liegende Elemente lesbar) |
 
 ---
 
@@ -156,13 +157,18 @@ Das Hinweisfeld oben rechts nennt nur noch die Anzahl („Auf dem Stack: 2“).
 
 **Hovern im Stack-Bereich:** Die großen Stack-Karten fangen die Maus ab – Karten auf dem Tisch
 **unter** der Anzeige werden dort weder gehovert noch angeklickt. In der kleinen Stack-Zone in der
-Tischmitte liegen neuere Karten oben und vorn; nur die **oberste (neueste)** Karte ist hoverbar.
+Tischmitte liegen neuere Karten oben und vorn. **Fährt die Maus über eine Karte der großen
+Stack-Anzeige – auch über den sichtbaren Rand einer tiefer liegenden –, kommt sie nach vorn**
+und ist vollständig lesbar; beim Verlassen rutscht sie zurück an ihren Platz.
 Allgemein gilt: Liegt die Maus über einer Bildschirmfläche, die Mausereignisse annimmt (Stack-Karten,
 Buttons, Debug-Fenster), wird auf dem Tisch dahinter nichts gehovert.
 
 - Wer etwas auf den Stack legt, behält die Priorität.
 - Aufgelöst wird das **oberste** Item erst, wenn **beide nacheinander passen** (LIFO).
-- Wer keinen spielbaren Sofortzauber hat, passt automatisch nach kurzer Bedenkzeit.
+- **Der Stack läuft, bis beide Spieler „Weiter“ gedrückt haben.** Der Mensch passt nur per Button
+  „Weiter (passen)“ bzw. Leertaste – es gibt kein automatisches Passen (einschaltbar über
+  `TurnManager.auto_pass_human`, dann passt er automatisch, wenn er keinen spielbaren Sofortzauber
+  hat). Die KI passt oder antwortet nach `priority_delay` Sekunden selbst.
 - Die KI antwortet höchstens einmal pro Item mit einem sinnvollen Sofortzauber.
 - **Hausverbot** (Counterspell, BB) neutralisiert den obersten gegnerischen Zauber.
 - Ein Item verpufft, wenn sein Ziel vor dem Auflösen verschwindet.

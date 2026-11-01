@@ -443,9 +443,6 @@ impl Zone {
                 _ => 0.0,
             };
             card.bind_mut().move_to(zone_xf * local, delay);
-            // Im Stack ist nur die oberste (neueste) Karte hoverbar, sonst alle
-            let pickable = self.kind != ZoneKind::Stack || i + 1 == n;
-            card.bind_mut().set_pickable(pickable);
         }
     }
 

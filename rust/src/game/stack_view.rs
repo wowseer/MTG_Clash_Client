@@ -10,6 +10,8 @@
 //!   Zauber oder eine Fähigkeit ist.
 //! - Die Kartenflächen fangen die Maus ab: Karten auf dem Tisch **unter** der Anzeige
 //!   werden weder gehovert noch angeklickt. Außerhalb der Karten bleibt der Tisch bedienbar.
+//! - Maus über eine (auch tiefer liegende) Stack-Karte: Sie kommt nach vorn und ist
+//!   vollständig lesbar; beim Verlassen rutscht sie zurück an ihren Platz.
 //!
 //! Wird vom [`TurnHud`](super::hud::TurnHud) jedes Frame aktualisiert; die Karten
 //! werden nur neu aufgebaut, wenn sich der Stack oder die Sprache ändert.
@@ -109,6 +111,19 @@ fn build_card(item: &Gd<StackItem>, scale: f32, top: bool) -> Gd<PanelContainer>
     let mut frame = PanelContainer::new_alloc();
     // Blockiert die Maus: Karten auf dem Tisch unter der Anzeige werden nicht gehovert
     frame.set_mouse_filter(MouseFilter::STOP);
+    // Maus über der Karte: nach vorn holen (auch tiefer liegende Stack-Elemente lesbar)
+    let mut f = frame.clone();
+    let enter = Callable::from_linked_fn("stack_card_enter", &frame, move |_| {
+        f.set_z_index(100);
+        f.set_scale(Vector2::splat(1.04));
+    });
+    let mut f = frame.clone();
+    let exit = Callable::from_linked_fn("stack_card_exit", &frame, move |_| {
+        f.set_z_index(0);
+        f.set_scale(Vector2::ONE);
+    });
+    frame.connect("mouse_entered", &enter);
+    frame.connect("mouse_exited", &exit);
     let border = if top { Color::from_rgb(1.0, 0.82, 0.35) } else { Color::from_rgba(0.5, 0.45, 0.4, 0.9) };
     frame.add_theme_stylebox_override("panel", &frame_style(border, if top { 4 } else { 2 }));
 

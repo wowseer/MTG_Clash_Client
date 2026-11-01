@@ -50,9 +50,13 @@ pub struct TurnManager {
     /// Zone, in der Zauberkarten liegen, solange sie auf dem Stack sind.
     #[export]
     stack_zone: Option<Gd<Zone>>,
-    /// Bedenkzeit, bevor automatisch gepasst wird (Mensch ohne Antwortmöglichkeit, KI).
+    /// Bedenkzeit der KI, bevor sie passt oder antwortet (Sekunden).
     #[export]
     priority_delay: f32,
+    /// Passt der Mensch automatisch, wenn er keinen spielbaren Sofortzauber hat?
+    /// Standard aus: Der Stack läuft, bis der Mensch „Weiter“ drückt.
+    #[export]
+    auto_pass_human: bool,
 
     game: Option<GameState>,
     state: Option<Box<dyn PhaseState>>,
@@ -79,6 +83,7 @@ impl INode for TurnManager {
             stack_manager: None,
             stack_zone: None,
             priority_delay: 0.9,
+            auto_pass_human: false,
             timer: 0.0,
             priority_timer: 0.0,
             last_stack_size: 0,
@@ -194,7 +199,11 @@ impl TurnManager {
     /// Beschriftung für den HUD-Button.
     #[func]
     pub fn get_button_text(&self) -> GString {
-        if self.stack_is_busy() { tr!("Passen  »", "Pass  »").into() } else { tr!("Nächste Phase  »", "Next phase  »").into() }
+        if self.stack_is_busy() {
+            tr!("Weiter (passen)  »", "Continue (pass)  »").into()
+        } else {
+            tr!("Nächste Phase  »", "Next phase  »").into()
+        }
     }
 
     /// Wartet das Spiel auf eine Eingabe des Menschen (Button „Nächste Phase“ bzw. „Passen“)?
@@ -235,7 +244,7 @@ impl TurnManager {
             let seat = self.priority_seat();
             let text = match &self.game {
                 Some(g) if g.is_human(seat) => {
-                    tr!("Du hast Priorität: Sofortzauber spielen oder passen (oberstes Item wird aufgelöst, wenn beide passen).", "You have priority: play an instant or pass (the top item resolves when both players pass).").to_string()
+                    tr!("Du hast Priorität: Sofortzauber spielen oder „Weiter“ drücken. Das oberste Element wird erst aufgelöst, wenn beide Spieler weiter gedrückt haben.", "You have priority: play an instant or press “Continue”. The top item only resolves once both players have continued.").to_string()
                 }
                 Some(g) => trf!("{} hat Priorität …", "{} has priority …", g.name(seat)),
                 None => String::new(),
@@ -640,11 +649,12 @@ impl TurnManager {
             return true;
         };
         if g.is_human(seat) {
-            // Automatisch passen, wenn der Mensch nichts antworten kann
+            // Der Mensch passt nur per Button „Weiter“ – außer `auto_pass_human` ist an
+            // und er hat keinen spielbaren Sofortzauber.
             let can_answer = GameState::cards_in(g.hand(seat))
                 .iter()
                 .any(|c| c.bind().kind() == CardKind::Instant && g.check_card(seat, c, phase).is_ok());
-            if !can_answer {
+            if self.auto_pass_human && !can_answer {
                 self.pass_priority(seat);
             }
         } else if !g.ai_respond(seat, phase) {
