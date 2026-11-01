@@ -23,11 +23,13 @@ use super::textures;
 #[derive(GodotClass)]
 #[class(base=OmniLight3D)]
 pub struct FlickerLight {
+    /// Grundhelligkeit des Lichts.
     #[export]
     base_energy: f32,
     /// Relative Stärke des Flackerns (0 = ruhig).
     #[export]
     flicker_strength: f32,
+    /// Geschwindigkeit des Flackerns (1 = normal).
     #[export]
     flicker_speed: f32,
     time: f32,
@@ -65,6 +67,9 @@ impl IOmniLight3D for FlickerLight {
 
 // ---------------------------------------------------------------- Tavern
 
+/// Tavernen-Kulisse: Holztisch mit Messing-Trennlinie, Kerzen, Krüge, Münzen sowie Gastraum
+/// mit Kamin, Fachwerk, Regalen, Fässern, Bank und Hockern – alles prozedural erzeugt.
+/// Maßstab: 1 Einheit = 10 cm; Tischoberfläche bei y = 0, Trennlinie bei z = 0.
 #[derive(GodotClass)]
 #[class(base=Node3D)]
 pub struct Tavern {

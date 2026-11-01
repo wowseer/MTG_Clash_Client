@@ -24,6 +24,7 @@ use super::layers::ZONE_LAYER;
 
 pub const ZONE_GROUP: &str = "card_zones";
 
+/// Art der Zone: 0 = Hand (Fächer), 1 = Stapel, 2 = Spielfeld, 3 = Ressourcen-Reihe, 4 = Stack.
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Debug)]
 #[godot(via = i64)]
 pub enum ZoneKind {
@@ -36,9 +37,14 @@ pub enum ZoneKind {
     Stack,
 }
 
+/// Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof,
+/// Spielfeld, Ressourcen-Reihe oder Stack. Karten gleiten per Tween an ihre Plätze;
+/// angelegte Karten (Ausrüstung, Auren) liegen versetzt unter ihrem Träger.
+/// Die Zone ist eine Area3D auf Kollisions-Layer 2 (Drop-Ziel für Raycasts).
 #[derive(GodotClass)]
 #[class(base=Area3D)]
 pub struct Zone {
+    /// Art der Anordnung: 0 = Hand, 1 = Stapel, 2 = Spielfeld, 3 = Ressourcen-Reihe, 4 = Stack.
     #[export]
     kind: ZoneKind,
     /// Ausdehnung der Drop-Fläche (x = Breite, y = Höhe der Kollisionsbox, z = Tiefe).
@@ -60,21 +66,27 @@ pub struct Zone {
     #[export]
     show_area: bool,
 
+    /// Hand: Radius des Fächerbogens.
     #[export_group(name = "Hand")]
     #[export]
     hand_radius: f32,
+    /// Hand: Winkel zwischen zwei Karten (Grad).
     #[export]
     hand_card_angle_degrees: f32,
+    /// Hand: maximaler Gesamtwinkel des Fächers (Grad).
     #[export]
     hand_max_spread_degrees: f32,
 
+    /// Stapel: Höhe je Karte.
     #[export_group(name = "Pile")]
     #[export]
     pile_spacing: f32,
 
+    /// Spielfeld im Rastermodus: Anzahl Spalten.
     #[export_group(name = "Battlefield")]
     #[export]
     grid_columns: i32,
+    /// Spielfeld im Rastermodus: Abstand der Karten (x, z).
     #[export]
     grid_spacing: Vector2,
     /// Karten bleiben dort liegen, wo sie abgelegt werden (statt Raster).
@@ -185,6 +197,7 @@ impl Zone {
         self.add_card(card, -1, delay);
     }
 
+    /// Bleiben Karten dort liegen, wo sie abgelegt werden (statt Raster)?
     #[func]
     pub fn is_free_placement(&self) -> bool {
         self.free_placement
@@ -268,6 +281,7 @@ impl Zone {
         self.layout_with_delay(None);
     }
 
+    /// Anzahl der Karten in der Zone.
     #[func]
     pub fn get_card_count(&self) -> i64 {
         self.cards.len() as i64
@@ -279,26 +293,31 @@ impl Zone {
         self.cards.last().cloned()
     }
 
+    /// Alle Karten der Zone, unterste bzw. erste zuerst.
     #[func]
     pub fn get_cards(&self) -> Array<Gd<Card3D>> {
         self.cards.iter().cloned().collect()
     }
 
+    /// Dürfen hier Karten abgelegt werden?
     #[func]
     pub fn accepts_drops(&self) -> bool {
         self.accepts_drops
     }
 
+    /// Dürfen Karten aus dieser Zone gegriffen werden?
     #[func]
     pub fn cards_draggable(&self) -> bool {
         self.cards_draggable
     }
 
+    /// Zieht ein Klick auf eine Karte dieser Zone eine Karte? (nur ohne Regeln)
     #[func]
     pub fn click_to_draw(&self) -> bool {
         self.click_to_draw
     }
 
+    /// Hebt die Zonenfläche hervor (nur sichtbar, wenn [member show_area] aktiv ist).
     #[func]
     pub fn set_highlighted(&mut self, on: bool) {
         if self.highlighted == on {

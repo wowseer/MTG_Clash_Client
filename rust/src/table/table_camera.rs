@@ -13,6 +13,8 @@ enum CameraMode {
     Follow(Gd<Node3D>),
 }
 
+/// Tischkamera: Übersicht über den Tisch, Nahaufnahme einer Karte (Rechtsklick) und leichtes
+/// Mitführen beim Ziehen einer Karte. Alle Übergänge sind weich.
 #[derive(GodotClass)]
 #[class(base=Camera3D)]
 pub struct TableCamera {
@@ -106,6 +108,7 @@ impl TableCamera {
         matches!(&self.mode, CameraMode::Focus(n) if n == &node)
     }
 
+    /// Ist die Kamera gerade in der Übersicht?
     #[func]
     pub fn is_overview(&self) -> bool {
         matches!(self.mode, CameraMode::Overview)

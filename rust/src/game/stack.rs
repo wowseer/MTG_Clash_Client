@@ -182,13 +182,16 @@ pub struct StackManager {
 
 #[godot_api]
 impl StackManager {
+    /// Ein Item wurde oben auf den Stack gelegt.
     #[signal]
     fn item_pushed(item: Gd<StackItem>);
+    /// Ein Item wurde aufgelöst (seine Callable wurde ausgeführt).
     #[signal]
     fn item_resolved(item: Gd<StackItem>);
     /// Item wurde ohne Wirkung entfernt (Ziel ungültig / Bedingung false).
     #[signal]
     fn item_fizzled(item: Gd<StackItem>);
+    /// Die Priorität ging an `player` (0 = Spieler, 1 = Gegner).
     #[signal]
     fn priority_changed(player: i64);
     /// Beide Spieler haben bei leerem Stack gepasst.
@@ -279,16 +282,19 @@ impl StackManager {
         self.signals().priority_changed().emit(p);
     }
 
+    /// Spieler, der gerade Priorität hat (0 = Spieler, 1 = Gegner).
     #[func]
     pub fn get_priority_player(&self) -> i64 {
         self.core.priority as i64
     }
 
+    /// Ist der Stack leer?
     #[func]
     pub fn is_empty(&self) -> bool {
         self.core.items.is_empty()
     }
 
+    /// Anzahl der Items auf dem Stack.
     #[func]
     pub fn size(&self) -> i64 {
         self.core.items.len() as i64

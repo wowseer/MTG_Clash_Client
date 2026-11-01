@@ -6,30 +6,40 @@ use godot::prelude::*;
 use super::mana::ManaPool;
 use crate::table::zone::Zone;
 
+/// Ein Sitzplatz am Tisch (Mensch oder KI) mit seinen Zonen, Lebenspunkten und dem
+/// Manapool. Die Tischszene enthält zwei: `Player` (unten) und `Opponent` (oben).
 #[derive(GodotClass)]
 #[class(base=Node3D)]
 pub struct PlayerSeat {
+    /// Anzeigename in HUD und Protokoll.
     #[export]
     pub(crate) display_name: GString,
     /// Wird dieser Platz von der KI gespielt?
     #[export]
     pub(crate) is_ai: bool,
+    /// Lebenspunkte zu Spielbeginn.
     #[export]
     pub(crate) starting_life: i32,
+    /// Zone der Handkarten.
     #[export]
     pub(crate) hand: Option<Gd<Zone>>,
+    /// Zone des Nachziehstapels (Deck).
     #[export]
     pub(crate) deck: Option<Gd<Zone>>,
+    /// Zone des Spielfelds (Kreaturen, Helden, Artefakte, Verzauberungen, Ausrüstung, Auren).
     #[export]
     pub(crate) battlefield: Option<Gd<Zone>>,
+    /// Zone des Friedhofs (Ablagestapel).
     #[export]
     pub(crate) discard: Option<Gd<Zone>>,
     /// Reihe für ausgespielte Ressourcen-Karten.
     #[export]
     pub(crate) resource_zone: Option<Gd<Zone>>,
+    /// Manapool dieses Spielers.
     #[export]
     pub(crate) mana_pool: Option<Gd<ManaPool>>,
 
+    /// Aktuelle Lebenspunkte (≤ 0 = Partie verloren).
     #[var]
     pub(crate) life: i32,
     /// In dieser Runde bereits ausgespielte Ressourcen-Karten.

@@ -45,9 +45,14 @@ struct RayHit {
     position: Vector3,
 }
 
+/// Wurzel der Tischszene: Maus-Eingabe (Hover, Klick, Drag-and-Drop per Raycast),
+/// Kamera-Fokus (Rechtsklick) und Erzeugung der Demo-Decks. Ist [member turn_manager]
+/// gesetzt, gelten alle Spielregeln; ohne ihn lassen sich Karten frei bewegen.
+/// In Test-Builds erzeugt er außerdem das Debug-Tool.
 #[derive(GodotClass)]
 #[class(base=Node3D)]
 pub struct TableController {
+    /// Die Tischkamera.
     #[export]
     camera: Option<Gd<TableCamera>>,
     /// Optional: Regelwerk/Rundenablauf. Ohne ihn ist alles frei spielbar.
@@ -68,6 +73,7 @@ pub struct TableController {
     /// Stärke der Schwung-Neigung beim Ziehen.
     #[export]
     drag_sway_amount: f32,
+    /// Länge der Maus-Raycasts in Einheiten.
     #[export]
     ray_length: f32,
     /// Anzahl der Demo-Karten im Deck (0 = keine Demo).
@@ -77,11 +83,14 @@ pub struct TableController {
     #[export]
     demo_hand_size: i32,
 
+    /// Handzone des Gegners (Demo: verdeckte Starthand).
     #[export_group(name = "Gegner")]
     #[export]
     opponent_hand_zone: Option<Gd<Zone>>,
+    /// Deckzone des Gegners (Demo: wird mit Karten gefüllt).
     #[export]
     opponent_deck_zone: Option<Gd<Zone>>,
+    /// Spielfeld des Gegners (Demo: optionale Startkarten).
     #[export]
     opponent_battlefield_zone: Option<Gd<Zone>>,
     /// Demo: verdeckte Handkarten des Gegners.

@@ -41,6 +41,10 @@ pub const CARD_WIDTH: f32 = 0.63;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
 
+/// Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung,
+/// Hover-Neigung und Hover-Zoom (offene Karten werden groß und lesbar), Raycast-Ziel
+/// (Kollisions-Layer 1), Gleit-Animationen per Tween sowie alle Spielwerte
+/// (Typ, Kosten, Angriff/Verteidigung, Fähigkeiten, Tapp-Zustand).
 #[derive(GodotClass)]
 #[class(base=Area3D)]
 pub struct Card3D {
@@ -82,9 +86,11 @@ pub struct Card3D {
     #[export]
     hover_scale: f32,
 
+    /// Kartenname.
     #[export_group(name = "Spielwerte")]
     #[export]
     card_name: GString,
+    /// Kartentyp: 0 = Kreatur, 1 = Ressource, 2 = Sofortzauber, 3 = Hexerei, 4 = Held, 5 = Ausrüstung, 6 = Artefakt, 7 = Verzauberung, 8 = Aura.
     #[export]
     card_kind: CardKind,
     /// Manakosten (leer = kostenlos).
@@ -93,10 +99,13 @@ pub struct Card3D {
     /// Nur Ressourcen: Farbe des Manas, das Tappen erzeugt.
     #[export]
     produces: ManaType,
+    /// Grundangriff (ohne Boni durch Ausrüstung, Auren, Verzauberungen).
     #[export]
     attack: i32,
+    /// Grundverteidigung (ohne Boni und ohne erlittenen Schaden).
     #[export]
     defense: i32,
+    /// Fähigkeit einer Kreatur: 0 = keine, 1 = Heiler, 2 = Feuer, 3 = Raufbold.
     #[export]
     ability: CardAbility,
 
@@ -278,6 +287,7 @@ impl IArea3D for Card3D {
 
 #[godot_api]
 impl Card3D {
+    /// Setzt die Textur der Vorderseite.
     #[func]
     pub fn set_face_texture(&mut self, tex: Option<Gd<Texture2D>>) {
         self.face_texture = tex;
@@ -286,6 +296,7 @@ impl Card3D {
         }
     }
 
+    /// Setzt die Textur der Rückseite.
     #[func]
     pub fn set_back_texture(&mut self, tex: Option<Gd<Texture2D>>) {
         self.back_texture = tex;
@@ -303,6 +314,7 @@ impl Card3D {
         }
     }
 
+    /// Liegt der Mauszeiger gerade auf der Karte?
     #[func]
     pub fn is_hovered(&self) -> bool {
         self.hovered
@@ -324,6 +336,7 @@ impl Card3D {
         );
     }
 
+    /// Markiert die Karte als gezogen (Hover aus, laufende Animation stoppt). Setzt der [TableController].
     #[func]
     pub fn set_dragging(&mut self, dragging: bool) {
         self.dragging = dragging;
@@ -335,6 +348,7 @@ impl Card3D {
         }
     }
 
+    /// Wird die Karte gerade gezogen?
     #[func]
     pub fn is_dragging(&self) -> bool {
         self.dragging
@@ -391,6 +405,7 @@ impl Card3D {
         self.defense + self.equip_defense + self.global_defense - self.damage
     }
 
+    /// Ist die Karte getappt (um 90° gedreht)?
     #[func]
     pub fn is_tapped(&self) -> bool {
         self.tapped

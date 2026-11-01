@@ -18,6 +18,7 @@ use godot::prelude::*;
 
 // ================================================================== ManaType
 
+/// Manafarbe. Als Zahl: 0 = Weiß, 1 = Blau, 2 = Schwarz, 3 = Rot, 4 = Grün, 5 = Farblos.
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[godot(via = i64)]
 pub enum ManaType {
@@ -234,14 +235,19 @@ pub struct ManaCost {
     /// Beliebiges Mana.
     #[export]
     generic: i32,
+    /// Weißes Mana, das mit Weiß bezahlt werden muss.
     #[export]
     white: i32,
+    /// Blaues Mana, das mit Blau bezahlt werden muss.
     #[export]
     blue: i32,
+    /// Schwarzes Mana, das mit Schwarz bezahlt werden muss.
     #[export]
     black: i32,
+    /// Rotes Mana, das mit Rot bezahlt werden muss.
     #[export]
     red: i32,
+    /// Grünes Mana, das mit Grün bezahlt werden muss.
     #[export]
     green: i32,
     /// Muss mit farblosem Mana bezahlt werden.
@@ -361,16 +367,19 @@ impl ManaPool {
         self.pay_mana(ManaCost::from_dictionary(cost))
     }
 
+    /// Kann dieser Pool die Kosten `cost` bezahlen?
     #[func]
     pub fn can_pay(&self, cost: Gd<ManaCost>) -> bool {
         cost.bind().cost().can_pay(&self.mana)
     }
 
+    /// Vorrat einer Farbe (0 = Weiß, 1 = Blau, 2 = Schwarz, 3 = Rot, 4 = Grün, 5 = Farblos).
     #[func]
     pub fn get_amount(&self, mana_type: ManaType) -> i64 {
         self.mana.get(mana_type) as i64
     }
 
+    /// Gesamtes Mana im Pool (alle Farben zusammen).
     #[func]
     pub fn get_total(&self) -> i64 {
         self.mana.total() as i64

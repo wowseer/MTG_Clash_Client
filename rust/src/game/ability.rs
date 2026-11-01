@@ -2,6 +2,7 @@
 
 use godot::prelude::*;
 
+/// Fähigkeit einer Kreatur. Als Zahl: 0 = keine, 1 = Heiler, 2 = Feuer, 3 = Raufbold.
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[godot(via = i64)]
 pub enum CardAbility {

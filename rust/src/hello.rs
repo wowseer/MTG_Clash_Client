@@ -5,6 +5,7 @@ use godot::prelude::*;
 #[derive(GodotClass)]
 #[class(base=Node2D)]
 pub struct Hello {
+    /// Text, der beim Start ausgegeben wird.
     #[export]
     greeting: GString,
     base: Base<Node2D>,
@@ -26,6 +27,7 @@ impl INode2D for Hello {
 
 #[godot_api]
 impl Hello {
+    /// Beispielfunktion: gibt `a + b` zurück.
     #[func]
     fn add(&self, a: i64, b: i64) -> i64 {
         a + b

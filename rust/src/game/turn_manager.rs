@@ -20,11 +20,19 @@ use super::stack::{StackItem, StackManager};
 use crate::table::card3d::Card3D;
 use crate::table::zone::Zone;
 
+/// Steuert die Partie: Rundenablauf als State Machine (Enttappen → Auffrischung → Ziehen →
+/// Hauptphase 1 → Angreifer bestimmen → Blocker zuweisen → Schadensberechnung →
+/// Hauptphase 2 → Ende), die Prioritätsschleife des Stacks und alle Spielregeln
+/// (Timing je Kartentyp, Mana, Kampf, Auren, zustandsbasierte Aktionen, KI).
+/// Schnittstelle für [TableController], [TurnHud] und eigene Skripte.
+/// Sitzplätze werden als Zahl angegeben: 0 = Spieler (unten), 1 = Gegner (oben).
 #[derive(GodotClass)]
 #[class(base=Node)]
 pub struct TurnManager {
+    /// Sitzplatz des menschlichen Spielers (unten).
     #[export]
     player_seat: Option<Gd<PlayerSeat>>,
+    /// Sitzplatz des Gegners (oben, normalerweise KI).
     #[export]
     opponent_seat: Option<Gd<PlayerSeat>>,
     /// Karten, die in der Zieh-Phase gezogen werden.
@@ -116,6 +124,7 @@ impl TurnManager {
     #[signal]
     fn phase_changed(index: i64, title: GString);
 
+    /// Die Partie ist entschieden; `winner` ist der Name des Gewinners.
     #[signal]
     fn game_over(winner: GString);
 
@@ -182,6 +191,7 @@ impl TurnManager {
         if self.stack_is_busy() { "Passen  »".into() } else { "Nächste Phase  »".into() }
     }
 
+    /// Wartet das Spiel auf eine Eingabe des Menschen (Button „Nächste Phase“ bzw. „Passen“)?
     #[func]
     pub fn is_waiting_for_input(&self) -> bool {
         if self.stack_is_busy() {
@@ -194,21 +204,25 @@ impl TurnManager {
         }
     }
 
+    /// Index der aktuellen Phase in [method get_phase_titles] (−1 = noch nicht gestartet oder Spielende).
     #[func]
     pub fn get_phase_index(&self) -> i64 {
         self.phase().map_or(-1, Phase::index)
     }
 
+    /// Name der aktuellen Phase.
     #[func]
     pub fn get_phase_title(&self) -> GString {
         self.phase().map_or("Austeilen …", Phase::title).into()
     }
 
+    /// Namen aller Phasen in ihrer Reihenfolge.
     #[func]
     pub fn get_phase_titles(&self) -> PackedStringArray {
         Phase::ORDER.iter().map(|p| GString::from(p.title())).collect()
     }
 
+    /// Hinweistext für das HUD: was der Spieler gerade tun kann.
     #[func]
     pub fn get_hint(&self) -> GString {
         if self.stack_is_busy() {
@@ -228,6 +242,7 @@ impl TurnManager {
         }
     }
 
+    /// Die letzten Protokolleinträge, ältester zuerst.
     #[func]
     pub fn get_log(&self) -> PackedStringArray {
         self.game
@@ -236,6 +251,7 @@ impl TurnManager {
             .unwrap_or_default()
     }
 
+    /// Rundennummer (jeder Zug eines Spielers zählt als eine Runde).
     #[func]
     pub fn get_turn(&self) -> i64 {
         self.game.as_ref().map_or(0, |g| g.turn as i64)
@@ -247,11 +263,13 @@ impl TurnManager {
         self.game.as_ref().map_or(-1, |g| g.active as i64)
     }
 
+    /// Name des Sitzplatzes `seat` (0 = Spieler, 1 = Gegner).
     #[func]
     pub fn get_seat_name(&self, seat: i64) -> GString {
         self.seat(seat).map_or(GString::new(), |s| s.bind().display_name.clone())
     }
 
+    /// Lebenspunkte von `seat` (0 = Spieler, 1 = Gegner).
     #[func]
     pub fn get_life(&self, seat: i64) -> i64 {
         self.seat(seat).map_or(0, |s| s.bind().life as i64)
@@ -284,6 +302,7 @@ impl TurnManager {
         GString::from(text.as_str())
     }
 
+    /// Name des Gewinners (leer, solange die Partie läuft).
     #[func]
     pub fn get_winner_name(&self) -> GString {
         match self.game.as_ref().and_then(|g| g.winner.map(|w| g.name(w))) {
@@ -523,6 +542,7 @@ impl TurnManager {
         }
     }
 
+    /// Schließt das Auswahlfenster für Heldenfähigkeiten ohne Aktivierung.
     #[func]
     pub fn cancel_hero_choice(&mut self) {
         if let Some(g) = self.game.as_mut() {

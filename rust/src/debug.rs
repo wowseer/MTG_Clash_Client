@@ -178,6 +178,9 @@ fn build_def(name: &str, kind: CardKind, ability: usize, cost: Cost, atk: i32, d
     d
 }
 
+/// Debug-Tool (nur in Test-Builds): Ressourcen hinzufügen, jede Karte auf die Hand geben
+/// und eigene Karten erstellen. Wird vom [TableController] automatisch erzeugt und
+/// existiert in Release-Builds (`cargo build --release`) nicht.
 #[derive(GodotClass)]
 #[class(base=CanvasLayer)]
 pub struct DebugPanel {
@@ -264,6 +267,7 @@ impl DebugPanel {
         self.update_preview_visibility();
     }
 
+    /// Reiter gewechselt: blendet die große Kartenvorschau ein oder aus.
     #[func]
     fn on_tab_changed(&mut self, _tab: i64) {
         self.update_preview_visibility();
@@ -285,6 +289,7 @@ impl DebugPanel {
         self.set_status(&format!("+{count} Ressource(n) {label}."));
     }
 
+    /// Knopf „Alle Ressourcen enttappen“: enttappt alle Karten der eigenen Ressourcen-Reihe.
     #[func]
     fn on_untap_resources(&mut self) {
         let Some(mut zone) = self.player_seat().and_then(|s| s.bind().resource_zone.clone()) else {
@@ -297,6 +302,7 @@ impl DebugPanel {
         self.set_status("Alle Ressourcen enttappt.");
     }
 
+    /// Suchfeld geändert: filtert die Kartenliste nach Name oder Typ.
     #[func]
     fn on_filter_changed(&mut self, _text: GString) {
         self.refresh_list();
@@ -308,6 +314,7 @@ impl DebugPanel {
         self.give_to_hand(index);
     }
 
+    /// Knopf „Auf die Hand“: legt die in der Liste gewählte Karte auf die Hand.
     #[func]
     fn on_give_selected(&mut self) {
         let selected = self.list.as_ref().map(|l| l.get_selected_items()).unwrap_or_default();
@@ -334,6 +341,8 @@ impl DebugPanel {
         }
     }
 
+    /// Knopf „Erstellen“: baut eine Karte aus Name, Typ, Fähigkeit, Kosten, Angriff und
+    /// Verteidigung. `to_hand` = true legt sie zusätzlich direkt auf die Hand.
     #[func]
     fn on_create(&mut self, to_hand: bool) {
         let name = self.name_edit.as_ref().map(|e| e.get_text().to_string()).unwrap_or_default();

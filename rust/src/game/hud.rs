@@ -1,7 +1,7 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
 //! - oben rechts: Phasenliste (aktuelle Phase hervorgehoben)
-//! - oben links / unten links: Leben und Gold von Gegner / Spieler
+//! - oben links / unten links: Leben, Ressourcen und Mana von Gegner / Spieler
 //! - unten rechts: Hinweis, Protokoll und Button „Nächste Phase“ (auch Leertaste)
 //!
 //! Das HUD liest den Zustand jedes Frame vom TurnManager (keine Signal-Kopplung nötig).
@@ -23,9 +23,14 @@ const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
 const PARCHMENT: Color = Color::from_rgb(0.93, 0.87, 0.74);
 const DIM: Color = Color::from_rgba(0.93, 0.87, 0.74, 0.45);
 
+/// Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts),
+/// Leben, Ressourcen und Mana beider Spieler (links), Button „Nächste Phase“ / „Passen“
+/// (unten rechts, auch Leertaste) und das Auswahlfenster für Heldenfähigkeiten.
+/// Liest den Zustand jedes Frame vom [TurnManager].
 #[derive(GodotClass)]
 #[class(base=CanvasLayer)]
 pub struct TurnHud {
+    /// Der [TurnManager], dessen Zustand angezeigt wird.
     #[export]
     turn_manager: Option<Gd<TurnManager>>,
 
@@ -81,16 +86,19 @@ impl ICanvasLayer for TurnHud {
 
 #[godot_api]
 impl TurnHud {
+    /// Knopf der ersten Heldenfähigkeit im Auswahlfenster.
     #[func]
     fn on_hero_ability_0(&mut self) {
         self.activate_hero(0);
     }
 
+    /// Knopf der zweiten Heldenfähigkeit im Auswahlfenster.
     #[func]
     fn on_hero_ability_1(&mut self) {
         self.activate_hero(1);
     }
 
+    /// Knopf „Abbrechen“ im Auswahlfenster für Heldenfähigkeiten.
     #[func]
     fn on_hero_cancel(&mut self) {
         if let Some(tm) = self.turn_manager.as_mut() {
@@ -98,6 +106,7 @@ impl TurnHud {
         }
     }
 
+    /// Button „Nächste Phase“ / „Passen“ bzw. Leertaste: ruft [method TurnManager.next_phase] auf.
     #[func]
     fn on_next_pressed(&mut self) {
         if let Some(tm) = self.turn_manager.as_mut() {
@@ -180,7 +189,7 @@ impl TurnHud {
         root.add_child(&phase_panel);
         turn.set_text("Runde –");
 
-        // Lebens-/Goldanzeigen
+        // Anzeigen für Leben, Ressourcen und Mana
         let opp = rich(18);
         let mut opp_panel = panel();
         opp_panel.add_child(&opp);
