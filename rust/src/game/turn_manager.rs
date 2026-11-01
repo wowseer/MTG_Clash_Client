@@ -170,6 +170,12 @@ impl TurnManager {
         }
     }
 
+    /// Alle Elemente auf dem Stack, unterstes zuerst (für die Stack-Anzeige).
+    #[func]
+    pub fn get_stack_items(&self) -> Array<Gd<StackItem>> {
+        self.stack_manager.as_ref().map(|s| s.bind().get_items()).unwrap_or_default()
+    }
+
     /// Stack-Einträge als Text, oberster zuerst.
     #[func]
     pub fn get_stack_lines(&self) -> PackedStringArray {

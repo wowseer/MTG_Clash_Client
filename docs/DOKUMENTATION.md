@@ -57,7 +57,7 @@ In Test-Builds hängt der `TableController` zusätzlich ein `DebugPanel` an (nic
 | Ordner / Datei | Inhalt |
 |---|---|
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, `Tavern`, Texturen |
-| `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD |
+| `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD, Stack-Anzeige (`stack_view.rs`) |
 | `rust/src/debug.rs` | Debug-Tool (nur Test-Build) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
 | `docs/` | diese Dokumentation und die API-Referenz |
@@ -144,6 +144,15 @@ Ausnahme: Ein Spieler hat eine bleibende Karte mit dem Dauereffekt **„Mana ble
 im Debug-Katalog); im Debug-Reiter „Erstellen“ als Artefakt-Fähigkeit „Passiv: Mana bleibt am Zugende erhalten“.
 
 ### 4.4 Stack und Priorität (`stack.rs`)
+
+**Anzeige:** Solange etwas auf dem Stack liegt, zeigt das HUD den Stack **groß in der oberen
+Bildschirmhälfte** (`StackView`). Das passiert bei jeder gespielten Karte außer Ressourcen (die
+nicht über den Stack gehen) und in jeder Prioritätsrunde. Jedes Element ist eine große Karte mit
+allen Texten; antwortet ein Spieler, wird seine Karte **versetzt darübergelegt**, die
+darunterliegenden bleiben am Rand sichtbar. Das oberste Element (wird als Nächstes aufgelöst) hat
+einen **goldenen Rahmen**. Ein Band zeigt *Spieler/Gegner · Zauber/Fähigkeit*; bei Fähigkeiten
+steht im Textfeld der konkrete Effekt. Nach dem Auflösen verschwindet die Karte aus der Anzeige.
+Das Hinweisfeld oben rechts nennt nur noch die Anzahl („Auf dem Stack: 2“).
 
 - Wer etwas auf den Stack legt, behält die Priorität.
 - Aufgelöst wird das **oberste** Item erst, wenn **beide nacheinander passen** (LIFO).

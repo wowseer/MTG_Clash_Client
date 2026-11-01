@@ -9,4 +9,5 @@ pub mod phases;
 pub mod timing;
 pub mod seat;
 pub mod stack;
+pub mod stack_view;
 pub mod turn_manager;

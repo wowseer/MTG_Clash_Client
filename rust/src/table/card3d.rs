@@ -574,7 +574,10 @@ impl Card3D {
         }
     }
 
-    pub(crate) fn refresh_labels(&mut self) {
+    /// Alle Texte der Kartenvorderseite in der aktuellen Sprache, mit Positionen in
+    /// Pixeln der Kartentextur (256 × 358). Gemeinsame Quelle für die 3D-Beschriftung
+    /// und 2D-Ansichten (z. B. die Stack-Anzeige im HUD).
+    pub fn face_texts(&self) -> FaceTexts {
         let atk = self.get_current_attack();
         let def = self.get_remaining_defense();
         let bonus = self.attack_bonus != 0
@@ -583,7 +586,7 @@ impl Card3D {
             || self.global_attack != 0
             || self.global_defense != 0;
         let damaged = self.damage > 0;
-        let (kind_text, body, stats) = match self.card_kind {
+        let (kind, body, stats) = match self.card_kind {
             CardKind::Creature => (self.ability.title().to_string(), self.ability.description().to_string(), format!("{atk}/{def}")),
             CardKind::Instant | CardKind::Sorcery => (self.card_kind.title().to_string(), self.effect.description(), String::new()),
             CardKind::Hero => (
@@ -609,8 +612,45 @@ impl Card3D {
                 Some(a) => (self.card_kind.type_line().to_string(), a.description(), a.stats_text()),
                 None => (self.card_kind.type_line().to_string(), String::new(), String::new()),
             },
-            CardKind::Resource => (String::new(), String::new(), String::new()),
+            CardKind::Resource => {
+                let color = self.produces.name();
+                (
+                    trf!("Ressource – {color}", "Resource – {color}"),
+                    trf!("Tappen: +1 {color}-Mana.", "Tap: +1 {color} mana."),
+                    String::new(),
+                )
+            }
         };
+        let name = crate::i18n::name(&self.card_name.to_string());
+        let (cost, cost_x, name_x) = if self.card_kind == CardKind::Resource {
+            (String::new(), 0.0, 128.0)
+        } else {
+            // Generische Kosten als Zahl im grauen Kostensymbol (ganz links),
+            // Name mittig im freien Bereich links der Kostensymbole
+            let c = self.mana_cost.as_ref().map(|c| c.bind().cost()).unwrap_or_default();
+            let pips = c.specific.total() as usize + usize::from(c.generic > 0);
+            let centers = placeholder::pip_centers(pips);
+            let left_pip = centers.first().copied().unwrap_or(256.0 - 20.0);
+            let cost = if c.generic > 0 { c.generic.to_string() } else { String::new() };
+            (cost, centers.first().copied().unwrap_or(0.0), (26.0 + left_pip - 16.0) * 0.5)
+        };
+        let stats_color = if damaged {
+            Color::from_rgb(1.0, 0.45, 0.4)
+        } else if bonus {
+            Color::from_rgb(0.6, 1.0, 0.5)
+        } else {
+            Color::WHITE
+        };
+        FaceTexts { name, name_x, cost, cost_x, kind, body, stats, stats_color }
+    }
+
+    /// Vorderseiten-Textur (für 2D-Ansichten).
+    pub fn face_tex(&self) -> Option<Gd<Texture2D>> {
+        self.face_texture.clone()
+    }
+
+    pub(crate) fn refresh_labels(&mut self) {
+        let t = self.face_texts();
         let Some(l) = self.labels.as_mut() else {
             return;
         };
@@ -618,41 +658,16 @@ impl Card3D {
             Vector3::new((x / 256.0 - 0.5) * CARD_WIDTH, CARD_THICKNESS * 0.5 + 0.0015, (y / 358.0 - 0.5) * CARD_HEIGHT)
         };
         let ty = placeholder::title_center_y();
-        let shown_name = crate::i18n::name(&self.card_name.to_string());
-        l.name.set_text(&shown_name);
-        if self.card_kind == CardKind::Resource {
-            let color = self.produces.name();
-            l.cost.set_text("");
-            l.name.set_position(px(128.0, ty));
-            l.kind.set_text(&trf!("Ressource – {color}", "Resource – {color}"));
-            l.text.set_text(&trf!("Tappen: +1 {color}-Mana.", "Tap: +1 {color} mana."));
-            l.stats.set_text("");
-        } else {
-            // Generische Kosten als Zahl im grauen Kostensymbol (ganz links)
-            let cost = self.mana_cost.as_ref().map(|c| c.bind().cost()).unwrap_or_default();
-            let pips = cost.specific.total() as usize + usize::from(cost.generic > 0);
-            let centers = placeholder::pip_centers(pips);
-            if cost.generic > 0 {
-                l.cost.set_text(&cost.generic.to_string());
-                l.cost.set_position(px(centers[0], ty));
-            } else {
-                l.cost.set_text("");
-            }
-            // Name mittig im freien Bereich links der Kostensymbole
-            let left_pip = centers.first().copied().unwrap_or(256.0 - 20.0);
-            l.name.set_position(px((26.0 + left_pip - 16.0) * 0.5, ty));
-            l.kind.set_text(&kind_text);
-            l.text.set_text(&body);
-            l.stats.set_text(&stats);
+        l.name.set_text(&t.name);
+        l.name.set_position(px(t.name_x, ty));
+        l.cost.set_text(&t.cost);
+        if !t.cost.is_empty() {
+            l.cost.set_position(px(t.cost_x, ty));
         }
-        let stat_color = if damaged {
-            Color::from_rgb(1.0, 0.45, 0.4)
-        } else if bonus {
-            Color::from_rgb(0.6, 1.0, 0.5)
-        } else {
-            Color::WHITE
-        };
-        l.stats.set_modulate(stat_color);
+        l.kind.set_text(&t.kind);
+        l.text.set_text(&t.body);
+        l.stats.set_text(&t.stats);
+        l.stats.set_modulate(t.stats_color);
     }
 
     fn build_labels(&mut self, visual: &mut Gd<Node3D>) {
@@ -865,4 +880,18 @@ fn card_label(parent: &mut Gd<Node3D>, pos: Vector3, font_size: i32, color: Colo
     l.set_cast_shadows_setting(ShadowCastingSetting::OFF);
     parent.add_child(&l);
     l
+}
+
+/// Texte der Kartenvorderseite (siehe [`Card3D::face_texts`]). Positionen `*_x` in
+/// Pixeln der Kartentextur (256 breit); die y-Positionen sind für alle Karten gleich.
+pub struct FaceTexts {
+    pub name: String,
+    pub name_x: f32,
+    /// Generische Kosten als Zahl ("" = keine), Mitte des grauen Kostensymbols bei `cost_x`.
+    pub cost: String,
+    pub cost_x: f32,
+    pub kind: String,
+    pub body: String,
+    pub stats: String,
+    pub stats_color: Color,
 }

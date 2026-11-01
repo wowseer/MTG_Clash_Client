@@ -1,8 +1,10 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
-//! - oben rechts: Phasenliste (aktuelle Phase hervorgehoben)
+//! - oben rechts: Phasenliste (aktuelle Phase hervorgehoben), Hinweis und Protokoll
 //! - oben links / unten links: Leben, Ressourcen und Mana von Gegner / Spieler
-//! - unten rechts: Hinweis, Protokoll und Button „Nächste Phase“ (auch Leertaste)
+//! - unten rechts: Button „Nächste Phase“ / „Passen“ (auch Leertaste)
+//! - unten Mitte: Auswahlfenster für Heldenfähigkeiten
+//! - obere Bildschirmhälfte: große Stack-Anzeige ([`StackView`]), solange der Stack belegt ist
 //!
 //! Das HUD liest den Zustand jedes Frame vom TurnManager (keine Signal-Kopplung nötig).
 //! Alle Flächen lassen Mausklicks durch, nur der Button fängt sie ab.
@@ -17,6 +19,7 @@ use godot::builtin::Side;
 use godot::global::Key;
 use godot::prelude::*;
 
+use super::stack_view::StackView;
 use super::turn_manager::TurnManager;
 
 const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
@@ -41,6 +44,8 @@ pub struct TurnHud {
     hint_label: Option<Gd<Label>>,
     log_label: Option<Gd<Label>>,
     button: Option<Gd<Button>>,
+    /// Große Stack-Anzeige in der oberen Bildschirmhälfte.
+    stack_view: Option<StackView>,
     hero_panel: Option<Gd<PanelContainer>>,
     hero_title: Option<Gd<Label>>,
     hero_buttons: Vec<Gd<Button>>,
@@ -60,6 +65,7 @@ impl ICanvasLayer for TurnHud {
             hint_label: None,
             log_label: None,
             button: None,
+            stack_view: None,
             hero_panel: None,
             hero_title: None,
             hero_buttons: Vec::new(),
@@ -212,6 +218,8 @@ impl TurnHud {
         root.add_child(&button);
 
         self.build_hero_panel(&mut root);
+        // Stack-Anzeige zuletzt: liegt über den übrigen Panels
+        self.stack_view = Some(StackView::new(&mut root));
         self.base_mut().add_child(&root);
         self.turn_label = Some(turn);
         self.opponent_info = Some(opp);
@@ -222,6 +230,10 @@ impl TurnHud {
     }
 
     fn refresh(&mut self) {
+        if let (Some(tm), Some(view)) = (self.turn_manager.clone(), self.stack_view.as_mut()) {
+            let items: Vec<_> = tm.bind().get_stack_items().iter_shared().collect();
+            view.update(&items);
+        }
         let Some(tm) = self.turn_manager.clone() else {
             return;
         };
@@ -271,13 +283,11 @@ impl TurnHud {
         let winner = tm.get_winner_name();
         if let Some(l) = self.hint_label.as_mut() {
             let text = if winner.is_empty() {
+                // Der Stack selbst wird groß von der StackView angezeigt; hier nur die Anzahl
                 let mut t = format!("{}\n{}", tm.get_phase_title(), tm.get_hint());
-                let stack = tm.get_stack_lines();
-                if !stack.is_empty() {
-                    t.push_str(tr!("\nStack (oben zuerst):", "\nStack (top first):"));
-                    for line in stack.as_slice() {
-                        t.push_str(&format!("\n• {line}"));
-                    }
+                let n = tm.get_stack_items().len();
+                if n > 0 {
+                    t.push_str(&trf!("\nAuf dem Stack: {n}", "\nOn the stack: {n}"));
                 }
                 t
             } else {

@@ -241,6 +241,7 @@ Steuert die Partie: Rundenablauf als State Machine (Enttappen → Auffrischung �
 | `start_game()` | `void` | Startet die Partie (der Spieler beginnt). |
 | `next_phase()` | `void` | Button „Nächste Phase“: nur wirksam, wenn die Phase auf einen Menschen wartet. |
 | `resolve_stack_item(item: StackItem)` | `void` | Wird vom StackManager beim Auflösen eines Items aufgerufen. |
+| `get_stack_items()` | `Array[StackItem]` | Alle Elemente auf dem Stack, unterstes zuerst (für die Stack-Anzeige). |
 | `get_stack_lines()` | `PackedStringArray` | Stack-Einträge als Text, oberster zuerst. |
 | `get_priority_seat()` | `int` | Spieler mit Priorität bei vollem Stack (-1 = Stack leer). |
 | `get_button_text()` | `String` | Beschriftung für den HUD-Button. |
