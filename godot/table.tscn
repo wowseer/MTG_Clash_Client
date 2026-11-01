@@ -1,0 +1,154 @@
+[gd_scene format=3 uid="uid://bqd5td2ryfncd"]
+
+[sub_resource type="Environment" id="env"]
+background_mode = 1
+background_color = Color(0.03, 0.02, 0.015, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.4, 0.28, 1)
+ambient_light_energy = 0.3
+tonemap_mode = 3
+ssao_enabled = true
+glow_enabled = true
+glow_intensity = 0.6
+glow_bloom = 0.05
+fog_enabled = true
+fog_light_color = Color(0.22, 0.13, 0.07, 1)
+fog_density = 0.006
+
+[node name="Table" type="TableController" unique_id=346997079 node_paths=PackedStringArray("camera", "turn_manager", "hand_zone", "deck_zone", "opponent_hand_zone", "opponent_deck_zone", "opponent_battlefield_zone")]
+camera = NodePath("Camera")
+turn_manager = NodePath("TurnManager")
+hand_zone = NodePath("Player/Hand")
+deck_zone = NodePath("Player/Deck")
+opponent_hand_zone = NodePath("Opponent/Hand")
+opponent_deck_zone = NodePath("Opponent/Deck")
+opponent_battlefield_zone = NodePath("Opponent/Battlefield")
+demo_opponent_battlefield_size = 0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1977328221]
+environment = SubResource("env")
+
+[node name="Tavern" type="Tavern" parent="." unique_id=2143555114]
+
+[node name="Lantern" type="SpotLight3D" parent="." unique_id=507094639]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 14, 0)
+light_color = Color(1, 0.82, 0.6, 1)
+light_energy = 10.0
+shadow_enabled = true
+spot_range = 30.0
+spot_angle = 38.0
+spot_angle_attenuation = 0.7
+
+[node name="Camera" type="TableCamera" parent="." unique_id=984837999]
+overview_position = Vector3(0, 10.5, 6.8)
+overview_target = Vector3(0, 0, -0.3)
+fov = 52.0
+far = 200.0
+
+[node name="Player" type="PlayerSeat" parent="." unique_id=439672300 node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
+hand = NodePath("Hand")
+deck = NodePath("Deck")
+battlefield = NodePath("Battlefield")
+discard = NodePath("Discard")
+resource_zone = NodePath("Resources")
+mana_pool = NodePath("ManaPool")
+
+[node name="Battlefield" type="Zone" parent="Player" unique_id=66267130]
+size = Vector3(11.6, 0.1, 4.3)
+free_placement = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0, 2.35)
+
+[node name="Deck" type="Zone" parent="Player" unique_id=1898977070]
+kind = 1
+size = Vector3(0.95, 0.3, 1.2)
+accepts_drops = false
+cards_draggable = false
+click_to_draw = true
+face_up = false
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.15, 0, 3.4)
+visible = false
+
+[node name="Discard" type="Zone" parent="Player" unique_id=882134221]
+kind = 1
+size = Vector3(0.95, 0.3, 1.2)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.15, 0, 1.6)
+
+[node name="Resources" type="Zone" parent="Player" unique_id=463578829]
+kind = 3
+size = Vector3(3.4, 0.3, 1.6)
+cards_draggable = false
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.3, 0, 3.55)
+
+[node name="ManaPool" type="ManaPool" parent="Player" unique_id=411184659]
+
+[node name="Hand" type="Zone" parent="Player" unique_id=546330428]
+kind = 0
+size = Vector3(5, 0.3, 1.4)
+transform = Transform3D(1.35, 0, 0, 0, 1.223515, -0.57053, 0, 0.57053, 1.223515, 0, 1.2, 4)
+
+[node name="Opponent" type="PlayerSeat" parent="." unique_id=1201133542 node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
+display_name = "Gegner"
+is_ai = true
+hand = NodePath("Hand")
+deck = NodePath("Deck")
+battlefield = NodePath("Battlefield")
+discard = NodePath("Discard")
+resource_zone = NodePath("Resources")
+mana_pool = NodePath("ManaPool")
+
+[node name="Battlefield" type="Zone" parent="Opponent" unique_id=1902286004]
+size = Vector3(11.6, 0.1, 4.3)
+accepts_drops = false
+cards_draggable = false
+grid_columns = 9
+grid_spacing = Vector2(1, 1.05)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.2, 0, -2.35)
+
+[node name="Deck" type="Zone" parent="Opponent" unique_id=131863721]
+kind = 1
+size = Vector3(0.95, 0.3, 1.2)
+accepts_drops = false
+cards_draggable = false
+face_up = false
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -6.15, 0, -3.4)
+
+[node name="Discard" type="Zone" parent="Opponent" unique_id=1580544609]
+kind = 1
+size = Vector3(0.95, 0.3, 1.2)
+accepts_drops = false
+cards_draggable = false
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -6.15, 0, -1.6)
+
+[node name="Resources" type="Zone" parent="Opponent" unique_id=213499238]
+kind = 3
+size = Vector3(3.4, 0.3, 1.6)
+accepts_drops = false
+cards_draggable = false
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4.3, 0, -3.55)
+
+[node name="ManaPool" type="ManaPool" parent="Opponent" unique_id=1860643415]
+
+[node name="Hand" type="Zone" parent="Opponent" unique_id=65253943]
+kind = 0
+size = Vector3(4, 0.3, 1.2)
+accepts_drops = false
+cards_draggable = false
+face_up = false
+transform = Transform3D(-1, 0, 0, 0, 0.866025, 0.5, 0, 0.5, -0.866025, 0, 0.6, -4.6)
+
+[node name="StackManager" type="StackManager" parent="."]
+
+[node name="StackZone" type="Zone" parent="."]
+kind = 4
+size = Vector3(1.2, 0.02, 0.9)
+accepts_drops = false
+cards_draggable = false
+
+[node name="TurnManager" type="TurnManager" parent="." unique_id=664733690 node_paths=PackedStringArray("player_seat", "opponent_seat", "stack_manager", "stack_zone")]
+player_seat = NodePath("../Player")
+opponent_seat = NodePath("../Opponent")
+stack_manager = NodePath("../StackManager")
+stack_zone = NodePath("../StackZone")
+
+[node name="TurnHud" type="TurnHud" parent="." unique_id=269019185 node_paths=PackedStringArray("turn_manager")]
+turn_manager = NodePath("../TurnManager")
