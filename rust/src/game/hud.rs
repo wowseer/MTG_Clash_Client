@@ -1,7 +1,7 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
 //! - unten links: Zeitstrahl der Phasen ([`PhaseTimeline`])
-//! - Bildmitte (Mittellinie): Hinweis bzw. Spielende; oben links: letzte Protokollzeilen
+//! - Bildmitte: nur die Meldung zum Spielende (keine Hinweistexte); oben links: letzte Protokollzeilen
 //! - Medaillon ([`SeatBadge`]) mit Leben, daneben Name, Ressourcen und Mana: folgt je einem
 //!   3D-Ankerpunkt (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne
 //!   Anker oben links (Gegner) bzw. unten links (Spieler)
@@ -38,7 +38,7 @@ const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
 const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
 const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
 
-/// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten links), Hinweis in der Bildmitte, letzte Protokollzeilen oben links,
+/// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten links), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links,
 /// je ein [SeatBadge]-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an
 /// [member player_hero_anchor] / [member opponent_hero_anchor], sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
 /// blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten.
@@ -69,7 +69,8 @@ pub struct TurnHud {
     player_row: Option<Gd<Control>>,
     /// Farbe, mit der der Hauptbutton zuletzt gestaltet wurde (nur bei Wechsel neu setzen).
     button_color: Option<Color>,
-    hint_label: Option<Gd<Label>>,
+    /// Meldung „Spielende – X gewinnt!“ in der Bildmitte (sonst leer).
+    game_over_label: Option<Gd<Label>>,
     log_label: Option<Gd<Label>>,
     button: Option<Gd<Button>>,
     /// Große Stack-Anzeige in der oberen Bildschirmhälfte.
@@ -96,7 +97,7 @@ impl ICanvasLayer for TurnHud {
             player_hero_anchor: None,
             opponent_hero_anchor: None,
             button_color: None,
-            hint_label: None,
+            game_over_label: None,
             log_label: None,
             button: None,
             stack_view: None,
@@ -199,8 +200,8 @@ impl TurnHud {
         place(&mut timeline, (0.0, 1.0), (14.0, -4.0), GrowDirection::END, GrowDirection::BEGIN);
         root.add_child(&timeline);
 
-        // Hinweis in der Bildmitte (auf der Mittellinie zwischen den Spielfeldern)
-        let mut hint = label(18, GOLD);
+        // Bildmitte: nur die Meldung zum Spielende
+        let mut hint = label(26, GOLD);
         hint.set_horizontal_alignment(godot::global::HorizontalAlignment::CENTER);
         hint.set_custom_minimum_size(Vector2::new(520.0, 0.0));
         hint.set_autowrap_mode(AutowrapMode::WORD_SMART);
@@ -239,7 +240,7 @@ impl TurnHud {
         self.player_badge = Some(me_badge);
         self.opponent_row = Some(opp_row);
         self.player_row = Some(me_row);
-        self.hint_label = Some(hint);
+        self.game_over_label = Some(hint);
         self.log_label = Some(log);
         self.button = Some(button);
     }
@@ -314,16 +315,12 @@ impl TurnHud {
             l.set_text(&info(0));
         }
 
+        // Keine Hinweistexte während des Spiels (Phase steht im Zeitstrahl, der Stack in der
+        // StackView) – nur das Spielende wird in der Bildmitte angezeigt.
         let winner = tm.get_winner_name();
-        if let Some(l) = self.hint_label.as_mut() {
+        if let Some(l) = self.game_over_label.as_mut() {
             let text = if winner.is_empty() {
-                // Phase steht im Zeitstrahl, der Stack groß in der StackView; hier nur Hinweis + Anzahl
-                let mut t = tm.get_hint().to_string();
-                let n = tm.get_stack_items().len();
-                if n > 0 {
-                    t.push_str(&trf!("\nAuf dem Stack: {n}", "\nOn the stack: {n}"));
-                }
-                t
+                String::new()
             } else {
                 trf!("Spielende\n{winner} gewinnt!", "Game over\n{winner} wins!")
             };

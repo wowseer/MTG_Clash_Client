@@ -91,7 +91,7 @@ die `HeroAnchor`-Marker mitziehen.
 |---|---|
 | Bildmitte oben / unten | `SeatBadge`-Medaillon von Gegner (rot, direkt unter dessen Hand) / Spieler (blau, direkt über der eigenen Hand) – wie in MTGA. Die Position kommt von den `HeroAnchor`-Markern (`TurnHud.player_hero_anchor` / `opponent_hero_anchor`); ohne Marker sitzen die Medaillons links oben / unten. Liegt die Maus im Handbereich, wird das Spieler-Medaillon durchscheinend, damit gezoomte Handkarten lesbar bleiben. Raute mit Wappen und Anfangsbuchstabe, roter Edelstein mit Lebenspunkten; pulsierender Schein = am Zug; Edelstein blitzt bei Schaden rot, bei Heilung grün. Daneben Name, Ressourcen und Mana |
 | unten links | `PhaseTimeline`: Zeitstrahl der Phasen – Punkte für die Phasen, ein Punkt „Kampf“ mit drei kleineren Unterpunkten (Angreifer, Blocker, Schaden). Eine leuchtende Markierung gleitet zur aktuellen Phase (bei neuer Runde springt sie zurück); erledigte Strecke und Punkte golden, kommende hohl. Darüber der Name der aktuellen Phase, darunter Runde und Seite am Zug |
-| Bildmitte | Hinweis zur aktuellen Situation (z. B. was zu tun ist, Anzahl der Stack-Elemente) bzw. Spielende |
+| Bildmitte | nur bei Spielende: „Spielende – X gewinnt!“. Während des Spiels keine Hinweistexte (Phase steht im Zeitstrahl, Stack in der Stack-Anzeige); `TurnManager.get_hint()` liefert den Hinweis weiterhin für eigene Skripte |
 | oben links | die letzten drei Protokollzeilen, dezent |
 | Bildschirmmitte | Auswahlfenster für Heldenfähigkeiten (nach Klick auf den eigenen Helden) |
 | unten rechts | großer Button „Nächste Phase“ / „Weiter (passen)“: blau, solange der Stack leer ist, orange, wenn Priorität abgegeben wird |
@@ -197,7 +197,7 @@ allen Texten; antwortet ein Spieler, wird seine Karte **versetzt darübergelegt*
 darunterliegenden bleiben am Rand sichtbar. Das oberste Element (wird als Nächstes aufgelöst) hat
 einen **goldenen Rahmen**. Ein Band zeigt *Spieler/Gegner · Zauber/Fähigkeit*; bei Fähigkeiten
 steht im Textfeld der konkrete Effekt. Nach dem Auflösen verschwindet die Karte aus der Anzeige.
-Der Hinweis in der Bildmitte nennt nur noch die Anzahl („Auf dem Stack: 2“).
+Eine zusätzliche Textanzeige der Stack-Anzahl gibt es nicht.
 
 **Hovern im Stack-Bereich:** Die großen Stack-Karten fangen die Maus ab – Karten auf dem Tisch
 **unter** der Anzeige werden dort weder gehovert noch angeklickt. In der kleinen Stack-Zone in der

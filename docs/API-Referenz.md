@@ -59,7 +59,7 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten links), Hinweis in der Bildmitte, letzte Protokollzeilen oben links, je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
+Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten links), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links, je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
 
 ### Eigenschaften
 
