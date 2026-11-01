@@ -58,13 +58,15 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts), je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (links: Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
+Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts), je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
 
 ### Eigenschaften
 
 | Name | Typ | Beschreibung |
 |---|---|---|
 | `turn_manager` | `TurnManager` | Der `TurnManager`, dessen Zustand angezeigt wird. |
+| `player_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand). Leer = Medaillon unten links. Liegt die Maus unterhalb des Medaillons im Handbereich, wird es durchscheinend, damit gezoomte Handkarten lesbar bleiben. |
+| `opponent_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Gegner-Medaillon sitzt (Oberkante mittig, z. B. direkt unter dessen Hand). Leer = Medaillon oben links. |
 
 ### Funktionen
 

@@ -42,8 +42,10 @@ Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Demo-Decks
 │   ├── Deck, Discard (Zone)     Deck, Friedhof
 │   ├── Resources (Zone)         Ressourcen-Reihe
 │   ├── ManaPool (ManaPool)      Manavorrat
-│   └── Hand (Zone)              Handkarten (Fächer)
-├── Opponent (PlayerSeat)        Gegner oben (KI), gleicher Aufbau, um 180° gedreht
+│   ├── HeroAnchor (Marker3D)    Position des Medaillons (direkt über der Hand)
+│   └── Hand (Zone)              Handkarten (Fächer, nah an der Kamera am unteren Bildrand)
+├── Opponent (PlayerSeat)        Gegner oben (KI), gleicher Aufbau, um 180° gedreht;
+│                                Hand am oberen Bildrand, Medaillon direkt darunter
 ├── StackManager (StackManager)  Stack + Prioritätsschleife
 ├── StackZone (Zone)             sichtbarer Stack in der Tischmitte
 ├── TurnManager (TurnManager)    Rundenablauf und alle Spielregeln
@@ -77,8 +79,9 @@ wieder auf ca. 10 stellen, die Arena braucht wegen des hellen Steins nur ca. 3).
 
 | Bereich | Inhalt |
 |---|---|
-| oben links / unten links | `SeatBadge`-Medaillon von Gegner (rot) / Spieler (blau): Raute mit Wappen und Anfangsbuchstabe, roter Edelstein mit Lebenspunkten; pulsierender Schein = am Zug; Edelstein blitzt bei Schaden rot, bei Heilung grün. Daneben Name, Ressourcen und Mana |
+| Bildmitte oben / unten | `SeatBadge`-Medaillon von Gegner (rot, direkt unter dessen Hand) / Spieler (blau, direkt über der eigenen Hand) – wie in MTGA. Die Position kommt von den `HeroAnchor`-Markern (`TurnHud.player_hero_anchor` / `opponent_hero_anchor`); ohne Marker sitzen die Medaillons links oben / unten. Liegt die Maus im Handbereich, wird das Spieler-Medaillon durchscheinend, damit gezoomte Handkarten lesbar bleiben. Raute mit Wappen und Anfangsbuchstabe, roter Edelstein mit Lebenspunkten; pulsierender Schein = am Zug; Edelstein blitzt bei Schaden rot, bei Heilung grün. Daneben Name, Ressourcen und Mana |
 | oben rechts | Runde, Phasenliste, Hinweis und Protokoll |
+| Bildschirmmitte | Auswahlfenster für Heldenfähigkeiten (nach Klick auf den eigenen Helden) |
 | unten rechts | großer Button „Nächste Phase“ / „Weiter (passen)“: blau, solange der Stack leer ist, orange, wenn Priorität abgegeben wird |
 
 ### Dateien

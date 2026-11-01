@@ -1,11 +1,12 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
 //! - oben rechts: Phasenliste (aktuelle Phase hervorgehoben), Hinweis und Protokoll
-//! - oben links / unten links: Medaillon ([`SeatBadge`]) mit Leben, daneben Name, Ressourcen
-//!   und Mana von Gegner / Spieler
+//! - Medaillon ([`SeatBadge`]) mit Leben, daneben Name, Ressourcen und Mana: folgt je einem
+//!   3D-Ankerpunkt (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne
+//!   Anker oben links (Gegner) bzw. unten links (Spieler)
 //! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
 //!   belegtem Stack orange
-//! - unten Mitte: Auswahlfenster für Heldenfähigkeiten
+//! - Bildschirmmitte: Auswahlfenster für Heldenfähigkeiten
 //! - obere Bildschirmhälfte: große Stack-Anzeige ([`StackView`]), solange der Stack belegt ist
 //!
 //! Das HUD liest den Zustand jedes Frame vom TurnManager (keine Signal-Kopplung nötig).
@@ -36,8 +37,8 @@ const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
 const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
 
 /// Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts),
-/// je ein [SeatBadge]-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (links: Gegner
-/// oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
+/// je ein [SeatBadge]-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an
+/// [member player_hero_anchor] / [member opponent_hero_anchor], sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
 /// blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten.
 /// Liest den Zustand jedes Frame vom [TurnManager].
 #[derive(GodotClass)]
@@ -46,12 +47,24 @@ pub struct TurnHud {
     /// Der [TurnManager], dessen Zustand angezeigt wird.
     #[export]
     turn_manager: Option<Gd<TurnManager>>,
+    /// 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand).
+    /// Leer = Medaillon unten links. Liegt die Maus unterhalb des Medaillons im Handbereich, wird es
+    /// durchscheinend, damit gezoomte Handkarten lesbar bleiben.
+    #[export]
+    player_hero_anchor: Option<Gd<Node3D>>,
+    /// 3D-Punkt, an dem das Gegner-Medaillon sitzt (Oberkante mittig, z. B. direkt unter dessen Hand).
+    /// Leer = Medaillon oben links.
+    #[export]
+    opponent_hero_anchor: Option<Gd<Node3D>>,
 
     phase_labels: Vec<Gd<Label>>,
     opponent_info: Option<Gd<RichTextLabel>>,
     player_info: Option<Gd<RichTextLabel>>,
     opponent_badge: Option<Gd<SeatBadge>>,
     player_badge: Option<Gd<SeatBadge>>,
+    /// Zeilen (Medaillon + Text) von Gegner und Spieler, für die Positionierung am Anker.
+    opponent_row: Option<Gd<Control>>,
+    player_row: Option<Gd<Control>>,
     /// Farbe, mit der der Hauptbutton zuletzt gestaltet wurde (nur bei Wechsel neu setzen).
     button_color: Option<Color>,
     turn_label: Option<Gd<Label>>,
@@ -77,6 +90,10 @@ impl ICanvasLayer for TurnHud {
             player_info: None,
             opponent_badge: None,
             player_badge: None,
+            opponent_row: None,
+            player_row: None,
+            player_hero_anchor: None,
+            opponent_hero_anchor: None,
             button_color: None,
             turn_label: None,
             hint_label: None,
@@ -145,7 +162,7 @@ impl TurnHud {
         }
     }
 
-    /// Auswahlfenster für Heldenfähigkeiten (unten Mitte, über der Hand).
+    /// Auswahlfenster für Heldenfähigkeiten (Bildschirmmitte).
     fn build_hero_panel(&mut self, root: &mut Gd<Control>) {
         let mut col = VBoxContainer::new_alloc();
         col.add_theme_constant_override("separation", 6);
@@ -164,7 +181,8 @@ impl TurnHud {
         let mut p = panel();
         p.add_child(&col);
         p.set_visible(false);
-        place(&mut p, (0.5, 1.0), (0.0, -190.0), GrowDirection::BOTH, GrowDirection::BEGIN);
+        // Bildschirmmitte (unten Mitte sitzen Hand und Spieler-Medaillon)
+        place(&mut p, (0.5, 0.5), (0.0, 0.0), GrowDirection::BOTH, GrowDirection::BOTH);
         root.add_child(&p);
         self.hero_panel = Some(p);
         self.hero_title = Some(title);
@@ -213,8 +231,8 @@ impl TurnHud {
         turn.set_text(tr!("Runde –", "Turn –"));
 
         // Medaillons mit Leben + Text für Ressourcen und Mana
-        let (opp_badge, opp) = seat_row(&mut root, OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
-        let (me_badge, me) = seat_row(&mut root, PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
+        let (opp_row, opp_badge, opp) = seat_row(&mut root, OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
+        let (me_row, me_badge, me) = seat_row(&mut root, PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
 
         // Nur der Button unten rechts (Deck und Ablage bleiben sichtbar)
         let mut button = styled_button(20);
@@ -234,12 +252,42 @@ impl TurnHud {
         self.player_info = Some(me);
         self.opponent_badge = Some(opp_badge);
         self.player_badge = Some(me_badge);
+        self.opponent_row = Some(opp_row);
+        self.player_row = Some(me_row);
         self.hint_label = Some(hint);
         self.log_label = Some(log);
         self.button = Some(button);
     }
 
+    /// Setzt die Medaillon-Zeilen an ihre 3D-Anker (Medaillon mittig über/unter dem Ankerpunkt).
+    fn place_seat_rows(&mut self) {
+        let Some(viewport) = self.base().get_viewport() else { return };
+        let Some(cam) = viewport.get_camera_3d() else { return };
+        let mouse = viewport.get_mouse_position();
+        for (anchor, row, is_player) in [
+            (self.player_hero_anchor.clone(), self.player_row.clone(), true),
+            (self.opponent_hero_anchor.clone(), self.opponent_row.clone(), false),
+        ] {
+            let (Some(anchor), Some(mut row)) = (anchor, row) else { continue };
+            let world = anchor.get_global_position();
+            if cam.is_position_behind(world) {
+                continue;
+            }
+            let p = cam.unproject_position(world);
+            // Zeile auf Mindestgröße bringen; erstes Kind ist das Medaillon
+            let size = row.get_combined_minimum_size();
+            row.set_size(size);
+            let badge_w = row.get_child(0).map(|b| b.cast::<Control>().get_combined_minimum_size().x).unwrap_or(0.0);
+            let top = if is_player { p.y - size.y } else { p.y };
+            row.set_position(Vector2::new(p.x - badge_w * 0.5, top));
+            // Spieler: durchscheinend, solange die Maus im Handbereich darunter ist
+            let alpha = if is_player && mouse.y > top + size.y * 0.5 && (mouse.x - p.x).abs() < 380.0 { 0.3 } else { 1.0 };
+            row.set_modulate(Color::from_rgba(1.0, 1.0, 1.0, alpha));
+        }
+    }
+
     fn refresh(&mut self) {
+        self.place_seat_rows();
         if let (Some(tm), Some(view)) = (self.turn_manager.clone(), self.stack_view.as_mut()) {
             let items: Vec<_> = tm.bind().get_stack_items().iter_shared().collect();
             view.update(&items);
@@ -391,14 +439,15 @@ fn paint_main_button(button: &mut Gd<Button>, color: Color) {
     button.add_theme_constant_override("outline_size", 4);
 }
 
-/// Medaillon + Infotext einer Seite, an einer Bildschirmecke verankert. Gibt beide zurück.
+/// Medaillon + Infotext einer Seite, an einer Bildschirmecke verankert (Rückfall, falls kein
+/// 3D-Anker gesetzt ist). Gibt Zeile, Medaillon und Text zurück.
 fn seat_row(
     root: &mut Gd<Control>,
     accent: Color,
     anchor: (f32, f32),
     offset: (f32, f32),
     grow_v: GrowDirection,
-) -> (Gd<SeatBadge>, Gd<RichTextLabel>) {
+) -> (Gd<Control>, Gd<SeatBadge>, Gd<RichTextLabel>) {
     let mut row = godot::classes::HBoxContainer::new_alloc();
     row.add_theme_constant_override("separation", 4);
     row.set_mouse_filter(MouseFilter::IGNORE);
@@ -411,7 +460,7 @@ fn seat_row(
     row.add_child(&text);
     place(&mut row, anchor, offset, GrowDirection::END, grow_v);
     root.add_child(&row);
-    (badge, text)
+    (row.upcast(), badge, text)
 }
 
 /// Mehrfarbiger Text (BBCode), z. B. für den Manapool.
