@@ -54,16 +54,16 @@ pub enum PlayError {
 impl PlayError {
     pub fn message(self) -> &'static str {
         match self {
-            PlayError::GameOver => "Die Partie ist beendet.",
-            PlayError::NotYourTurn => "Nur im eigenen Zug.",
-            PlayError::WrongPhase => "Nur in einer Hauptphase.",
-            PlayError::StackNotEmpty => "Nur wenn der Stack leer ist.",
-            PlayError::ResourceLimit => "Nur eine Ressourcen-Karte pro Runde.",
-            PlayError::NotEnoughMana => "Nicht genug Mana.",
-            PlayError::AlreadyActivated => "Dieser Held war in dieser Runde schon aktiv.",
-            PlayError::NotEnoughWillpower => "Nicht genug Willenskraft.",
-            PlayError::NoTarget => "Kein gültiges Ziel.",
-            PlayError::NotInHand => "Die Karte ist nicht auf deiner Hand.",
+            PlayError::GameOver => tr!("Die Partie ist beendet.", "The game is over."),
+            PlayError::NotYourTurn => tr!("Nur im eigenen Zug.", "Only during your own turn."),
+            PlayError::WrongPhase => tr!("Nur in einer Hauptphase.", "Only during a main phase."),
+            PlayError::StackNotEmpty => tr!("Nur wenn der Stack leer ist.", "Only while the stack is empty."),
+            PlayError::ResourceLimit => tr!("Nur eine Ressourcen-Karte pro Runde.", "Only one resource card per turn."),
+            PlayError::NotEnoughMana => tr!("Nicht genug Mana.", "Not enough mana."),
+            PlayError::AlreadyActivated => tr!("Dieser Held war in dieser Runde schon aktiv.", "This hero has already acted this turn."),
+            PlayError::NotEnoughWillpower => tr!("Nicht genug Willenskraft.", "Not enough willpower."),
+            PlayError::NoTarget => tr!("Kein gültiges Ziel.", "No valid target."),
+            PlayError::NotInHand => tr!("Die Karte ist nicht auf deiner Hand.", "That card is not in your hand."),
         }
     }
 }

@@ -132,7 +132,7 @@ impl TurnHud {
         for (i, method) in ["on_hero_ability_0", "on_hero_ability_1", "on_hero_cancel"].into_iter().enumerate() {
             let mut b = styled_button(if i == 2 { 15 } else { 16 });
             if i == 2 {
-                b.set_text("Abbrechen");
+                b.set_text(tr!("Abbrechen", "Cancel"));
             }
             b.connect("pressed", &Callable::from_object_method(&self.to_gd(), method));
             col.add_child(&b);
@@ -187,7 +187,7 @@ impl TurnHud {
         phase_panel.add_child(&phases);
         place(&mut phase_panel, (1.0, 0.0), (-14.0, 14.0), GrowDirection::BEGIN, GrowDirection::END);
         root.add_child(&phase_panel);
-        turn.set_text("Runde –");
+        turn.set_text(tr!("Runde –", "Turn –"));
 
         // Anzeigen für Leben, Ressourcen und Mana
         let opp = rich(18);
@@ -204,7 +204,7 @@ impl TurnHud {
 
         // Nur der Button unten rechts (Deck und Ablage bleiben sichtbar)
         let mut button = styled_button(18);
-        button.set_text("Nächste Phase  »");
+        button.set_text(tr!("Nächste Phase  »", "Next phase  »"));
         button.set_custom_minimum_size(Vector2::new(240.0, 46.0));
         let callable = Callable::from_object_method(&self.to_gd(), "on_next_pressed");
         button.connect("pressed", &callable);
@@ -231,9 +231,14 @@ impl TurnHud {
 
         if let Some(l) = self.turn_label.as_mut() {
             let who = if active >= 0 { tm.get_seat_name(active).to_string() } else { "—".into() };
-            l.set_text(&format!("Runde {}  ·  {who}", tm.get_turn()));
+            l.set_text(&trf!("Runde {}  ·  {who}", "Turn {}  ·  {who}", tm.get_turn()));
         }
+        let titles = tm.get_phase_titles();
         for (i, l) in self.phase_labels.iter_mut().enumerate() {
+            let indent = if (4..=6).contains(&i) { "    " } else { "" };
+            if let Some(t) = titles.as_slice().get(i) {
+                l.set_text(&format!("{indent}{t}"));
+            }
             let (col, size) = match (i as i64).cmp(&current) {
                 std::cmp::Ordering::Equal => (GOLD, 17),
                 std::cmp::Ordering::Less => (DIM, 15),
@@ -245,9 +250,10 @@ impl TurnHud {
 
         let info = |seat: i64| {
             let r = tm.get_resource_counts(seat);
-            let marker = if seat == active { "  [color=#f2c766](am Zug)[/color]" } else { "" };
-            format!(
+            let marker = if seat == active { tr!("  [color=#f2c766](am Zug)[/color]", "  [color=#f2c766](to play)[/color]") } else { "" };
+            trf!(
                 "{}{marker}\nLeben {}   ·   Ressourcen {}/{}\nMana: {}",
+                "{}{marker}\nLife {}   ·   Resources {}/{}\nMana: {}",
                 tm.get_seat_name(seat),
                 tm.get_life(seat),
                 r.x,
@@ -268,14 +274,14 @@ impl TurnHud {
                 let mut t = format!("{}\n{}", tm.get_phase_title(), tm.get_hint());
                 let stack = tm.get_stack_lines();
                 if !stack.is_empty() {
-                    t.push_str("\nStack (oben zuerst):");
+                    t.push_str(tr!("\nStack (oben zuerst):", "\nStack (top first):"));
                     for line in stack.as_slice() {
                         t.push_str(&format!("\n• {line}"));
                     }
                 }
                 t
             } else {
-                format!("Spielende\n{winner} gewinnt!")
+                trf!("Spielende\n{winner} gewinnt!", "Game over\n{winner} wins!")
             };
             l.set_text(&text);
         }
@@ -298,7 +304,10 @@ impl TurnHud {
         }
         if !hero.is_empty() {
             if let Some(t) = self.hero_title.as_mut() {
-                t.set_text(&format!("{hero} – Fähigkeit wählen (1× pro Runde)"));
+                t.set_text(&trf!("{hero} – Fähigkeit wählen (1× pro Runde)", "{hero} – choose an ability (once per turn)"));
+            }
+            if let Some(b) = self.hero_buttons.get_mut(2) {
+                b.set_text(tr!("Abbrechen", "Cancel"));
             }
             let choices = tm.get_hero_choices();
             for (i, b) in self.hero_buttons.iter_mut().take(2).enumerate() {

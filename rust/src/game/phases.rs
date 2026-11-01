@@ -43,16 +43,16 @@ impl Phase {
 
     pub fn title(self) -> &'static str {
         match self {
-            Phase::Untap => "Enttappen",
-            Phase::Upkeep => "Auffrischung",
-            Phase::Draw => "Ziehen",
-            Phase::Main1 => "Hauptphase 1",
-            Phase::Attackers => "Angreifer bestimmen",
-            Phase::Blockers => "Blocker zuweisen",
-            Phase::Damage => "Schadensberechnung",
-            Phase::Main2 => "Hauptphase 2",
-            Phase::End => "Ende",
-            Phase::GameOver => "Spielende",
+            Phase::Untap => tr!("Enttappen", "Untap"),
+            Phase::Upkeep => tr!("Auffrischung", "Upkeep"),
+            Phase::Draw => tr!("Ziehen", "Draw"),
+            Phase::Main1 => tr!("Hauptphase 1", "Main phase 1"),
+            Phase::Attackers => tr!("Angreifer bestimmen", "Declare attackers"),
+            Phase::Blockers => tr!("Blocker zuweisen", "Declare blockers"),
+            Phase::Damage => tr!("Schadensberechnung", "Combat damage"),
+            Phase::Main2 => tr!("Hauptphase 2", "Main phase 2"),
+            Phase::End => tr!("Ende", "End"),
+            Phase::GameOver => tr!("Spielende", "Game over"),
         }
     }
 
@@ -117,7 +117,7 @@ impl PhaseState for UntapPhase {
     }
     fn enter(&mut self, g: &mut GameState) {
         let seat = g.active;
-        g.log(format!("— Runde {}: {} ist am Zug —", g.turn, g.name(seat)));
+        g.log(trf!("— Runde {}: {} ist am Zug —", "— Turn {}: {} to play —", g.turn, g.name(seat)));
         g.untap(seat);
     }
     fn auto_delay(&self, _g: &GameState) -> f32 {
@@ -191,9 +191,9 @@ impl PhaseState for MainPhase {
     }
     fn hint(&self, g: &GameState) -> String {
         if g.is_human(g.active) {
-            "Karten aus der Hand auf deine Tischhälfte ziehen. Klick auf Ressource = Mana, auf Held = Fähigkeit, auf Ausrüstung und dann Kreatur = anlegen.".into()
+            tr!("Karten aus der Hand auf deine Tischhälfte ziehen. Klick auf Ressource = Mana, auf Held = Fähigkeit, auf Ausrüstung und dann Kreatur = anlegen.", "Drag cards from your hand onto your half of the table. Click a resource = mana, a hero = ability, equipment and then a creature = equip.").into()
         } else {
-            format!("{} spielt Karten aus …", g.name(g.active))
+            trf!("{} spielt Karten aus …", "{} is playing cards …", g.name(g.active))
         }
     }
     fn next(&self, _g: &GameState) -> Phase {
@@ -235,9 +235,9 @@ impl PhaseState for AttackersPhase {
     }
     fn hint(&self, g: &GameState) -> String {
         if g.is_human(g.active) {
-            "Klicke ungetappte Kreaturen an, die angreifen sollen.".into()
+            tr!("Klicke ungetappte Kreaturen an, die angreifen sollen.", "Click untapped creatures that should attack.").into()
         } else {
-            format!("{} wählt Angreifer …", g.name(g.active))
+            trf!("{} wählt Angreifer …", "{} is choosing attackers …", g.name(g.active))
         }
     }
     fn next(&self, g: &GameState) -> Phase {
@@ -277,9 +277,9 @@ impl PhaseState for BlockersPhase {
     }
     fn hint(&self, g: &GameState) -> String {
         if g.is_human(g.defender()) {
-            "Klicke eine eigene Kreatur und dann den Angreifer, den sie blocken soll.".into()
+            tr!("Klicke eine eigene Kreatur und dann den Angreifer, den sie blocken soll.", "Click one of your creatures, then the attacker it should block.").into()
         } else {
-            format!("{} weist Blocker zu …", g.name(g.defender()))
+            trf!("{} weist Blocker zu …", "{} is assigning blockers …", g.name(g.defender()))
         }
     }
     fn next(&self, _g: &GameState) -> Phase {
@@ -343,8 +343,8 @@ impl PhaseState for GameOverPhase {
     }
     fn hint(&self, g: &GameState) -> String {
         match g.winner {
-            Some(w) => format!("{} gewinnt die Partie!", g.name(w)),
-            None => "Spielende".into(),
+            Some(w) => trf!("{} gewinnt die Partie!", "{} wins the game!", g.name(w)),
+            None => tr!("Spielende", "Game over").into(),
         }
     }
     fn next(&self, _g: &GameState) -> Phase {

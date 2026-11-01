@@ -96,8 +96,9 @@ impl GameState {
         !self.seats[seat].bind().is_ai
     }
 
+    /// Anzeigename des Sitzplatzes in der aktuellen Sprache.
     pub fn name(&self, seat: usize) -> String {
-        self.seats[seat].bind().display_name.to_string()
+        crate::i18n::name(&self.seats[seat].bind().display_name.to_string())
     }
 
     pub fn hand(&self, seat: usize) -> Option<Gd<Zone>> {
@@ -212,7 +213,7 @@ impl GameState {
         if life <= 0 && self.winner.is_none() {
             self.winner = Some(1 - seat);
             let (w, l) = (self.name(1 - seat), self.name(seat));
-            self.log(format!("{l} hat keine Lebenspunkte mehr – {w} gewinnt!"));
+            self.log(trf!("{l} hat keine Lebenspunkte mehr – {w} gewinnt!", "{l} has no life left – {w} wins!"));
         }
     }
 
@@ -278,7 +279,7 @@ impl GameState {
             Self::move_card(card, &mut discard, 0.15);
         }
         let name = card.bind().display_name();
-        self.log(format!("{name} wird zerstört."));
+        self.log(trf!("{name} wird zerstört.", "{name} is destroyed."));
     }
 
     // ------------------------------------------------------------ Phasen-Aktionen
@@ -312,12 +313,12 @@ impl GameState {
             match ability {
                 CardAbility::Regeneration => {
                     self.change_life(seat, 1);
-                    self.log(format!("{name}: {} erhält 1 Leben.", self.name(seat)));
+                    self.log(trf!("{name}: {} erhält 1 Leben.", "{name}: {} gains 1 life.", self.name(seat)));
                 }
                 CardAbility::Firebreath => {
                     let target = 1 - seat;
                     self.change_life(target, -1);
-                    self.log(format!("{name}: 1 Schaden an {}.", self.name(target)));
+                    self.log(trf!("{name}: 1 Schaden an {}.", "{name}: 1 damage to {}.", self.name(target)));
                 }
                 _ => {}
             }
@@ -336,7 +337,7 @@ impl GameState {
                     hand.bind_mut().add_card(card, -1, k as f64 * 0.15);
                 }
                 None => {
-                    self.log(format!("{}: Deck ist leer.", self.name(seat)));
+                    self.log(trf!("{}: Deck ist leer.", "{}: deck is empty.", self.name(seat)));
                     return;
                 }
             }
@@ -513,23 +514,23 @@ impl GameState {
         }
         if kind == CardKind::Resource {
             self.seats[seat].bind_mut().resources_played += 1;
-            self.log(format!("{} legt {name} aus.", self.name(seat)));
+            self.log(trf!("{} legt {name} aus.", "{} plays {name}.", self.name(seat)));
             return self.resource_zone(seat);
         }
         if kind == CardKind::Aura {
-            self.log(format!("{name}: Auren auf eine Kreatur ziehen ({}).", PlayError::NoTarget.message()));
+            self.log(trf!("{name}: Auren auf eine Kreatur ziehen ({}).", "{name}: drag auras onto a target ({}).", PlayError::NoTarget.message()));
             return None;
         }
         if !self.auto_pay(seat, &cost) {
             self.log(format!("{name}: {}", PlayError::NotEnoughMana.message()));
             return None;
         }
-        self.log(format!("{} spielt {name} ({}, {}).", self.name(seat), kind.title(), cost.to_text()));
+        self.log(trf!("{} spielt {name} ({}, {}).", "{} casts {name} ({}, {}).", self.name(seat), kind.title(), cost.to_text()));
         // Alles außer Ressourcen geht auf den Stack; bleibende Karten kommen beim
         // Auflösen aufs Spielfeld (Payload = gewünschte Position).
         let text = match kind {
             CardKind::Instant | CardKind::Sorcery => format!("{name}: {}", effect.description()),
-            _ => format!("{name} ({})", kind.title()),
+            _ => trf!("{name} ({})", "{name} ({})", kind.title()),
         };
         let payload = drop_point.map_or(Variant::nil(), |p| p.to_variant());
         self.push_item(seat, card, text, Variant::nil(), payload);
@@ -553,7 +554,7 @@ impl GameState {
             return None;
         }
         let tname = target.bind().display_name();
-        self.log(format!("{} wirkt {name} auf {tname} ({}).", self.name(seat), cost.to_text()));
+        self.log(trf!("{} wirkt {name} auf {tname} ({}).", "{} casts {name} on {tname} ({}).", self.name(seat), cost.to_text()));
         self.push_item(seat, card, format!("{name} → {tname}"), target.to_variant(), Variant::nil());
         self.stack_zone.clone().or_else(|| self.discard(seat))
     }
@@ -664,10 +665,10 @@ impl GameState {
                             _ => {}
                         }
                         let hn = host.bind().display_name();
-                        self.log(format!("{name} verzaubert {hn}."));
+                        self.log(trf!("{name} verzaubert {hn}.", "{name} enchants {hn}."));
                     }
                     None => {
-                        self.log(format!("{name} verpufft: kein gültiges Ziel mehr."));
+                        self.log(trf!("{name} verpufft: kein gültiges Ziel mehr.", "{name} fizzles: no valid target left."));
                         let owner = card.bind().owner_seat.clamp(0, 1) as usize;
                         if let Some(mut discard) = self.discard(owner) {
                             Self::move_card(&card, &mut discard, 0.1);
@@ -687,7 +688,7 @@ impl GameState {
                         Err(_) => bf.bind_mut().add_card_free(card.clone(), 0.0),
                     }
                     card.bind_mut().set_tapped(false);
-                    self.log(format!("{name} betritt das Spielfeld."));
+                    self.log(trf!("{name} betritt das Spielfeld.", "{name} enters the battlefield."));
                 }
             }
         }
@@ -757,7 +758,7 @@ impl GameState {
                     if let Some(mut discard) = self.discard(owner) {
                         Self::move_card(&aura, &mut discard, 0.25);
                     }
-                    self.log(format!("{an} geht mit {hn} auf den Friedhof."));
+                    self.log(trf!("{an} geht mit {hn} auf den Friedhof.", "{an} goes to the graveyard together with {hn}."));
                 }
             }
         }
@@ -850,15 +851,15 @@ impl GameState {
             SpellEffect::None => {}
             SpellEffect::Heal(n) => {
                 self.change_life(seat, n);
-                self.log(format!("{source}: {} erhält {n} Leben.", self.name(seat)));
+                self.log(trf!("{source}: {} erhält {n} Leben.", "{source}: {} gains {n} life.", self.name(seat)));
             }
             SpellEffect::Draw(n) => {
                 self.draw(seat, n);
-                self.log(format!("{source}: {} zieht {n} Karte(n).", self.name(seat)));
+                self.log(trf!("{source}: {} zieht {n} Karte(n).", "{source}: {} draws {n} card(s).", self.name(seat)));
             }
             SpellEffect::DamageOpponent(n) => {
                 self.change_life(foe, -n);
-                self.log(format!("{source}: {n} Schaden an {}.", self.name(foe)));
+                self.log(trf!("{source}: {n} Schaden an {}.", "{source}: {n} damage to {}.", self.name(foe)));
             }
             SpellEffect::DamageStrongestCreature(n) => {
                 let target = self.creatures(foe).into_iter().max_by_key(|c| c.bind().get_current_attack());
@@ -866,12 +867,12 @@ impl GameState {
                     Some(mut t) => {
                         t.bind_mut().add_damage(n);
                         let tname = t.bind().display_name();
-                        self.log(format!("{source}: {n} Schaden an {tname}."));
+                        self.log(trf!("{source}: {n} Schaden an {tname}.", "{source}: {n} damage to {tname}."));
                         if t.bind().get_remaining_defense() <= 0 {
                             self.destroy(&mut t);
                         }
                     }
-                    None => self.log(format!("{source}: kein Ziel.")),
+                    None => self.log(trf!("{source}: kein Ziel.", "{source}: no target.")),
                 }
             }
             SpellEffect::Counter => match (self.counter_target(seat), self.stack.clone()) {
@@ -887,10 +888,10 @@ impl GameState {
                         if let Some(mut discard) = self.discard(owner) {
                             Self::move_card(&card, &mut discard, 0.1);
                         }
-                        self.log(format!("{source}: {name} von {} wird neutralisiert.", self.name(controller)));
+                        self.log(trf!("{source}: {name} von {} wird neutralisiert.", "{source}: {}'s {name} is countered.", self.name(controller)));
                     }
                 }
-                _ => self.log(format!("{source}: kein Zauber zum Neutralisieren.")),
+                _ => self.log(trf!("{source}: kein Zauber zum Neutralisieren.", "{source}: no spell to counter.")),
             },
         }
     }
@@ -922,7 +923,7 @@ impl GameState {
         let text = format!("{name}: {}", ability.effect.description());
         self.push_item(seat, hero, text, Variant::nil(), (index as i64).to_variant());
         if willpower <= 0 {
-            self.log(format!("{name} hat keine Willenskraft mehr."));
+            self.log(trf!("{name} hat keine Willenskraft mehr.", "{name} has no willpower left."));
             self.destroy(hero);
         }
         Ok(())
@@ -957,7 +958,7 @@ impl GameState {
             bf.bind_mut().attach(equipment.clone(), host.clone());
         }
         let (en, hn) = (equipment.bind().display_name(), host.bind().display_name());
-        self.log(format!("{en} wird an {hn} angelegt (+{}/+{}).", stats.attack, stats.defense));
+        self.log(trf!("{en} wird an {hn} angelegt (+{}/+{}).", "{en} is attached to {hn} (+{}/+{}).", stats.attack, stats.defense));
         Ok(())
     }
 
@@ -994,12 +995,12 @@ impl GameState {
             if ability == CardAbility::Rage {
                 card.bind_mut().add_attack_bonus(1);
                 self.temp_effects.push(TempEffect { card: card.clone(), attack_bonus: 1 });
-                self.log(format!("{name} gerät in Rage (+1 Angriff)."));
+                self.log(trf!("{name} gerät in Rage (+1 Angriff).", "{name} becomes enraged (+1 attack)."));
             }
         }
         let n = self.combat.attackers.len();
         if n > 0 {
-            self.log(format!("{} greift mit {n} Kreatur(en) an.", self.name(self.active)));
+            self.log(trf!("{} greift mit {n} Kreatur(en) an.", "{} attacks with {n} creature(s).", self.name(self.active)));
         }
     }
 
@@ -1077,7 +1078,7 @@ impl GameState {
                     };
                     blocker.bind_mut().add_damage(atk);
                     attacker.bind_mut().add_damage(batk);
-                    self.log(format!("{aname} ({atk}) kämpft gegen {bname} ({batk})."));
+                    self.log(trf!("{aname} ({atk}) kämpft gegen {bname} ({batk}).", "{aname} ({atk}) fights {bname} ({batk})."));
                     for c in [&attacker, &blocker] {
                         if c.bind().get_remaining_defense() <= 0 && !dead.contains(c) {
                             dead.push(c.clone());
@@ -1086,7 +1087,7 @@ impl GameState {
                 }
                 None => {
                     self.change_life(defender, -atk);
-                    self.log(format!("{aname} trifft {} für {atk}.", self.name(defender)));
+                    self.log(trf!("{aname} trifft {} für {atk}.", "{aname} hits {} for {atk}.", self.name(defender)));
                 }
             }
         }
@@ -1249,7 +1250,7 @@ impl GameState {
                 let mut blocker = free.remove(i);
                 blocker.bind_mut().set_marker(CardMarker::Blocking);
                 let (bn, an) = (blocker.bind().display_name(), attacker.bind().display_name());
-                self.log(format!("{bn} blockt {an}."));
+                self.log(trf!("{bn} blockt {an}.", "{bn} blocks {an}."));
                 self.combat.blocks.push((blocker, attacker));
             }
         }

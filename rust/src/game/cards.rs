@@ -35,23 +35,23 @@ pub enum CardKind {
 impl CardKind {
     pub fn title(self) -> &'static str {
         match self {
-            CardKind::Creature => "Kreatur",
-            CardKind::Resource => "Ressource",
-            CardKind::Instant => "Sofortzauber",
-            CardKind::Sorcery => "Hexerei",
-            CardKind::Hero => "Held",
-            CardKind::Equipment => "Ausrüstung",
-            CardKind::Artifact => "Artefakt",
-            CardKind::Enchantment => "Verzauberung",
-            CardKind::Aura => "Aura",
+            CardKind::Creature => tr!("Kreatur", "Creature"),
+            CardKind::Resource => tr!("Ressource", "Resource"),
+            CardKind::Instant => tr!("Sofortzauber", "Instant"),
+            CardKind::Sorcery => tr!("Hexerei", "Sorcery"),
+            CardKind::Hero => tr!("Held", "Hero"),
+            CardKind::Equipment => tr!("Ausrüstung", "Equipment"),
+            CardKind::Artifact => tr!("Artefakt", "Artifact"),
+            CardKind::Enchantment => tr!("Verzauberung", "Enchantment"),
+            CardKind::Aura => tr!("Aura", "Aura"),
         }
     }
 
     /// Typzeile auf der Karte (mit Obertyp).
     pub fn type_line(self) -> &'static str {
         match self {
-            CardKind::Equipment => "Artefakt – Ausrüstung",
-            CardKind::Aura => "Verzauberung – Aura",
+            CardKind::Equipment => tr!("Artefakt – Ausrüstung", "Artifact – Equipment"),
+            CardKind::Aura => tr!("Verzauberung – Aura", "Enchantment – Aura"),
             other => other.title(),
         }
     }
@@ -91,14 +91,14 @@ impl SpellEffect {
     pub fn description(self) -> String {
         match self {
             SpellEffect::None => String::new(),
-            SpellEffect::Heal(n) => format!("Du erhältst {n} Leben."),
-            SpellEffect::Draw(1) => "Ziehe 1 Karte.".into(),
-            SpellEffect::Draw(n) => format!("Ziehe {n} Karten."),
-            SpellEffect::DamageOpponent(n) => format!("{n} Schaden am Gegner."),
+            SpellEffect::Heal(n) => trf!("Du erhältst {n} Leben.", "You gain {n} life."),
+            SpellEffect::Draw(1) => tr!("Ziehe 1 Karte.", "Draw 1 card.").into(),
+            SpellEffect::Draw(n) => trf!("Ziehe {n} Karten.", "Draw {n} cards."),
+            SpellEffect::DamageOpponent(n) => trf!("{n} Schaden am Gegner.", "{n} damage to the opponent."),
             SpellEffect::DamageStrongestCreature(n) => {
-                format!("{n} Schaden an der stärksten gegnerischen Kreatur.")
+                trf!("{n} Schaden an der stärksten gegnerischen Kreatur.", "{n} damage to the strongest enemy creature.")
             }
-            SpellEffect::Counter => "Neutralisiere den obersten gegnerischen Zauber auf dem Stack.".into(),
+            SpellEffect::Counter => tr!("Neutralisiere den obersten gegnerischen Zauber auf dem Stack.", "Counter the topmost enemy spell on the stack.").into(),
         }
     }
 }
@@ -116,9 +116,9 @@ impl StaticEffect {
     pub fn description(self) -> String {
         let fmt = |v: i32| if v >= 0 { format!("+{v}") } else { format!("−{}", -v) };
         match self {
-            StaticEffect::OwnCreatures(a, d) => format!("Deine Kreaturen erhalten {}/{}.", fmt(a), fmt(d)),
+            StaticEffect::OwnCreatures(a, d) => trf!("Deine Kreaturen erhalten {}/{}.", "Your creatures get {}/{}.", fmt(a), fmt(d)),
             StaticEffect::OpponentCreatures(a, d) => {
-                format!("Gegnerische Kreaturen erhalten {}/{}.", fmt(a), fmt(d))
+                trf!("Gegnerische Kreaturen erhalten {}/{}.", "Enemy creatures get {}/{}.", fmt(a), fmt(d))
             }
         }
     }
@@ -152,12 +152,12 @@ impl AuraTarget {
 
     pub fn description(self) -> &'static str {
         match self {
-            AuraTarget::Creature => "Verzaubert eine Kreatur.",
-            AuraTarget::Resource => "Verzaubert eine Ressource.",
-            AuraTarget::Artifact => "Verzaubert ein Artefakt.",
-            AuraTarget::Enchantment => "Verzaubert eine Verzauberung.",
-            AuraTarget::Hero => "Verzaubert einen Helden.",
-            AuraTarget::Permanent => "Verzaubert eine bleibende Karte.",
+            AuraTarget::Creature => tr!("Verzaubert eine Kreatur.", "Enchant creature."),
+            AuraTarget::Resource => tr!("Verzaubert eine Ressource.", "Enchant resource."),
+            AuraTarget::Artifact => tr!("Verzaubert ein Artefakt.", "Enchant artifact."),
+            AuraTarget::Enchantment => tr!("Verzaubert eine Verzauberung.", "Enchant enchantment."),
+            AuraTarget::Hero => tr!("Verzaubert einen Helden.", "Enchant hero."),
+            AuraTarget::Permanent => tr!("Verzaubert eine bleibende Karte.", "Enchant permanent."),
         }
     }
 }
@@ -197,10 +197,10 @@ impl AuraDef {
     pub fn description(&self) -> String {
         let fmt = |v: i32| if v >= 0 { format!("+{v}") } else { format!("−{}", -v) };
         let effect = match self.effect {
-            AuraEffect::Stats(a, d) => format!("Sie erhält {}/{}.", fmt(a), fmt(d)),
-            AuraEffect::ExtraMana(n) => format!("Beim Tappen liefert sie {n} zusätzliches Mana."),
-            AuraEffect::NoUntap => "Sie wird getappt und enttappt nicht mehr.".to_string(),
-            AuraEffect::Willpower(n) => format!("Er erhält {} Willenskraft.", fmt(n)),
+            AuraEffect::Stats(a, d) => trf!("Sie erhält {}/{}.", "It gets {}/{}.", fmt(a), fmt(d)),
+            AuraEffect::ExtraMana(n) => trf!("Beim Tappen liefert sie {n} zusätzliches Mana.", "When tapped, it produces {n} additional mana."),
+            AuraEffect::NoUntap => tr!("Sie wird getappt und enttappt nicht mehr.", "It becomes tapped and no longer untaps.").to_string(),
+            AuraEffect::Willpower(n) => trf!("Er erhält {} Willenskraft.", "It gets {} willpower.", fmt(n)),
         };
         format!("{} {effect}", self.target.description())
     }
@@ -224,7 +224,7 @@ pub struct ActivatedAbility {
 
 impl ActivatedAbility {
     pub fn description(&self) -> String {
-        let cost = if self.cost.total() > 0 { format!("{}, Tappen", self.cost.to_text()) } else { "Tappen".into() };
+        let cost = if self.cost.total() > 0 { trf!("{}, Tappen", "{}, Tap", self.cost.to_text()) } else { tr!("Tappen", "Tap").into() };
         format!("{cost}: {}", self.effect.description())
     }
 }
@@ -254,8 +254,8 @@ pub struct EquipStats {
 
 impl EquipStats {
     pub fn description(&self) -> String {
-        format!(
-            "Angelegte Kreatur erhält +{}/+{}. Anlegen: {}",
+        trf!(
+            "Angelegte Kreatur erhält +{}/+{}. Anlegen: {}", "Equipped creature gets +{}/+{}. Equip: {}",
             self.attack,
             self.defense,
             self.cost.to_text()
@@ -319,15 +319,15 @@ impl CardDef {
                 format!("{}/{}", self.attack, self.defense),
             ),
             CardKind::Resource => (
-                format!("Ressource – {}", self.produces.name()),
-                format!("Tappen: +1 {}-Mana.", self.produces.name()),
+                trf!("Ressource – {}", "Resource – {}", self.produces.name()),
+                trf!("Tappen: +1 {}-Mana.", "Tap: +1 {} mana.", self.produces.name()),
                 String::new(),
             ),
             CardKind::Instant | CardKind::Sorcery => {
                 (self.kind.title().to_string(), self.effect.description(), String::new())
             }
             CardKind::Hero => (
-                "Held".to_string(),
+                tr!("Held", "Hero").to_string(),
                 self.hero_abilities.iter().map(|a| a.description()).collect::<Vec<_>>().join("\n"),
                 format!("WK {}", self.willpower),
             ),
@@ -356,29 +356,30 @@ impl CardDef {
     #[cfg(debug_assertions)]
     pub fn rules_text(&self) -> String {
         let timing = match self.kind {
-            CardKind::Creature => "Eigene Hauptphase bei leerem Stack. Bleibt auf dem Spielfeld, kann angreifen und blocken.",
-            CardKind::Resource => "Eigene Hauptphase, höchstens 1 pro Runde, kostet nichts. Liegt in der Ressourcen-Reihe; Klick = tappen für Mana.",
-            CardKind::Instant => "Jederzeit spielbar – auch im gegnerischen Zug und als Antwort auf dem Stack.",
-            CardKind::Sorcery => "Nur in der eigenen Hauptphase bei leerem Stack. Geht danach auf den Friedhof.",
-            CardKind::Hero => "Eigene Hauptphase bei leerem Stack. Klick = Fähigkeit wählen (1× pro Runde); sie ändert die Willenskraft. Bei 0 Willenskraft wird der Held zerstört.",
-            CardKind::Equipment => "Eigene Hauptphase. Liegt danach auf dem Spielfeld; Klick auf die Ausrüstung und dann auf eine eigene Kreatur legt sie für die Anlegekosten an.",
-            CardKind::Artifact => "Eigene Hauptphase. Passive Effekte wirken dauerhaft; eine Tapp-Fähigkeit kann jederzeit per Klick genutzt werden.",
-            CardKind::Enchantment => "Eigene Hauptphase. Wirkt dauerhaft auf das ganze Spiel.",
-            CardKind::Aura => "Eigene Hauptphase; muss auf ein gültiges Ziel gezogen werden. Verlässt das Ziel das Spiel, geht die Aura auf den Friedhof.",
+            CardKind::Creature => tr!("Eigene Hauptphase bei leerem Stack. Bleibt auf dem Spielfeld, kann angreifen und blocken.", "Your own main phase with an empty stack. Stays on the battlefield and can attack and block."),
+            CardKind::Resource => tr!("Eigene Hauptphase, höchstens 1 pro Runde, kostet nichts. Liegt in der Ressourcen-Reihe; Klick = tappen für Mana.", "Your own main phase, at most 1 per turn, free. Lies in the resource row; click = tap for mana."),
+            CardKind::Instant => tr!("Jederzeit spielbar – auch im gegnerischen Zug und als Antwort auf dem Stack.", "Playable at any time – also during the opponent's turn and in response on the stack."),
+            CardKind::Sorcery => tr!("Nur in der eigenen Hauptphase bei leerem Stack. Geht danach auf den Friedhof.", "Only during your own main phase with an empty stack. Goes to the graveyard afterwards."),
+            CardKind::Hero => tr!("Eigene Hauptphase bei leerem Stack. Klick = Fähigkeit wählen (1× pro Runde); sie ändert die Willenskraft. Bei 0 Willenskraft wird der Held zerstört.", "Your own main phase with an empty stack. Click = choose an ability (once per turn); it changes willpower. At 0 willpower the hero is destroyed."),
+            CardKind::Equipment => tr!("Eigene Hauptphase. Liegt danach auf dem Spielfeld; Klick auf die Ausrüstung und dann auf eine eigene Kreatur legt sie für die Anlegekosten an.", "Your own main phase. Then lies on the battlefield; click the equipment and then one of your creatures to equip it for its equip cost."),
+            CardKind::Artifact => tr!("Eigene Hauptphase. Passive Effekte wirken dauerhaft; eine Tapp-Fähigkeit kann jederzeit per Klick genutzt werden.", "Your own main phase. Passive effects are permanent; a tap ability can be used at any time by clicking."),
+            CardKind::Enchantment => tr!("Eigene Hauptphase. Wirkt dauerhaft auf das ganze Spiel.", "Your own main phase. Affects the whole game permanently."),
+            CardKind::Aura => tr!("Eigene Hauptphase; muss auf ein gültiges Ziel gezogen werden. Verlässt das Ziel das Spiel, geht die Aura auf den Friedhof.", "Your own main phase; must be dragged onto a valid target. If the target leaves play, the aura goes to the graveyard."),
         };
-        let cost = if self.kind == CardKind::Resource { "keine".to_string() } else { self.cost.to_text() };
+        let cost = if self.kind == CardKind::Resource { tr!("keine", "none").to_string() } else { self.cost.to_text() };
         let (type_line, body, stats) = self.face_texts();
-        let mut text = format!("{}\n{type_line}  ·  Kosten: {cost}", self.name);
+        let name = crate::i18n::name(&self.name);
+        let mut text = trf!("{name}\n{type_line}  ·  Kosten: {cost}", "{name}\n{type_line}  ·  Cost: {cost}");
         if !stats.is_empty() {
-            text.push_str(&format!("  ·  Werte: {stats}"));
+            text.push_str(&trf!("  ·  Werte: {stats}", "  ·  Stats: {stats}"));
         }
         if !body.is_empty() {
-            text.push_str(&format!("\n\nWirkung: {body}"));
+            text.push_str(&trf!("\n\nWirkung: {body}", "\n\nEffect: {body}"));
         }
         if self.effect == SpellEffect::Counter {
-            text.push_str("\nNur spielbar, wenn ein gegnerischer Zauber auf dem Stack liegt.");
+            text.push_str(tr!("\nNur spielbar, wenn ein gegnerischer Zauber auf dem Stack liegt.", "\nOnly playable while an enemy spell is on the stack."));
         }
-        text.push_str(&format!("\n\nWann: {timing}"));
+        text.push_str(&trf!("\n\nWann: {timing}", "\n\nWhen: {timing}"));
         text
     }
 

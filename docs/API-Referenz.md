@@ -30,13 +30,14 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 
 > Existiert nur in Test-Builds (`cargo build`), nicht in `cargo build --release`.
 
-Debug-Tool (nur in Test-Builds): Ressourcen hinzufügen, jede Karte auf die Hand geben und eigene Karten erstellen. Wird vom `TableController` automatisch erzeugt und existiert in Release-Builds (`cargo build --release`) nicht.
+Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressourcen hinzufügen, jede Karte auf die Hand geben und eigene Karten erstellen. Wird vom `TableController` automatisch erzeugt und existiert in Release-Builds (`cargo build --release`) nicht.
 
 ### Funktionen
 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `on_toggle()` | `void` | Fenster ein-/ausblenden. |
+| `on_language_selected(index: int)` | `void` | Sprache gewählt (0 = Deutsch, 1 = English): stellt das ganze Spiel um, beschriftet alle Karten neu und baut das Debug-Fenster in der neuen Sprache auf. |
 | `on_catalog_selected(index: int)` | `void` | Karte in der Liste ausgewählt: große Vorschau zeigen. |
 | `on_tab_changed(tab: int)` | `void` | Reiter gewechselt: blendet die große Kartenvorschau ein oder aus. |
 | `on_add_resource(index: int)` | `void` | "+"-Knopf: `index` in RESOURCE_BUTTONS. |
@@ -115,7 +116,7 @@ Manavorrat eines Spielers.
 | `empty_pool()` | `void` | Leert den Pool (z. B. am Ende jeder Phase). |
 | `to_dictionary()` | `Dictionary` | Aktueller Vorrat als Dictionary `{ ManaType: Menge }`. |
 | `static get_mana_color(mana_type: int (Manafarbe))` | `Color` | Anzeigefarbe eines Manatyps (für HUD-Symbole). |
-| `static get_mana_name(mana_type: int (Manafarbe))` | `String` | Anzeigename eines Manatyps, z. B. "Rot". |
+| `static get_mana_name(mana_type: int (Manafarbe))` | `String` | Anzeigename eines Manatyps, z. B. tr!("Rot", "Red"). |
 | `to_text()` | `String` | Lesbare Anzeige, z. B. "Rot 2 · Grün 1". |
 
 ### Signale
@@ -406,6 +407,8 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Klick, Drag-and-Drop per Raycast), K
 |---|---|---|
 | `draw_card(delay: float)` | `Card3D` | Zieht die oberste Karte des Decks auf die Hand. |
 | `static move_top_card(from: Zone, to: Zone, delay: float)` | `Card3D` | Bewegt die oberste Karte von `from` nach `to` (z. B. Gegner zieht / spielt aus). |
+| `set_language(code: String)` | `void` | Stellt die Sprache des Spiels um: `"de"` = Deutsch, `"en"` = Englisch. HUD, Hinweise und neue Protokolleinträge wechseln sofort; alle Karten werden neu beschriftet. Bereits geschriebene Protokolleinträge bleiben unverändert. |
+| `get_language()` | `String` | Aktuelle Sprache: `"de"` oder `"en"`. |
 | `get_hovered_card()` | `Card3D` | Die Karte, die gerade unter dem Mauszeiger liegt. |
 | `get_dragged_card()` | `Card3D` | Die Karte, die gerade gezogen wird. |
 

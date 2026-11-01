@@ -54,12 +54,12 @@ impl ManaType {
 
     pub fn name(self) -> &'static str {
         match self {
-            ManaType::White => "Weiß",
-            ManaType::Blue => "Blau",
-            ManaType::Black => "Schwarz",
-            ManaType::Red => "Rot",
-            ManaType::Green => "Grün",
-            ManaType::Colorless => "Farblos",
+            ManaType::White => tr!("Weiß", "White"),
+            ManaType::Blue => tr!("Blau", "Blue"),
+            ManaType::Black => tr!("Schwarz", "Black"),
+            ManaType::Red => tr!("Rot", "Red"),
+            ManaType::Green => tr!("Grün", "Green"),
+            ManaType::Colorless => tr!("Farblos", "Colorless"),
         }
     }
 
@@ -410,7 +410,7 @@ impl ManaPool {
         mana_type.color()
     }
 
-    /// Anzeigename eines Manatyps, z. B. "Rot".
+    /// Anzeigename eines Manatyps, z. B. tr!("Rot", "Red").
     #[func]
     pub fn get_mana_name(mana_type: ManaType) -> GString {
         GString::from(mana_type.name())
@@ -424,7 +424,7 @@ impl ManaPool {
             .filter(|t| self.mana.get(*t) > 0)
             .map(|t| format!("{} {}", t.name(), self.mana.get(t)))
             .collect();
-        let text = if parts.is_empty() { "leer".to_string() } else { parts.join(" · ") };
+        let text = if parts.is_empty() { tr!("leer", "empty").to_string() } else { parts.join(" · ") };
         GString::from(text.as_str())
     }
 }

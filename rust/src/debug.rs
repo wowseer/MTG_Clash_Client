@@ -5,6 +5,8 @@
 //! nicht. Der TableController erzeugt das Panel per Code, deshalb steht in der
 //! Szene kein Node, der im fertigen Spiel fehlen könnte.
 //!
+//! Oben: Sprachauswahl (Deutsch / English) für das ganze Spiel.
+//!
 //! Reiter:
 //! - Ressourcen: beliebig viele Ressourcen-Karten je Farbe in die eigene Reihe.
 //! - Karten:     jede mögliche Karte auf die Hand (Liste mit Suche).
@@ -42,6 +44,18 @@ const RESOURCE_BUTTONS: [(&str, ManaType); 6] = [
     ("Grau", ManaType::Colorless),
 ];
 
+/// Beschriftung eines Ressourcen-Knopfs in der aktuellen Sprache.
+fn resource_label(de: &str) -> &'static str {
+    match de {
+        "Blau" => tr!("Blau", "Blue"),
+        "Schwarz" => tr!("Schwarz", "Black"),
+        "Grün" => tr!("Grün", "Green"),
+        "Rot" => tr!("Rot", "Red"),
+        "Gelb" => tr!("Gelb", "Yellow"),
+        _ => tr!("Grau", "Grey"),
+    }
+}
+
 /// Kartentypen im "Erstellen"-Reiter (Reihenfolge = Index im Auswahlfeld).
 const KINDS: [CardKind; 9] = [
     CardKind::Creature,
@@ -59,41 +73,64 @@ const KINDS: [CardKind; 9] = [
 fn abilities_for(kind: CardKind) -> (&'static [&'static str], &'static str) {
     match kind {
         CardKind::Creature => (
-            &["Keine", "Heiler: Auffrischung +1 Leben", "Feuer: Auffrischung 1 Schaden am Gegner", "Raufbold: +1 Angriff beim Angreifen"],
-            "Angriff / Verteidigung der Kreatur.",
+            tr!(
+                &["Keine", "Heiler: Auffrischung +1 Leben", "Feuer: Auffrischung 1 Schaden am Gegner", "Raufbold: +1 Angriff beim Angreifen"],
+                &["None", "Healer: upkeep +1 life", "Fire: upkeep 1 damage to the opponent", "Brawler: +1 attack when attacking"]
+            ),
+            tr!("Angriff / Verteidigung der Kreatur.", "Attack / defense of the creature."),
         ),
         CardKind::Resource => (
-            &["Gelb (Weiß)", "Blau", "Schwarz", "Rot", "Grün", "Grau (Farblos)"],
-            "Ressourcen kosten nichts; Angriff/Verteidigung werden ignoriert.",
+            tr!(
+                &["Gelb (Weiß)", "Blau", "Schwarz", "Rot", "Grün", "Grau (Farblos)"],
+                &["Yellow (white)", "Blue", "Black", "Red", "Green", "Grey (colorless)"]
+            ),
+            tr!("Ressourcen kosten nichts; Angriff/Verteidigung werden ignoriert.", "Resources are free; attack/defense are ignored."),
         ),
         CardKind::Instant | CardKind::Sorcery => (
-            &["Heilen", "Karten ziehen", "Schaden am Gegner", "Schaden an stärkster gegn. Kreatur", "Neutralisieren (Counterspell)"],
-            "Angriff = Stärke des Effekts (Leben, Karten, Schaden).",
+            tr!(
+                &["Heilen", "Karten ziehen", "Schaden am Gegner", "Schaden an stärkster gegn. Kreatur", "Neutralisieren (Counterspell)"],
+                &["Heal", "Draw cards", "Damage to opponent", "Damage to strongest enemy creature", "Counter (counterspell)"]
+            ),
+            tr!("Angriff = Stärke des Effekts (Leben, Karten, Schaden).", "Attack = strength of the effect (life, cards, damage)."),
         ),
         CardKind::Hero => (
-            &["+1: Leben (Angriff)  /  −3: Schaden an Kreatur", "+1: Karte ziehen  /  −3: Schaden am Gegner (Angriff)"],
-            "Angriff = Stärke der Fähigkeiten, Verteidigung = Willenskraft.",
+            tr!(
+                &["+1: Leben (Angriff)  /  −3: Schaden an Kreatur", "+1: Karte ziehen  /  −3: Schaden am Gegner (Angriff)"],
+                &["+1: life (attack)  /  −3: damage to creature", "+1: draw a card  /  −3: damage to opponent (attack)"]
+            ),
+            tr!("Angriff = Stärke der Fähigkeiten, Verteidigung = Willenskraft.", "Attack = strength of the abilities, defense = willpower."),
         ),
         CardKind::Equipment => (
-            &["Anlegen kostet 1", "Anlegen kostet 2", "Anlegen kostet 3"],
-            "Angriff / Verteidigung = Bonus für die ausgerüstete Kreatur.",
+            tr!(&["Anlegen kostet 1", "Anlegen kostet 2", "Anlegen kostet 3"], &["Equip costs 1", "Equip costs 2", "Equip costs 3"]),
+            tr!("Angriff / Verteidigung = Bonus für die ausgerüstete Kreatur.", "Attack / defense = bonus for the equipped creature."),
         ),
         CardKind::Artifact => (
-            &["Passiv: deine Kreaturen +A/+V", "Tappen: +Angriff Leben", "Tappen: ziehe Angriff Karten", "Tappen: Angriff Schaden am Gegner"],
-            "Angriff / Verteidigung = Bonus bzw. Stärke.",
+            tr!(
+                &["Passiv: deine Kreaturen +A/+V", "Tappen: +Angriff Leben", "Tappen: ziehe Angriff Karten", "Tappen: Angriff Schaden am Gegner"],
+                &["Passive: your creatures +A/+D", "Tap: +attack life", "Tap: draw attack cards", "Tap: attack damage to opponent"]
+            ),
+            tr!("Angriff / Verteidigung = Bonus bzw. Stärke.", "Attack / defense = bonus or strength."),
         ),
         CardKind::Enchantment => (
-            &["Deine Kreaturen +A/+V", "Gegnerische Kreaturen −A/−V"],
-            "Angriff / Verteidigung = globaler Bonus.",
+            tr!(&["Deine Kreaturen +A/+V", "Gegnerische Kreaturen −A/−V"], &["Your creatures +A/+D", "Enemy creatures −A/−D"]),
+            tr!("Angriff / Verteidigung = globaler Bonus.", "Attack / defense = global bonus."),
         ),
         CardKind::Aura => (
-            &[
-                "Verzaubert Kreatur: ±A/±V",
-                "Verzaubert Ressource: +Angriff Mana",
-                "Verzaubert bleibende Karte: enttappt nicht",
-                "Verzaubert Held: +Verteidigung Willenskraft",
-            ],
-            "Angriff / Verteidigung = Wirkung (negativ = Fluch).",
+            tr!(
+                &[
+                    "Verzaubert Kreatur: ±A/±V",
+                    "Verzaubert Ressource: +Angriff Mana",
+                    "Verzaubert bleibende Karte: enttappt nicht",
+                    "Verzaubert Held: +Verteidigung Willenskraft",
+                ],
+                &[
+                    "Enchant creature: ±A/±D",
+                    "Enchant resource: +attack mana",
+                    "Enchant permanent: does not untap",
+                    "Enchant hero: +defense willpower",
+                ]
+            ),
+            tr!("Angriff / Verteidigung = Wirkung (negativ = Fluch).", "Attack / defense = effect (negative = curse)."),
         ),
     }
 }
@@ -178,8 +215,8 @@ fn build_def(name: &str, kind: CardKind, ability: usize, cost: Cost, atk: i32, d
     d
 }
 
-/// Debug-Tool (nur in Test-Builds): Ressourcen hinzufügen, jede Karte auf die Hand geben
-/// und eigene Karten erstellen. Wird vom [TableController] automatisch erzeugt und
+/// Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressourcen
+/// hinzufügen, jede Karte auf die Hand geben und eigene Karten erstellen. Wird vom [TableController] automatisch erzeugt und
 /// existiert in Release-Builds (`cargo build --release`) nicht.
 #[derive(GodotClass)]
 #[class(base=CanvasLayer)]
@@ -205,6 +242,8 @@ pub struct DebugPanel {
     hint: Option<Gd<Label>>,
     tabs: Option<Gd<TabContainer>>,
     preview: Option<Preview>,
+    /// Oberstes Control der Oberfläche (wird beim Sprachwechsel neu aufgebaut).
+    root: Option<Gd<Control>>,
 
     base: Base<CanvasLayer>,
 }
@@ -231,6 +270,7 @@ impl ICanvasLayer for DebugPanel {
             hint: None,
             tabs: None,
             preview: None,
+            root: None,
             base,
         }
     }
@@ -255,6 +295,31 @@ impl DebugPanel {
         self.update_preview_visibility();
     }
 
+    /// Sprache gewählt (0 = Deutsch, 1 = English): stellt das ganze Spiel um,
+    /// beschriftet alle Karten neu und baut das Debug-Fenster in der neuen Sprache auf.
+    #[func]
+    fn on_language_selected(&mut self, index: i64) {
+        if let Some(mut c) = self.controller.clone() {
+            c.bind_mut().set_language(if index == 1 { "en" } else { "de" }.into());
+        }
+        // Oberfläche neu aufbauen, offenen Reiter beibehalten
+        let tab = self.tabs.as_ref().map_or(0, |t| t.get_current_tab());
+        if let Some(mut old) = self.root.take() {
+            old.queue_free();
+        }
+        self.build();
+        if let Some(w) = self.window.as_mut() {
+            w.set_visible(true);
+        }
+        if let Some(t) = self.tabs.as_mut() {
+            t.set_current_tab(tab);
+        }
+        self.refresh_list();
+        self.on_kind_selected(0);
+        self.update_preview_visibility();
+        self.set_status(tr!("Sprache: Deutsch", "Language: English"));
+    }
+
     /// Karte in der Liste ausgewählt: große Vorschau zeigen.
     #[func]
     fn on_catalog_selected(&mut self, index: i64) {
@@ -277,16 +342,17 @@ impl DebugPanel {
     #[func]
     fn on_add_resource(&mut self, index: i64) {
         let (label, t) = RESOURCE_BUTTONS[index.clamp(0, 5) as usize];
+        let label = resource_label(label);
         let count = self.amount.as_ref().map_or(1, |a| a.get_value() as i32);
         let Some(zone) = self.player_seat().and_then(|s| s.bind().resource_zone.clone()) else {
-            return self.set_status("Keine Ressourcen-Reihe gefunden.");
+            return self.set_status(tr!("Keine Ressourcen-Reihe gefunden.", "No resource row found."));
         };
         let mut def = CardDef::base(cards::resource_name(t), CardKind::Resource, Cost::default());
         def.produces = t;
         for _ in 0..count {
             self.spawn(&def, zone.clone());
         }
-        self.set_status(&format!("+{count} Ressource(n) {label}."));
+        self.set_status(&trf!("+{count} Ressource(n) {label}.", "+{count} resource(s) {label}."));
     }
 
     /// Knopf „Alle Ressourcen enttappen“: enttappt alle Karten der eigenen Ressourcen-Reihe.
@@ -299,7 +365,7 @@ impl DebugPanel {
             c.bind_mut().set_tapped(false);
         }
         zone.bind_mut().layout();
-        self.set_status("Alle Ressourcen enttappt.");
+        self.set_status(tr!("Alle Ressourcen enttappt.", "All resources untapped."));
     }
 
     /// Suchfeld geändert: filtert die Kartenliste nach Name oder Typ.
@@ -320,7 +386,7 @@ impl DebugPanel {
         let selected = self.list.as_ref().map(|l| l.get_selected_items()).unwrap_or_default();
         match selected.as_slice().first() {
             Some(&i) => self.give_to_hand(i as i64),
-            None => self.set_status("Bitte zuerst eine Karte in der Liste wählen."),
+            None => self.set_status(tr!("Bitte zuerst eine Karte in der Liste wählen.", "Please select a card in the list first.")),
         }
     }
 
@@ -351,12 +417,12 @@ impl DebugPanel {
         let cost_text = self.cost_edit.as_ref().map(|e| e.get_text().to_string()).unwrap_or_default();
         let cost = match Cost::parse(&cost_text) {
             Ok(c) => c,
-            Err(_) => return self.set_status("Kosten ungültig. Beispiel: 2RG (W B S R G F)."),
+            Err(_) => return self.set_status(tr!("Kosten ungültig. Beispiel: 2RG (W B S R G F).", "Invalid cost. Example: 2RG (W B S R G F).")),
         };
         let atk = self.attack.as_ref().map_or(0, |s| s.get_value() as i32);
         let def = self.defense.as_ref().map_or(0, |s| s.get_value() as i32);
         let card = build_def(&name, kind, ability, cost, atk, def);
-        let label = format!("{} ({})", card.name, kind.title());
+        let label = format!("{} ({})", crate::i18n::name(&card.name), kind.title());
         self.catalog.push(card);
         self.refresh_list();
         if to_hand {
@@ -366,7 +432,7 @@ impl DebugPanel {
                 None => self.give_catalog_entry(self.catalog.len() - 1),
             }
         } else {
-            self.set_status(&format!("{label} erstellt – steht jetzt in der Kartenliste."));
+            self.set_status(&trf!("{label} erstellt – steht jetzt in der Kartenliste.", "{label} created – now in the card list."));
         }
     }
 }
@@ -400,7 +466,8 @@ impl DebugPanel {
         };
         let def = self.catalog[i].clone();
         self.spawn(&def, hand);
-        self.set_status(&format!("{} auf die Hand gelegt.", def.name));
+        let shown = crate::i18n::name(&def.name);
+        self.set_status(&trf!("{shown} auf die Hand gelegt.", "{shown} added to your hand."));
     }
 
     fn set_status(&mut self, text: &str) {
@@ -416,6 +483,7 @@ impl DebugPanel {
                 let d = &self.catalog[i];
                 filter.is_empty()
                     || d.name.to_lowercase().contains(&filter)
+                    || crate::i18n::name(&d.name).to_lowercase().contains(&filter)
                     || d.kind.title().to_lowercase().contains(&filter)
             })
             .collect();
@@ -429,7 +497,7 @@ impl DebugPanel {
                     _ => String::new(),
                 };
                 let cost = if d.kind == CardKind::Resource { d.produces.name().to_string() } else { d.cost.to_text() };
-                format!("{}  [{}, {}]{}", d.name, d.kind.title(), cost, stats)
+                format!("{}  [{}, {}]{}", crate::i18n::name(&d.name), d.kind.title(), cost, stats)
             })
             .collect();
         if let Some(list) = self.list.as_mut() {
@@ -456,6 +524,7 @@ impl DebugPanel {
 
     fn build(&mut self) {
         let mut root = Control::new_alloc();
+        self.root = Some(root.clone());
         root.set_anchors_preset(LayoutPreset::FULL_RECT);
         root.set_mouse_filter(MouseFilter::IGNORE);
 
@@ -481,9 +550,18 @@ impl DebugPanel {
         self.tabs = Some(tabs.clone());
 
         let mut col = VBoxContainer::new_alloc();
+        let mut lang_row = HBoxContainer::new_alloc();
+        lang_row.add_child(&text_label("Sprache / Language:"));
+        let mut lang = OptionButton::new_alloc();
+        lang.add_item("Deutsch");
+        lang.add_item("English");
+        lang.select(if crate::i18n::lang() == crate::i18n::Lang::En { 1 } else { 0 });
+        lang.connect("item_selected", &self.method("on_language_selected"));
+        lang_row.add_child(&lang);
+        col.add_child(&lang_row);
         col.add_child(&tabs);
         let mut status = Label::new_alloc();
-        status.set_text("Debug-Tool (nur Test-Build)");
+        status.set_text(tr!("Debug-Tool (nur Test-Build)", "Debug tool (test build only)"));
         status.add_theme_color_override("font_color", Color::from_rgb(1.0, 0.85, 0.3));
         col.add_child(&status);
         self.status = Some(status);
@@ -508,11 +586,11 @@ impl DebugPanel {
 
     fn build_resources_tab(&mut self) -> Gd<VBoxContainer> {
         let mut tab = VBoxContainer::new_alloc();
-        tab.set_name("Ressourcen");
+        tab.set_name(tr!("Ressourcen", "Resources"));
         tab.add_theme_constant_override("separation", 8);
 
         let mut row = HBoxContainer::new_alloc();
-        row.add_child(&text_label("Anzahl pro Klick:"));
+        row.add_child(&text_label(tr!("Anzahl pro Klick:", "Amount per click:")));
         let mut amount = SpinBox::new_alloc();
         amount.set_min(1.0);
         amount.set_max(20.0);
@@ -525,7 +603,7 @@ impl DebugPanel {
         grid.set_columns(2);
         for (i, (label, t)) in RESOURCE_BUTTONS.into_iter().enumerate() {
             let mut b = Button::new_alloc();
-            b.set_text(&format!("+  {label}"));
+            b.set_text(&format!("+  {}", resource_label(label)));
             b.set_custom_minimum_size(Vector2::new(190.0, 40.0));
             b.add_theme_stylebox_override("normal", &style(t.color().darkened(0.35)));
             b.add_theme_stylebox_override("hover", &style(t.color().darkened(0.15)));
@@ -538,18 +616,21 @@ impl DebugPanel {
         tab.add_child(&grid);
 
         let mut untap = Button::new_alloc();
-        untap.set_text("Alle Ressourcen enttappen");
+        untap.set_text(tr!("Alle Ressourcen enttappen", "Untap all resources"));
         untap.connect("pressed", &self.method("on_untap_resources"));
         tab.add_child(&untap);
-        tab.add_child(&text_label("Gelb = weißes Mana, Grau = farblos.\nDie Karten landen direkt in deiner Ressourcen-Reihe\n(zählen nicht zum Limit 1 pro Runde)."));
+        tab.add_child(&text_label(tr!(
+            "Gelb = weißes Mana, Grau = farblos.\nDie Karten landen direkt in deiner Ressourcen-Reihe\n(zählen nicht zum Limit 1 pro Runde).",
+            "Yellow = white mana, grey = colorless.\nThe cards go straight into your resource row\n(they do not count towards the limit of 1 per turn)."
+        )));
         tab
     }
 
     fn build_cards_tab(&mut self) -> Gd<VBoxContainer> {
         let mut tab = VBoxContainer::new_alloc();
-        tab.set_name("Karten");
+        tab.set_name(tr!("Karten", "Cards"));
         let mut filter = LineEdit::new_alloc();
-        filter.set_placeholder("Suchen (Name oder Typ) …");
+        filter.set_placeholder(tr!("Suchen (Name oder Typ) …", "Search (name or type) …"));
         filter.connect("text_changed", &self.method("on_filter_changed"));
         tab.add_child(&filter);
         self.filter = Some(filter);
@@ -563,7 +644,7 @@ impl DebugPanel {
         self.list = Some(list);
 
         let mut give = Button::new_alloc();
-        give.set_text("Auf die Hand  (oder Doppelklick)");
+        give.set_text(tr!("Auf die Hand  (oder Doppelklick)", "To hand  (or double-click)"));
         give.connect("pressed", &self.method("on_give_selected"));
         tab.add_child(&give);
         tab
@@ -571,18 +652,18 @@ impl DebugPanel {
 
     fn build_create_tab(&mut self) -> Gd<VBoxContainer> {
         let mut tab = VBoxContainer::new_alloc();
-        tab.set_name("Erstellen");
+        tab.set_name(tr!("Erstellen", "Create"));
         let mut grid = GridContainer::new_alloc();
         grid.set_columns(2);
 
-        grid.add_child(&text_label("Name:"));
+        grid.add_child(&text_label(tr!("Name:", "Name:")));
         let mut name = LineEdit::new_alloc();
-        name.set_placeholder("z. B. Taverntroll");
+        name.set_placeholder(tr!("z. B. Taverntroll", "e.g. Tavern Troll"));
         name.set_custom_minimum_size(Vector2::new(260.0, 0.0));
         grid.add_child(&name);
         self.name_edit = Some(name);
 
-        grid.add_child(&text_label("Typ:"));
+        grid.add_child(&text_label(tr!("Typ:", "Type:")));
         let mut kind = OptionButton::new_alloc();
         for k in KINDS {
             kind.add_item(k.title());
@@ -591,23 +672,23 @@ impl DebugPanel {
         grid.add_child(&kind);
         self.kind_select = Some(kind);
 
-        grid.add_child(&text_label("Fähigkeit:"));
+        grid.add_child(&text_label(tr!("Fähigkeit:", "Ability:")));
         let ability = OptionButton::new_alloc();
         grid.add_child(&ability);
         self.ability_select = Some(ability);
 
-        grid.add_child(&text_label("Kosten:"));
+        grid.add_child(&text_label(tr!("Kosten:", "Cost:")));
         let mut cost = LineEdit::new_alloc();
-        cost.set_placeholder("z. B. 2RG  (W B S R G F)");
+        cost.set_placeholder(tr!("z. B. 2RG  (W B S R G F)", "e.g. 2RG  (W B S R G F)"));
         grid.add_child(&cost);
         self.cost_edit = Some(cost);
 
-        grid.add_child(&text_label("Angriff:"));
+        grid.add_child(&text_label(tr!("Angriff:", "Attack:")));
         let attack = spin(-10.0, 20.0, 2.0);
         grid.add_child(&attack);
         self.attack = Some(attack);
 
-        grid.add_child(&text_label("Verteidigung:"));
+        grid.add_child(&text_label(tr!("Verteidigung:", "Defense:")));
         let defense = spin(-10.0, 20.0, 2.0);
         grid.add_child(&defense);
         self.defense = Some(defense);
@@ -620,11 +701,11 @@ impl DebugPanel {
 
         let mut row = HBoxContainer::new_alloc();
         let mut create = Button::new_alloc();
-        create.set_text("Erstellen");
+        create.set_text(tr!("Erstellen", "Create"));
         create.connect("pressed", &self.method("on_create").bind(&[false.to_variant()]));
         row.add_child(&create);
         let mut create_hand = Button::new_alloc();
-        create_hand.set_text("Erstellen + auf die Hand");
+        create_hand.set_text(tr!("Erstellen + auf die Hand", "Create + to hand"));
         create_hand.connect("pressed", &self.method("on_create").bind(&[true.to_variant()]));
         row.add_child(&create_hand);
         tab.add_child(&row);
@@ -717,7 +798,7 @@ impl Preview {
         let width = left - 16.0 - 26.0;
         self.name.set_size(Vector2::new(width, 28.0));
         self.name.set_position(Vector2::new(26.0, ty - 14.0));
-        self.name.set_text(&def.name);
+        self.name.set_text(&crate::i18n::name(&def.name));
         self.kind.set_text(&kind);
         self.body.set_text(&body);
         self.stats.set_text(&stats);

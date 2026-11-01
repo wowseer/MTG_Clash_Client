@@ -188,7 +188,7 @@ impl TurnManager {
     /// Beschriftung für den HUD-Button.
     #[func]
     pub fn get_button_text(&self) -> GString {
-        if self.stack_is_busy() { "Passen  »".into() } else { "Nächste Phase  »".into() }
+        if self.stack_is_busy() { tr!("Passen  »", "Pass  »").into() } else { tr!("Nächste Phase  »", "Next phase  »").into() }
     }
 
     /// Wartet das Spiel auf eine Eingabe des Menschen (Button „Nächste Phase“ bzw. „Passen“)?
@@ -213,7 +213,7 @@ impl TurnManager {
     /// Name der aktuellen Phase.
     #[func]
     pub fn get_phase_title(&self) -> GString {
-        self.phase().map_or("Austeilen …", Phase::title).into()
+        self.phase().map_or(tr!("Austeilen …", "Dealing …"), Phase::title).into()
     }
 
     /// Namen aller Phasen in ihrer Reihenfolge.
@@ -229,16 +229,16 @@ impl TurnManager {
             let seat = self.priority_seat();
             let text = match &self.game {
                 Some(g) if g.is_human(seat) => {
-                    "Du hast Priorität: Sofortzauber spielen oder passen (oberstes Item wird aufgelöst, wenn beide passen).".to_string()
+                    tr!("Du hast Priorität: Sofortzauber spielen oder passen (oberstes Item wird aufgelöst, wenn beide passen).", "You have priority: play an instant or pass (the top item resolves when both players pass).").to_string()
                 }
-                Some(g) => format!("{} hat Priorität …", g.name(seat)),
+                Some(g) => trf!("{} hat Priorität …", "{} has priority …", g.name(seat)),
                 None => String::new(),
             };
             return GString::from(text.as_str());
         }
         match (&self.game, &self.state) {
             (Some(g), Some(s)) => GString::from(s.hint(g).as_str()),
-            _ => "Karten werden ausgeteilt …".into(),
+            _ => tr!("Karten werden ausgeteilt …", "Dealing cards …").into(),
         }
     }
 
@@ -266,7 +266,7 @@ impl TurnManager {
     /// Name des Sitzplatzes `seat` (0 = Spieler, 1 = Gegner).
     #[func]
     pub fn get_seat_name(&self, seat: i64) -> GString {
-        self.seat(seat).map_or(GString::new(), |s| s.bind().display_name.clone())
+        self.seat(seat).map_or(GString::new(), |s| GString::from(crate::i18n::name(&s.bind().display_name.to_string()).as_str()))
     }
 
     /// Lebenspunkte von `seat` (0 = Spieler, 1 = Gegner).
@@ -429,7 +429,7 @@ impl TurnManager {
         if let Some(mut eq) = g.pending_equip.clone() {
             if on_own_field && kind == CardKind::Creature {
                 if let Err(e) = g.equip(owner, &mut eq, &mut card, phase) {
-                    g.log(format!("Anlegen nicht möglich: {}", e.message()));
+                    g.log(trf!("Anlegen nicht möglich: {}", "Cannot equip: {}", e.message()));
                 }
                 g.clear_pending();
                 return true;
@@ -446,7 +446,7 @@ impl TurnManager {
                     card.bind_mut().set_marker(CardMarker::Selected);
                     g.pending_equip = Some(card);
                 }
-                Err(e) => g.log(format!("Anlegen nicht möglich: {}", e.message())),
+                Err(e) => g.log(trf!("Anlegen nicht möglich: {}", "Cannot equip: {}", e.message())),
             }
             return true;
         }
@@ -458,7 +458,7 @@ impl TurnManager {
         if on_own_field && kind == CardKind::Artifact {
             if card.bind().activated.is_some() {
                 if let Err(e) = g.activate_artifact(owner, &mut card, phase) {
-                    g.log(format!("Fähigkeit nicht möglich: {}", e.message()));
+                    g.log(trf!("Fähigkeit nicht möglich: {}", "Ability not possible: {}", e.message()));
                 }
                 return true;
             }
@@ -536,7 +536,7 @@ impl TurnManager {
         match g.activate_hero(seat, &mut hero, index.max(0) as usize, phase) {
             Ok(()) => true,
             Err(e) => {
-                g.log(format!("Fähigkeit nicht möglich: {}", e.message()));
+                g.log(trf!("Fähigkeit nicht möglich: {}", "Ability not possible: {}", e.message()));
                 false
             }
         }

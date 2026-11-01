@@ -1,7 +1,8 @@
 # MTG Clash – Dokumentation
 
 Ein Kartenspiel in einer 3D-Taverne. Die Spiellogik ist in **Rust** (godot-rust / gdext 0.5.5)
-geschrieben und wird als GDExtension in **Godot 4.7** geladen.
+geschrieben und wird als GDExtension in **Godot 4.7** geladen. Das Spiel ist zweisprachig
+(**Deutsch / Englisch**, siehe Abschnitt 6).
 
 Diese Datei gibt den Überblick. Jede einzelne Klasse, Eigenschaft, Funktion und jedes Signal
 ist beschrieben
@@ -58,6 +59,7 @@ In Test-Builds hängt der `TableController` zusätzlich ein `DebugPanel` an (nic
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, `Tavern`, Texturen |
 | `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD |
 | `rust/src/debug.rs` | Debug-Tool (nur Test-Build) |
+| `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
 | `docs/` | diese Dokumentation und die API-Referenz |
 | `tools/gen_api_doc.py` | erzeugt `docs/API-Referenz.md` |
 
@@ -155,6 +157,8 @@ Werden jeden Frame geprüft:
 
 Button **DEBUG** am linken Bildschirmrand. Existiert nur in `cargo build`, nicht in `cargo build --release`.
 
+Oben im Fenster: **Sprache / Language** (Deutsch / English) – stellt das ganze Spiel um.
+
 | Reiter | Funktion |
 |---|---|
 | Ressourcen | „+“ für Blau, Schwarz, Grün, Rot, Gelb (= weißes Mana), Grau (= farblos), mit Anzahl; „Alle Ressourcen enttappen“ |
@@ -165,7 +169,30 @@ Erstellte Karten gelten nur bis zum Neustart.
 
 ---
 
-## 6. Eigene Skripte (GDScript) – Beispiele
+## 6. Sprache (Deutsch / Englisch)
+
+- **Umschalten:** im Debug-Tool (*Sprache / Language*) oder per Code
+  `$Table.set_language("en")` / `$Table.set_language("de")`; abfragen mit `$Table.get_language()`.
+  Standard ist Deutsch.
+- **Sofort umgestellt:** HUD, Phasen, Hinweise, Fehlermeldungen, Kartenbeschriftungen,
+  Kartenvorschau und das Debug-Fenster.
+- **Protokoll:** neue Einträge erscheinen in der neuen Sprache; ältere bleiben, wie sie geschrieben wurden.
+- **Dokumentation** (Godot-Hilfe, diese Datei) bleibt Deutsch.
+
+### Neue Texte hinzufügen (`rust/src/i18n.rs`)
+
+| Fall | Schreibweise |
+|---|---|
+| fester Text | `tr!("Abbrechen", "Cancel")` |
+| Text mit Werten | `trf!("{n} Karten", "{n} cards")` oder `trf!("{} zieht", "{} draws", name)` |
+| Kartenname / Eigenname | deutscher Name im Code, englischer Eintrag in `i18n::name()` |
+
+Kartennamen sind intern immer deutsch (sie dienen als Schlüssel) und werden erst bei der
+Anzeige übersetzt. Selbst erstellte Karten aus dem Debug-Tool behalten ihren Namen.
+
+---
+
+## 7. Eigene Skripte (GDScript) – Beispiele
 
 ```gdscript
 @onready var tm: TurnManager = $Table/TurnManager
@@ -187,7 +214,7 @@ $Table/StackManager.push(item)
 
 ---
 
-## 7. Bekannte Vereinfachungen
+## 8. Bekannte Vereinfachungen
 
 - Bei leerem Stack muss nicht beidseitig gepasst werden; die Phasen steuern Button und Automatik.
 - Zauber wählen ihr Ziel automatisch (z. B. „stärkste gegnerische Kreatur“); nur Auren werden gezielt gelegt.

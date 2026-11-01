@@ -515,7 +515,7 @@ impl Card3D {
 
     /// Kartenname als Rust-String (für Protokolltexte).
     pub fn display_name(&self) -> String {
-        self.card_name.to_string()
+        crate::i18n::name(&self.card_name.to_string())
     }
 
     /// Manakosten als Rust-Wert (ohne Resource = kostenlos).
@@ -587,7 +587,7 @@ impl Card3D {
             CardKind::Creature => (self.ability.title().to_string(), self.ability.description().to_string(), format!("{atk}/{def}")),
             CardKind::Instant | CardKind::Sorcery => (self.card_kind.title().to_string(), self.effect.description(), String::new()),
             CardKind::Hero => (
-                "Held".to_string(),
+                tr!("Held", "Hero").to_string(),
                 self.hero_abilities.iter().map(|a| a.description()).collect::<Vec<_>>().join("\n"),
                 format!("WK {}", self.willpower),
             ),
@@ -618,13 +618,14 @@ impl Card3D {
             Vector3::new((x / 256.0 - 0.5) * CARD_WIDTH, CARD_THICKNESS * 0.5 + 0.0015, (y / 358.0 - 0.5) * CARD_HEIGHT)
         };
         let ty = placeholder::title_center_y();
-        l.name.set_text(&self.card_name);
+        let shown_name = crate::i18n::name(&self.card_name.to_string());
+        l.name.set_text(&shown_name);
         if self.card_kind == CardKind::Resource {
             let color = self.produces.name();
             l.cost.set_text("");
             l.name.set_position(px(128.0, ty));
-            l.kind.set_text(&format!("Ressource – {color}"));
-            l.text.set_text(&format!("Tappen: +1 {color}-Mana."));
+            l.kind.set_text(&trf!("Ressource – {color}", "Resource – {color}"));
+            l.text.set_text(&trf!("Tappen: +1 {color}-Mana.", "Tap: +1 {color} mana."));
             l.stats.set_text("");
         } else {
             // Generische Kosten als Zahl im grauen Kostensymbol (ganz links)

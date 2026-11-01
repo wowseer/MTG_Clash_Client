@@ -19,19 +19,19 @@ pub enum CardAbility {
 impl CardAbility {
     pub fn title(self) -> &'static str {
         match self {
-            Self::None => "Kreatur",
-            Self::Regeneration => "Kreatur – Heiler",
-            Self::Firebreath => "Kreatur – Feuer",
-            Self::Rage => "Kreatur – Raufbold",
+            Self::None => tr!("Kreatur", "Creature"),
+            Self::Regeneration => tr!("Kreatur – Heiler", "Creature – Healer"),
+            Self::Firebreath => tr!("Kreatur – Feuer", "Creature – Fire"),
+            Self::Rage => tr!("Kreatur – Raufbold", "Creature – Brawler"),
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
             Self::None => "",
-            Self::Regeneration => "Auffrischung: Du erhältst 1 Leben.",
-            Self::Firebreath => "Auffrischung: 1 Schaden am Gegner.",
-            Self::Rage => "Greift sie an, erhält sie +1 Angriff bis Rundenende.",
+            Self::Regeneration => tr!("Auffrischung: Du erhältst 1 Leben.", "Upkeep: You gain 1 life."),
+            Self::Firebreath => tr!("Auffrischung: 1 Schaden am Gegner.", "Upkeep: 1 damage to the opponent."),
+            Self::Rage => tr!("Greift sie an, erhält sie +1 Angriff bis Rundenende.", "When it attacks, it gets +1 attack until end of turn."),
         }
     }
 }

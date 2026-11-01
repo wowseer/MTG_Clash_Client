@@ -231,6 +231,26 @@ impl TableController {
         Some(card)
     }
 
+    /// Stellt die Sprache des Spiels um: `"de"` = Deutsch, `"en"` = Englisch.
+    /// HUD, Hinweise und neue Protokolleinträge wechseln sofort; alle Karten werden
+    /// neu beschriftet. Bereits geschriebene Protokolleinträge bleiben unverändert.
+    #[func]
+    pub fn set_language(&mut self, code: GString) {
+        let lang = if code.to_string().to_lowercase().starts_with("en") {
+            crate::i18n::Lang::En
+        } else {
+            crate::i18n::Lang::De
+        };
+        crate::i18n::set_lang(lang);
+        self.refresh_all_cards();
+    }
+
+    /// Aktuelle Sprache: `"de"` oder `"en"`.
+    #[func]
+    pub fn get_language(&self) -> GString {
+        if crate::i18n::lang() == crate::i18n::Lang::En { "en".into() } else { "de".into() }
+    }
+
     /// Die Karte, die gerade unter dem Mauszeiger liegt.
     #[func]
     pub fn get_hovered_card(&self) -> Option<Gd<Card3D>> {
@@ -522,6 +542,15 @@ impl TableController {
         card.bind_mut().snap_to(start);
         zone.bind_mut().add_card(card.clone(), -1, 0.0);
         card
+    }
+
+    /// Beschriftet alle Karten neu (z. B. nach einem Sprachwechsel).
+    pub fn refresh_all_cards(&mut self) {
+        for child in self.base().get_children().iter_shared() {
+            if let Ok(mut card) = child.try_cast::<Card3D>() {
+                card.bind_mut().refresh_labels();
+            }
+        }
     }
 
     /// Zonen-Zugriff für das Debug-Tool.
