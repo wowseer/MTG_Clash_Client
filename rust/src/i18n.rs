@@ -110,6 +110,7 @@ pub fn name(de: &str) -> String {
         "Fluch des Katers" => "Hangover Curse",
         "Goldader" => "Gold Vein",
         "Rostfluch" => "Rust Curse",
+        "Sparstrumpf" => "Savings Sock",
         // Debug-Standardname
         "Eigene Karte" => "Custom Card",
         "Karte" => "Card",

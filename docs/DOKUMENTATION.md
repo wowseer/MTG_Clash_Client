@@ -104,7 +104,9 @@ Enttappen → Auffrischung → Ziehen → Hauptphase 1 → Angreifer bestimmen �
 | Schadensberechnung | Kampfschaden; ungeblockt trifft den Spieler | automatisch |
 | Ende | temporäre Effekte, Schaden und Markierungen entfernen, Spielerwechsel | automatisch |
 
-Mana im Pool verfällt am Ende jeder Phase. Solange etwas auf dem Stack liegt, pausiert die Phase.
+Mana im Pool bleibt über alle Phasen eines Zuges erhalten und wird **am Ende des Zuges auf null gesetzt** –
+außer ein Spieler hat eine Karte mit „Mana bleibt erhalten“ im Spiel (siehe 4.3).
+Solange etwas auf dem Stack liegt, pausiert die Phase.
 Beide Spieler starten mit 20 Leben; bei 0 Leben ist die Partie verloren.
 
 ### 4.2 Kartentypen und Timing (`cards.rs`, `timing.rs`)
@@ -135,6 +137,12 @@ Kostenschreibweise: Zahl = generisch, Buchstaben `W B S R G F` je Farbe – z. B
 Farbige Anteile müssen mit genau dieser Farbe bezahlt werden, generische mit beliebigem Mana.
 Beim Ausspielen wird zuerst aus dem Pool bezahlt; fehlt etwas, tappt das Spiel passende Ressourcen automatisch.
 
+**Zugende:** Am Ende jedes Zuges werden die Manapools **beider** Spieler auf null gesetzt.
+Ausnahme: Ein Spieler hat eine bleibende Karte mit dem Dauereffekt **„Mana bleibt erhalten“**
+(`StaticEffect::KeepMana`) im Spiel – dann behält er sein unverbrauchtes Mana (Protokoll:
+„Spieler behält 3 Mana (Sparstrumpf)“). Beispielkarte: Artefakt **Sparstrumpf** (Kosten 2,
+im Debug-Katalog); im Debug-Reiter „Erstellen“ als Artefakt-Fähigkeit „Passiv: Mana bleibt am Zugende erhalten“.
+
 ### 4.4 Stack und Priorität (`stack.rs`)
 
 - Wer etwas auf den Stack legt, behält die Priorität.
@@ -161,7 +169,7 @@ Oben im Fenster: **Sprache / Language** (Deutsch / English) – stellt das ganze
 
 | Reiter | Funktion |
 |---|---|
-| Ressourcen | „+“ für Blau, Schwarz, Grün, Rot, Gelb (= weißes Mana), Grau (= farblos), mit Anzahl; „Alle Ressourcen enttappen“ |
+| Mana | „+“ für Blau, Schwarz, Grün, Rot, Gelb (= weißes Mana), Grau (= farblos) legt Mana **direkt in den Manapool** (Menge = „Anzahl pro Klick“, 1–99); es verfällt am Zugende wie jedes Mana. Dazu „Manapool leeren“ und „Alle Ressourcen enttappen“ |
 | Karten | alle Karten mit Suche; Doppelklick / „Auf die Hand“; große Vorschau mit Regeltext |
 | Erstellen | eigene Karte aus Name, Typ, Fähigkeit, Kosten, Angriff, Verteidigung |
 

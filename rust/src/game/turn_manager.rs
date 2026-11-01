@@ -660,8 +660,12 @@ impl TurnManager {
         let (Some(game), Some(state)) = (self.game.as_mut(), self.state.as_mut()) else {
             return;
         };
+        // Mana verfällt erst am Ende des Zuges (nicht nach jeder Phase)
+        let end_of_turn = state.phase() == Phase::End;
         state.exit(game);
-        game.empty_pools();
+        if end_of_turn {
+            game.empty_pools();
+        }
         game.clear_pending();
         let next = if game.winner.is_some() { Phase::GameOver } else { state.next(game) };
         self.enter(next);

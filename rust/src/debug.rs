@@ -106,8 +106,8 @@ fn abilities_for(kind: CardKind) -> (&'static [&'static str], &'static str) {
         ),
         CardKind::Artifact => (
             tr!(
-                &["Passiv: deine Kreaturen +A/+V", "Tappen: +Angriff Leben", "Tappen: ziehe Angriff Karten", "Tappen: Angriff Schaden am Gegner"],
-                &["Passive: your creatures +A/+D", "Tap: +attack life", "Tap: draw attack cards", "Tap: attack damage to opponent"]
+                &["Passiv: deine Kreaturen +A/+V", "Tappen: +Angriff Leben", "Tappen: ziehe Angriff Karten", "Tappen: Angriff Schaden am Gegner", "Passiv: Mana bleibt am Zugende erhalten"],
+                &["Passive: your creatures +A/+D", "Tap: +attack life", "Tap: draw attack cards", "Tap: attack damage to opponent", "Passive: mana is kept at end of turn"]
             ),
             tr!("Angriff / Verteidigung = Bonus bzw. Stärke.", "Attack / defense = bonus or strength."),
         ),
@@ -194,7 +194,8 @@ fn build_def(name: &str, kind: CardKind, ability: usize, cost: Cost, atk: i32, d
             0 => d.static_effect = Some(StaticEffect::OwnCreatures(atk, def)),
             1 => d.activated = Some(ActivatedAbility { cost: Cost::default(), effect: SpellEffect::Heal(n) }),
             2 => d.activated = Some(ActivatedAbility { cost: Cost::default(), effect: SpellEffect::Draw(n) }),
-            _ => d.activated = Some(ActivatedAbility { cost: Cost::default(), effect: SpellEffect::DamageOpponent(n) }),
+            3 => d.activated = Some(ActivatedAbility { cost: Cost::default(), effect: SpellEffect::DamageOpponent(n) }),
+            _ => d.static_effect = Some(StaticEffect::KeepMana),
         },
         CardKind::Enchantment => {
             d.static_effect = Some(if ability == 0 {
@@ -338,21 +339,29 @@ impl DebugPanel {
         self.update_preview_visibility();
     }
 
-    /// "+"-Knopf: `index` in RESOURCE_BUTTONS.
+    /// "+"-Knopf: legt Mana direkt in den eigenen Manapool – Menge = „Anzahl pro Klick“.
+    /// `index`: 0 = Blau, 1 = Schwarz, 2 = Grün, 3 = Rot, 4 = Gelb (weißes Mana), 5 = Grau (farblos).
+    /// Das Mana verfällt am Ende des Zuges (außer mit einer Karte „Mana bleibt erhalten“).
     #[func]
-    fn on_add_resource(&mut self, index: i64) {
+    fn on_add_mana(&mut self, index: i64) {
         let (label, t) = RESOURCE_BUTTONS[index.clamp(0, 5) as usize];
         let label = resource_label(label);
-        let count = self.amount.as_ref().map_or(1, |a| a.get_value() as i32);
-        let Some(zone) = self.player_seat().and_then(|s| s.bind().resource_zone.clone()) else {
-            return self.set_status(tr!("Keine Ressourcen-Reihe gefunden.", "No resource row found."));
+        let count = self.amount.as_ref().map_or(1, |a| a.get_value() as i64);
+        let Some(mut pool) = self.player_seat().and_then(|s| s.bind().mana_pool.clone()) else {
+            return self.set_status(tr!("Kein Manapool gefunden.", "No mana pool found."));
         };
-        let mut def = CardDef::base(cards::resource_name(t), CardKind::Resource, Cost::default());
-        def.produces = t;
-        for _ in 0..count {
-            self.spawn(&def, zone.clone());
+        pool.bind_mut().add_mana(t, count);
+        let text = pool.bind().to_text();
+        self.set_status(&trf!("+{count} Mana {label}  →  Pool: {text}", "+{count} mana {label}  →  pool: {text}"));
+    }
+
+    /// Knopf „Manapool leeren“: setzt den eigenen Manapool auf null.
+    #[func]
+    fn on_clear_mana(&mut self) {
+        if let Some(mut pool) = self.player_seat().and_then(|s| s.bind().mana_pool.clone()) {
+            pool.bind_mut().empty_pool();
         }
-        self.set_status(&trf!("+{count} Ressource(n) {label}.", "+{count} resource(s) {label}."));
+        self.set_status(tr!("Manapool geleert.", "Mana pool emptied."));
     }
 
     /// Knopf „Alle Ressourcen enttappen“: enttappt alle Karten der eigenen Ressourcen-Reihe.
@@ -586,14 +595,14 @@ impl DebugPanel {
 
     fn build_resources_tab(&mut self) -> Gd<VBoxContainer> {
         let mut tab = VBoxContainer::new_alloc();
-        tab.set_name(tr!("Ressourcen", "Resources"));
+        tab.set_name(tr!("Mana", "Mana"));
         tab.add_theme_constant_override("separation", 8);
 
         let mut row = HBoxContainer::new_alloc();
         row.add_child(&text_label(tr!("Anzahl pro Klick:", "Amount per click:")));
         let mut amount = SpinBox::new_alloc();
         amount.set_min(1.0);
-        amount.set_max(20.0);
+        amount.set_max(99.0);
         amount.set_value(1.0);
         row.add_child(&amount);
         tab.add_child(&row);
@@ -610,18 +619,22 @@ impl DebugPanel {
             let text = if t == ManaType::White { Color::from_rgb(0.1, 0.1, 0.1) } else { Color::WHITE };
             b.add_theme_color_override("font_color", text);
             b.add_theme_color_override("font_hover_color", text);
-            b.connect("pressed", &self.method("on_add_resource").bind(&[(i as i64).to_variant()]));
+            b.connect("pressed", &self.method("on_add_mana").bind(&[(i as i64).to_variant()]));
             grid.add_child(&b);
         }
         tab.add_child(&grid);
 
+        let mut clear = Button::new_alloc();
+        clear.set_text(tr!("Manapool leeren", "Empty mana pool"));
+        clear.connect("pressed", &self.method("on_clear_mana"));
+        tab.add_child(&clear);
         let mut untap = Button::new_alloc();
         untap.set_text(tr!("Alle Ressourcen enttappen", "Untap all resources"));
         untap.connect("pressed", &self.method("on_untap_resources"));
         tab.add_child(&untap);
         tab.add_child(&text_label(tr!(
-            "Gelb = weißes Mana, Grau = farblos.\nDie Karten landen direkt in deiner Ressourcen-Reihe\n(zählen nicht zum Limit 1 pro Runde).",
-            "Yellow = white mana, grey = colorless.\nThe cards go straight into your resource row\n(they do not count towards the limit of 1 per turn)."
+            "Gelb = weißes Mana, Grau = farblos.\nDas Mana kommt direkt in deinen Manapool und\nverfällt am Ende des Zuges (außer mit „Sparstrumpf“).",
+            "Yellow = white mana, grey = colorless.\nThe mana goes straight into your mana pool and\nempties at the end of the turn (unless you have “Savings Sock”)."
         )));
         tab
     }

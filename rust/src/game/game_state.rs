@@ -711,6 +711,7 @@ impl GameState {
                         bonus[seat].0 += a;
                         bonus[seat].1 += d;
                     }
+                    Some(StaticEffect::KeepMana) => {}
                     Some(StaticEffect::OpponentCreatures(a, d)) => {
                         bonus[1 - seat].0 += a;
                         bonus[1 - seat].1 += d;
@@ -973,10 +974,29 @@ impl GameState {
     }
 
     /// Leert die Manapools beider Spieler (Mana verfällt am Ende jeder Phase).
+    /// Ende des Zuges: Manapools beider Spieler auf null setzen – außer bei einem
+    /// Spieler, der eine Karte mit „Mana bleibt erhalten“ im Spiel hat.
     pub fn empty_pools(&mut self) {
         for seat in 0..2 {
-            if let Some(mut pool) = self.pool(seat) {
-                pool.bind_mut().empty_pool();
+            let Some(mut pool) = self.pool(seat) else {
+                continue;
+            };
+            let keeper = self
+                .permanents(seat)
+                .into_iter()
+                .find(|c| c.bind().static_effect == Some(StaticEffect::KeepMana));
+            let total = pool.bind().get_total();
+            match keeper {
+                Some(card) if total > 0 => {
+                    let name = card.bind().display_name();
+                    self.log(trf!(
+                        "{} behält {total} Mana ({name}).",
+                        "{} keeps {total} mana ({name}).",
+                        self.name(seat)
+                    ));
+                }
+                Some(_) => {}
+                None => pool.bind_mut().empty_pool(),
             }
         }
     }

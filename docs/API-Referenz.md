@@ -40,7 +40,8 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 | `on_language_selected(index: int)` | `void` | Sprache gewählt (0 = Deutsch, 1 = English): stellt das ganze Spiel um, beschriftet alle Karten neu und baut das Debug-Fenster in der neuen Sprache auf. |
 | `on_catalog_selected(index: int)` | `void` | Karte in der Liste ausgewählt: große Vorschau zeigen. |
 | `on_tab_changed(tab: int)` | `void` | Reiter gewechselt: blendet die große Kartenvorschau ein oder aus. |
-| `on_add_resource(index: int)` | `void` | "+"-Knopf: `index` in RESOURCE_BUTTONS. |
+| `on_add_mana(index: int)` | `void` | "+"-Knopf: legt Mana direkt in den eigenen Manapool – Menge = „Anzahl pro Klick“. `index`: 0 = Blau, 1 = Schwarz, 2 = Grün, 3 = Rot, 4 = Gelb (weißes Mana), 5 = Grau (farblos). Das Mana verfällt am Ende des Zuges (außer mit einer Karte „Mana bleibt erhalten“). |
+| `on_clear_mana()` | `void` | Knopf „Manapool leeren“: setzt den eigenen Manapool auf null. |
 | `on_untap_resources()` | `void` | Knopf „Alle Ressourcen enttappen“: enttappt alle Karten der eigenen Ressourcen-Reihe. |
 | `on_filter_changed(text: String)` | `void` | Suchfeld geändert: filtert die Kartenliste nach Name oder Typ. |
 | `on_catalog_activated(index: int)` | `void` | Doppelklick in der Kartenliste. |

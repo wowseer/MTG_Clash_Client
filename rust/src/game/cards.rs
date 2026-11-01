@@ -110,6 +110,8 @@ pub enum StaticEffect {
     OwnCreatures(i32, i32),
     /// Kreaturen des Gegners erhalten a/d (meist negativ).
     OpponentCreatures(i32, i32),
+    /// Unverbrauchtes Mana im Pool des Besitzers verfällt am Ende des Zuges nicht.
+    KeepMana,
 }
 
 impl StaticEffect {
@@ -120,6 +122,11 @@ impl StaticEffect {
             StaticEffect::OpponentCreatures(a, d) => {
                 trf!("Gegnerische Kreaturen erhalten {}/{}.", "Enemy creatures get {}/{}.", fmt(a), fmt(d))
             }
+            StaticEffect::KeepMana => tr!(
+                "Unverbrauchtes Mana in deinem Pool verfällt am Ende des Zuges nicht.",
+                "Unused mana in your pool does not empty at the end of the turn."
+            )
+            .to_string(),
         }
     }
 }
@@ -458,6 +465,15 @@ fn colored(main: ManaType, generic: u32) -> Cost {
     c
 }
 
+/// Artefakt „Sparstrumpf“: Mana bleibt über das Zugende hinaus erhalten.
+/// (Noch in keinem Demo-Deck – über den Debug-Katalog erhältlich.)
+#[cfg(debug_assertions)]
+pub fn keep_mana_artifact() -> CardDef {
+    let mut def = CardDef::base("Sparstrumpf", CardKind::Artifact, Cost { generic: 2, ..Cost::default() });
+    def.static_effect = Some(StaticEffect::KeepMana);
+    def
+}
+
 /// Blauer Counterspell: Sofortzauber für BB.
 pub fn counterspell() -> CardDef {
     let mut cost = Cost::default();
@@ -481,6 +497,7 @@ pub fn catalog() -> Vec<CardDef> {
         .collect();
     let decks = [(0usize, [ManaType::Red, ManaType::Green]), (1000, [ManaType::Blue, ManaType::Black])];
     list.push(counterspell());
+    list.push(keep_mana_artifact());
     for (offset, colors) in decks {
         for id in offset..offset + 30 {
             let def = demo_card(id, colors);
