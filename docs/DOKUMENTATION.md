@@ -165,6 +165,10 @@ Werden jeden Frame geprüft:
 
 Button **DEBUG** am linken Bildschirmrand. Existiert nur in `cargo build`, nicht in `cargo build --release`.
 
+**Verschieben:** Die rote Titelleiste „::: Debug – zum Verschieben ziehen“ mit gedrückter linker
+Maustaste ziehen. Die große Kartenvorschau wandert rechts daneben mit; die Titelleiste bleibt
+immer im Bild. Die Position bleibt beim Sprachwechsel erhalten (nicht über einen Neustart hinweg).
+
 Oben im Fenster: **Sprache / Language** (Deutsch / English) – stellt das ganze Spiel um.
 
 | Reiter | Funktion |

@@ -17,7 +17,10 @@ use godot::classes::{
     Button, CanvasLayer, Control, GridContainer, HBoxContainer, ICanvasLayer, ItemList, Label, LineEdit,
     OptionButton, PanelContainer, SpinBox, StyleBoxFlat, TabContainer, TextureRect, VBoxContainer,
 };
+use godot::classes::control::CursorShape;
 use godot::classes::texture_rect::{ExpandMode, StretchMode};
+use godot::classes::{InputEvent, InputEventMouseButton, InputEventMouseMotion};
+use godot::global::MouseButton;
 use godot::global::{HorizontalAlignment, VerticalAlignment};
 use godot::builtin::Side;
 use godot::prelude::*;
@@ -245,6 +248,10 @@ pub struct DebugPanel {
     preview: Option<Preview>,
     /// Oberstes Control der Oberfläche (wird beim Sprachwechsel neu aufgebaut).
     root: Option<Gd<Control>>,
+    /// Fenster wird gerade an der Titelleiste gezogen.
+    dragging_window: bool,
+    /// Vom Benutzer gewählte Fensterposition (bleibt beim Sprachwechsel erhalten).
+    window_pos: Option<Vector2>,
 
     base: Base<CanvasLayer>,
 }
@@ -272,6 +279,8 @@ impl ICanvasLayer for DebugPanel {
             tabs: None,
             preview: None,
             root: None,
+            dragging_window: false,
+            window_pos: None,
             base,
         }
     }
@@ -312,7 +321,10 @@ impl DebugPanel {
         if let Some(w) = self.window.as_mut() {
             w.set_visible(true);
         }
-        if let Some(t) = self.tabs.as_mut() {
+        if let Some(mut t) = self.tabs.clone() {
+            // set_current_tab löst `tab_changed` aus, das wieder in dieses Objekt
+            // zurückruft (on_tab_changed) – base_mut() erlaubt diesen Rückruf.
+            let _guard = self.base_mut();
             t.set_current_tab(tab);
         }
         self.refresh_list();
@@ -331,6 +343,22 @@ impl DebugPanel {
             }
         }
         self.update_preview_visibility();
+    }
+
+    /// Maus-Eingabe auf der Titelleiste: linke Taste gedrückt halten und ziehen
+    /// verschiebt das Debug-Fenster (die Kartenvorschau wandert mit).
+    #[func]
+    fn on_header_input(&mut self, event: Gd<InputEvent>) {
+        if let Ok(mb) = event.clone().try_cast::<InputEventMouseButton>() {
+            if mb.get_button_index() == MouseButton::LEFT {
+                self.dragging_window = mb.is_pressed();
+            }
+        } else if let Ok(motion) = event.try_cast::<InputEventMouseMotion>() {
+            if self.dragging_window {
+                let current = self.window.as_ref().map_or(Vector2::ZERO, |w| w.get_position());
+                self.move_window_to(current + motion.get_relative());
+            }
+        }
     }
 
     /// Reiter gewechselt: blendet die große Kartenvorschau ein oder aus.
@@ -602,6 +630,20 @@ impl DebugPanel {
         self.tabs = Some(tabs.clone());
 
         let mut col = VBoxContainer::new_alloc();
+
+        // Titelleiste: mit gedrückter linker Maustaste ziehen = Fenster verschieben
+        let mut header = PanelContainer::new_alloc();
+        header.add_theme_stylebox_override("panel", &style(Color::from_rgba(0.35, 0.05, 0.05, 0.95)));
+        header.set_mouse_filter(MouseFilter::STOP);
+        header.set_default_cursor_shape(CursorShape::MOVE);
+        header.set_tooltip_text(tr!("Zum Verschieben ziehen", "Drag to move"));
+        let mut title = text_label(tr!(":::  Debug – zum Verschieben ziehen", ":::  Debug – drag to move"));
+        title.add_theme_color_override("font_color", Color::from_rgb(1.0, 0.85, 0.3));
+        title.set_mouse_filter(MouseFilter::IGNORE);
+        header.add_child(&title);
+        header.connect("gui_input", &self.method("on_header_input"));
+        col.add_child(&header);
+
         let mut lang_row = HBoxContainer::new_alloc();
         lang_row.add_child(&text_label("Sprache / Language:"));
         let mut lang = OptionButton::new_alloc();
@@ -634,6 +676,30 @@ impl DebugPanel {
         self.preview = Some(preview);
 
         self.base_mut().add_child(&root);
+        // Nach einem Neuaufbau (Sprachwechsel) die gewählte Position wiederherstellen
+        if let Some(pos) = self.window_pos {
+            self.move_window_to(pos);
+        }
+    }
+
+    /// Verschiebt das Fenster (begrenzt auf den sichtbaren Bereich) und führt die
+    /// Kartenvorschau rechts daneben mit.
+    fn move_window_to(&mut self, pos: Vector2) {
+        let Some(mut window) = self.window.clone() else {
+            return;
+        };
+        let screen = self.base().get_viewport().map_or(Vector2::new(1152.0, 648.0), |v| v.get_visible_rect().size);
+        let size = window.get_size().coord_max(window.get_combined_minimum_size());
+        // Titelleiste bleibt immer greifbar im Bild
+        let pos = Vector2::new(
+            pos.x.clamp(-size.x + 80.0, (screen.x - 80.0).max(0.0)),
+            pos.y.clamp(0.0, (screen.y - 40.0).max(0.0)),
+        );
+        window.set_position(pos);
+        if let Some(p) = self.preview.as_mut() {
+            p.panel.set_position(pos + Vector2::new(size.x + 10.0, 0.0));
+        }
+        self.window_pos = Some(pos);
     }
 
     fn build_resources_tab(&mut self) -> Gd<VBoxContainer> {
