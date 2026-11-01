@@ -1,5 +1,5 @@
 //! Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis, Steinrand
-//! mit Goldeinlage, Kristallsäulen auf der Gegnerseite, gestufter Sockel, Schieferboden, Säulenruinen,
+//! mit Goldeinlage, Leuchtkristalle in den Ecken, gestufter Sockel, Schieferboden, Säulenruinen,
 //! Feuerschalen und eine Arenamauer mit Bannern beider Seiten.
 //!
 //! Ersetzt die Taverne als Standard-Kulisse (`table.tscn`). Alles wird in `ready()`
@@ -13,7 +13,7 @@ use godot::classes::base_material_3d::{EmissionOperator, Feature, TextureParam};
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::light_3d::Param;
 use godot::classes::{
-    BoxMesh, CylinderMesh, INode3D, Material, Mesh, MeshInstance3D, PlaneMesh, StandardMaterial3D,
+    BoxMesh, CylinderMesh, INode3D, Material, Mesh, MeshInstance3D, PlaneMesh, SphereMesh, StandardMaterial3D,
 };
 use godot::prelude::*;
 
@@ -23,12 +23,14 @@ use super::zone::Zone;
 
 /// Farbe der leuchtenden Runen und Kristalle.
 const ARCANE: Color = Color::from_rgb(0.35, 0.85, 1.0);
+/// Höhe der Randoberkante über dem Brett (flach, damit das Brett wie eine Matte wirkt).
+const RIM_TOP: f32 = 0.06;
 /// Farbe der Feuerschalen.
 const FIRE: Color = Color::from_rgb(1.0, 0.55, 0.2);
 
 /// Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte,
 /// großer Raute, Mittellinie und eingelassenen Kartenfächern (automatisch unter jeder
-/// Stapel- und Ressourcen-[Zone] der Szene), Steinrand mit Goldeinlage, Kristallsäulen in den hinteren Ecken,
+/// Stapel- und Ressourcen-[Zone] der Szene), flacher Steinrand mit Goldeinlage, Leuchtkristalle in den Ecken,
 /// gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern.
 /// Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0,
 /// Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
@@ -105,7 +107,7 @@ impl Materials {
             wall: tint(textured(&stone, 0.06, 0.95), Color::from_rgb(0.55, 0.53, 0.52)),
             gold: solid(Color::from_rgb(0.85, 0.66, 0.3), 0.3, 1.0),
             iron: solid(Color::from_rgb(0.1, 0.1, 0.11), 0.5, 0.8),
-            crystal: glow(ARCANE, 4.0),
+            crystal: glow(ARCANE, 1.4),
             fire: glow(FIRE, 4.0),
         }
     }
@@ -215,11 +217,12 @@ impl Arena {
         }
     }
 
-    /// Erhöhter Steinrand mit Goldeinlage, Eckblöcke (hinten mit Kristallsäulen, vorn mit Goldkappe).
+    /// Flacher Steinrand mit Goldeinlage, Eckblöcke mit eingelassenem Leuchtkristall.
     fn build_rim(&mut self, m: &Materials) {
         let bs = self.board_size;
         let rim = 0.6;
-        let (h, y) = (0.75, -0.125);
+        // Flach wie eine Spielmatte: Rand nur knapp über dem Brett
+        let (h, y) = (0.6 + RIM_TOP, (RIM_TOP - 0.6) * 0.5);
         for (size, pos) in [
             (Vector3::new(bs.x + rim * 2.0, h, rim), Vector3::new(0.0, y, bs.y * 0.5 + rim * 0.5)),
             (Vector3::new(bs.x + rim * 2.0, h, rim), Vector3::new(0.0, y, -bs.y * 0.5 - rim * 0.5)),
@@ -229,7 +232,7 @@ impl Arena {
             self.add_box("Rim", size, pos, &m.rim_stone);
         }
         // Goldeinlage an der Innenkante
-        let gy = 0.25;
+        let gy = RIM_TOP + 0.005;
         for (size, pos) in [
             (Vector3::new(bs.x + 0.12, 0.03, 0.06), Vector3::new(0.0, gy, bs.y * 0.5 + 0.03)),
             (Vector3::new(bs.x + 0.12, 0.03, 0.06), Vector3::new(0.0, gy, -bs.y * 0.5 - 0.03)),
@@ -250,35 +253,21 @@ impl Arena {
             g.set_cast_shadows_setting(ShadowCastingSetting::OFF);
         }
 
-        // Eckblöcke, auf der Gegnerseite mit Kristallsäulen
+        // Flache Eckblöcke mit Goldfassung und eingelassenem, leuchtendem Kristall
         let cx = bs.x * 0.5 + rim * 0.5;
         let cz = bs.y * 0.5 + rim * 0.5;
         for (sx, sz) in [(-1.0f32, -1.0f32), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
             let base = Vector3::new(sx * cx, 0.0, sz * cz);
-            self.add_box("CornerBlock", Vector3::new(1.1, 1.0, 1.1), base + Vector3::new(0.0, -0.1, 0.0), &m.rim_stone);
-            // Spielerseite: nur flache Goldkappe (Säulen lägen am Bildrand und verdeckten die Hand)
-            if sz > 0.0 {
-                self.add_cylinder("CornerCap", (0.3, 0.42), 0.18, base + Vector3::new(0.0, 0.49, 0.0), &m.gold);
-                continue;
-            }
-            let ph = 1.4;
-            self.add_cylinder("CrystalPillar", (0.3, 0.38), ph, base + Vector3::new(0.0, 0.4 + ph * 0.5, 0.0), &m.rim_stone);
-            let top = 0.4 + ph;
-            self.add_cylinder("CrystalBowl", (0.42, 0.22), 0.22, base + Vector3::new(0.0, top + 0.11, 0.0), &m.gold);
-            // Schwebender Kristall: Doppelpyramide aus zwei sechseckigen Kegeln
-            let cpos = base + Vector3::new(0.0, top + 0.75, 0.0);
-            for (dy, flip) in [(0.18, false), (-0.18, true)] {
-                let mut cone = CylinderMesh::new_gd();
-                cone.set_radial_segments(6);
-                cone.set_rings(1);
-                cone.set_top_radius(if flip { 0.2 } else { 0.0 });
-                cone.set_bottom_radius(if flip { 0.0 } else { 0.2 });
-                cone.set_height(0.36);
-                cone.set_material(&m.crystal);
-                let mut c = self.add_mesh("Crystal", cone, cpos + Vector3::new(0.0, dy, 0.0));
-                c.set_cast_shadows_setting(ShadowCastingSetting::OFF);
-            }
-            self.add_light(cpos, ARCANE, 1.6, 7.0, 0.12);
+            self.add_box("CornerBlock", Vector3::new(1.1, 0.6, 1.1), base + Vector3::new(0.0, RIM_TOP - 0.3, 0.0), &m.rim_stone);
+            self.add_cylinder("CornerSetting", (0.36, 0.4), 0.04, base + Vector3::new(0.0, RIM_TOP + 0.02, 0.0), &m.gold);
+            let mut gem = SphereMesh::new_gd();
+            gem.set_radius(0.16);
+            gem.set_height(0.08);
+            gem.set_radial_segments(6);
+            gem.set_rings(2);
+            gem.set_material(&m.crystal);
+            let mut g = self.add_mesh("Crystal", gem, base + Vector3::new(0.0, RIM_TOP + 0.05, 0.0));
+            g.set_cast_shadows_setting(ShadowCastingSetting::OFF);
         }
     }
 

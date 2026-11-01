@@ -1,6 +1,7 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
-//! - oben rechts: Phasenliste (aktuelle Phase hervorgehoben), Hinweis und Protokoll
+//! - unten links: Zeitstrahl der Phasen ([`PhaseTimeline`])
+//! - Bildmitte (Mittellinie): Hinweis bzw. Spielende; oben links: letzte Protokollzeilen
 //! - Medaillon ([`SeatBadge`]) mit Leben, daneben Name, Ressourcen und Mana: folgt je einem
 //!   3D-Ankerpunkt (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne
 //!   Anker oben links (Gegner) bzw. unten links (Spieler)
@@ -22,6 +23,7 @@ use godot::builtin::Side;
 use godot::global::Key;
 use godot::prelude::*;
 
+use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::stack_view::StackView;
 use super::turn_manager::TurnManager;
@@ -36,7 +38,7 @@ const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
 const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
 const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
 
-/// Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts),
+/// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten links), Hinweis in der Bildmitte, letzte Protokollzeilen oben links,
 /// je ein [SeatBadge]-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an
 /// [member player_hero_anchor] / [member opponent_hero_anchor], sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
 /// blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten.
@@ -57,7 +59,7 @@ pub struct TurnHud {
     #[export]
     opponent_hero_anchor: Option<Gd<Node3D>>,
 
-    phase_labels: Vec<Gd<Label>>,
+    timeline: Option<Gd<PhaseTimeline>>,
     opponent_info: Option<Gd<RichTextLabel>>,
     player_info: Option<Gd<RichTextLabel>>,
     opponent_badge: Option<Gd<SeatBadge>>,
@@ -67,7 +69,6 @@ pub struct TurnHud {
     player_row: Option<Gd<Control>>,
     /// Farbe, mit der der Hauptbutton zuletzt gestaltet wurde (nur bei Wechsel neu setzen).
     button_color: Option<Color>,
-    turn_label: Option<Gd<Label>>,
     hint_label: Option<Gd<Label>>,
     log_label: Option<Gd<Label>>,
     button: Option<Gd<Button>>,
@@ -85,7 +86,7 @@ impl ICanvasLayer for TurnHud {
     fn init(base: Base<CanvasLayer>) -> Self {
         Self {
             turn_manager: None,
-            phase_labels: Vec::new(),
+            timeline: None,
             opponent_info: None,
             player_info: None,
             opponent_badge: None,
@@ -95,7 +96,6 @@ impl ICanvasLayer for TurnHud {
             player_hero_anchor: None,
             opponent_hero_anchor: None,
             button_color: None,
-            turn_label: None,
             hint_label: None,
             log_label: None,
             button: None,
@@ -194,41 +194,26 @@ impl TurnHud {
         root.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
         root.set_mouse_filter(MouseFilter::IGNORE);
 
-        // Phasenliste oben rechts
-        let mut phases = VBoxContainer::new_alloc();
-        phases.add_theme_constant_override("separation", 2);
-        let mut turn = label(18, GOLD);
-        phases.add_child(&turn);
-        let titles = self
-            .turn_manager
-            .as_ref()
-            .map(|tm| tm.bind().get_phase_titles())
-            .unwrap_or_default();
-        for (i, t) in titles.as_slice().iter().enumerate() {
-            // Kampf-Unterphasen eingerückt
-            let indent = if (4..=6).contains(&i) { "    " } else { "" };
-            let mut l = label(15, DIM);
-            l.set_text(&format!("{indent}{t}"));
-            phases.add_child(&l);
-            self.phase_labels.push(l);
-        }
-        // Hinweis und Protokoll unter der Phasenliste
-        phases.set_custom_minimum_size(Vector2::new(270.0, 0.0));
-        let mut sep = label(6, DIM);
-        sep.set_text(" ");
-        phases.add_child(&sep);
-        let mut hint = label(16, GOLD);
-        hint.set_autowrap_mode(AutowrapMode::WORD_SMART);
-        phases.add_child(&hint);
-        let mut log = label(13, PARCHMENT);
-        log.set_autowrap_mode(AutowrapMode::WORD_SMART);
-        phases.add_child(&log);
+        // Zeitstrahl der Phasen unten links (gegenüber dem Button, unter dem Spielbrett)
+        let mut timeline = PhaseTimeline::new_alloc();
+        place(&mut timeline, (0.0, 1.0), (14.0, -4.0), GrowDirection::END, GrowDirection::BEGIN);
+        root.add_child(&timeline);
 
-        let mut phase_panel = panel();
-        phase_panel.add_child(&phases);
-        place(&mut phase_panel, (1.0, 0.0), (-14.0, 14.0), GrowDirection::BEGIN, GrowDirection::END);
-        root.add_child(&phase_panel);
-        turn.set_text(tr!("Runde –", "Turn –"));
+        // Hinweis in der Bildmitte (auf der Mittellinie zwischen den Spielfeldern)
+        let mut hint = label(18, GOLD);
+        hint.set_horizontal_alignment(godot::global::HorizontalAlignment::CENTER);
+        hint.set_custom_minimum_size(Vector2::new(520.0, 0.0));
+        hint.set_autowrap_mode(AutowrapMode::WORD_SMART);
+        hint.add_theme_constant_override("outline_size", 6);
+        place(&mut hint, (0.5, 0.5), (0.0, 0.0), GrowDirection::BOTH, GrowDirection::BOTH);
+        root.add_child(&hint);
+
+        // Letzte Protokollzeilen oben links, dezent
+        let mut log = label(13, DIM);
+        log.set_custom_minimum_size(Vector2::new(360.0, 0.0));
+        log.set_autowrap_mode(AutowrapMode::WORD_SMART);
+        place(&mut log, (0.0, 0.0), (14.0, 12.0), GrowDirection::END, GrowDirection::END);
+        root.add_child(&log);
 
         // Medaillons mit Leben + Text für Ressourcen und Mana
         let (opp_row, opp_badge, opp) = seat_row(&mut root, OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
@@ -247,7 +232,7 @@ impl TurnHud {
         // Stack-Anzeige zuletzt: liegt über den übrigen Panels
         self.stack_view = Some(StackView::new(&mut root));
         self.base_mut().add_child(&root);
-        self.turn_label = Some(turn);
+        self.timeline = Some(timeline);
         self.opponent_info = Some(opp);
         self.player_info = Some(me);
         self.opponent_badge = Some(opp_badge);
@@ -299,23 +284,10 @@ impl TurnHud {
         let current = tm.get_phase_index();
         let active = tm.get_active_seat();
 
-        if let Some(l) = self.turn_label.as_mut() {
+        if let Some(t) = self.timeline.as_mut() {
             let who = if active >= 0 { tm.get_seat_name(active).to_string() } else { "—".into() };
-            l.set_text(&trf!("Runde {}  ·  {who}", "Turn {}  ·  {who}", tm.get_turn()));
-        }
-        let titles = tm.get_phase_titles();
-        for (i, l) in self.phase_labels.iter_mut().enumerate() {
-            let indent = if (4..=6).contains(&i) { "    " } else { "" };
-            if let Some(t) = titles.as_slice().get(i) {
-                l.set_text(&format!("{indent}{t}"));
-            }
-            let (col, size) = match (i as i64).cmp(&current) {
-                std::cmp::Ordering::Equal => (GOLD, 17),
-                std::cmp::Ordering::Less => (DIM, 15),
-                std::cmp::Ordering::Greater => (PARCHMENT, 15),
-            };
-            l.add_theme_color_override("font_color", col);
-            l.add_theme_font_size_override("font_size", size);
+            let turn = trf!("Runde {}  ·  {who}", "Turn {}  ·  {who}", tm.get_turn());
+            t.bind_mut().set_state(tm.get_phase_titles(), current, GString::from(&turn));
         }
 
         let info = |seat: i64| {
@@ -345,8 +317,8 @@ impl TurnHud {
         let winner = tm.get_winner_name();
         if let Some(l) = self.hint_label.as_mut() {
             let text = if winner.is_empty() {
-                // Der Stack selbst wird groß von der StackView angezeigt; hier nur die Anzahl
-                let mut t = format!("{}\n{}", tm.get_phase_title(), tm.get_hint());
+                // Phase steht im Zeitstrahl, der Stack groß in der StackView; hier nur Hinweis + Anzahl
+                let mut t = tm.get_hint().to_string();
                 let n = tm.get_stack_items().len();
                 if n > 0 {
                     t.push_str(&trf!("\nAuf dem Stack: {n}", "\nOn the stack: {n}"));
@@ -359,9 +331,9 @@ impl TurnHud {
         }
         if let Some(l) = self.log_label.as_mut() {
             let log = tm.get_log();
-            // Nur die letzten Einträge, damit das Panel nicht über den Button wächst
+            // Nur die letzten Einträge
             let all = log.as_slice();
-            let lines: Vec<String> = all[all.len().saturating_sub(4)..].iter().map(|s| s.to_string()).collect();
+            let lines: Vec<String> = all[all.len().saturating_sub(3)..].iter().map(|s| s.to_string()).collect();
             l.set_text(&lines.join("\n"));
         }
         if let Some(b) = self.button.as_mut() {

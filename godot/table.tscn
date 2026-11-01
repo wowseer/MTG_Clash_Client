@@ -40,9 +40,11 @@ spot_angle = 38.0
 spot_angle_attenuation = 0.7
 
 [node name="Camera" type="TableCamera" parent="." unique_id=984837999]
-overview_position = Vector3(0, 13, 4.4)
-overview_target = Vector3(0, 0, -0.3)
-fov = 52.0
+overview_position = Vector3(0, 23.2, 6.4)
+overview_target = Vector3(0, 0, 0.2)
+focus_distance = 2.4
+follow_distance = 6.6
+fov = 30.0
 far = 200.0
 
 [node name="Player" type="PlayerSeat" parent="." unique_id=439672300 node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
@@ -86,7 +88,7 @@ kind = 0
 size = Vector3(5, 0.3, 1.4)
 hand_card_angle_degrees = 4.6
 hand_max_spread_degrees = 32.0
-transform = Transform3D(0.85, 0, 0, 0, 0.7987, -0.2907, 0, 0.2907, 0.7987, 0, 8.46, 4.78)
+transform = Transform3D(2.8, 0, 0, 0, 2.705, -0.725, 0, 0.725, 2.705, 0, 0.6, 5.95)
 
 [node name="Opponent" type="PlayerSeat" parent="." unique_id=1201133542 node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
 display_name = "Gegner"
@@ -131,10 +133,10 @@ transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4.3, 0, -3.55)
 [node name="ManaPool" type="ManaPool" parent="Opponent" unique_id=1860643415]
 
 [node name="HeroAnchor" type="Marker3D" parent="Player"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.59, 4.45)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 4.78)
 
 [node name="HeroAnchor" type="Marker3D" parent="Opponent"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, -6.0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, -5.75)
 
 [node name="Hand" type="Zone" parent="Opponent" unique_id=65253943]
 kind = 0
@@ -142,7 +144,7 @@ size = Vector3(4, 0.3, 1.2)
 accepts_drops = false
 cards_draggable = false
 face_up = false
-transform = Transform3D(-1, 0, 0, 0, 0.866025, 0.5, 0, 0.5, -0.866025, 0, 1.0, -6.5)
+transform = Transform3D(-1.4, 0, 0, 0, 1.352, 0.362, 0, 0.362, -1.352, 0, 1.0, -6.4)
 
 [node name="StackManager" type="StackManager" parent="."]
 

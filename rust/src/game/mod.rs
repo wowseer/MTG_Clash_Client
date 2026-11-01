@@ -5,6 +5,7 @@ pub mod cards;
 pub mod game_state;
 pub mod hud;
 pub mod mana;
+pub mod phase_timeline;
 pub mod phases;
 pub mod timing;
 pub mod seat;

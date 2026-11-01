@@ -67,7 +67,7 @@ alles wird prozedural in Rust erzeugt.
 | Spielbrett | Sandstein mit gemeißelten Rillen (Normal-Map aus einem Höhenbild): doppelter Rahmen mit Eck-Ringen, große Raute, Mittellinie (z = 0) |
 | Runenkreis | in der Brettmitte; Ringe, Stern und Glyphen leuchten türkis (Emissionstextur, Stärke `rune_glow`) |
 | Kartenfächer | vertiefte Felder unter jeder Stapel- (Deck/Friedhof) und Ressourcen-`Zone` der Szene – werden beim Start aus den Zonen gelesen, passen sich also an verschobene Zonen an |
-| Rand | Steinrand mit Goldeinlage; hinten Kristallsäulen mit Licht, vorn flache Goldkappen |
+| Rand | flacher Steinrand (nur 0,06 über dem Brett) mit Goldeinlage; in den Ecken eingelassene Leuchtkristalle in Goldfassung – das Brett wirkt wie eine flache Spielmatte |
 | Umgebung | gestufter Sockel, Schieferboden, zwei Feuerschalen, Säulenruinen, runde Arenamauer mit Bannern in Spieler- (`player_color`) und Gegnerfarbe (`opponent_color`) |
 
 Einstellbar im Inspector: `board_size`, `texture_resolution` (Pixel pro Einheit der Brett-Textur),
@@ -76,9 +76,12 @@ Einstellbar im Inspector: `board_size`, `texture_resolution` (Pixel pro Einheit 
 wieder auf ca. 10 stellen, die Arena braucht wegen des hellen Steins nur ca. 3).
 
 **Kamera und Aufteilung** (wie in digitalen Kartenspielen): Die Übersichtskamera schaut steil
-von oben (ca. 70°, `Camera.overview_position` (0, 13, 4.4)). Die eigene Hand liegt nah vor der
-Kamera am unteren Bildrand (nur die obere Kartenhälfte ist sichtbar, Hover zoomt die ganze Karte),
-die Gegnerhand am oberen Rand. Beide Spielfelder sind 3,0 Einheiten tief (Mittellinie bis
+von oben (ca. 75°) aus großer Entfernung mit kleinem Blickwinkel (`fov` 30°,
+`Camera.overview_position` (0, 23.2, 6.4)) – dadurch fast keine Perspektive, das Spielfeld wirkt
+flach wie in Arena. Nahaufnahme- und Mitführ-Abstand (`focus_distance` 2,4, `follow_distance` 6,6)
+sind an den kleinen Blickwinkel angepasst. Die eigene Hand liegt vergrößert (Skalierung 2,8) knapp
+über dem Brett vor dessen Vorderkante am unteren Bildrand (die untere Kartenhälfte ist
+abgeschnitten, Hover zoomt die ganze Karte), die Gegnerhand am oberen Rand. Beide Spielfelder sind 3,0 Einheiten tief (Mittellinie bis
 z = ±3,2), damit vor ihnen Platz für die Medaillons bleibt. Wer Kamera oder Hand verschiebt, muss
 die `HeroAnchor`-Marker mitziehen.
 
@@ -87,7 +90,9 @@ die `HeroAnchor`-Marker mitziehen.
 | Bereich | Inhalt |
 |---|---|
 | Bildmitte oben / unten | `SeatBadge`-Medaillon von Gegner (rot, direkt unter dessen Hand) / Spieler (blau, direkt über der eigenen Hand) – wie in MTGA. Die Position kommt von den `HeroAnchor`-Markern (`TurnHud.player_hero_anchor` / `opponent_hero_anchor`); ohne Marker sitzen die Medaillons links oben / unten. Liegt die Maus im Handbereich, wird das Spieler-Medaillon durchscheinend, damit gezoomte Handkarten lesbar bleiben. Raute mit Wappen und Anfangsbuchstabe, roter Edelstein mit Lebenspunkten; pulsierender Schein = am Zug; Edelstein blitzt bei Schaden rot, bei Heilung grün. Daneben Name, Ressourcen und Mana |
-| oben rechts | Runde, Phasenliste, Hinweis und Protokoll |
+| unten links | `PhaseTimeline`: Zeitstrahl der Phasen – Punkte für die Phasen, ein Punkt „Kampf“ mit drei kleineren Unterpunkten (Angreifer, Blocker, Schaden). Eine leuchtende Markierung gleitet zur aktuellen Phase (bei neuer Runde springt sie zurück); erledigte Strecke und Punkte golden, kommende hohl. Darüber der Name der aktuellen Phase, darunter Runde und Seite am Zug |
+| Bildmitte | Hinweis zur aktuellen Situation (z. B. was zu tun ist, Anzahl der Stack-Elemente) bzw. Spielende |
+| oben links | die letzten drei Protokollzeilen, dezent |
 | Bildschirmmitte | Auswahlfenster für Heldenfähigkeiten (nach Klick auf den eigenen Helden) |
 | unten rechts | großer Button „Nächste Phase“ / „Weiter (passen)“: blau, solange der Stack leer ist, orange, wenn Priorität abgegeben wird |
 
@@ -192,7 +197,7 @@ allen Texten; antwortet ein Spieler, wird seine Karte **versetzt darübergelegt*
 darunterliegenden bleiben am Rand sichtbar. Das oberste Element (wird als Nächstes aufgelöst) hat
 einen **goldenen Rahmen**. Ein Band zeigt *Spieler/Gegner · Zauber/Fähigkeit*; bei Fähigkeiten
 steht im Textfeld der konkrete Effekt. Nach dem Auflösen verschwindet die Karte aus der Anzeige.
-Das Hinweisfeld oben rechts nennt nur noch die Anzahl („Auf dem Stack: 2“).
+Der Hinweis in der Bildmitte nennt nur noch die Anzahl („Auf dem Stack: 2“).
 
 **Hovern im Stack-Bereich:** Die großen Stack-Karten fangen die Maus ab – Karten auf dem Tisch
 **unter** der Anzeige werden dort weder gehovert noch angeklickt. In der kleinen Stack-Zone in der

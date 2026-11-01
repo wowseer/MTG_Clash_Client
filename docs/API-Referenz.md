@@ -12,6 +12,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [TurnHud](#turnhud) – erbt von `CanvasLayer`
 - [ManaCost](#manacost) – erbt von `Resource`
 - [ManaPool](#manapool) – erbt von `Node`
+- [PhaseTimeline](#phasetimeline) – erbt von `Control`
 - [PlayerSeat](#playerseat) – erbt von `Node3D`
 - [SeatBadge](#seatbadge) – erbt von `Control`
 - [StackItem](#stackitem) – erbt von `RefCounted`
@@ -58,7 +59,7 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts), je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
+Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten links), Hinweis in der Bildmitte, letzte Protokollzeilen oben links, je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
 
 ### Eigenschaften
 
@@ -132,6 +133,18 @@ Manavorrat eines Spielers.
 | Signal | Beschreibung |
 |---|---|
 | `pool_changed()` | Wird nach jeder Änderung ausgelöst. |
+
+## PhaseTimeline
+
+*Erbt von `Control` · Quelle: `rust/src/game/phase_timeline.rs`*
+
+Zeitstrahl der Phasen (HUD): Punkte für die Phasen, kleinere Unterpunkte für die Kampfschritte (Phasen-Index 4–6) hinter einem Punkt „Kampf“. Eine leuchtende Markierung gleitet zur aktuellen Phase; erledigte Punkte sind golden, kommende hohl. Darüber steht der Name der aktuellen Phase, darunter Runde und Seite am Zug. Wird vom `TurnHud` jedes Frame über `set_state()` gefüttert.
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `set_state(titles: PackedStringArray, current: int, turn_text: String)` | `void` | Setzt Phasennamen (in Spielreihenfolge), Index der aktuellen Phase (-1 = vor Spielbeginn) und den Text unter dem Zeitstrahl (z. B. „Runde 3 · Spieler“). |
 
 ## PlayerSeat
 
@@ -328,7 +341,7 @@ Beispiel-Node: zeigt, dass die Rust-Extension geladen wird.
 
 *Erbt von `Node3D` · Quelle: `rust/src/table/arena.rs`*
 
-Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte, großer Raute, Mittellinie und eingelassenen Kartenfächern (automatisch unter jeder Stapel- und Ressourcen-`Zone` der Szene), Steinrand mit Goldeinlage, Kristallsäulen in den hinteren Ecken, gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern. Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0, Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
+Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte, großer Raute, Mittellinie und eingelassenen Kartenfächern (automatisch unter jeder Stapel- und Ressourcen-`Zone` der Szene), flacher Steinrand mit Goldeinlage, Leuchtkristalle in den Ecken, gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern. Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0, Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
 
 ### Eigenschaften
 
