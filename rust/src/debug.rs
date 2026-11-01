@@ -252,6 +252,10 @@ pub struct DebugPanel {
     dragging_window: bool,
     /// Vom Benutzer gewählte Fensterposition (bleibt beim Sprachwechsel erhalten).
     window_pos: Option<Vector2>,
+    /// Empfänger für „Auf die Hand“: 0 = Spieler, 1 = Gegner.
+    recipient: i64,
+    /// Die beiden gekoppelten Empfänger-Auswahlfelder (Reiter Karten und Erstellen).
+    recipient_selects: Vec<Gd<OptionButton>>,
 
     base: Base<CanvasLayer>,
 }
@@ -281,6 +285,8 @@ impl ICanvasLayer for DebugPanel {
             root: None,
             dragging_window: false,
             window_pos: None,
+            recipient: 0,
+            recipient_selects: Vec::new(),
             base,
         }
     }
@@ -357,6 +363,20 @@ impl DebugPanel {
             if self.dragging_window {
                 let current = self.window.as_ref().map_or(Vector2::ZERO, |w| w.get_position());
                 self.move_window_to(current + motion.get_relative());
+            }
+        }
+    }
+
+    /// Empfänger gewählt (0 = Spieler, 1 = Gegner): gilt für „Auf die Hand“ und
+    /// „Erstellen + auf die Hand“. Karten für den Gegner landen verdeckt auf seiner Hand,
+    /// gehören ihm und werden von der KI regelkonform gespielt.
+    #[func]
+    fn on_recipient_selected(&mut self, index: i64) {
+        self.recipient = index.clamp(0, 1);
+        let r = self.recipient as i32;
+        for s in self.recipient_selects.iter_mut() {
+            if s.is_instance_valid() {
+                s.select(r);
             }
         }
     }
@@ -528,10 +548,24 @@ impl DebugPanel {
         }
     }
 
-    fn spawn(&mut self, def: &CardDef, zone: Gd<Zone>) {
+    fn spawn(&mut self, def: &CardDef, owner: usize, zone: Gd<Zone>) {
         if let Some(mut c) = self.controller.clone() {
-            c.bind_mut().spawn_card(def, 0, zone);
+            c.bind_mut().spawn_card(def, owner, zone);
         }
+    }
+
+    /// Auswahlfeld „Empfänger: Spieler / Gegner“ (gekoppelt über `recipient`).
+    fn recipient_row(&mut self) -> Gd<HBoxContainer> {
+        let mut row = HBoxContainer::new_alloc();
+        row.add_child(&text_label(tr!("Empfänger:", "Recipient:")));
+        let mut select = OptionButton::new_alloc();
+        select.add_item(tr!("Spieler (deine Hand)", "Player (your hand)"));
+        select.add_item(tr!("Gegner (seine Hand)", "Opponent (their hand)"));
+        select.select(self.recipient as i32);
+        select.connect("item_selected", &self.method("on_recipient_selected"));
+        row.add_child(&select);
+        self.recipient_selects.push(select);
+        row
     }
 
     fn give_to_hand(&mut self, list_index: i64) {
@@ -541,13 +575,22 @@ impl DebugPanel {
     }
 
     fn give_catalog_entry(&mut self, i: usize) {
-        let Some(hand) = self.controller.as_ref().and_then(|c| c.bind().hand()) else {
+        let to_opponent = self.recipient == 1;
+        let hand = self.controller.as_ref().and_then(|c| {
+            let c = c.bind();
+            if to_opponent { c.opponent_hand() } else { c.hand() }
+        });
+        let Some(hand) = hand else {
             return;
         };
         let def = self.catalog[i].clone();
-        self.spawn(&def, hand);
+        self.spawn(&def, usize::from(to_opponent), hand);
         let shown = crate::i18n::name(&def.name);
-        self.set_status(&trf!("{shown} auf die Hand gelegt.", "{shown} added to your hand."));
+        if to_opponent {
+            self.set_status(&trf!("{shown} auf die Hand des Gegners gelegt.", "{shown} added to the opponent's hand."));
+        } else {
+            self.set_status(&trf!("{shown} auf die Hand gelegt.", "{shown} added to your hand."));
+        }
     }
 
     fn set_status(&mut self, text: &str) {
@@ -605,6 +648,7 @@ impl DebugPanel {
     fn build(&mut self) {
         let mut root = Control::new_alloc();
         self.root = Some(root.clone());
+        self.recipient_selects.clear();
         root.set_anchors_preset(LayoutPreset::FULL_RECT);
         root.set_mouse_filter(MouseFilter::IGNORE);
 
@@ -782,6 +826,8 @@ impl DebugPanel {
         tab.add_child(&list);
         self.list = Some(list);
 
+        let recipient = self.recipient_row();
+        tab.add_child(&recipient);
         let mut give = Button::new_alloc();
         give.set_text(tr!("Auf die Hand  (oder Doppelklick)", "To hand  (or double-click)"));
         give.connect("pressed", &self.method("on_give_selected"));
@@ -838,6 +884,8 @@ impl DebugPanel {
         tab.add_child(&hint);
         self.hint = Some(hint);
 
+        let recipient = self.recipient_row();
+        tab.add_child(&recipient);
         let mut row = HBoxContainer::new_alloc();
         let mut create = Button::new_alloc();
         create.set_text(tr!("Erstellen", "Create"));

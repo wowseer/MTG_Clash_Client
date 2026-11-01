@@ -537,8 +537,9 @@ impl TableController {
             c.set_back_texture(Some(back));
         }
         self.base_mut().add_child(&card);
-        // Startet sichtbar über dem Deck und gleitet dann in die Zielzone
-        let start = self.deck_zone.as_ref().map_or(zone.get_global_transform(), |d| d.get_global_transform());
+        // Startet sichtbar über dem Deck des Besitzers und gleitet dann in die Zielzone
+        let deck = if owner == 1 { self.opponent_deck_zone.as_ref() } else { self.deck_zone.as_ref() };
+        let start = deck.map_or(zone.get_global_transform(), |d| d.get_global_transform());
         card.bind_mut().snap_to(start);
         zone.bind_mut().add_card(card.clone(), -1, 0.0);
         card

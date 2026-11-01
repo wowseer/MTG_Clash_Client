@@ -40,6 +40,7 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 | `on_language_selected(index: int)` | `void` | Sprache gewählt (0 = Deutsch, 1 = English): stellt das ganze Spiel um, beschriftet alle Karten neu und baut das Debug-Fenster in der neuen Sprache auf. |
 | `on_catalog_selected(index: int)` | `void` | Karte in der Liste ausgewählt: große Vorschau zeigen. |
 | `on_header_input(event: InputEvent)` | `void` | Maus-Eingabe auf der Titelleiste: linke Taste gedrückt halten und ziehen verschiebt das Debug-Fenster (die Kartenvorschau wandert mit). |
+| `on_recipient_selected(index: int)` | `void` | Empfänger gewählt (0 = Spieler, 1 = Gegner): gilt für „Auf die Hand“ und „Erstellen + auf die Hand“. Karten für den Gegner landen verdeckt auf seiner Hand, gehören ihm und werden von der KI regelkonform gespielt. |
 | `on_tab_changed(tab: int)` | `void` | Reiter gewechselt: blendet die große Kartenvorschau ein oder aus. |
 | `on_add_mana(index: int)` | `void` | "+"-Knopf: legt Mana direkt in den eigenen Manapool – Menge = „Anzahl pro Klick“. `index`: 0 = Blau, 1 = Schwarz, 2 = Grün, 3 = Rot, 4 = Gelb (weißes Mana), 5 = Grau (farblos). Das Mana verfällt am Ende des Zuges (außer mit einer Karte „Mana bleibt erhalten“). |
 | `on_infinite_mana_selected(index: int)` | `void` | Auswahl „Unendlich Mana“: 0 = aus, 1 = Spieler, 2 = Gegner, 3 = beide. Wer unendlich Mana hat, kann jede Karte und Fähigkeit bezahlen, ohne Ressourcen zu tappen oder den Pool zu verbrauchen; alle anderen Regeln gelten weiter. |

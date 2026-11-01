@@ -183,10 +183,15 @@ Oben im Fenster: **Sprache / Language** (Deutsch / English) – stellt das ganze
 | Reiter | Funktion |
 |---|---|
 | Mana | „+“ für Blau, Schwarz, Grün, Rot, Gelb (= weißes Mana), Grau (= farblos) legt Mana **direkt in den Manapool** (Menge = „Anzahl pro Klick“, 1–99); es verfällt am Zugende wie jedes Mana. Dazu „Manapool leeren“ und „Alle Ressourcen enttappen“. **Unendlich Mana:** Aus / Spieler / Gegner / Beide (siehe unten) |
-| Karten | alle Karten mit Suche; Doppelklick / „Auf die Hand“; große Vorschau mit Regeltext |
-| Erstellen | eigene Karte aus Name, Typ, Fähigkeit, Kosten, Angriff, Verteidigung |
+| Karten | alle Karten mit Suche; Doppelklick / „Auf die Hand“; große Vorschau mit Regeltext. **Empfänger:** Spieler (deine Hand) oder Gegner (seine Hand) |
+| Erstellen | eigene Karte aus Name, Typ, Fähigkeit, Kosten, Angriff, Verteidigung; „Erstellen + auf die Hand“ beachtet den Empfänger |
 
 Erstellte Karten gelten nur bis zum Neustart.
+
+**Karten an den Gegner:** Ist als Empfänger „Gegner“ gewählt (die Auswahl in den Reitern *Karten*
+und *Erstellen* ist gekoppelt), gleitet die Karte vom Gegner-Deck **verdeckt** auf seine Hand und
+**gehört ihm** (`owner_seat = 1`, Friedhof des Gegners). Die KI spielt sie in ihrem Zug regelkonform
+aus – zusammen mit „Unendlich Mana: Gegner“ lassen sich so gezielt Gegnerzüge testen.
 
 ### Unendlich-Mana-Modus
 
