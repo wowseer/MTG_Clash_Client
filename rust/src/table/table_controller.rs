@@ -559,6 +559,12 @@ impl TableController {
         self.hand_zone.clone()
     }
 
+    /// Handzone des Gegners (für das Debug-Tool).
+    #[cfg(debug_assertions)]
+    pub fn opponent_hand(&self) -> Option<Gd<Zone>> {
+        self.opponent_hand_zone.clone()
+    }
+
     fn spawn_demo_cards(&mut self) {
         let back = self.back_texture();
         let Some(deck) = self.deck_zone.clone() else {

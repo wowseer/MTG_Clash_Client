@@ -383,7 +383,12 @@ impl GameState {
     }
 
     pub fn can_afford(&self, seat: usize, cost: &Cost) -> bool {
-        cost.can_pay(&self.potential_mana(seat))
+        self.has_infinite_mana(seat) || cost.can_pay(&self.potential_mana(seat))
+    }
+
+    /// Debug-Modus „unendlich Mana“ für diesen Spieler aktiv?
+    pub fn has_infinite_mana(&self, seat: usize) -> bool {
+        self.seats[seat].bind().infinite_mana
     }
 
     /// Tappt eine ungetappte Ressourcen-Karte und legt ihr Mana in den Pool.
@@ -407,6 +412,10 @@ impl GameState {
     /// Bezahlt Kosten: zuerst aus dem Pool; fehlt etwas, werden passende
     /// Ressourcen automatisch getappt. Alles oder nichts.
     pub fn auto_pay(&mut self, seat: usize, cost: &Cost) -> bool {
+        // Debug „unendlich Mana“: bezahlt, ohne zu tappen oder den Pool zu verbrauchen
+        if self.has_infinite_mana(seat) {
+            return true;
+        }
         if !self.can_afford(seat, cost) {
             return false;
         }

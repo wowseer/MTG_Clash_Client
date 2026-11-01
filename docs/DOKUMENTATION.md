@@ -169,11 +169,23 @@ Oben im Fenster: **Sprache / Language** (Deutsch / English) – stellt das ganze
 
 | Reiter | Funktion |
 |---|---|
-| Mana | „+“ für Blau, Schwarz, Grün, Rot, Gelb (= weißes Mana), Grau (= farblos) legt Mana **direkt in den Manapool** (Menge = „Anzahl pro Klick“, 1–99); es verfällt am Zugende wie jedes Mana. Dazu „Manapool leeren“ und „Alle Ressourcen enttappen“ |
+| Mana | „+“ für Blau, Schwarz, Grün, Rot, Gelb (= weißes Mana), Grau (= farblos) legt Mana **direkt in den Manapool** (Menge = „Anzahl pro Klick“, 1–99); es verfällt am Zugende wie jedes Mana. Dazu „Manapool leeren“ und „Alle Ressourcen enttappen“. **Unendlich Mana:** Aus / Spieler / Gegner / Beide (siehe unten) |
 | Karten | alle Karten mit Suche; Doppelklick / „Auf die Hand“; große Vorschau mit Regeltext |
 | Erstellen | eigene Karte aus Name, Typ, Fähigkeit, Kosten, Angriff, Verteidigung |
 
 Erstellte Karten gelten nur bis zum Neustart.
+
+### Unendlich-Mana-Modus
+
+Auswahl im Reiter „Mana“: **Aus**, **Spieler**, **Gegner** oder **Beide**.
+
+- Wer unendlich Mana hat, kann **jede Karte und jede Fähigkeit bezahlen** (auch Anlegekosten von
+  Ausrüstung und Tapp-Fähigkeiten) – ohne Ressourcen zu tappen und ohne den Manapool zu verbrauchen.
+- Alle anderen Regeln gelten weiter: eigener Zug, Phase, leerer Stack, 1 Ressource pro Runde, gültige Ziele.
+- Das HUD zeigt bei „Mana“ dann *unendlich (Debug)*.
+- Mit „Gegner“ oder „Beide“ spielt die KI alle Karten aus, die sie regelkonform spielen darf.
+- Technisch: Eigenschaft `infinite_mana` am `PlayerSeat`; geprüft in `GameState.can_afford` / `auto_pay`.
+  Nur das Debug-Tool schaltet sie ein – im Release-Build ist der Modus nicht erreichbar.
 
 ---
 

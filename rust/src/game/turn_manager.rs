@@ -292,6 +292,9 @@ impl TurnManager {
         let Some(pool) = self.seat(seat).and_then(|s| s.bind().mana_pool.clone()) else {
             return GString::new();
         };
+        if self.seat(seat).is_some_and(|s| s.bind().infinite_mana) {
+            return GString::from(tr!("[color=#b48cff]unendlich (Debug)[/color]", "[color=#b48cff]infinite (debug)[/color]"));
+        }
         let mana = pool.bind().mana();
         let parts: Vec<String> = ManaType::ALL
             .into_iter()

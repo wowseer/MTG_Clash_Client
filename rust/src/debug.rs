@@ -355,6 +355,32 @@ impl DebugPanel {
         self.set_status(&trf!("+{count} Mana {label}  →  Pool: {text}", "+{count} mana {label}  →  pool: {text}"));
     }
 
+    /// Auswahl „Unendlich Mana“: 0 = aus, 1 = Spieler, 2 = Gegner, 3 = beide.
+    /// Wer unendlich Mana hat, kann jede Karte und Fähigkeit bezahlen, ohne Ressourcen zu
+    /// tappen oder den Pool zu verbrauchen; alle anderen Regeln gelten weiter.
+    #[func]
+    fn on_infinite_mana_selected(&mut self, index: i64) {
+        let (player, opponent) = match index {
+            1 => (true, false),
+            2 => (false, true),
+            3 => (true, true),
+            _ => (false, false),
+        };
+        if let Some(mut s) = self.player_seat() {
+            s.bind_mut().infinite_mana = player;
+        }
+        if let Some(mut s) = self.opponent_seat() {
+            s.bind_mut().infinite_mana = opponent;
+        }
+        let text = match index {
+            1 => tr!("Unendlich Mana: Spieler", "Infinite mana: player"),
+            2 => tr!("Unendlich Mana: Gegner", "Infinite mana: opponent"),
+            3 => tr!("Unendlich Mana: beide", "Infinite mana: both"),
+            _ => tr!("Unendlich Mana: aus", "Infinite mana: off"),
+        };
+        self.set_status(text);
+    }
+
     /// Knopf „Manapool leeren“: setzt den eigenen Manapool auf null.
     #[func]
     fn on_clear_mana(&mut self) {
@@ -455,6 +481,23 @@ impl DebugPanel {
     fn player_seat(&self) -> Option<Gd<PlayerSeat>> {
         let hand = self.controller.as_ref()?.bind().hand()?;
         hand.get_parent()?.try_cast::<PlayerSeat>().ok()
+    }
+
+    fn opponent_seat(&self) -> Option<Gd<PlayerSeat>> {
+        let hand = self.controller.as_ref()?.bind().opponent_hand()?;
+        hand.get_parent()?.try_cast::<PlayerSeat>().ok()
+    }
+
+    /// Aktueller Modus „unendlich Mana“: 0 = aus, 1 = Spieler, 2 = Gegner, 3 = beide.
+    fn infinite_mana_mode(&self) -> i64 {
+        let p = self.player_seat().is_some_and(|s| s.bind().infinite_mana);
+        let o = self.opponent_seat().is_some_and(|s| s.bind().infinite_mana);
+        match (p, o) {
+            (false, false) => 0,
+            (true, false) => 1,
+            (false, true) => 2,
+            (true, true) => 3,
+        }
     }
 
     fn spawn(&mut self, def: &CardDef, zone: Gd<Zone>) {
@@ -623,6 +666,23 @@ impl DebugPanel {
             grid.add_child(&b);
         }
         tab.add_child(&grid);
+
+        // Unendlich-Mana-Modus
+        let mut inf_row = HBoxContainer::new_alloc();
+        inf_row.add_child(&text_label(tr!("Unendlich Mana:", "Infinite mana:")));
+        let mut inf = OptionButton::new_alloc();
+        for label in [
+            tr!("Aus", "Off"),
+            tr!("Spieler", "Player"),
+            tr!("Gegner", "Opponent"),
+            tr!("Beide", "Both"),
+        ] {
+            inf.add_item(label);
+        }
+        inf.select(self.infinite_mana_mode() as i32);
+        inf.connect("item_selected", &self.method("on_infinite_mana_selected"));
+        inf_row.add_child(&inf);
+        tab.add_child(&inf_row);
 
         let mut clear = Button::new_alloc();
         clear.set_text(tr!("Manapool leeren", "Empty mana pool"));

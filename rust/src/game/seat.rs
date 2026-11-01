@@ -45,6 +45,10 @@ pub struct PlayerSeat {
     /// In dieser Runde bereits ausgespielte Ressourcen-Karten.
     #[var]
     pub(crate) resources_played: i32,
+    /// Debug: unendlich Mana – jede Karte und Fähigkeit ist bezahlbar, ohne Ressourcen
+    /// zu tappen oder den Pool zu verbrauchen. Wird nur vom Debug-Tool eingeschaltet.
+    #[var]
+    pub(crate) infinite_mana: bool,
 
     base: Base<Node3D>,
 }
@@ -64,6 +68,7 @@ impl INode3D for PlayerSeat {
             mana_pool: None,
             life: 20,
             resources_played: 0,
+            infinite_mana: false,
             base,
         }
     }
