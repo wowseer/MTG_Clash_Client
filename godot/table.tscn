@@ -40,7 +40,7 @@ spot_angle = 38.0
 spot_angle_attenuation = 0.7
 
 [node name="Camera" type="TableCamera" parent="." unique_id=984837999]
-overview_position = Vector3(0, 10.5, 6.8)
+overview_position = Vector3(0, 13, 4.4)
 overview_target = Vector3(0, 0, -0.3)
 fov = 52.0
 far = 200.0
@@ -54,9 +54,9 @@ resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
 [node name="Battlefield" type="Zone" parent="Player" unique_id=66267130]
-size = Vector3(11.6, 0.1, 4.3)
+size = Vector3(11.6, 0.1, 3.0)
 free_placement = true
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0, 2.35)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0, 1.7)
 
 [node name="Deck" type="Zone" parent="Player" unique_id=1898977070]
 kind = 1
@@ -86,7 +86,7 @@ kind = 0
 size = Vector3(5, 0.3, 1.4)
 hand_card_angle_degrees = 4.6
 hand_max_spread_degrees = 32.0
-transform = Transform3D(1.1, 0, 0, 0, 1.0715, -0.2475, 0, 0.2475, 1.0715, 0, 6.75, 5.95)
+transform = Transform3D(0.85, 0, 0, 0, 0.7987, -0.2907, 0, 0.2907, 0.7987, 0, 8.46, 4.78)
 
 [node name="Opponent" type="PlayerSeat" parent="." unique_id=1201133542 node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
 display_name = "Gegner"
@@ -99,12 +99,12 @@ resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
 [node name="Battlefield" type="Zone" parent="Opponent" unique_id=1902286004]
-size = Vector3(11.6, 0.1, 4.3)
+size = Vector3(11.6, 0.1, 3.0)
 accepts_drops = false
 cards_draggable = false
 grid_columns = 9
 grid_spacing = Vector2(1, 1.05)
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.2, 0, -2.35)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.2, 0, -1.7)
 
 [node name="Deck" type="Zone" parent="Opponent" unique_id=131863721]
 kind = 1
@@ -131,10 +131,10 @@ transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4.3, 0, -3.55)
 [node name="ManaPool" type="ManaPool" parent="Opponent" unique_id=1860643415]
 
 [node name="HeroAnchor" type="Marker3D" parent="Player"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6.86, 5.53)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.59, 4.45)
 
 [node name="HeroAnchor" type="Marker3D" parent="Opponent"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, -6.3)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, -6.0)
 
 [node name="Hand" type="Zone" parent="Opponent" unique_id=65253943]
 kind = 0
@@ -142,7 +142,7 @@ size = Vector3(4, 0.3, 1.2)
 accepts_drops = false
 cards_draggable = false
 face_up = false
-transform = Transform3D(-1, 0, 0, 0, 0.866025, 0.5, 0, 0.5, -0.866025, 0, 1.0, -6.8)
+transform = Transform3D(-1, 0, 0, 0, 0.866025, 0.5, 0, 0.5, -0.866025, 0, 1.0, -6.5)
 
 [node name="StackManager" type="StackManager" parent="."]
 

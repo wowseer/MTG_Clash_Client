@@ -75,6 +75,13 @@ Einstellbar im Inspector: `board_size`, `texture_resolution` (Pixel pro Einheit 
 `table.tscn` den Knoten `Arena` durch einen `Tavern`-Knoten ersetzen (dann `Lantern.light_energy`
 wieder auf ca. 10 stellen, die Arena braucht wegen des hellen Steins nur ca. 3).
 
+**Kamera und Aufteilung** (wie in digitalen Kartenspielen): Die Übersichtskamera schaut steil
+von oben (ca. 70°, `Camera.overview_position` (0, 13, 4.4)). Die eigene Hand liegt nah vor der
+Kamera am unteren Bildrand (nur die obere Kartenhälfte ist sichtbar, Hover zoomt die ganze Karte),
+die Gegnerhand am oberen Rand. Beide Spielfelder sind 3,0 Einheiten tief (Mittellinie bis
+z = ±3,2), damit vor ihnen Platz für die Medaillons bleibt. Wer Kamera oder Hand verschiebt, muss
+die `HeroAnchor`-Marker mitziehen.
+
 **HUD (`TurnHud`)**
 
 | Bereich | Inhalt |

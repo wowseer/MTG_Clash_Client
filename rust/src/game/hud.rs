@@ -322,8 +322,8 @@ impl TurnHud {
             let r = tm.get_resource_counts(seat);
             let marker = if seat == active { tr!("  [color=#f2c766](am Zug)[/color]", "  [color=#f2c766](to play)[/color]") } else { "" };
             trf!(
-                "[font_size=22]{}[/font_size]{marker}\nRessourcen {}/{}\nMana: {}",
-                "[font_size=22]{}[/font_size]{marker}\nResources {}/{}\nMana: {}",
+                "[font_size=17]{}[/font_size]{marker}\nRessourcen {}/{}\nMana: {}",
+                "[font_size=17]{}[/font_size]{marker}\nResources {}/{}\nMana: {}",
                 tm.get_seat_name(seat),
                 r.x,
                 r.y,
@@ -454,7 +454,7 @@ fn seat_row(
     let mut badge = SeatBadge::new_alloc();
     badge.set("accent", &accent.to_variant());
     row.add_child(&badge);
-    let mut text = rich(17);
+    let mut text = rich(14);
     text.set_v_size_flags(godot::classes::control::SizeFlags::SHRINK_CENTER);
     text.add_theme_constant_override("outline_size", 6);
     row.add_child(&text);
