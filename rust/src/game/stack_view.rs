@@ -8,7 +8,8 @@
 //!   Das oberste Element (wird als Nächstes aufgelöst) hat einen goldenen Rahmen.
 //! - Ein Band zeigt, wer das Element kontrolliert (Spieler/Gegner) und ob es ein
 //!   Zauber oder eine Fähigkeit ist.
-//! - Fängt keine Mausklicks ab.
+//! - Die Kartenflächen fangen die Maus ab: Karten auf dem Tisch **unter** der Anzeige
+//!   werden weder gehovert noch angeklickt. Außerhalb der Karten bleibt der Tisch bedienbar.
 //!
 //! Wird vom [`TurnHud`](super::hud::TurnHud) jedes Frame aktualisiert; die Karten
 //! werden nur neu aufgebaut, wenn sich der Stack oder die Sprache ändert.
@@ -106,7 +107,8 @@ fn build_card(item: &Gd<StackItem>, scale: f32, top: bool) -> Gd<PanelContainer>
     let is_ability = payload.try_to::<i64>().is_ok() || payload.try_to::<GString>().is_ok_and(|p| p == "ability");
 
     let mut frame = PanelContainer::new_alloc();
-    frame.set_mouse_filter(MouseFilter::IGNORE);
+    // Blockiert die Maus: Karten auf dem Tisch unter der Anzeige werden nicht gehovert
+    frame.set_mouse_filter(MouseFilter::STOP);
     let border = if top { Color::from_rgb(1.0, 0.82, 0.35) } else { Color::from_rgba(0.5, 0.45, 0.4, 0.9) };
     frame.add_theme_stylebox_override("panel", &frame_style(border, if top { 4 } else { 2 }));
 

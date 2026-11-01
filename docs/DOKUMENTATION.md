@@ -69,7 +69,7 @@ In Test-Builds hängt der `TableController` zusätzlich ein `DebugPanel` an (nic
 
 | Aktion | Wirkung |
 |---|---|
-| Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom) |
+| Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons, Debug-Fenster oder die Stack-Anzeige hindurch |
 | Karte aus der Hand ziehen und loslassen | ausspielen (Regeln prüfen Phase, Stack und Mana) |
 | Aura ziehen | über einer gültigen Zielkarte loslassen (Ziel wird gelb markiert) |
 | Klick auf eigene Ressource | tappen → +1 Mana in den Pool |
@@ -153,6 +153,12 @@ darunterliegenden bleiben am Rand sichtbar. Das oberste Element (wird als Nächs
 einen **goldenen Rahmen**. Ein Band zeigt *Spieler/Gegner · Zauber/Fähigkeit*; bei Fähigkeiten
 steht im Textfeld der konkrete Effekt. Nach dem Auflösen verschwindet die Karte aus der Anzeige.
 Das Hinweisfeld oben rechts nennt nur noch die Anzahl („Auf dem Stack: 2“).
+
+**Hovern im Stack-Bereich:** Die großen Stack-Karten fangen die Maus ab – Karten auf dem Tisch
+**unter** der Anzeige werden dort weder gehovert noch angeklickt. In der kleinen Stack-Zone in der
+Tischmitte liegen neuere Karten oben und vorn; nur die **oberste (neueste)** Karte ist hoverbar.
+Allgemein gilt: Liegt die Maus über einer Bildschirmfläche, die Mausereignisse annimmt (Stack-Karten,
+Buttons, Debug-Fenster), wird auf dem Tisch dahinter nichts gehovert.
 
 - Wer etwas auf den Stack legt, behält die Priorität.
 - Aufgelöst wird das **oberste** Item erst, wenn **beide nacheinander passen** (LIFO).

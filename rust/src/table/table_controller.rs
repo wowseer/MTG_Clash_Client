@@ -298,10 +298,20 @@ impl TableController {
     // ------------------------------------------------------------------ Hover
 
     fn update_hover(&mut self, origin: Vector3, dir: Vector3) {
-        let hit = self.raycast(origin, dir, CARD_LAYER).and_then(|h| {
-            let card = h.collider.try_cast::<Card3D>().ok()?;
-            Some((card, h.position))
-        });
+        // Liegt die Maus über einer Bildschirmfläche, die Mausereignisse annimmt
+        // (Stack-Anzeige, Buttons, Debug-Fenster …), wird nichts dahinter gehovert.
+        let over_gui = self
+            .base()
+            .get_viewport()
+            .is_some_and(|v| v.gui_get_hovered_control().is_some());
+        let hit = if over_gui {
+            None
+        } else {
+            self.raycast(origin, dir, CARD_LAYER).and_then(|h| {
+                let card = h.collider.try_cast::<Card3D>().ok()?;
+                Some((card, h.position))
+            })
+        };
 
         let new_card = hit.as_ref().map(|(c, _)| c.clone());
         if new_card != self.hovered {

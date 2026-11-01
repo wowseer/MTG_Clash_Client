@@ -443,6 +443,9 @@ impl Zone {
                 _ => 0.0,
             };
             card.bind_mut().move_to(zone_xf * local, delay);
+            // Im Stack ist nur die oberste (neueste) Karte hoverbar, sonst alle
+            let pickable = self.kind != ZoneKind::Stack || i + 1 == n;
+            card.bind_mut().set_pickable(pickable);
         }
     }
 
@@ -503,8 +506,9 @@ impl Zone {
                 Transform3D::new(basis, pos)
             }
             ZoneKind::Stack => {
+                // Neuere Karten liegen höher und weiter vorn (zur Kamera hin) – oben auf.
                 let x = (i as f32 - (n as f32 - 1.0) * 0.5) * 0.32;
-                Transform3D::new(flip, Vector3::new(x, half_t + 0.05 + i as f32 * 0.012, -(i as f32) * 0.06))
+                Transform3D::new(flip, Vector3::new(x, half_t + 0.05 + i as f32 * 0.012, i as f32 * 0.06))
             }
             ZoneKind::Battlefield | ZoneKind::Resources => {
                 let cols = (self.grid_columns.max(1) as usize).min(n.max(1));
