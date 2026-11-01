@@ -1,4 +1,4 @@
-//! Prozedurale Texturen für die Taverne (Holz, Spielmatte, Putz).
+//! Prozedurale Texturen für Taverne und Arena (Holz, Stein, Putz, Arena-Spielbrett).
 //! Die Pixel werden in Rust berechnet und in einem Rutsch an Godot übergeben.
 
 use godot::classes::image::Format;
@@ -174,6 +174,181 @@ pub fn plaster() -> Gd<Texture2D> {
             let (u, v) = (x as f32 / w as f32, y as f32 / h as f32);
             let n = fbm(u, v, 8, 8, 5, 3);
             c.put(x, y, mix(a, b, n * 1.4 - 0.2));
+        }
+    }
+    c.texture()
+}
+
+// ---------------------------------------------------------------- Arena
+
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Tiefe einer gemeißelten Rille (0 = Oberfläche, 1 = Rillengrund) im Abstand `d`
+/// von der Rillenmitte bei der Breite `w` (alles in Welt-Einheiten).
+fn groove(d: f32, w: f32) -> f32 {
+    1.0 - smoothstep(w * 0.45, w, d)
+}
+
+/// Vorzeichenbehafteter Abstand zu einem abgerundeten Rechteck (negativ = innen).
+fn sd_round_rect(p: Vector2, center: Vector2, half: Vector2, radius: f32) -> f32 {
+    let q = (p - center).abs() - half + Vector2::splat(radius);
+    let outside = Vector2::new(q.x.max(0.0), q.y.max(0.0)).length();
+    outside + q.x.max(q.y).min(0.0) - radius
+}
+
+/// Ein ins Brett eingelassenes Kartenfach (Rechteck in Welt-Koordinaten x/z).
+pub struct BoardSlot {
+    /// Mittelpunkt (x, z) auf dem Brett.
+    pub center: Vector2,
+    /// Halbe Größe (x, z) inklusive Rand.
+    pub half: Vector2,
+}
+
+/// Texturen der Arena-Spielfläche.
+pub struct BoardTextures {
+    pub albedo: Gd<Texture2D>,
+    pub normal: Gd<Texture2D>,
+    pub emission: Gd<Texture2D>,
+}
+
+/// Sandstein-Spielbrett mit gemeißelten Ornamenten: Runenkreis in der Mitte (leuchtet über die
+/// Emissionstextur), große Raute, Mittellinie, doppelter Rahmen mit Eck-Ringen und eingelassene
+/// Kartenfächer (`slots`). `size` = Brettgröße in Welt-Einheiten (x, z), Brettmitte = (0, 0).
+/// u läuft entlang +x, v entlang +z.
+pub fn arena_board(size: Vector2, px_per_unit: f32, slots: &[BoardSlot]) -> BoardTextures {
+    let w = (size.x * px_per_unit) as i32;
+    let h = (size.y * px_per_unit) as i32;
+    let half = size * 0.5;
+    let n = (w * h) as usize;
+    let mut height = vec![0u8; n];
+    let mut albedo = Canvas::new(w, h);
+    let mut emission = Canvas::new(w, h);
+
+    let light = Color::from_rgb(0.66, 0.55, 0.4);
+    let dark = Color::from_rgb(0.42, 0.33, 0.23);
+    let glow_col = Color::from_rgb(0.35, 0.85, 1.0);
+    let frame_outer = half - Vector2::splat(0.25);
+    let frame_inner = half - Vector2::splat(0.42);
+    let tau = std::f32::consts::TAU;
+    let rhombus = Vector2::new(half.x - 1.0, half.y - 0.8);
+    let rhombus_norm = (1.0 / (rhombus.x * rhombus.x) + 1.0 / (rhombus.y * rhombus.y)).sqrt();
+
+    for py in 0..h {
+        for px in 0..w {
+            let (u, v) = (px as f32 / w as f32, py as f32 / h as f32);
+            let p = Vector2::new(u * size.x - half.x, v * size.y - half.y);
+            let r = p.length();
+            let ang = p.y.atan2(p.x);
+
+            // Rillen mit Leuchten (Runenkreis) und ohne
+            let mut lit = 0.0f32;
+            let mut carved = 0.0f32;
+
+            // --- Runenkreis
+            for (r0, gw, glows) in [(1.62, 0.04, false), (1.5, 0.026, false), (1.05, 0.032, true), (0.62, 0.026, true), (0.2, 0.024, true)] {
+                let g = groove((r - r0).abs(), gw);
+                if glows { lit = lit.max(g) } else { carved = carved.max(g) }
+            }
+            // Speichen innen/außen um den Glyphenring
+            if (1.05..1.21).contains(&r) || (1.35..1.5).contains(&r) {
+                let step = tau / 36.0;
+                let a = (ang / step).round() * step;
+                carved = carved.max(groove(r * (ang - a).abs(), 0.014));
+            }
+            // Glyphen: kleine Ringe auf r = 1.28
+            {
+                let step = tau / 12.0;
+                let a = ((ang - step * 0.5) / step).round() * step + step * 0.5;
+                let c = Vector2::new(a.cos(), a.sin()) * 1.28;
+                let d = (p - c).length();
+                lit = lit.max(groove((d - 0.065).abs(), 0.018));
+            }
+            // Achtzackiger Stern aus zwei Quadraten im Kreis r = 1.05
+            if r < 1.08 {
+                let s = 1.05 / std::f32::consts::SQRT_2;
+                let sq1 = (p.x.abs().max(p.y.abs()) - s).abs();
+                let q = Vector2::new(p.x + p.y, p.y - p.x) / std::f32::consts::SQRT_2;
+                let sq2 = (q.x.abs().max(q.y.abs()) - s).abs();
+                lit = lit.max(groove(sq1.min(sq2), 0.022));
+            }
+
+            // --- Große Raute und Mittellinie (außerhalb des Kreises)
+            if r > 1.7 {
+                let d = (p.x.abs() / rhombus.x + p.y.abs() / rhombus.y - 1.0).abs() / rhombus_norm;
+                carved = carved.max(groove(d, 0.03));
+                if p.x.abs() < frame_inner.x {
+                    carved = carved.max(groove(p.y.abs(), 0.04));
+                }
+            }
+
+            // --- Doppelter Rahmen mit Ringen in den Ecken
+            carved = carved.max(groove(sd_round_rect(p, Vector2::ZERO, frame_outer, 0.3).abs(), 0.045));
+            carved = carved.max(groove(sd_round_rect(p, Vector2::ZERO, frame_inner, 0.2).abs(), 0.026));
+            let corner = Vector2::new(frame_inner.x, frame_inner.y);
+            let dc = (p.abs() - corner).length();
+            carved = carved.max(groove((dc - 0.32).abs(), 0.026));
+            carved = carved.max(groove((dc - 0.16).abs(), 0.02));
+
+            // --- Kartenfächer: Rand-Rille + leicht vertiefte Fläche
+            let mut recess = 0.0f32;
+            for s in slots {
+                let sd = sd_round_rect(p, s.center, s.half, 0.08);
+                carved = carved.max(groove(sd.abs(), 0.032));
+                recess = recess.max(1.0 - smoothstep(-0.03, 0.0, sd));
+            }
+
+            // Steinstruktur
+            let big = fbm(u, v, 4, 3, 4, 101);
+            let fine = fbm(u, v, 48, 34, 3, 202);
+            let pits = smoothstep(0.76, 0.84, fbm(u, v, 40, 28, 2, 303)) * 0.6;
+            let depth = carved.max(lit);
+            let hgt = 0.85 - depth * 0.55 - recess * 0.12 - (fine - 0.5) * 0.12 - pits * 0.12;
+            height[(py * w + px) as usize] = (hgt.clamp(0.0, 1.0) * 255.0) as u8;
+
+            let mut col = mix(dark, light, 0.25 + big * 0.9 + (fine - 0.5) * 0.4);
+            col = col * (1.0 - depth * 0.5) * (1.0 - recess * 0.1) * (1.0 - pits * 0.25);
+            col.a = 1.0;
+            albedo.put(px, py, col);
+            emission.put(px, py, glow_col * lit);
+        }
+    }
+
+    let mut himg = Image::create_from_data(w, h, false, Format::L8, &PackedByteArray::from(height))
+        .expect("Höhenbild");
+    himg.bump_map_to_normal_map_ex().bump_scale(4.0).done();
+    himg.generate_mipmaps();
+    BoardTextures {
+        albedo: albedo.texture(),
+        normal: ImageTexture::create_from_image(&himg).expect("Normal-Map").upcast(),
+        emission: emission.texture(),
+    }
+}
+
+/// Bodenplatten aus dunklem Schiefer, 4 × 4 Platten (kachelbar).
+pub fn flagstones() -> Gd<Texture2D> {
+    let (w, h) = (512, 512);
+    let tiles = 4;
+    let tile = w / tiles;
+    let mut c = Canvas::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            let (tx, ty) = (x / tile, y / tile);
+            let (ex, ey) = (x % tile, y % tile);
+            let edge = ex.min(tile - 1 - ex).min(ey.min(tile - 1 - ey)) as f32;
+            let (u, v) = (x as f32 / w as f32, y as f32 / h as f32);
+            let n = fbm(u, v, 16, 16, 4, 404);
+            let tone = hash(tx, ty, 405);
+            let base = mix(Color::from_rgb(0.2, 0.21, 0.23), Color::from_rgb(0.34, 0.34, 0.35), tone);
+            let col = if edge < 3.0 + n * 3.0 {
+                Color::from_rgb(0.07, 0.07, 0.08)
+            } else {
+                let bevel = 1.0 - (1.0 - (edge / 10.0).min(1.0)) * 0.3;
+                mix(base * 0.8, base * 1.2, n) * bevel
+            };
+            c.put(x, y, col);
         }
     }
     c.texture()

@@ -1,6 +1,6 @@
 # MTG Clash – Dokumentation
 
-Ein Kartenspiel in einer 3D-Taverne. Die Spiellogik ist in **Rust** (godot-rust / gdext 0.5.5)
+Ein Kartenspiel in einer 3D-Arena. Die Spiellogik ist in **Rust** (godot-rust / gdext 0.5.5)
 geschrieben und wird als GDExtension in **Godot 4.7** geladen. Das Spiel ist zweisprachig
 (**Deutsch / Englisch**, siehe Abschnitt 6).
 
@@ -35,7 +35,7 @@ Nach jedem Rust-Build das Spiel neu starten, damit die neue Bibliothek geladen w
 ```
 Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Demo-Decks
 ├── WorldEnvironment, Lantern    Licht und Atmosphäre
-├── Tavern (Tavern)              prozedurale Taverne und Tisch
+├── Arena (Arena)                prozedurale Arena mit Spielbrett (Kulisse)
 ├── Camera (TableCamera)         Übersicht / Nahaufnahme
 ├── Player (PlayerSeat)          Spieler unten
 │   ├── Battlefield (Zone)       Spielfeld (freie Platzierung)
@@ -52,12 +52,41 @@ Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Demo-Decks
 
 In Test-Builds hängt der `TableController` zusätzlich ein `DebugPanel` an (nicht in der Szenendatei).
 
+### Kulisse und Bildschirm-Anzeige
+
+Der Look orientiert sich an digitalen Sammelkartenspielen (Spielbrett von oben, Medaillons mit
+Lebenspunkten, großer Aktionsbutton), ist aber eine eigene Gestaltung ohne fremde Grafiken –
+alles wird prozedural in Rust erzeugt.
+
+**`Arena` (`rust/src/table/arena.rs`)** – Standard-Kulisse von `table.tscn`:
+
+| Element | Beschreibung |
+|---|---|
+| Spielbrett | Sandstein mit gemeißelten Rillen (Normal-Map aus einem Höhenbild): doppelter Rahmen mit Eck-Ringen, große Raute, Mittellinie (z = 0) |
+| Runenkreis | in der Brettmitte; Ringe, Stern und Glyphen leuchten türkis (Emissionstextur, Stärke `rune_glow`) |
+| Kartenfächer | vertiefte Felder unter jeder Stapel- (Deck/Friedhof) und Ressourcen-`Zone` der Szene – werden beim Start aus den Zonen gelesen, passen sich also an verschobene Zonen an |
+| Rand | Steinrand mit Goldeinlage; hinten Kristallsäulen mit Licht, vorn flache Goldkappen |
+| Umgebung | gestufter Sockel, Schieferboden, zwei Feuerschalen, Säulenruinen, runde Arenamauer mit Bannern in Spieler- (`player_color`) und Gegnerfarbe (`opponent_color`) |
+
+Einstellbar im Inspector: `board_size`, `texture_resolution` (Pixel pro Einheit der Brett-Textur),
+`rune_glow`, `player_color`, `opponent_color`. Die alte Kulisse `Tavern` existiert weiter: in
+`table.tscn` den Knoten `Arena` durch einen `Tavern`-Knoten ersetzen (dann `Lantern.light_energy`
+wieder auf ca. 10 stellen, die Arena braucht wegen des hellen Steins nur ca. 3).
+
+**HUD (`TurnHud`)**
+
+| Bereich | Inhalt |
+|---|---|
+| oben links / unten links | `SeatBadge`-Medaillon von Gegner (rot) / Spieler (blau): Raute mit Wappen und Anfangsbuchstabe, roter Edelstein mit Lebenspunkten; pulsierender Schein = am Zug; Edelstein blitzt bei Schaden rot, bei Heilung grün. Daneben Name, Ressourcen und Mana |
+| oben rechts | Runde, Phasenliste, Hinweis und Protokoll |
+| unten rechts | großer Button „Nächste Phase“ / „Weiter (passen)“: blau, solange der Stack leer ist, orange, wenn Priorität abgegeben wird |
+
 ### Dateien
 
 | Ordner / Datei | Inhalt |
 |---|---|
-| `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, `Tavern`, Texturen |
-| `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD, Stack-Anzeige (`stack_view.rs`) |
+| `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`) |
+| `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD, Spieler-Medaillon (`seat_badge.rs`), Stack-Anzeige (`stack_view.rs`) |
 | `rust/src/debug.rs` | Debug-Tool (nur Test-Build) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
 | `docs/` | diese Dokumentation und die API-Referenz |

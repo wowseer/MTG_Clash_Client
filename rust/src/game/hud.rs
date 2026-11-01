@@ -1,8 +1,10 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
 //! - oben rechts: Phasenliste (aktuelle Phase hervorgehoben), Hinweis und Protokoll
-//! - oben links / unten links: Leben, Ressourcen und Mana von Gegner / Spieler
-//! - unten rechts: Button „Nächste Phase“ / „Passen“ (auch Leertaste)
+//! - oben links / unten links: Medaillon ([`SeatBadge`]) mit Leben, daneben Name, Ressourcen
+//!   und Mana von Gegner / Spieler
+//! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
+//!   belegtem Stack orange
 //! - unten Mitte: Auswahlfenster für Heldenfähigkeiten
 //! - obere Bildschirmhälfte: große Stack-Anzeige ([`StackView`]), solange der Stack belegt ist
 //!
@@ -19,16 +21,24 @@ use godot::builtin::Side;
 use godot::global::Key;
 use godot::prelude::*;
 
+use super::seat_badge::SeatBadge;
 use super::stack_view::StackView;
 use super::turn_manager::TurnManager;
 
 const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
 const PARCHMENT: Color = Color::from_rgb(0.93, 0.87, 0.74);
 const DIM: Color = Color::from_rgba(0.93, 0.87, 0.74, 0.45);
+/// Seitenfarben (passen zu den Bannern der Arena).
+const PLAYER_ACCENT: Color = Color::from_rgb(0.25, 0.55, 0.95);
+const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
+/// Hauptbutton: blau (Phase beenden) bzw. orange (Priorität abgeben, Stack belegt).
+const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
+const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
 
 /// Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts),
-/// Leben, Ressourcen und Mana beider Spieler (links), Button „Nächste Phase“ / „Passen“
-/// (unten rechts, auch Leertaste) und das Auswahlfenster für Heldenfähigkeiten.
+/// je ein [SeatBadge]-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (links: Gegner
+/// oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
+/// blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten.
 /// Liest den Zustand jedes Frame vom [TurnManager].
 #[derive(GodotClass)]
 #[class(base=CanvasLayer)]
@@ -40,6 +50,10 @@ pub struct TurnHud {
     phase_labels: Vec<Gd<Label>>,
     opponent_info: Option<Gd<RichTextLabel>>,
     player_info: Option<Gd<RichTextLabel>>,
+    opponent_badge: Option<Gd<SeatBadge>>,
+    player_badge: Option<Gd<SeatBadge>>,
+    /// Farbe, mit der der Hauptbutton zuletzt gestaltet wurde (nur bei Wechsel neu setzen).
+    button_color: Option<Color>,
     turn_label: Option<Gd<Label>>,
     hint_label: Option<Gd<Label>>,
     log_label: Option<Gd<Label>>,
@@ -61,6 +75,9 @@ impl ICanvasLayer for TurnHud {
             phase_labels: Vec::new(),
             opponent_info: None,
             player_info: None,
+            opponent_badge: None,
+            player_badge: None,
+            button_color: None,
             turn_label: None,
             hint_label: None,
             log_label: None,
@@ -195,23 +212,14 @@ impl TurnHud {
         root.add_child(&phase_panel);
         turn.set_text(tr!("Runde –", "Turn –"));
 
-        // Anzeigen für Leben, Ressourcen und Mana
-        let opp = rich(18);
-        let mut opp_panel = panel();
-        opp_panel.add_child(&opp);
-        place(&mut opp_panel, (0.0, 0.0), (14.0, 14.0), GrowDirection::END, GrowDirection::END);
-        root.add_child(&opp_panel);
-
-        let me = rich(18);
-        let mut me_panel = panel();
-        me_panel.add_child(&me);
-        place(&mut me_panel, (0.0, 1.0), (14.0, -14.0), GrowDirection::END, GrowDirection::BEGIN);
-        root.add_child(&me_panel);
+        // Medaillons mit Leben + Text für Ressourcen und Mana
+        let (opp_badge, opp) = seat_row(&mut root, OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
+        let (me_badge, me) = seat_row(&mut root, PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
 
         // Nur der Button unten rechts (Deck und Ablage bleiben sichtbar)
-        let mut button = styled_button(18);
+        let mut button = styled_button(20);
         button.set_text(tr!("Nächste Phase  »", "Next phase  »"));
-        button.set_custom_minimum_size(Vector2::new(240.0, 46.0));
+        button.set_custom_minimum_size(Vector2::new(270.0, 56.0));
         let callable = Callable::from_object_method(&self.to_gd(), "on_next_pressed");
         button.connect("pressed", &callable);
         place(&mut button, (1.0, 1.0), (-14.0, -14.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
@@ -224,6 +232,8 @@ impl TurnHud {
         self.turn_label = Some(turn);
         self.opponent_info = Some(opp);
         self.player_info = Some(me);
+        self.opponent_badge = Some(opp_badge);
+        self.player_badge = Some(me_badge);
         self.hint_label = Some(hint);
         self.log_label = Some(log);
         self.button = Some(button);
@@ -264,15 +274,19 @@ impl TurnHud {
             let r = tm.get_resource_counts(seat);
             let marker = if seat == active { tr!("  [color=#f2c766](am Zug)[/color]", "  [color=#f2c766](to play)[/color]") } else { "" };
             trf!(
-                "{}{marker}\nLeben {}   ·   Ressourcen {}/{}\nMana: {}",
-                "{}{marker}\nLife {}   ·   Resources {}/{}\nMana: {}",
+                "[font_size=22]{}[/font_size]{marker}\nRessourcen {}/{}\nMana: {}",
+                "[font_size=22]{}[/font_size]{marker}\nResources {}/{}\nMana: {}",
                 tm.get_seat_name(seat),
-                tm.get_life(seat),
                 r.x,
                 r.y,
                 tm.get_pool_bbcode(seat)
             )
         };
+        for (seat, badge) in [(1, self.opponent_badge.as_mut()), (0, self.player_badge.as_mut())] {
+            if let Some(b) = badge {
+                b.bind_mut().set_state(tm.get_seat_name(seat), tm.get_life(seat), seat == active);
+            }
+        }
         if let Some(l) = self.opponent_info.as_mut() {
             l.set_text(&info(1));
         }
@@ -305,6 +319,11 @@ impl TurnHud {
         if let Some(b) = self.button.as_mut() {
             b.set_disabled(!tm.is_waiting_for_input());
             b.set_text(&tm.get_button_text());
+            let color = if tm.get_stack_items().is_empty() { BUTTON_BLUE } else { BUTTON_ORANGE };
+            if self.button_color != Some(color) {
+                paint_main_button(b, color);
+                self.button_color = Some(color);
+            }
         }
 
         // Heldenfähigkeiten
@@ -339,14 +358,60 @@ fn styled_button(font_size: i32) -> Gd<Button> {
     button.add_theme_color_override("font_hover_color", GOLD);
     button.add_theme_color_override("font_disabled_color", DIM);
     for (state, bg) in [
-        ("normal", Color::from_rgba(0.35, 0.2, 0.08, 0.95)),
-        ("hover", Color::from_rgba(0.48, 0.28, 0.1, 0.95)),
-        ("pressed", Color::from_rgba(0.25, 0.14, 0.05, 0.95)),
-        ("disabled", Color::from_rgba(0.15, 0.1, 0.06, 0.7)),
+        ("normal", Color::from_rgba(0.14, 0.17, 0.24, 0.95)),
+        ("hover", Color::from_rgba(0.2, 0.25, 0.36, 0.95)),
+        ("pressed", Color::from_rgba(0.09, 0.11, 0.16, 0.95)),
+        ("disabled", Color::from_rgba(0.08, 0.09, 0.12, 0.7)),
     ] {
         button.add_theme_stylebox_override(state, &style(bg, 6.0));
     }
     button
+}
+
+/// Großer, pillenförmiger Hauptbutton in der Farbe `color` (heller Rand, Schatten, Hover heller).
+fn paint_main_button(button: &mut Gd<Button>, color: Color) {
+    let light = color.lerp(Color::WHITE, 0.45);
+    for (state, bg, border) in [
+        ("normal", color, light),
+        ("hover", color.lerp(Color::WHITE, 0.15), Color::WHITE),
+        ("pressed", color.darkened(0.25), light),
+        ("disabled", Color::from_rgba(0.12, 0.13, 0.16, 0.8), Color::from_rgba(0.4, 0.42, 0.48, 0.8)),
+    ] {
+        let mut s = style(bg, 28.0);
+        s.set_border_color(border);
+        s.set_border_width_all(3);
+        s.set_shadow_color(Color::from_rgba(color.r, color.g, color.b, if state == "disabled" { 0.0 } else { 0.45 }));
+        s.set_shadow_size(10);
+        button.add_theme_stylebox_override(state, &s);
+    }
+    button.add_theme_color_override("font_color", Color::WHITE);
+    button.add_theme_color_override("font_hover_color", Color::WHITE);
+    button.add_theme_color_override("font_pressed_color", Color::WHITE);
+    button.add_theme_color_override("font_outline_color", Color::from_rgba(0.0, 0.0, 0.0, 0.6));
+    button.add_theme_constant_override("outline_size", 4);
+}
+
+/// Medaillon + Infotext einer Seite, an einer Bildschirmecke verankert. Gibt beide zurück.
+fn seat_row(
+    root: &mut Gd<Control>,
+    accent: Color,
+    anchor: (f32, f32),
+    offset: (f32, f32),
+    grow_v: GrowDirection,
+) -> (Gd<SeatBadge>, Gd<RichTextLabel>) {
+    let mut row = godot::classes::HBoxContainer::new_alloc();
+    row.add_theme_constant_override("separation", 4);
+    row.set_mouse_filter(MouseFilter::IGNORE);
+    let mut badge = SeatBadge::new_alloc();
+    badge.set("accent", &accent.to_variant());
+    row.add_child(&badge);
+    let mut text = rich(17);
+    text.set_v_size_flags(godot::classes::control::SizeFlags::SHRINK_CENTER);
+    text.add_theme_constant_override("outline_size", 6);
+    row.add_child(&text);
+    place(&mut row, anchor, offset, GrowDirection::END, grow_v);
+    root.add_child(&row);
+    (badge, text)
 }
 
 /// Mehrfarbiger Text (BBCode), z. B. für den Manapool.
@@ -387,7 +452,7 @@ fn style(bg: Color, radius: f32) -> Gd<StyleBoxFlat> {
 
 fn panel() -> Gd<PanelContainer> {
     let mut p = PanelContainer::new_alloc();
-    p.add_theme_stylebox_override("panel", &style(Color::from_rgba(0.09, 0.05, 0.025, 0.8), 8.0));
+    p.add_theme_stylebox_override("panel", &style(Color::from_rgba(0.05, 0.06, 0.08, 0.82), 8.0));
     p.set_mouse_filter(MouseFilter::IGNORE);
     p
 }

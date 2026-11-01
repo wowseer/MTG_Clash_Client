@@ -13,10 +13,12 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [ManaCost](#manacost) – erbt von `Resource`
 - [ManaPool](#manapool) – erbt von `Node`
 - [PlayerSeat](#playerseat) – erbt von `Node3D`
+- [SeatBadge](#seatbadge) – erbt von `Control`
 - [StackItem](#stackitem) – erbt von `RefCounted`
 - [StackManager](#stackmanager) – erbt von `Node`
 - [TurnManager](#turnmanager) – erbt von `Node`
 - [Hello](#hello) – erbt von `Node2D`
+- [Arena](#arena) – erbt von `Node3D`
 - [Card3D](#card3d) – erbt von `Area3D`
 - [TableCamera](#tablecamera) – erbt von `Camera3D`
 - [TableController](#tablecontroller) – erbt von `Node3D`
@@ -56,7 +58,7 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts), Leben, Ressourcen und Mana beider Spieler (links), Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
+Bildschirm-Overlay für den Rundenablauf: Phasenliste, Hinweis und Protokoll (oben rechts), je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (links: Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
 
 ### Eigenschaften
 
@@ -157,6 +159,27 @@ Ein Sitzplatz am Tisch (Mensch oder KI) mit seinen Zonen, Lebenspunkten und dem 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `owns_zone(zone: Zone)` | `bool` | Gehört die Zone zu diesem Sitzplatz? |
+
+## SeatBadge
+
+*Erbt von `Control` · Quelle: `rust/src/game/seat_badge.rs`*
+
+Rautenförmiges Spieler-Medaillon (HUD): Wappen in der Seitenfarbe `accent`, darunter ein roter Edelstein mit den Lebenspunkten `life`. Ist `active` gesetzt (Spieler am Zug), pulsiert ein Schein um die Raute; Lebensänderungen blitzen kurz rot (Schaden) bzw. grün (Heilung). Wird vom `TurnHud` jedes Frame über `set_state()` aktualisiert.
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `seat_name` | `String` | Name der Seite; sein Anfangsbuchstabe steht im Wappen. |
+| `life` | `int` | Angezeigte Lebenspunkte. |
+| `active` | `bool` | Ist diese Seite am Zug? (pulsierender Schein) |
+| `accent` | `Color` | Farbe des Wappens (Seitenfarbe, z. B. blau für den Spieler, rot für den Gegner). |
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `set_state(seat_name: String, life: int, active: bool)` | `void` | Setzt Name, Lebenspunkte und „am Zug“ auf einmal. Weicht `life` vom bisherigen Wert ab, blitzt der Edelstein kurz auf (rot bei Schaden, grün bei Heilung). |
 
 ## StackItem
 
@@ -298,6 +321,22 @@ Beispiel-Node: zeigt, dass die Rust-Extension geladen wird.
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `add(a: int, b: int)` | `int` | Beispielfunktion: gibt `a + b` zurück. |
+
+## Arena
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/arena.rs`*
+
+Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte, großer Raute, Mittellinie und eingelassenen Kartenfächern (automatisch unter jeder Stapel- und Ressourcen-`Zone` der Szene), Steinrand mit Goldeinlage, Kristallsäulen in den hinteren Ecken, gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern. Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0, Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `board_size` | `Vector2` | Größe des Spielbretts (x = Breite, y = Tiefe) in Einheiten. |
+| `texture_resolution` | `float` | Auflösung der Brett-Textur in Pixeln pro Einheit (höher = schärfere Ornamente, längerer Start). |
+| `rune_glow` | `float` | Leuchtstärke des Runenkreises (0 = aus). |
+| `player_color` | `Color` | Bannerfarbe der Spielerseite. |
+| `opponent_color` | `Color` | Bannerfarbe der Gegnerseite. |
 
 ## Card3D
 

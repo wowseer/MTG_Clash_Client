@@ -37,6 +37,14 @@ pub struct FlickerLight {
     base: Base<OmniLight3D>,
 }
 
+impl FlickerLight {
+    /// Setzt Grundhelligkeit und Flackerstärke (für prozedural erzeugte Lichter).
+    pub(super) fn configure(&mut self, energy: f32, strength: f32) {
+        self.base_energy = energy;
+        self.flicker_strength = strength;
+    }
+}
+
 #[godot_api]
 impl IOmniLight3D for FlickerLight {
     fn init(base: Base<OmniLight3D>) -> Self {
@@ -526,7 +534,7 @@ impl Tavern {
 
 // ---------------------------------------------------------------- Materialien
 
-fn solid(color: Color, roughness: f32, metallic: f32) -> Gd<Material> {
+pub(super) fn solid(color: Color, roughness: f32, metallic: f32) -> Gd<Material> {
     let mut m = StandardMaterial3D::new_gd();
     m.set_albedo(color);
     m.set_roughness(roughness);
@@ -535,7 +543,7 @@ fn solid(color: Color, roughness: f32, metallic: f32) -> Gd<Material> {
 }
 
 /// Triplanar in Weltkoordinaten projizierte Textur; `per_unit` = Wiederholungen pro Einheit.
-fn textured(tex: &Gd<Texture2D>, per_unit: f32, roughness: f32) -> Gd<Material> {
+pub(super) fn textured(tex: &Gd<Texture2D>, per_unit: f32, roughness: f32) -> Gd<Material> {
     let mut m = StandardMaterial3D::new_gd();
     m.set_texture(TextureParam::ALBEDO, tex);
     m.set_flag(Flags::UV1_USE_TRIPLANAR, true);
@@ -545,7 +553,7 @@ fn textured(tex: &Gd<Texture2D>, per_unit: f32, roughness: f32) -> Gd<Material> 
     m.upcast()
 }
 
-fn glow(color: Color, energy: f32) -> Gd<Material> {
+pub(super) fn glow(color: Color, energy: f32) -> Gd<Material> {
     let mut m = StandardMaterial3D::new_gd();
     m.set_shading_mode(ShadingMode::UNSHADED);
     m.set_albedo(color);

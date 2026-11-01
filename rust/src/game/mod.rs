@@ -8,6 +8,7 @@ pub mod mana;
 pub mod phases;
 pub mod timing;
 pub mod seat;
+pub mod seat_badge;
 pub mod stack;
 pub mod stack_view;
 pub mod turn_manager;

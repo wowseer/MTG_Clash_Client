@@ -2,18 +2,18 @@
 
 [sub_resource type="Environment" id="env"]
 background_mode = 1
-background_color = Color(0.03, 0.02, 0.015, 1)
+background_color = Color(0.03, 0.035, 0.05, 1)
 ambient_light_source = 2
-ambient_light_color = Color(0.55, 0.4, 0.28, 1)
-ambient_light_energy = 0.3
+ambient_light_color = Color(0.55, 0.58, 0.68, 1)
+ambient_light_energy = 0.35
 tonemap_mode = 3
 ssao_enabled = true
 glow_enabled = true
 glow_intensity = 0.6
 glow_bloom = 0.05
 fog_enabled = true
-fog_light_color = Color(0.22, 0.13, 0.07, 1)
-fog_density = 0.006
+fog_light_color = Color(0.08, 0.1, 0.14, 1)
+fog_density = 0.012
 
 [node name="Table" type="TableController" unique_id=346997079 node_paths=PackedStringArray("camera", "turn_manager", "hand_zone", "deck_zone", "opponent_hand_zone", "opponent_deck_zone", "opponent_battlefield_zone")]
 camera = NodePath("Camera")
@@ -28,12 +28,12 @@ demo_opponent_battlefield_size = 0
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1977328221]
 environment = SubResource("env")
 
-[node name="Tavern" type="Tavern" parent="." unique_id=2143555114]
+[node name="Arena" type="Arena" parent="." unique_id=2143555114]
 
 [node name="Lantern" type="SpotLight3D" parent="." unique_id=507094639]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 14, 0)
-light_color = Color(1, 0.82, 0.6, 1)
-light_energy = 10.0
+light_color = Color(1, 0.93, 0.82, 1)
+light_energy = 3.2
 shadow_enabled = true
 spot_range = 30.0
 spot_angle = 38.0
