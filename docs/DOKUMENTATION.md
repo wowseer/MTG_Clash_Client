@@ -127,12 +127,14 @@ die `HeroAnchor`-Marker mitziehen.
 
 **Zielpfeile und Auren (`TargetArrows`, `target_arrows.rs`; Aura-Shader in `card3d.rs`):**
 Karten bekommen einen schmalen, weichen Lichtsaum am Kartenrand, der ruhig „atmet“:
-dezent warmgold = die Karte kann gerade handeln (in der eigenen Angreifer-Phase: kann angreifen;
-in der eigenen Blocker-Phase: kann noch blocken), kräftig orange = Angreifer, blau = Blocker,
+dezent warmgold = kann angreifen (eigene Angreifer-Phase), dezent blau = möglicher Blocker
+(eigene Blocker-Phase), kräftig orange = Angreifer, blau = Blocker,
 gold = ausgewählt bzw. wählt ein Ziel (`TurnManager.refresh_ready_glow()`,
-`Card3D.set_ready_glow()`). Getappte Karten bleiben gerade liegen, werden
-ausgegraut (Vorderseite und Beschriftung abgedunkelt) und zeigen mittig ein graues Tapp-Symbol
-(Kreispfeil auf dunkler Scheibe, `textures::tap_icon()`); für Skripte `Card3D.set_tapped_state()`. Pfeile sind gebogene, leuchtende Bänder
+`Card3D.set_ready_glow()`). **Getappte** Karten werden leicht schräg gestellt (15°,
+`zone::TAP_ANGLE_DEGREES`), ausgegraut (Vorderseite und Beschriftung abgedunkelt) und zeigen mittig
+ein graues Tapp-Symbol (Kreispfeil auf dunkler Scheibe, `textures::tap_icon()`); für Skripte
+`Card3D.set_tapped_state()`. **Kreaturen, die angegriffen haben**, sind ebenfalls schräg und
+ausgegraut, aber **ohne** Tapp-Symbol – bis sie wieder enttappt werden. Pfeile sind gebogene, leuchtende Bänder
 über dem Tisch mit Chevrons, die zur Spitze laufen: Angreifer zeigen nach vorn, Blocker auf ihren
 Angreifer. Bei jeder Zielwahl („wähle …“: Blocker zuweisen, Ausrüstung anlegen) zieht man einen
 goldenen Pfeil von der Karte zum Ziel; nur über einem **gültigen** Ziel rastet die Spitze auf dessen Mitte ein (`TurnManager.is_valid_aim_target`), sonst folgt sie der Maus. Ressourcen sind nie Quelle oder Ziel eines Pfeils.
@@ -158,7 +160,7 @@ Enttappen → Auffrischung → Ziehen → Hauptphase 1 → Angreifer bestimmen �
 | Auffrischung | Fähigkeiten „zu Beginn der Runde“ (Heiler, Feuer) | automatisch |
 | Ziehen | 1 Karte (der Startspieler zieht in Runde 1 nicht) | automatisch |
 | Hauptphase 1 / 2 | Karten ausspielen, Helden, Ausrüstung, Artefakte | Button |
-| Angreifer bestimmen | Angreifer wählen; sie werden getappt (ausgegraut mit Tapp-Symbol) | Button |
+| Angreifer bestimmen | Angreifer wählen; danach sind sie getappt: leicht schräg und ausgegraut (ohne Tapp-Symbol) | Button |
 | Blocker zuweisen | Verteidiger weist Blocker zu | Button (wenn Mensch verteidigt) |
 | Schadensberechnung | Kampfschaden; ungeblockt trifft den Spieler | automatisch |
 | Ende | temporäre Effekte, Schaden und Markierungen entfernen, Spielerwechsel | automatisch |

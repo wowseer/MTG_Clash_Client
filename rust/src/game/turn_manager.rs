@@ -17,7 +17,7 @@ use super::timing::{check_sorcery_timing, PlayError};
 use crate::table::card3d::CardMarker;
 use super::seat::PlayerSeat;
 use super::stack::{StackItem, StackManager};
-use crate::table::card3d::{Card3D, ATTACK_GLOW, BLOCK_GLOW};
+use crate::table::card3d::{Card3D, ATTACK_GLOW, BLOCK_GLOW, READY_GLOW};
 use crate::table::target_arrows::ArrowSpec;
 
 /// Länge des Angriffspfeils (vom Angreifer nach vorn, Einheiten).
@@ -493,8 +493,8 @@ impl TurnManager {
     }
 
     /// Setzt das dezente Leuchten „kann handeln“ auf allen Karten der Spielfelder: in der
-    /// Angreifer-Phase des Menschen auf Kreaturen, die angreifen können, in seiner Blocker-Phase
-    /// auf Kreaturen, die noch blocken können. Sonst leuchtet nichts.
+    /// Angreifer-Phase des Menschen goldener Rand für Kreaturen, die angreifen können, in seiner
+    /// Blocker-Phase blauer Rand für mögliche Blocker. Sonst leuchtet nichts.
     pub fn refresh_ready_glow(&self) {
         let Some(g) = self.game.as_ref() else { return };
         let phase = self.phase();
@@ -504,18 +504,20 @@ impl TurnManager {
                 .untapped_creatures(g.active)
                 .into_iter()
                 .filter(|c| c.bind().get_current_attack() > 0 && !g.combat.attackers.contains(c))
-                .collect(),
+                .collect::<Vec<_>>(),
             Some(Phase::Blockers) if g.is_human(g.defender()) && !busy => g
                 .untapped_creatures(g.defender())
                 .into_iter()
                 .filter(|c| !g.combat.blocks.iter().any(|(b, _)| b == c) && g.combat.selected.as_ref() != Some(c))
-                .collect(),
+                .collect::<Vec<_>>(),
             _ => Vec::new(),
         };
+        // Angreifer-Phase: Gold (kann angreifen); Blocker-Phase: Blau (kann blocken)
+        let color = if phase == Some(Phase::Blockers) { BLOCK_GLOW } else { READY_GLOW };
         for seat in 0..2 {
             for mut card in GameState::cards_in(g.battlefield(seat)) {
                 let on = ready.contains(&card);
-                card.bind_mut().set_ready_glow(on);
+                card.bind_mut().set_ready_color(on.then_some(color));
             }
         }
     }

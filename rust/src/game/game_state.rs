@@ -1062,6 +1062,8 @@ impl GameState {
         let attackers = self.combat.attackers.clone();
         for mut card in attackers {
             Self::set_tapped(&mut card, true);
+            // Hat angegriffen: leicht schräg (getappt) und ausgegraut
+            card.bind_mut().set_attacked(true);
             let (ability, name) = {
                 let c = card.bind();
                 (c.ability_kind(), c.display_name())

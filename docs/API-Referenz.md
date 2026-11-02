@@ -429,8 +429,8 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `get_remaining_defense()` | `int` | Verteidigung abzüglich erlittenen Schadens in dieser Runde. |
 | `set_ready_glow(on: bool)` | `void` | Leuchten „diese Karte kann gerade handeln“ (z. B. als Angreifer erklärt oder als Blocker zugewiesen werden). Dezenter als die Markierungen; eine Markierung hat Vorrang. |
 | `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
-| `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (ausgegraut + Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
-| `is_tapped()` | `bool` | Ist die Karte getappt (ausgegraut mit Tapp-Symbol)? |
+| `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (schräg, ausgegraut, Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
+| `is_tapped()` | `bool` | Ist die Karte getappt (leicht schräg, ausgegraut, Tapp-Symbol)? |
 | `is_artifact()` | `bool` | Artefakt (inkl. Ausrüstung)? |
 | `is_enchantment()` | `bool` | Verzauberung (inkl. Aura)? |
 | `get_enchanted()` | `Card3D` | Kreatur, die diese Aura verzaubert (null = keine). |

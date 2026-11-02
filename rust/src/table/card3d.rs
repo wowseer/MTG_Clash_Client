@@ -9,10 +9,11 @@
 //!     ├── Face  (PlaneMesh, +Y, Vorderseiten-Textur)
 //!     ├── Back  (PlaneMesh, -Y, Rückseiten-Textur)
 //!     ├── Marker (PlaneMesh unter der Karte, Lichtsaum: kann handeln / Angriff / Block / Auswahl)
-//!     └── TapIcon (PlaneMesh auf der Vorderseite, graues Tapp-Symbol, nur wenn getappt)
+//!     └── TapIcon (PlaneMesh auf der Vorderseite, graues Tapp-Symbol; getappt, aber nicht angegriffen)
 //! ```
-//! **Getappt:** Die Karte bleibt gerade liegen, wird grau abgedunkelt und zeigt das
-//! Tapp-Symbol (grauer Kreispfeil) mittig auf der Vorderseite.
+//! **Getappt:** Die Zone stellt die Karte leicht schräg (`zone::TAP_ANGLE_DEGREES`); sie wird
+//! ausgegraut (Vorderseite und Beschriftung abgedunkelt) und zeigt das graue Tapp-Symbol.
+//! **Hat angegriffen:** ebenfalls schräg und ausgegraut, aber **ohne** Tapp-Symbol.
 //!
 //! Die Karte liegt in ihrem lokalen Raum flach in der XZ-Ebene, Vorderseite zeigt
 //! nach +Y, die Oberkante der Karte zeigt nach -Z.
@@ -47,7 +48,7 @@ pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
 
 /// Farbe der Aura: Angreifer (Orange), Blocker (Blau), ausgewählte Karte (Gold),
-/// Karte kann gerade handeln (angreifen/blocken: warmes Gold, dezent).
+/// Karte kann angreifen (warmes Gold, dezent); mögliche Blocker leuchten dezent blau.
 pub const ATTACK_GLOW: Color = Color::from_rgb(1.0, 0.5, 0.12);
 pub const BLOCK_GLOW: Color = Color::from_rgb(0.3, 0.65, 1.0);
 pub const SELECT_GLOW: Color = Color::from_rgb(1.0, 0.85, 0.35);
@@ -56,7 +57,7 @@ pub const READY_GLOW: Color = Color::from_rgb(1.0, 0.7, 0.28);
 /// höhere Stärke = heller und etwas breiterer Schein.
 const READY_STRENGTH: f32 = 0.7;
 const MARK_STRENGTH: f32 = 1.5;
-/// Farbe, mit der getappte Karten abgedunkelt/ausgegraut werden.
+/// Farbe, mit der getappte Karten (und Kreaturen, die angegriffen haben) ausgegraut werden.
 const TAPPED_TINT: Color = Color::from_rgb(0.52, 0.52, 0.55);
 /// Kantenlänge des Tapp-Symbols auf der Karte (Einheiten; Karte = 0,63 breit).
 const TAP_ICON_SIZE: f32 = 0.34;
@@ -166,8 +167,10 @@ pub struct Card3D {
     damage: i32,
     attack_bonus: i32,
     marker: CardMarker,
-    /// Dezentes Leuchten: Karte kann gerade handeln (siehe set_ready_glow).
-    ready_glow: bool,
+    /// Dezentes Leuchten in dieser Farbe: Karte kann gerade handeln (None = aus).
+    ready_glow: Option<Color>,
+    /// Hat in diesem Zug angegriffen (ausgegraut, bis sie enttappt wird).
+    attacked: bool,
 
     /// Sofortzauber / Hexerei: Effekt beim Auflösen.
     pub(crate) effect: SpellEffect,
@@ -242,7 +245,8 @@ impl IArea3D for Card3D {
             damage: 0,
             attack_bonus: 0,
             marker: CardMarker::None,
-            ready_glow: false,
+            ready_glow: None,
+            attacked: false,
             effect: SpellEffect::None,
             hero_abilities: Vec::new(),
             willpower: 0,
@@ -487,10 +491,7 @@ impl Card3D {
     /// zugewiesen werden). Dezenter als die Markierungen; eine Markierung hat Vorrang.
     #[func]
     pub fn set_ready_glow(&mut self, on: bool) {
-        if self.ready_glow != on {
-            self.ready_glow = on;
-            self.apply_glow();
-        }
+        self.set_ready_color(on.then_some(READY_GLOW));
     }
 
     /// Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau),
@@ -506,14 +507,14 @@ impl Card3D {
         self.set_marker(marker);
     }
 
-    /// Setzt nur den Tapp-Zustand der Karte (ausgegraut + Tapp-Symbol), ohne Spielregeln
+    /// Setzt nur den Tapp-Zustand der Karte (schräg, ausgegraut, Tapp-Symbol), ohne Spielregeln
     /// (kein Mana, kein Neu-Anordnen) – für Skripte und Tests.
     #[func]
     pub fn set_tapped_state(&mut self, tapped: bool) {
         self.set_tapped(tapped);
     }
 
-    /// Ist die Karte getappt (ausgegraut mit Tapp-Symbol)?
+    /// Ist die Karte getappt (leicht schräg, ausgegraut, Tapp-Symbol)?
     #[func]
     pub fn is_tapped(&self) -> bool {
         self.tapped
@@ -644,15 +645,35 @@ impl Card3D {
     }
 
     /// Tapp-Zustand setzen; die Drehung übernimmt die Zone beim nächsten `layout()`.
-    /// Tappt bzw. enttappt die Karte: getappt = ausgegraut mit Tapp-Symbol (keine Drehung).
+    /// Tappt bzw. enttappt die Karte: getappt = leicht schräg (durch die Zone), ausgegraut und mit
+    /// Tapp-Symbol. Enttappen beendet auch den Zustand „hat angegriffen“.
     pub fn set_tapped(&mut self, tapped: bool) {
         self.tapped = tapped;
+        if !tapped {
+            self.attacked = false;
+        }
         self.apply_tapped_look();
     }
 
-    /// Ausgrauen (Vorderseite und Beschriftung) und Tapp-Symbol passend zu `tapped`.
+    /// Markiert die Kreatur als „hat angegriffen“: schräg und ausgegraut, aber ohne Tapp-Symbol –
+    /// bis sie wieder enttappt wird.
+    pub fn set_attacked(&mut self, attacked: bool) {
+        self.attacked = attacked;
+        self.apply_tapped_look();
+    }
+
+    /// Dezentes Leuchten „kann handeln“ in `color` (z. B. Gold = kann angreifen,
+    /// Blau = kann blocken); None = aus. Eine Markierung hat Vorrang.
+    pub fn set_ready_color(&mut self, color: Option<Color>) {
+        if self.ready_glow != color {
+            self.ready_glow = color;
+            self.apply_glow();
+        }
+    }
+
+    /// Ausgrauen (getappt oder hat angegriffen) und Tapp-Symbol (nur getappt ohne Angriff).
     fn apply_tapped_look(&mut self) {
-        let tint = if self.tapped { TAPPED_TINT } else { Color::WHITE };
+        let tint = if self.tapped || self.attacked { TAPPED_TINT } else { Color::WHITE };
         if let Some(mat) = self.face_material.as_mut() {
             if self.face_texture.is_some() {
                 mat.set_albedo(tint);
@@ -664,7 +685,7 @@ impl Card3D {
             }
         }
         if let Some(icon) = self.tap_icon.as_mut() {
-            icon.set_visible(self.tapped);
+            icon.set_visible(self.tapped && !self.attacked);
         }
     }
 
@@ -695,8 +716,7 @@ impl Card3D {
             CardMarker::Attacking => Some((ATTACK_GLOW, MARK_STRENGTH)),
             CardMarker::Blocking => Some((BLOCK_GLOW, MARK_STRENGTH)),
             CardMarker::Selected => Some((SELECT_GLOW, MARK_STRENGTH)),
-            CardMarker::None if self.ready_glow => Some((READY_GLOW, READY_STRENGTH)),
-            CardMarker::None => None,
+            CardMarker::None => self.ready_glow.map(|c| (c, READY_STRENGTH)),
         };
         if let (Some(mesh), Some(mat)) = (self.marker_mesh.as_mut(), self.marker_material.as_mut()) {
             mesh.set_visible(glow.is_some());
