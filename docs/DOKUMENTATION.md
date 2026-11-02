@@ -126,7 +126,7 @@ die `HeroAnchor`-Marker mitziehen.
 | Aktion | Wirkung |
 |---|---|
 | Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons, Debug-Fenster oder die Stack-Anzeige hindurch |
-| Karte aus der Hand ziehen und loslassen | ausspielen (Regeln prüfen Phase, Stack und Mana). Die Karte wird automatisch platziert (siehe „Anordnung auf dem Spielfeld“) |
+| Karte aus der Hand ziehen und loslassen | ausspielen (Regeln prüfen Phase, Stack und Mana). Danach gibst du die Priorität **automatisch** ab: Antwortet der Gegner nicht, löst sich die Karte ohne weiteren Klick auf und gleitet auf ihren automatischen Platz (siehe „Anordnung auf dem Spielfeld“). Antwortet er, hast du wieder Priorität („Weiter“ bzw. Sofortzauber) |
 | Aura ziehen | über einer gültigen Zielkarte loslassen (Ziel wird gelb markiert) |
 | Klick auf eigene Ressource | tappen → +1 Mana in den Pool. Erneuter Klick auf die getappte Ressource nimmt den Tapp zurück (Ressource enttappt, Mana wieder aus dem Pool) – solange genau dieses Mana noch unbenutzt im Pool liegt. Nach dem Ausgeben oder Leeren des Pools nicht mehr möglich; automatisch beim Bezahlen getappte Ressourcen lassen sich nicht zurücknehmen |
 | Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |

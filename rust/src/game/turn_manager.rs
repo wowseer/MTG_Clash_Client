@@ -443,7 +443,11 @@ impl TurnManager {
             return None;
         }
         g.clear_pending();
-        g.cast_aura(seat, &card, &target, phase)
+        let zone = g.cast_aura(seat, &card, &target, phase);
+        if zone.is_some() {
+            self.auto_pass_after_cast(seat);
+        }
+        zone
     }
 }
 
@@ -534,7 +538,21 @@ impl TurnManager {
             return None;
         }
         g.clear_pending();
-        g.play_from_hand_at(seat, &card, phase, point)
+        let zone = g.play_from_hand_at(seat, &card, phase, point);
+        if zone.is_some() {
+            self.auto_pass_after_cast(seat);
+        }
+        zone
+    }
+
+    /// Nach dem Ausspielen aus der Hand gibt der Mensch die Priorität automatisch ab (wie in
+    /// digitalen Kartenspielen üblich): Antwortet der Gegner nicht, löst sich die Karte ohne
+    /// weiteren Klick auf und gleitet auf ihren Platz. Antwortet er, liegt die Priorität danach
+    /// wieder beim Menschen. Ressourcen gehen nicht über den Stack – dann passiert nichts.
+    fn auto_pass_after_cast(&mut self, seat: usize) {
+        if self.stack_is_busy() && self.priority_seat() == seat {
+            self.pass_priority(seat);
+        }
     }
 }
 
