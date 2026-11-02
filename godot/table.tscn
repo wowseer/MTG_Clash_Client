@@ -94,6 +94,9 @@ transform = Transform3D(2.8, 0, 0, 0, 2.705, -0.725, 0, 0.725, 2.705, 0, 0.6, 5.
 [node name="HeroAnchor" type="Marker3D" parent="Player" unique_id=901721143]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 4.78)
 
+[node name="ManaAnchor" type="Marker3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.3, 0, 4.45)
+
 [node name="Opponent" type="PlayerSeat" parent="." unique_id=1201133542 node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
 display_name = "Gegner"
 is_ai = true
@@ -162,7 +165,8 @@ opponent_seat = NodePath("../Opponent")
 stack_manager = NodePath("../StackManager")
 stack_zone = NodePath("../StackZone")
 
-[node name="TurnHud" type="TurnHud" parent="." unique_id=269019185 node_paths=PackedStringArray("turn_manager", "player_hero_anchor", "opponent_hero_anchor")]
+[node name="TurnHud" type="TurnHud" parent="." unique_id=269019185 node_paths=PackedStringArray("turn_manager", "player_hero_anchor", "opponent_hero_anchor", "player_mana_anchor")]
 turn_manager = NodePath("../TurnManager")
 player_hero_anchor = NodePath("../Player/HeroAnchor")
 opponent_hero_anchor = NodePath("../Opponent/HeroAnchor")
+player_mana_anchor = NodePath("../Player/ManaAnchor")

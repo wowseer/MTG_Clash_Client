@@ -5,7 +5,8 @@
 //! - Medaillon ([`SeatBadge`]) mit Leben (ohne Text daneben): folgt je einem 3D-Ankerpunkt
 //!   (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne Anker oben links
 //!   (Gegner) bzw. unten links (Spieler)
-//! - rechts neben dem Spieler-Medaillon: Manapool als runde Symbole ([`ManaPoolView`])
+//! - unter der Ressourcen-Reihe des Spielers (3D-Anker, sonst rechts neben seinem Medaillon):
+//!   Manapool als runde Symbole ([`ManaPoolView`])
 //! - linker Bildrand: Spielername, darüber die Rundenzahl mit Sanduhr ([`HourglassIcon`]) –
 //!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
 //! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
@@ -71,6 +72,10 @@ pub struct TurnHud {
     /// Leer = Medaillon oben links.
     #[export]
     opponent_hero_anchor: Option<Gd<Node3D>>,
+    /// 3D-Punkt, an dem die Mana-Symbole des Spielers sitzen (Oberkante mittig, z. B. direkt unter
+    /// der Ressourcen-Reihe). Leer = rechts neben dem Spieler-Medaillon.
+    #[export]
+    player_mana_anchor: Option<Gd<Node3D>>,
 
     timeline: Option<Gd<PhaseTimeline>>,
     /// Linker Bildrand: Name und Rundenzahl von Gegner (oben) und Spieler (unten).
@@ -126,6 +131,7 @@ impl ICanvasLayer for TurnHud {
             player_mask: None,
             player_hero_anchor: None,
             opponent_hero_anchor: None,
+            player_mana_anchor: None,
             button_color: None,
             game_over_label: None,
             button: None,
@@ -319,14 +325,23 @@ impl TurnHud {
             let badge_w = row.get_child(0).map(|b| b.cast::<Control>().get_combined_minimum_size().x).unwrap_or(0.0);
             let top = if is_player { p.y - size.y } else { p.y };
             row.set_position(Vector2::new(p.x - badge_w * 0.5, top));
-            // Manapool rechts neben dem Spieler-Medaillon, auf Höhe der Rautenmitte
-            if is_player {
+            // Ohne Mana-Anker: Manapool rechts neben dem Spieler-Medaillon, auf Höhe der Rautenmitte
+            if is_player && self.player_mana_anchor.is_none() {
                 if let Some(mana) = self.player_mana.as_mut() {
                     let min = mana.get_combined_minimum_size();
-                    let h = min.y;
                     mana.set_size(min);
-                    mana.set_position(Vector2::new(p.x + badge_w * 0.5 + 10.0, top + size.y * 0.42 - h * 0.5));
+                    mana.set_position(Vector2::new(p.x + badge_w * 0.5 + 10.0, top + size.y * 0.42 - min.y * 0.5));
                 }
+            }
+        }
+        // Mana-Anker (z. B. unter der Ressourcen-Reihe): Symbole mittig darunter
+        if let (Some(anchor), Some(mana)) = (self.player_mana_anchor.clone(), self.player_mana.as_mut()) {
+            let world = anchor.get_global_position();
+            if !cam.is_position_behind(world) {
+                let p = cam.unproject_position(world);
+                let min = mana.get_combined_minimum_size();
+                mana.set_size(min);
+                mana.set_position(Vector2::new(p.x - min.x * 0.5, p.y));
             }
         }
     }

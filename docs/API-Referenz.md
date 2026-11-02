@@ -104,6 +104,7 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | `turn_manager` | `TurnManager` | Der `TurnManager`, dessen Zustand angezeigt wird. |
 | `player_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand). Leer = Medaillon unten links. Gezoomte oder gezogene Karten liegen sichtbar über dem Medaillon (Aussparung per `CardCutout`). |
 | `opponent_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Gegner-Medaillon sitzt (Oberkante mittig, z. B. direkt unter dessen Hand). Leer = Medaillon oben links. |
+| `player_mana_anchor` | `Node3D` | 3D-Punkt, an dem die Mana-Symbole des Spielers sitzen (Oberkante mittig, z. B. direkt unter der Ressourcen-Reihe). Leer = rechts neben dem Spieler-Medaillon. |
 
 ### Funktionen
 
