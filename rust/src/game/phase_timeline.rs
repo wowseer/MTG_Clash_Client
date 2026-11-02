@@ -12,7 +12,8 @@
 //! und schafft Platz für seine drei Schritte, danach rückt alles wieder zusammen.
 //! In den Kreisen steht ein Symbol für den Schritt: Enttappen = Kreispfeil gegen den
 //! Uhrzeigersinn, Auffrischung = Sonne, Ziehen = Karte mit Plus, Hauptphase = aufgefächerte
-//! Karten, Ende = Mondsichel, Kampf = gekreuzte Schwerter.
+//! Karten, Ende = Mondsichel, Kampf = gekreuzte Schwerter; aufgeklappte Kampfschritte:
+//! Angreifer = Schwert, Blocker = Schild, Schaden = Flamme.
 //!
 //! Die aktuelle Station leuchtet (weiß mit goldenem Rand, pulsierender Schein); erledigte Strecke
 //! und Stationen sind golden, kommende hohl. Größe, Aufklappen und Position gleiten weich.
@@ -48,11 +49,11 @@ const LINE_Y: f32 = 40.0;
 const OPENING_R: [f32; 4] = [9.0, 10.5, 12.0, BIG_R];
 const BIG_R: f32 = 14.0;
 const COMBAT_R: f32 = 9.0;
-const SUB_R: f32 = 4.5;
+const SUB_R: f32 = 8.0;
 const END_R: f32 = 9.5;
 /// Abstand zwischen zwei Stationen (Pixel) und zwischen aufgeklappten Kampfschritten.
 const STATION_GAP: f32 = 54.0;
-const SUB_GAP: f32 = 26.0;
+const SUB_GAP: f32 = 29.0;
 /// Dunkle Symbolfarbe auf hellen/goldenen Kreisen.
 const ICON_DARK: Color = Color::from_rgb(0.16, 0.12, 0.08);
 
@@ -95,6 +96,9 @@ enum Icon {
     Main,
     End,
     Combat,
+    Attack,
+    Block,
+    Damage,
 }
 
 /// Ein Punkt auf dem Zeitstrahl.
@@ -294,7 +298,8 @@ impl PhaseTimeline {
                 _ => State::Upcoming,
             };
             let u = STATION_GAP + (k as f32 + 1.0) * SUB_GAP * e;
-            dots.push(Dot { x: x(u), r: SUB_R, alpha: e, state, icon: None });
+            let icon = [Icon::Attack, Icon::Block, Icon::Damage][k];
+            dots.push(Dot { x: x(u), r: SUB_R, alpha: e, state, icon: Some(icon) });
         }
         let closing_r = self.closing_r.unwrap_or_else(|| self.closing_target_r());
         dots.push(Dot { x: x(2.0 * STATION_GAP + spread), r: closing_r, alpha: 1.0, state: self.state(CLOSING), icon: Some(closing_icon) });
@@ -375,6 +380,42 @@ impl PhaseTimeline {
                 // Mondsichel: Scheibe, davon eine versetzte Scheibe in Hintergrundfarbe ausgespart
                 b.draw_circle(c, s * 0.8, ink);
                 b.draw_circle(c + Vector2::new(s * 0.38, -s * 0.22), s * 0.68, bg);
+            }
+            Icon::Attack => {
+                // Einzelnes Schwert, schräg (Spitze oben rechts)
+                let tip = c + Vector2::new(s * 0.85, -s * 0.85);
+                let hilt = c + Vector2::new(-s * 0.8, s * 0.8);
+                b.draw_line_ex(hilt, tip, ink).width(w).antialiased(true).done();
+                let g = c + Vector2::new(-s * 0.4, s * 0.4);
+                let n = Vector2::new(1.0, 1.0).normalized() * (s * 0.38);
+                b.draw_line_ex(g - n, g + n, ink).width(w).antialiased(true).done();
+            }
+            Icon::Block => {
+                // Schild: oben gerade Kante, Seiten nach unten zur Spitze zulaufend
+                let pts: Vec<Vector2> = [
+                    (-0.8, -0.8), (0.8, -0.8), (0.78, -0.1), (0.55, 0.45), (0.0, 0.95), (-0.55, 0.45), (-0.78, -0.1),
+                ]
+                .iter()
+                .map(|(x, y)| c + Vector2::new(*x, *y) * s)
+                .collect();
+                b.draw_colored_polygon(&PackedVector2Array::from(&pts[..]), ink);
+                // Mittelstreifen in Hintergrundfarbe
+                b.draw_line_ex(c + Vector2::new(0.0, -0.6) * s, c + Vector2::new(0.0, 0.62) * s, bg).width(w * 0.7).done();
+            }
+            Icon::Damage => {
+                // Flamme: Tropfenform mit Spitze nach oben, innen eine kleinere Flamme ausgespart
+                // Tropfenkurve: x = sin t · sin(t/2), y = −cos t → Spitze oben, unten rund
+                let flame = |scale: f32, off: Vector2| -> Vec<Vector2> {
+                    (0..24)
+                        .map(|i| {
+                            let t = i as f32 / 24.0 * TAU;
+                            let p = Vector2::new(0.78 * t.sin() * (t * 0.5).sin(), -0.95 * t.cos());
+                            c + off + p * (s * scale)
+                        })
+                        .collect()
+                };
+                b.draw_colored_polygon(&PackedVector2Array::from(&flame(1.0, Vector2::ZERO)[..]), ink);
+                b.draw_colored_polygon(&PackedVector2Array::from(&flame(0.45, Vector2::new(0.0, s * 0.25))[..]), bg);
             }
             Icon::Combat => {
                 // Zwei gekreuzte Schwerter (Klinge + Parierstange)
