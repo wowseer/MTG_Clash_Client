@@ -8,8 +8,12 @@
 //!     ├── Body  (BoxMesh, dünner Kartenkörper)
 //!     ├── Face  (PlaneMesh, +Y, Vorderseiten-Textur)
 //!     ├── Back  (PlaneMesh, -Y, Rückseiten-Textur)
-//!     └── Marker (PlaneMesh unter der Karte, Lichtsaum: kann handeln / Angriff / Block / Auswahl)
+//!     ├── Marker (PlaneMesh unter der Karte, Lichtsaum: kann handeln / Angriff / Block / Auswahl)
+//!     └── TapIcon (PlaneMesh auf der Vorderseite, graues Tapp-Symbol, nur wenn getappt)
 //! ```
+//! **Getappt:** Die Karte bleibt gerade liegen, wird grau abgedunkelt und zeigt das
+//! Tapp-Symbol (grauer Kreispfeil) mittig auf der Vorderseite.
+//!
 //! Die Karte liegt in ihrem lokalen Raum flach in der XZ-Ebene, Vorderseite zeigt
 //! nach +Y, die Oberkante der Karte zeigt nach -Z.
 //!
@@ -52,6 +56,10 @@ pub const READY_GLOW: Color = Color::from_rgb(1.0, 0.7, 0.28);
 /// höhere Stärke = heller und etwas breiterer Schein.
 const READY_STRENGTH: f32 = 0.7;
 const MARK_STRENGTH: f32 = 1.5;
+/// Farbe, mit der getappte Karten abgedunkelt/ausgegraut werden.
+const TAPPED_TINT: Color = Color::from_rgb(0.52, 0.52, 0.55);
+/// Kantenlänge des Tapp-Symbols auf der Karte (Einheiten; Karte = 0,63 breit).
+const TAP_ICON_SIZE: f32 = 0.34;
 /// Wie weit die Aura über den Kartenrand hinausragt (Einheiten).
 const GLOW_MARGIN: f32 = 0.16;
 
@@ -190,6 +198,7 @@ pub struct Card3D {
     labels: Option<CardLabels>,
     marker_mesh: Option<Gd<MeshInstance3D>>,
     marker_material: Option<Gd<ShaderMaterial>>,
+    tap_icon: Option<Gd<MeshInstance3D>>,
     visual: Option<Gd<Node3D>>,
     meshes: Vec<Gd<MeshInstance3D>>,
     face_material: Option<Gd<StandardMaterial3D>>,
@@ -252,6 +261,7 @@ impl IArea3D for Card3D {
             labels: None,
             marker_mesh: None,
             marker_material: None,
+            tap_icon: None,
             visual: None,
             meshes: Vec::new(),
             face_material: None,
@@ -341,6 +351,7 @@ impl Card3D {
         if let Some(mat) = self.face_material.as_mut() {
             apply_texture(mat, self.face_texture.as_ref(), Color::from_rgb(0.9, 0.9, 0.9));
         }
+        self.apply_tapped_look();
     }
 
     /// Setzt die Textur der Rückseite.
@@ -495,7 +506,14 @@ impl Card3D {
         self.set_marker(marker);
     }
 
-    /// Ist die Karte getappt (um 90° gedreht)?
+    /// Setzt nur den Tapp-Zustand der Karte (ausgegraut + Tapp-Symbol), ohne Spielregeln
+    /// (kein Mana, kein Neu-Anordnen) – für Skripte und Tests.
+    #[func]
+    pub fn set_tapped_state(&mut self, tapped: bool) {
+        self.set_tapped(tapped);
+    }
+
+    /// Ist die Karte getappt (ausgegraut mit Tapp-Symbol)?
     #[func]
     pub fn is_tapped(&self) -> bool {
         self.tapped
@@ -626,8 +644,28 @@ impl Card3D {
     }
 
     /// Tapp-Zustand setzen; die Drehung übernimmt die Zone beim nächsten `layout()`.
+    /// Tappt bzw. enttappt die Karte: getappt = ausgegraut mit Tapp-Symbol (keine Drehung).
     pub fn set_tapped(&mut self, tapped: bool) {
         self.tapped = tapped;
+        self.apply_tapped_look();
+    }
+
+    /// Ausgrauen (Vorderseite und Beschriftung) und Tapp-Symbol passend zu `tapped`.
+    fn apply_tapped_look(&mut self) {
+        let tint = if self.tapped { TAPPED_TINT } else { Color::WHITE };
+        if let Some(mat) = self.face_material.as_mut() {
+            if self.face_texture.is_some() {
+                mat.set_albedo(tint);
+            }
+        }
+        if let Some(labels) = self.labels.as_mut() {
+            for l in labels.all() {
+                l.set_modulate(tint);
+            }
+        }
+        if let Some(icon) = self.tap_icon.as_mut() {
+            icon.set_visible(self.tapped);
+        }
     }
 
     pub fn add_damage(&mut self, amount: i32) {
@@ -916,10 +954,29 @@ impl Card3D {
         self.marker_mesh = Some(marker);
         self.marker_material = Some(marker_mat);
 
+        // Tapp-Symbol: knapp über der Vorderseite, mittig im Bildfeld, nur wenn getappt sichtbar
+        let mut icon_mat = StandardMaterial3D::new_gd();
+        icon_mat.set_shading_mode(ShadingMode::UNSHADED);
+        icon_mat.set_transparency(godot::classes::base_material_3d::Transparency::ALPHA);
+        icon_mat.set_texture(TextureParam::ALBEDO, &super::textures::tap_icon());
+        icon_mat.set_texture_filter(TextureFilter::LINEAR_WITH_MIPMAPS);
+        let mut icon_mesh = PlaneMesh::new_gd();
+        icon_mesh.set_size(Vector2::splat(TAP_ICON_SIZE));
+        icon_mesh.set_material(&icon_mat);
+        let mut icon = MeshInstance3D::new_alloc();
+        icon.set_name("TapIcon");
+        icon.set_mesh(&icon_mesh);
+        icon.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+        icon.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.003, -CARD_HEIGHT * 0.12));
+        icon.set_visible(false);
+        visual.add_child(&icon);
+        self.tap_icon = Some(icon);
+
         self.build_labels(&mut visual);
         self.meshes = vec![body, face, back];
         self.face_material = Some(face_mat);
         self.back_material = Some(back_mat);
+        self.apply_tapped_look();
     }
 }
 

@@ -29,6 +29,14 @@ pub struct Combat {
     pub selected: Option<Gd<Card3D>>,
 }
 
+/// Von Hand getappte Ressource und das Mana, das sie in den Pool gelegt hat. Solange dieses
+/// Mana unbenutzt im Pool liegt, kann die Ressource wieder enttappt werden (Mana zurück).
+pub struct ManaTap {
+    pub card: Gd<Card3D>,
+    pub mana_type: ManaType,
+    pub amount: u32,
+}
+
 /// Temporärer Effekt, der in der End-Phase entfernt wird.
 pub struct TempEffect {
     pub card: Gd<Card3D>,
@@ -55,6 +63,8 @@ pub struct GameState {
     pub ai_answered: Option<InstanceId>,
     /// Vom Menschen gewählte Ausrüstung, die angelegt werden soll.
     pub pending_equip: Option<Gd<Card3D>>,
+    /// Von Hand getappte Ressourcen, deren Mana noch zurückgenommen werden kann.
+    pub mana_taps: Vec<ManaTap>,
     /// Held, dessen Fähigkeitenauswahl im HUD offen ist.
     pub pending_hero: Option<Gd<Card3D>>,
 }
@@ -82,6 +92,7 @@ impl GameState {
             resolver,
             ai_answered: None,
             pending_equip: None,
+            mana_taps: Vec::new(),
             pending_hero: None,
         }
     }
@@ -287,6 +298,8 @@ impl GameState {
     /// Enttappen: alle Kreaturen und Ressourcen des Spielers enttappen,
     /// Ressourcen-Zähler der Runde zurücksetzen.
     pub fn untap(&mut self, seat: usize) {
+        let taps = std::mem::take(&mut self.mana_taps);
+        self.mana_taps = taps.into_iter().filter(|t| self.seat_of_card(&t.card) != Some(seat)).collect();
         self.seats[seat].bind_mut().resources_played = 0;
         for mut hero in self.of_kind(seat, CardKind::Hero) {
             hero.bind_mut().hero_used = false;
@@ -406,6 +419,36 @@ impl GameState {
         if let Some(mut pool) = self.pool(seat) {
             pool.bind_mut().add_mana(t, amount as i64);
         }
+        true
+    }
+
+    /// Tappt eine Ressource von Hand (Klick) und merkt sich das Mana, damit der Tapp
+    /// zurückgenommen werden kann, solange das Mana unbenutzt im Pool liegt.
+    pub fn tap_for_mana_by_hand(&mut self, card: &mut Gd<Card3D>) -> bool {
+        if !self.tap_for_mana(card) {
+            return false;
+        }
+        let amount = 1 + self.extra_mana(card);
+        let mana_type = card.bind().produced_mana();
+        self.mana_taps.push(ManaTap { card: card.clone(), mana_type, amount });
+        true
+    }
+
+    /// Nimmt einen Tapp für Mana zurück: Ist `card` von Hand getappt worden und liegt ihr Mana
+    /// noch im Pool, wird das Mana abgezogen und die Ressource enttappt. false = nicht möglich
+    /// (Mana schon ausgegeben, Pool geleert oder nicht von Hand getappt).
+    pub fn untap_unused_mana(&mut self, card: &mut Gd<Card3D>) -> bool {
+        let Some(pos) = self.mana_taps.iter().position(|t| &t.card == card) else {
+            return false;
+        };
+        let Some(seat) = self.seat_of_card(card) else { return false };
+        let Some(mut pool) = self.pool(seat) else { return false };
+        let (mana_type, amount) = (self.mana_taps[pos].mana_type, self.mana_taps[pos].amount);
+        if !pool.bind_mut().remove_mana(mana_type, amount as i64) {
+            return false;
+        }
+        self.mana_taps.remove(pos);
+        Self::set_tapped(card, false);
         true
     }
 
@@ -986,6 +1029,8 @@ impl GameState {
     /// Ende des Zuges: Manapools beider Spieler auf null setzen – außer bei einem
     /// Spieler, der eine Karte mit „Mana bleibt erhalten“ im Spiel hat.
     pub fn empty_pools(&mut self) {
+        // Geleertes Mana lässt sich nicht mehr zurücknehmen
+        self.mana_taps.clear();
         for seat in 0..2 {
             let Some(mut pool) = self.pool(seat) else {
                 continue;

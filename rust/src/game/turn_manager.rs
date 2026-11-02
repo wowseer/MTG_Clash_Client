@@ -540,7 +540,8 @@ impl TurnManager {
 impl TurnManager {
 
     /// Klick auf eine Karte. true = Klick verbraucht (kein Drag starten).
-    /// - eigene Ressource in der Reihe: tappen (+1 Mana), jederzeit
+    /// - eigene Ressource in der Reihe: tappen (+1 Mana), jederzeit; erneuter Klick auf eine so
+    ///   getappte Ressource nimmt den Tapp zurück, solange ihr Mana unbenutzt im Pool liegt
     /// - eigener Held: Fähigkeitenauswahl im HUD öffnen
     /// - eigene Ausrüstung: auswählen, danach eigene Kreatur anklicken = anlegen
     /// - sonst entscheidet die Phase (z. B. Kampfauswahl)
@@ -554,7 +555,12 @@ impl TurnManager {
         let in_row = |seat: usize| zone.is_some() && zone == g.resource_zone(seat);
         if card.bind().is_resource() && (in_row(0) || in_row(1)) {
             if (0..2).any(|seat| in_row(seat) && g.is_human(seat)) && phase != Phase::GameOver {
-                g.tap_for_mana(&mut card);
+                // Getappt und Mana noch unbenutzt im Pool: Tapp zurücknehmen
+                if card.bind().is_tapped() {
+                    g.untap_unused_mana(&mut card);
+                } else {
+                    g.tap_for_mana_by_hand(&mut card);
+                }
             }
             return true;
         }

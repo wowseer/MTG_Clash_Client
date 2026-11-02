@@ -74,6 +74,63 @@ impl Canvas {
 
 // ---------------------------------------------------------------- Texturen
 
+/// Symbol für getappte Karten: grauer Kreispfeil im Uhrzeigersinn auf dunkler,
+/// halbtransparenter Scheibe (96 × 96, mit Alpha). Wird je Karte erzeugt (klein; ein globaler
+/// Zwischenspeicher würde beim Beenden als nicht freigegebene Textur gemeldet).
+pub fn tap_icon() -> Gd<Texture2D> {
+    const N: i32 = 96;
+    let mut data = vec![0u8; (N * N * 4) as usize];
+    let c = N as f32 * 0.5;
+    // Maße unten sind für 128 px angegeben und werden auf N skaliert
+    let k = N as f32 / 128.0;
+    let grey = Color::from_rgb(0.78, 0.78, 0.8);
+    let disc = Color::from_rgb(0.08, 0.08, 0.1);
+    let (ring_r, ring_w) = (34.0 * k, 6.0 * k);
+    // Bogen von 40° bis 320° (Lücke oben rechts), Spitze am Ende bei 320°, zeigt im Uhrzeigersinn
+    let (a0, a1) = (40f32.to_radians(), 320f32.to_radians());
+    let tip_angle = a1;
+    let tip_center = Vector2::new(tip_angle.cos(), tip_angle.sin()) * ring_r;
+    let along = Vector2::new(-tip_angle.sin(), tip_angle.cos()); // Laufrichtung bei wachsendem Winkel
+    let outward = Vector2::new(tip_angle.cos(), tip_angle.sin());
+    let (head_len, head_w) = (20.0 * k, 15.0 * k);
+    for y in 0..N {
+        for x in 0..N {
+            let p = Vector2::new(x as f32 + 0.5 - c, y as f32 + 0.5 - c);
+            let r = p.length();
+            let mut ang = p.y.atan2(p.x);
+            if ang < 0.0 {
+                ang += std::f32::consts::TAU;
+            }
+            // Scheibe
+            let disc_a = (1.0 - smoothstep(54.0 * k, 57.0 * k, r)) * 0.62;
+            // Ring-Bogen
+            let in_arc = ang >= a0 && ang <= a1;
+            let ring = if in_arc { 1.0 - smoothstep(ring_w * 0.5 - 1.0, ring_w * 0.5 + 1.0, (r - ring_r).abs()) } else { 0.0 };
+            // Pfeilspitze: Dreieck ab dem Bogenende in Laufrichtung
+            let q = p - tip_center;
+            let t = q.dot(along);
+            let s = q.dot(outward).abs();
+            let head = if (-1.0..head_len).contains(&t) {
+                let half = head_w * (1.0 - t / head_len);
+                1.0 - smoothstep(half - 1.0, half + 1.0, s)
+            } else {
+                0.0
+            };
+            let icon = ring.max(head);
+            let col = mix(disc, grey, icon);
+            let a = disc_a.max(icon);
+            let i = ((y * N + x) * 4) as usize;
+            data[i] = (col.r * 255.0) as u8;
+            data[i + 1] = (col.g * 255.0) as u8;
+            data[i + 2] = (col.b * 255.0) as u8;
+            data[i + 3] = (a.clamp(0.0, 1.0) * 255.0) as u8;
+        }
+    }
+    let mut img = Image::create_from_data(N, N, false, Format::RGBA8, &PackedByteArray::from(data)).expect("Tapp-Symbol");
+    img.generate_mipmaps();
+    ImageTexture::create_from_image(&img).expect("ImageTexture").upcast()
+}
+
 /// Holzdielen (kachelbar). `planks` Dielen übereinander, Maserung entlang U.
 pub fn wood_planks(planks: i32, light: Color, dark: Color, seed: u32) -> Gd<Texture2D> {
     wood_planks_oriented(planks, light, dark, seed, false)

@@ -139,6 +139,7 @@ Manavorrat eines Spielers.
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `add_mana(mana_type: int (Manafarbe), amount: int)` | `void` | Fügt Mana hinzu. |
+| `remove_mana(mana_type: int (Manafarbe), amount: int)` | `bool` | Nimmt `amount` Mana der Art `mana_type` wieder aus dem Pool (z. B. Tapp zurückgenommen). Alles oder nichts: false, wenn nicht genug davon im Pool liegt. |
 | `pay_mana(cost: ManaCost)` | `bool` | Bezahlt die Kosten (alles oder nichts). true = bezahlt. |
 | `pay_mana_dict(cost: Dictionary)` | `bool` | Wie `pay_mana`, mit Kosten als Dictionary `{ ManaType: Menge, "generic": Menge }`. |
 | `can_pay(cost: ManaCost)` | `bool` | Kann dieser Pool die Kosten `cost` bezahlen? |
@@ -329,7 +330,7 @@ Steuert die Partie: Rundenablauf als State Machine (Enttappen → Auffrischung �
 | `aim_at(source: Card3D, target: Card3D)` | `bool` | Zielpfeil von `source` auf `target` losgelassen: Blocker zuweisen bzw. Ausrüstung anlegen. true = ausgeführt (bei ungültigem Ziel steht der Grund im Protokoll). |
 | `is_legal_aura_target(aura: Card3D, target: Card3D)` | `bool` | Darf diese Aura die Karte `target` verzaubern? (für die Zielmarkierung beim Ziehen) |
 | `resolve_aura_drop(card: Card3D, from: Zone, target: Card3D)` | `Zone` | Aura aus der Hand auf eine bleibende Karte ziehen. Liefert die Zielzone (Stack) oder null. |
-| `on_card_clicked(card: Card3D)` | `bool` | Klick auf eine Karte. true = Klick verbraucht (kein Drag starten). - eigene Ressource in der Reihe: tappen (+1 Mana), jederzeit - eigener Held: Fähigkeitenauswahl im HUD öffnen - eigene Ausrüstung: auswählen, danach eigene Kreatur anklicken = anlegen - sonst entscheidet die Phase (z. B. Kampfauswahl) |
+| `on_card_clicked(card: Card3D)` | `bool` | Klick auf eine Karte. true = Klick verbraucht (kein Drag starten). - eigene Ressource in der Reihe: tappen (+1 Mana), jederzeit; erneuter Klick auf eine so getappte Ressource nimmt den Tapp zurück, solange ihr Mana unbenutzt im Pool liegt - eigener Held: Fähigkeitenauswahl im HUD öffnen - eigene Ausrüstung: auswählen, danach eigene Kreatur anklicken = anlegen - sonst entscheidet die Phase (z. B. Kampfauswahl) |
 | `get_hero_choice_name()` | `String` | Name des Helden mit offener Fähigkeitenauswahl ("" = keine). |
 | `get_hero_choices()` | `PackedStringArray` | Fähigkeiten des gewählten Helden als Text; nicht verfügbare mit Grund. |
 | `is_hero_choice_available(index: int)` | `bool` | Ist Fähigkeit `index` des gewählten Helden gerade aktivierbar? |
@@ -428,7 +429,8 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `get_remaining_defense()` | `int` | Verteidigung abzüglich erlittenen Schadens in dieser Runde. |
 | `set_ready_glow(on: bool)` | `void` | Leuchten „diese Karte kann gerade handeln“ (z. B. als Angreifer erklärt oder als Blocker zugewiesen werden). Dezenter als die Markierungen; eine Markierung hat Vorrang. |
 | `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
-| `is_tapped()` | `bool` | Ist die Karte getappt (um 90° gedreht)? |
+| `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (ausgegraut + Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
+| `is_tapped()` | `bool` | Ist die Karte getappt (ausgegraut mit Tapp-Symbol)? |
 | `is_artifact()` | `bool` | Artefakt (inkl. Ausrüstung)? |
 | `is_enchantment()` | `bool` | Verzauberung (inkl. Aura)? |
 | `get_enchanted()` | `Card3D` | Kreatur, die diese Aura verzaubert (null = keine). |

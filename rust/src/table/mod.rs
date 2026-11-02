@@ -8,5 +8,5 @@ pub mod table_controller;
 pub mod arena;
 pub mod tavern;
 pub mod target_arrows;
-mod textures;
+pub(crate) mod textures;
 pub mod zone;

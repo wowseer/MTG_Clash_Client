@@ -107,6 +107,11 @@ impl Mana {
         self.0[t.index()] += amount;
     }
 
+    /// Zieht Mana ab (nie unter 0).
+    pub fn remove(&mut self, t: ManaType, amount: u32) {
+        self.0[t.index()] = self.0[t.index()].saturating_sub(amount);
+    }
+
     pub fn total(&self) -> u32 {
         self.0.iter().sum()
     }
@@ -354,6 +359,18 @@ impl ManaPool {
         self.signals().pool_changed().emit();
     }
 
+    /// Nimmt `amount` Mana der Art `mana_type` wieder aus dem Pool (z. B. Tapp zurückgenommen).
+    /// Alles oder nichts: false, wenn nicht genug davon im Pool liegt.
+    #[func]
+    pub fn remove_mana(&mut self, mana_type: ManaType, amount: i64) -> bool {
+        if amount <= 0 || (self.mana.get(mana_type) as i64) < amount {
+            return false;
+        }
+        self.mana.remove(mana_type, amount as u32);
+        self.signals().pool_changed().emit();
+        true
+    }
+
     /// Bezahlt die Kosten (alles oder nichts). true = bezahlt.
     #[func]
     pub fn pay_mana(&mut self, cost: Gd<ManaCost>) -> bool {
@@ -451,6 +468,15 @@ mod tests {
 
     fn pool(w: u32, b: u32, s: u32, r: u32, g: u32, f: u32) -> Mana {
         Mana([w, b, s, r, g, f])
+    }
+
+    #[test]
+    fn remove_never_goes_below_zero() {
+        let mut m = pool(0, 0, 0, 2, 0, 0);
+        m.remove(Red, 1);
+        assert_eq!(m.get(Red), 1);
+        m.remove(Red, 5);
+        assert_eq!(m.get(Red), 0);
     }
 
     #[test]

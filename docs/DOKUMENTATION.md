@@ -115,7 +115,7 @@ die `HeroAnchor`-Marker mitziehen.
 | Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons, Debug-Fenster oder die Stack-Anzeige hindurch |
 | Karte aus der Hand ziehen und loslassen | ausspielen (Regeln prüfen Phase, Stack und Mana) |
 | Aura ziehen | über einer gültigen Zielkarte loslassen (Ziel wird gelb markiert) |
-| Klick auf eigene Ressource | tappen → +1 Mana in den Pool |
+| Klick auf eigene Ressource | tappen → +1 Mana in den Pool. Erneuter Klick auf die getappte Ressource nimmt den Tapp zurück (Ressource enttappt, Mana wieder aus dem Pool) – solange genau dieses Mana noch unbenutzt im Pool liegt. Nach dem Ausgeben oder Leeren des Pools nicht mehr möglich; automatisch beim Bezahlen getappte Ressourcen lassen sich nicht zurücknehmen |
 | Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |
 | Pfeil von der Ausrüstung auf eine eigene Kreatur ziehen (oder: Klick auf Ausrüstung, goldener Pfeil folgt der Maus, dann Klick auf Kreatur) | Ausrüstung anlegen (kostet Mana) |
 | Klick auf Artefakt mit Fähigkeit | Fähigkeit aktivieren (tappt das Artefakt) |
@@ -130,8 +130,9 @@ Karten bekommen einen schmalen, weichen Lichtsaum am Kartenrand, der ruhig „at
 dezent warmgold = die Karte kann gerade handeln (in der eigenen Angreifer-Phase: kann angreifen;
 in der eigenen Blocker-Phase: kann noch blocken), kräftig orange = Angreifer, blau = Blocker,
 gold = ausgewählt bzw. wählt ein Ziel (`TurnManager.refresh_ready_glow()`,
-`Card3D.set_ready_glow()`). Getappte Karten werden nur leicht schräg gestellt
-(`TAP_ANGLE_DEGREES` = 15° in `zone.rs`) statt quer. Pfeile sind gebogene, leuchtende Bänder
+`Card3D.set_ready_glow()`). Getappte Karten bleiben gerade liegen, werden
+ausgegraut (Vorderseite und Beschriftung abgedunkelt) und zeigen mittig ein graues Tapp-Symbol
+(Kreispfeil auf dunkler Scheibe, `textures::tap_icon()`); für Skripte `Card3D.set_tapped_state()`. Pfeile sind gebogene, leuchtende Bänder
 über dem Tisch mit Chevrons, die zur Spitze laufen: Angreifer zeigen nach vorn, Blocker auf ihren
 Angreifer. Bei jeder Zielwahl („wähle …“: Blocker zuweisen, Ausrüstung anlegen) zieht man einen
 goldenen Pfeil von der Karte zum Ziel; nur über einem **gültigen** Ziel rastet die Spitze auf dessen Mitte ein (`TurnManager.is_valid_aim_target`), sonst folgt sie der Maus. Ressourcen sind nie Quelle oder Ziel eines Pfeils.
@@ -157,7 +158,7 @@ Enttappen → Auffrischung → Ziehen → Hauptphase 1 → Angreifer bestimmen �
 | Auffrischung | Fähigkeiten „zu Beginn der Runde“ (Heiler, Feuer) | automatisch |
 | Ziehen | 1 Karte (der Startspieler zieht in Runde 1 nicht) | automatisch |
 | Hauptphase 1 / 2 | Karten ausspielen, Helden, Ausrüstung, Artefakte | Button |
-| Angreifer bestimmen | Angreifer wählen; sie werden getappt (leicht schräg gestellt, 15°) | Button |
+| Angreifer bestimmen | Angreifer wählen; sie werden getappt (ausgegraut mit Tapp-Symbol) | Button |
 | Blocker zuweisen | Verteidiger weist Blocker zu | Button (wenn Mensch verteidigt) |
 | Schadensberechnung | Kampfschaden; ungeblockt trifft den Spieler | automatisch |
 | Ende | temporäre Effekte, Schaden und Markierungen entfernen, Spielerwechsel | automatisch |
