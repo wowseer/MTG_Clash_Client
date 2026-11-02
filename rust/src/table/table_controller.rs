@@ -315,18 +315,21 @@ impl TableController {
         let Some(mut layer) = self.arrows.clone() else { return };
         let mut specs: Vec<ArrowSpec> = Vec::new();
         let mut source = self.aim_drag.clone();
-        if let Some(tm) = self.turn_manager.as_ref() {
+        let tm = self.turn_manager.clone();
+        if let Some(tm) = tm.as_ref() {
             let tm = tm.bind();
+            tm.refresh_ready_glow();
             specs.extend(tm.combat_arrows());
             source = source.or_else(|| tm.aim_source());
         }
         if let Some(src) = source.filter(|c| c.is_instance_valid()) {
             let from = src.get_global_position();
-            // Über einer anderen Karte: Pfeil rastet auf deren Mitte ein
+            // Über einem gültigen Ziel: Pfeil rastet auf dessen Mitte ein (sonst folgt er der Maus)
             let target = self
                 .hovered
                 .as_ref()
-                .filter(|c| c.is_instance_valid() && **c != src)
+                .filter(|c| c.is_instance_valid())
+                .filter(|c| tm.as_ref().is_some_and(|tm| tm.bind().is_valid_aim_target(&src, c)))
                 .map(|c| c.get_global_position())
                 .or(self.mouse_point);
             if let Some(to) = target {

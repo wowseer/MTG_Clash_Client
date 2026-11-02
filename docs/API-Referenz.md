@@ -426,6 +426,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `stop_motion()` | `void` | Bricht eine laufende Gleit-Animation ab. |
 | `get_current_attack()` | `int` | Angriff inklusive temporärer Boni. |
 | `get_remaining_defense()` | `int` | Verteidigung abzüglich erlittenen Schadens in dieser Runde. |
+| `set_ready_glow(on: bool)` | `void` | Leuchten „diese Karte kann gerade handeln“ (z. B. als Angreifer erklärt oder als Blocker zugewiesen werden). Dezenter als die Markierungen; eine Markierung hat Vorrang. |
 | `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
 | `is_tapped()` | `bool` | Ist die Karte getappt (um 90° gedreht)? |
 | `is_artifact()` | `bool` | Artefakt (inkl. Ausrüstung)? |

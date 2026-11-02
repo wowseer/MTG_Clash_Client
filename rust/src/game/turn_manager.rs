@@ -388,6 +388,10 @@ impl TurnManager {
         let phase = self.phase().unwrap_or(Phase::Untap);
         let Some(g) = self.game.as_ref() else { return false };
         let c = card.bind();
+        // Ressourcen erzeugen nie Pfeile (Klick = Mana)
+        if c.is_resource() {
+            return false;
+        }
         let defender = g.defender();
         if phase == Phase::Blockers && g.is_human(defender) && !self.stack_is_busy() {
             return g.is_on_battlefield(&card, defender) && c.is_creature() && !c.is_tapped();
@@ -457,7 +461,7 @@ impl TurnManager {
     pub fn combat_arrows(&self) -> Vec<ArrowSpec> {
         let Some(g) = self.game.as_ref() else { return Vec::new() };
         let mut arrows = Vec::new();
-        for a in g.combat.attackers.iter().filter(|c| c.is_instance_valid()) {
+        for a in g.combat.attackers.iter().filter(|c| c.is_instance_valid() && c.bind().is_creature()) {
             // Spieler (Sitz 0) greift nach -z an, der Gegner nach +z
             let forward = if g.seat_of_card(a) == Some(0) { Vector3::FORWARD } else { Vector3::BACK };
             let p = a.get_global_position();
@@ -469,6 +473,51 @@ impl TurnManager {
             arrows.push(ArrowSpec { from: from + dir * 0.35, to: to - dir * 0.3, color: BLOCK_GLOW });
         }
         arrows
+    }
+
+    /// Ist `target` ein gültiges Ziel für den Zielpfeil von `source`? Nur dann rastet der Pfeil
+    /// auf der Karte ein (Ressourcen und andere ungültige Karten nie).
+    pub fn is_valid_aim_target(&self, source: &Gd<Card3D>, target: &Gd<Card3D>) -> bool {
+        let Some(g) = self.game.as_ref() else { return false };
+        if source == target || target.bind().is_resource() {
+            return false;
+        }
+        if self.phase() == Some(Phase::Blockers) && source.bind().is_creature() {
+            return g.combat.attackers.contains(target);
+        }
+        let Some(owner) = g.seat_of_card(source) else { return false };
+        source.bind().kind() == CardKind::Equipment
+            && target.bind().is_creature()
+            && g.is_on_battlefield(target, owner)
+            && source.bind().equipped_to.as_ref() != Some(target)
+    }
+
+    /// Setzt das dezente Leuchten „kann handeln“ auf allen Karten der Spielfelder: in der
+    /// Angreifer-Phase des Menschen auf Kreaturen, die angreifen können, in seiner Blocker-Phase
+    /// auf Kreaturen, die noch blocken können. Sonst leuchtet nichts.
+    pub fn refresh_ready_glow(&self) {
+        let Some(g) = self.game.as_ref() else { return };
+        let phase = self.phase();
+        let busy = self.stack_is_busy();
+        let ready: Vec<Gd<Card3D>> = match phase {
+            Some(Phase::Attackers) if g.is_human(g.active) && !busy => g
+                .untapped_creatures(g.active)
+                .into_iter()
+                .filter(|c| c.bind().get_current_attack() > 0 && !g.combat.attackers.contains(c))
+                .collect(),
+            Some(Phase::Blockers) if g.is_human(g.defender()) && !busy => g
+                .untapped_creatures(g.defender())
+                .into_iter()
+                .filter(|c| !g.combat.blocks.iter().any(|(b, _)| b == c) && g.combat.selected.as_ref() != Some(c))
+                .collect(),
+            _ => Vec::new(),
+        };
+        for seat in 0..2 {
+            for mut card in GameState::cards_in(g.battlefield(seat)) {
+                let on = ready.contains(&card);
+                card.bind_mut().set_ready_glow(on);
+            }
+        }
     }
 
     fn drop_impl(&mut self, card: Gd<Card3D>, from: Gd<Zone>, to: Gd<Zone>, point: Option<Vector3>) -> Option<Gd<Zone>> {

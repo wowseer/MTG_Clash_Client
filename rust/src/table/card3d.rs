@@ -8,7 +8,7 @@
 //!     ├── Body  (BoxMesh, dünner Kartenkörper)
 //!     ├── Face  (PlaneMesh, +Y, Vorderseiten-Textur)
 //!     ├── Back  (PlaneMesh, -Y, Rückseiten-Textur)
-//!     └── Marker (PlaneMesh unter der Karte, leuchtende Aura bei Angriff/Block/Auswahl)
+//!     └── Marker (PlaneMesh unter der Karte, Lichtsaum: kann handeln / Angriff / Block / Auswahl)
 //! ```
 //! Die Karte liegt in ihrem lokalen Raum flach in der XZ-Ebene, Vorderseite zeigt
 //! nach +Y, die Oberkante der Karte zeigt nach -Z.
@@ -42,19 +42,27 @@ pub const CARD_WIDTH: f32 = 0.63;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
 
-/// Farbe der Aura: Angreifer (glühendes Orange), Blocker (Blau), ausgewählte Karte (Gold).
+/// Farbe der Aura: Angreifer (Orange), Blocker (Blau), ausgewählte Karte (Gold),
+/// Karte kann gerade handeln (angreifen/blocken: warmes Gold, dezent).
 pub const ATTACK_GLOW: Color = Color::from_rgb(1.0, 0.5, 0.12);
 pub const BLOCK_GLOW: Color = Color::from_rgb(0.3, 0.65, 1.0);
 pub const SELECT_GLOW: Color = Color::from_rgb(1.0, 0.85, 0.35);
+pub const READY_GLOW: Color = Color::from_rgb(1.0, 0.7, 0.28);
+/// Helligkeit des Leuchtens „kann handeln“ und der Markierungen (Angreifer/Blocker/Auswahl);
+/// höhere Stärke = heller und etwas breiterer Schein.
+const READY_STRENGTH: f32 = 0.7;
+const MARK_STRENGTH: f32 = 1.5;
 /// Wie weit die Aura über den Kartenrand hinausragt (Einheiten).
-const GLOW_MARGIN: f32 = 0.22;
+const GLOW_MARGIN: f32 = 0.16;
 
-/// Aura-Shader: weicher, flackernder Schein um ein abgerundetes Rechteck (Kartenform).
-/// Flammenartig durch wandernde Zacken entlang des Umfangs; additiv, ohne Licht.
+/// Aura-Shader: schmaler, heller Rand direkt an der Kartenkante mit weichem, kurzem Schein
+/// nach außen und ruhigem „Atmen“ – wie ein Lichtsaum unter der Karte. Additiv, ohne Licht;
+/// `strength` skaliert Helligkeit und Breite (dezent = Karte kann handeln, kräftig = Angreifer/Blocker).
 const GLOW_SHADER: &str = r#"
 shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
 uniform vec4 glow_color : source_color = vec4(1.0, 0.5, 0.12, 1.0);
+uniform float strength = 1.0;
 uniform vec2 quad_size;
 uniform vec2 card_half;
 
@@ -65,16 +73,14 @@ float sd_round_rect(vec2 p, vec2 b, float r) {
 
 void fragment() {
     vec2 p = (UV - 0.5) * quad_size;
-    float d = sd_round_rect(p, card_half, 0.04);
-    float ang = atan(p.y, p.x);
-    // Flammenzacken: zwei gegenläufige Wellen entlang des Umfangs, dazu Pulsieren
-    float flick = 0.5 + 0.25 * sin(ang * 9.0 + TIME * 5.0) + 0.25 * sin(ang * 23.0 - TIME * 8.3);
-    float reach = 0.07 + 0.09 * flick;
-    float glow = exp(-max(d, 0.0) / reach);
-    float rim = smoothstep(0.035, 0.0, abs(d - 0.012));
-    float pulse = 0.85 + 0.15 * sin(TIME * 3.0);
-    float a = (glow * 0.85 + rim * 0.9) * pulse * smoothstep(-0.02, 0.0, d);
-    ALBEDO = glow_color.rgb * (1.0 + rim * 0.6);
+    float d = sd_round_rect(p, card_half, 0.03);
+    float halo = exp(-max(d, 0.0) / (0.05 + 0.03 * strength)) * 0.6;
+    float rim = smoothstep(0.022, 0.0, abs(d - 0.006));
+    float breathe = 0.88 + 0.12 * sin(TIME * 2.2);
+    // Vor dem Rand der Fläche weich auf 0 auslaufen (keine sichtbare Rechteckkante)
+    float margin = quad_size.x * 0.5 - card_half.x;
+    float a = (halo + rim * 0.75) * strength * breathe * smoothstep(-0.01, 0.0, d) * smoothstep(margin, margin * 0.45, d);
+    ALBEDO = mix(glow_color.rgb, vec3(1.0), rim * 0.35);
     ALPHA = clamp(a, 0.0, 1.0);
 }
 "#;
@@ -152,6 +158,8 @@ pub struct Card3D {
     damage: i32,
     attack_bonus: i32,
     marker: CardMarker,
+    /// Dezentes Leuchten: Karte kann gerade handeln (siehe set_ready_glow).
+    ready_glow: bool,
 
     /// Sofortzauber / Hexerei: Effekt beim Auflösen.
     pub(crate) effect: SpellEffect,
@@ -225,6 +233,7 @@ impl IArea3D for Card3D {
             damage: 0,
             attack_bonus: 0,
             marker: CardMarker::None,
+            ready_glow: false,
             effect: SpellEffect::None,
             hero_abilities: Vec::new(),
             willpower: 0,
@@ -463,6 +472,16 @@ impl Card3D {
         self.defense + self.equip_defense + self.global_defense - self.damage
     }
 
+    /// Leuchten „diese Karte kann gerade handeln“ (z. B. als Angreifer erklärt oder als Blocker
+    /// zugewiesen werden). Dezenter als die Markierungen; eine Markierung hat Vorrang.
+    #[func]
+    pub fn set_ready_glow(&mut self, on: bool) {
+        if self.ready_glow != on {
+            self.ready_glow = on;
+            self.apply_glow();
+        }
+    }
+
     /// Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau),
     /// 3 = ausgewählt/wählt ein Ziel (gold).
     #[func]
@@ -630,16 +649,22 @@ impl Card3D {
 
     pub fn set_marker(&mut self, marker: CardMarker) {
         self.marker = marker;
-        let color = match marker {
+        self.apply_glow();
+    }
+
+    fn apply_glow(&mut self) {
+        let glow = match self.marker {
+            CardMarker::Attacking => Some((ATTACK_GLOW, MARK_STRENGTH)),
+            CardMarker::Blocking => Some((BLOCK_GLOW, MARK_STRENGTH)),
+            CardMarker::Selected => Some((SELECT_GLOW, MARK_STRENGTH)),
+            CardMarker::None if self.ready_glow => Some((READY_GLOW, READY_STRENGTH)),
             CardMarker::None => None,
-            CardMarker::Attacking => Some(ATTACK_GLOW),
-            CardMarker::Blocking => Some(BLOCK_GLOW),
-            CardMarker::Selected => Some(SELECT_GLOW),
         };
         if let (Some(mesh), Some(mat)) = (self.marker_mesh.as_mut(), self.marker_material.as_mut()) {
-            mesh.set_visible(color.is_some());
-            if let Some(c) = color {
+            mesh.set_visible(glow.is_some());
+            if let Some((c, strength)) = glow {
                 mat.set_shader_parameter("glow_color", &c.to_variant());
+                mat.set_shader_parameter("strength", &strength.to_variant());
             }
         }
     }

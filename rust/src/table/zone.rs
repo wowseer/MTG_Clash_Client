@@ -23,6 +23,8 @@ use super::card3d::{CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, Card3D};
 use super::layers::ZONE_LAYER;
 
 pub const ZONE_GROUP: &str = "card_zones";
+/// Drehung getappter Karten im Uhrzeigersinn (Grad) – nur leicht schräg statt quer.
+pub const TAP_ANGLE_DEGREES: f32 = 15.0;
 
 /// Art der Zone: 0 = Hand (Fächer), 1 = Stapel, 2 = Spielfeld, 3 = Ressourcen-Reihe, 4 = Stack.
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Debug)]
@@ -381,8 +383,8 @@ impl Zone {
 
         let tap = |local: &mut Transform3D, card: &Gd<Card3D>| {
             if card.bind().is_tapped() {
-                // Getappt: um 90° im Uhrzeigersinn gedreht
-                local.basis = local.basis * Basis::from_axis_angle(Vector3::UP, -std::f32::consts::FRAC_PI_2);
+                // Getappt: leicht schräg gestellt (wie in digitalen Kartenspielen üblich)
+                local.basis = local.basis * Basis::from_axis_angle(Vector3::UP, -TAP_ANGLE_DEGREES.to_radians());
             }
         };
 

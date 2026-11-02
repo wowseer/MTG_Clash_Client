@@ -119,18 +119,22 @@ die `HeroAnchor`-Marker mitziehen.
 | Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |
 | Pfeil von der Ausrüstung auf eine eigene Kreatur ziehen (oder: Klick auf Ausrüstung, goldener Pfeil folgt der Maus, dann Klick auf Kreatur) | Ausrüstung anlegen (kostet Mana) |
 | Klick auf Artefakt mit Fähigkeit | Fähigkeit aktivieren (tappt das Artefakt) |
-| Angreifer-Phase: Klick auf Kreaturen | als Angreifer markieren: flackernde orange Aura um die Karte und ein orangefarbener Pfeil nach vorn (Richtung Gegner) |
+| Angreifer-Phase: Klick auf Kreaturen | als Angreifer markieren: kräftiger oranger Lichtsaum um die Karte und ein orangefarbener Pfeil nach vorn (Richtung Gegner). Kreaturen, die angreifen können, leuchten vorher dezent warmgold |
 | Blocker-Phase: Pfeil von eigener Kreatur auf einen Angreifer ziehen (oder: Kreatur anklicken – goldene Aura, Pfeil folgt der Maus – dann Angreifer anklicken) | Blocker zuweisen: blaue Aura und blauer Pfeil vom Blocker zum Angreifer. Loslassen ins Leere bricht ab; erneuter Klick auf einen Blocker löst die Zuweisung |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
 | Button „Nächste Phase“ / „Weiter (passen)“ bzw. Leertaste | Phase beenden bzw. bei belegtem Stack Priorität abgeben |
 | Maus über eine Karte der großen Stack-Anzeige | holt sie nach vorn (auch tiefer liegende Elemente lesbar) |
 
 **Zielpfeile und Auren (`TargetArrows`, `target_arrows.rs`; Aura-Shader in `card3d.rs`):**
-Karten im Kampf bekommen eine flackernde, leuchtende Aura rund um den Rand (orange = Angreifer,
-blau = Blocker, gold = ausgewählt bzw. wählt ein Ziel). Pfeile sind gebogene, leuchtende Bänder
+Karten bekommen einen schmalen, weichen Lichtsaum am Kartenrand, der ruhig „atmet“:
+dezent warmgold = die Karte kann gerade handeln (in der eigenen Angreifer-Phase: kann angreifen;
+in der eigenen Blocker-Phase: kann noch blocken), kräftig orange = Angreifer, blau = Blocker,
+gold = ausgewählt bzw. wählt ein Ziel (`TurnManager.refresh_ready_glow()`,
+`Card3D.set_ready_glow()`). Getappte Karten werden nur leicht schräg gestellt
+(`TAP_ANGLE_DEGREES` = 15° in `zone.rs`) statt quer. Pfeile sind gebogene, leuchtende Bänder
 über dem Tisch mit Chevrons, die zur Spitze laufen: Angreifer zeigen nach vorn, Blocker auf ihren
 Angreifer. Bei jeder Zielwahl („wähle …“: Blocker zuweisen, Ausrüstung anlegen) zieht man einen
-goldenen Pfeil von der Karte zum Ziel; über einer Karte rastet die Spitze auf deren Mitte ein.
+goldenen Pfeil von der Karte zum Ziel; nur über einem **gültigen** Ziel rastet die Spitze auf dessen Mitte ein (`TurnManager.is_valid_aim_target`), sonst folgt sie der Maus. Ressourcen sind nie Quelle oder Ziel eines Pfeils.
 Während der Zielwahl werden Karten nicht gezoomt. Neue Zielwahl-Karten melden sich über
 `TurnManager.can_aim_from()` / `aim_at()` an. Für Skripte: `Card3D.set_marker_kind(int)`
 (0 = keine, 1 = Angreifer, 2 = Blocker, 3 = ausgewählt) und `TargetArrows.set_arrow_pairs()`.
@@ -153,7 +157,7 @@ Enttappen → Auffrischung → Ziehen → Hauptphase 1 → Angreifer bestimmen �
 | Auffrischung | Fähigkeiten „zu Beginn der Runde“ (Heiler, Feuer) | automatisch |
 | Ziehen | 1 Karte (der Startspieler zieht in Runde 1 nicht) | automatisch |
 | Hauptphase 1 / 2 | Karten ausspielen, Helden, Ausrüstung, Artefakte | Button |
-| Angreifer bestimmen | Angreifer wählen; sie werden getappt | Button |
+| Angreifer bestimmen | Angreifer wählen; sie werden getappt (leicht schräg gestellt, 15°) | Button |
 | Blocker zuweisen | Verteidiger weist Blocker zu | Button (wenn Mensch verteidigt) |
 | Schadensberechnung | Kampfschaden; ungeblockt trifft den Spieler | automatisch |
 | Ende | temporäre Effekte, Schaden und Markierungen entfernen, Spielerwechsel | automatisch |
