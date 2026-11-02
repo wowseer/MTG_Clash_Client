@@ -105,7 +105,6 @@ die `HeroAnchor`-Marker mitziehen.
 | unten rechts, über dem Button | `PhaseTimeline`: Zeitstrahl der Phasen mit drei Stationen – (1) ein Kreis für Enttappen, Auffrischung, Ziehen und Hauptphase 1, der mit jedem dieser Schritte größer wird (Hauptphase 1 = groß); (2) ein Punkt „Kampf“, dessen drei Schritte (Angreifer, Blocker, Schaden) eingeklappt sind und erst beim Kampf aufklappen (danach wieder zu); (3) ein Kreis für Hauptphase 2 und Ende – groß in Hauptphase 2, im Endschritt schrumpft er auf einen kleinen Kreis (bei neuer Runde wieder groß). Die aktuelle Station leuchtet (bei neuer Runde springt die Markierung zurück), erledigte Strecke und Stationen golden, kommende hohl. Darüber der Name der aktuellen Phase, darunter Runde und Seite am Zug |
 | Bildmitte | nur bei Spielende: „Spielende – X gewinnt!“. Während des Spiels keine Hinweistexte (Phase steht im Zeitstrahl, Stack in der Stack-Anzeige); `TurnManager.get_hint()` liefert den Hinweis weiterhin für eigene Skripte |
 | linker Bildrand, oben / unten | Gegner (oben links) bzw. Spieler (unten links): Rundenzahl mit Sanduhr-Symbol (`HourglassIcon`, `hourglass.rs`), darunter der Spielername; der Name der Seite am Zug ist golden |
-| oben links, unter dem Gegnernamen | die letzten drei Protokollzeilen, dezent |
 | Bildschirmmitte | Auswahlfenster für Heldenfähigkeiten (nach Klick auf den eigenen Helden) |
 | unten rechts | großer Button „Nächste Phase“ / „Weiter (passen)“: blau, solange der Stack leer ist, orange, wenn Priorität abgegeben wird |
 

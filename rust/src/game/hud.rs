@@ -7,7 +7,6 @@
 //!   (Gegner) bzw. unten links (Spieler)
 //! - linker Bildrand: Spielername, darüber die Rundenzahl mit Sanduhr ([`HourglassIcon`]) –
 //!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
-//! - oben links unter dem Gegnernamen: letzte Protokollzeilen
 //! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
 //!   belegtem Stack orange
 //! - Bildschirmmitte: Auswahlfenster für Heldenfähigkeiten
@@ -44,7 +43,7 @@ const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
 const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
 const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
 
-/// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links,
+/// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte,
 /// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
 /// sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr
 /// ([HourglassIcon]; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
@@ -85,7 +84,6 @@ pub struct TurnHud {
     button_color: Option<Color>,
     /// Meldung „Spielende – X gewinnt!“ in der Bildmitte (sonst leer).
     game_over_label: Option<Gd<Label>>,
-    log_label: Option<Gd<Label>>,
     button: Option<Gd<Button>>,
     /// Große Stack-Anzeige in der oberen Bildschirmhälfte.
     stack_view: Option<StackView>,
@@ -116,7 +114,6 @@ impl ICanvasLayer for TurnHud {
             opponent_hero_anchor: None,
             button_color: None,
             game_over_label: None,
-            log_label: None,
             button: None,
             stack_view: None,
             hero_panel: None,
@@ -231,12 +228,6 @@ impl TurnHud {
         let (opp_turn, opp_name) = name_block(&mut root, (0.0, 0.0), (14.0, 10.0), GrowDirection::END);
         let (me_turn, me_name) = name_block(&mut root, (0.0, 1.0), (14.0, -12.0), GrowDirection::BEGIN);
 
-        // Letzte Protokollzeilen oben links unter dem Gegnernamen, dezent
-        let mut log = label(13, DIM);
-        log.set_custom_minimum_size(Vector2::new(360.0, 0.0));
-        log.set_autowrap_mode(AutowrapMode::WORD_SMART);
-        place(&mut log, (0.0, 0.0), (14.0, 66.0), GrowDirection::END, GrowDirection::END);
-        root.add_child(&log);
 
         // Medaillons mit Leben – je unter einer Maske, die schwebende Karten ausspart
         // (Karten liegen so sichtbar über den Medaillons)
@@ -274,7 +265,6 @@ impl TurnHud {
         self.opponent_mask = Some(opp_mask);
         self.player_mask = Some(me_mask);
         self.game_over_label = Some(hint);
-        self.log_label = Some(log);
         self.button = Some(button);
     }
 
@@ -365,13 +355,6 @@ impl TurnHud {
                 trf!("Spielende\n{winner} gewinnt!", "Game over\n{winner} wins!")
             };
             l.set_text(&text);
-        }
-        if let Some(l) = self.log_label.as_mut() {
-            let log = tm.get_log();
-            // Nur die letzten Einträge
-            let all = log.as_slice();
-            let lines: Vec<String> = all[all.len().saturating_sub(3)..].iter().map(|s| s.to_string()).collect();
-            l.set_text(&lines.join("\n"));
         }
         if let Some(b) = self.button.as_mut() {
             b.set_disabled(!tm.is_waiting_for_input());
