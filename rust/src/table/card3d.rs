@@ -463,7 +463,6 @@ impl Card3D {
         self.defense + self.equip_defense + self.global_defense - self.damage
     }
 
-    /// Ist die Karte getappt (um 90° gedreht)?
     /// Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau),
     /// 3 = ausgewählt/wählt ein Ziel (gold).
     #[func]
@@ -477,6 +476,7 @@ impl Card3D {
         self.set_marker(marker);
     }
 
+    /// Ist die Karte getappt (um 90° gedreht)?
     #[func]
     pub fn is_tapped(&self) -> bool {
         self.tapped

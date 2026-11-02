@@ -426,8 +426,8 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `stop_motion()` | `void` | Bricht eine laufende Gleit-Animation ab. |
 | `get_current_attack()` | `int` | Angriff inklusive temporärer Boni. |
 | `get_remaining_defense()` | `int` | Verteidigung abzüglich erlittenen Schadens in dieser Runde. |
-| `set_marker_kind(kind: int)` | `void` | Ist die Karte getappt (um 90° gedreht)? Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
-| `is_tapped()` | `bool` |  |
+| `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
+| `is_tapped()` | `bool` | Ist die Karte getappt (um 90° gedreht)? |
 | `is_artifact()` | `bool` | Artefakt (inkl. Ausrüstung)? |
 | `is_enchantment()` | `bool` | Verzauberung (inkl. Aura)? |
 | `get_enchanted()` | `Card3D` | Kreatur, die diese Aura verzaubert (null = keine). |
