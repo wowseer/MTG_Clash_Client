@@ -17,3 +17,7 @@ config/features=PackedStringArray("4.7")
 [dotnet]
 
 project/assembly_name="MTG Clash"
+
+[rendering]
+
+textures/vram_compression/import_etc2_astc=true

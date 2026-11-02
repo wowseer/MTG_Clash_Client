@@ -1,7 +1,8 @@
 //! TableController: verbindet Kamera, Zonen und Karten.
 //!
 //! - Hover: Raycast Maus -> Karten (CARD_LAYER), liefert Trefferpunkt für den Tilt.
-//! - Drag: Karte aus einer Zone greifen, auf einer Ebene über dem Tisch bewegen,
+//! - Drag: Karte aus einer Zone greifen, auf einer Ebene über dem Tisch bewegen (sie behält dabei
+//!   ihre Bildschirmgröße, z. B. Handgröße, und schrumpft erst beim Ablegen auf Tischgröße),
 //!   per Raycast (ZONE_LAYER) das Drop-Ziel bestimmen und dort ablegen.
 //!   Ungültiger Drop -> Karte gleitet an ihren alten Platz zurück.
 //! - Rechtsklick: Nahaufnahme der Karte unter der Maus (erneut = zurück), Esc = Übersicht.
@@ -44,6 +45,11 @@ struct DragState {
     last_position: Vector3,
     /// Nur für Auren: Kreatur unter dem Mauszeiger (mögliches Ziel).
     aura_target: Option<Gd<Card3D>>,
+    /// Weltgröße der Karte beim Greifen (z. B. Handgröße) und ihr Kameraabstand dabei:
+    /// Beim Ziehen wird die Größe mit dem Abstand mitskaliert, damit die Karte auf dem
+    /// Bildschirm so groß bleibt wie auf der Hand.
+    grab_scale: f32,
+    grab_distance: f32,
 }
 
 struct RayHit {
@@ -178,7 +184,13 @@ impl INode3D for TableController {
         let dt = (delta as f32).max(1e-4);
         let mut card = drag.card.clone();
         let current = card.get_global_transform();
-        let target = Transform3D::new(Basis::IDENTITY, drag.plane_point);
+        // Bildschirmgröße wie beim Greifen halten: Weltgröße wächst mit dem Kameraabstand
+        let cam_pos = self.camera.as_ref().map(|c| c.get_global_position());
+        let scale = match cam_pos {
+            Some(cp) if drag.grab_distance > 1e-3 => drag.grab_scale * cp.distance_to(drag.plane_point) / drag.grab_distance,
+            _ => drag.grab_scale,
+        };
+        let target = Transform3D::new(Basis::from_scale(Vector3::splat(scale)), drag.plane_point);
         let w = 1.0 - (-self.drag_follow_speed * dt).exp();
         let next = current.interpolate_with(&target, w);
 
@@ -457,6 +469,9 @@ impl TableController {
 
     fn start_drag(&mut self, mut card: Gd<Card3D>, mut zone: Gd<Zone>) {
         self.clear_hover();
+        let grab = card.get_global_transform();
+        let grab_scale = grab.basis.get_scale().x.max(0.01);
+        let grab_distance = self.camera.as_ref().map_or(0.0, |c| c.get_global_position().distance_to(grab.origin));
         let origin_index = zone.bind_mut().remove_card(card.clone());
         card.bind_mut().set_dragging(true);
         let pos = card.get_global_position();
@@ -470,6 +485,8 @@ impl TableController {
             plane_point: pos,
             last_position: pos,
             aura_target: None,
+            grab_scale,
+            grab_distance,
         });
     }
 
