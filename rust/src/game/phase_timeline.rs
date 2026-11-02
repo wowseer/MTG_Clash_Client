@@ -8,8 +8,9 @@
 //! 3. **Rundenende** – ein Kreis für Hauptphase 2 und Ende: groß in Hauptphase 2, schrumpft
 //!    im Endschritt auf einen kleinen Kreis.
 //!
-//! Die Stationen liegen eng beieinander (rechtsbündig); beginnt der Kampf, klappt er nach links auf
-//! und schafft Platz für seine drei Schritte, danach rückt alles wieder zusammen.
+//! Die Stationen liegen eng beieinander, mittig über dem Hauptbutton; beginnt der Kampf, klappt er
+//! auf (die Reihe wächst nach beiden Seiten) und schafft Platz für seine drei Schritte, danach
+//! rückt alles wieder zusammen.
 //! In den Kreisen steht ein Symbol für den Schritt: Enttappen = Kreispfeil gegen den
 //! Uhrzeigersinn, Auffrischung = Sonne, Ziehen = Karte mit Plus, Hauptphase = aufgefächerte
 //! Karten, Ende = Mondsichel, Kampf = gekreuzte Schwerter; aufgeklappte Kampfschritte:
@@ -17,7 +18,7 @@
 //!
 //! Die aktuelle Station leuchtet (weiß mit goldenem Rand, pulsierender Schein); erledigte Strecke
 //! und Stationen sind golden, kommende hohl. Größe, Aufklappen und Position gleiten weich.
-//! Über der Linie steht der Name der aktuellen Phase, darunter Runde und wer am Zug ist.
+//! Über der Linie steht der Name der aktuellen Phase.
 
 use std::f32::consts::TAU;
 use std::ops::RangeInclusive;
@@ -28,7 +29,6 @@ use godot::global::HorizontalAlignment;
 use godot::prelude::*;
 
 const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
-const TEXT: Color = Color::from_rgb(0.97, 0.94, 0.88);
 const DIM: Color = Color::from_rgba(0.93, 0.87, 0.74, 0.55);
 const LINE: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.22);
 const HOLLOW: Color = Color::from_rgba(0.05, 0.06, 0.08, 0.9);
@@ -42,7 +42,7 @@ const CLOSING: RangeInclusive<usize> = 7..=8;
 const END: usize = 8;
 
 const WIDTH: f32 = 270.0;
-const HEIGHT: f32 = 78.0;
+const HEIGHT: f32 = 58.0;
 const LINE_Y: f32 = 40.0;
 /// Radien: Rundenbeginn wächst von OPENING_R[0] bis BIG_R; Kampf mittel, Unterpunkte klein;
 /// Rundenende groß (BIG_R) und im Endschritt klein (END_R).
@@ -61,14 +61,13 @@ const ICON_DARK: Color = Color::from_rgb(0.16, 0.12, 0.08);
 /// Ziehen und Hauptphase 1 wachsender Kreis, ein Punkt „Kampf“, der seine drei Schritte (Phasen-Index
 /// 4–6) erst während des Kampfs aufklappt, und ein Kreis für Hauptphase 2 und Ende, der im
 /// Endschritt kleiner wird. Die aktuelle Station leuchtet; erledigte sind golden, kommende hohl. Darüber steht der Name
-/// der aktuellen Phase, darunter Runde und Seite am Zug. Wird vom [TurnHud] jedes Frame über
+/// der aktuellen Phase. Wird vom [TurnHud] jedes Frame über
 /// [method set_state] gefüttert.
 #[derive(GodotClass)]
 #[class(base=Control)]
 pub struct PhaseTimeline {
     titles: Vec<String>,
     current: i64,
-    turn_text: String,
     /// Animierte Werte (None = noch nicht gesetzt): x der Markierung, Radius des
     /// Rundenbeginn- und Rundenende-Kreises, Aufklappgrad des Kampfs (0 = zu, 1 = offen).
     marker_x: Option<f32>,
@@ -116,7 +115,6 @@ impl IControl for PhaseTimeline {
         Self {
             titles: Vec::new(),
             current: -1,
-            turn_text: String::new(),
             marker_x: None,
             opening_r: None,
             closing_r: None,
@@ -207,27 +205,18 @@ impl IControl for PhaseTimeline {
         });
         let tx = marker.clamp(half.min(WIDTH * 0.5), (WIDTH - half).max(WIDTH * 0.5));
         self.text(&title, Vector2::new(tx, LINE_Y - BIG_R - 8.0), 16, GOLD, HorizontalAlignment::CENTER);
-        // Runde/Seite mittig unter den Stationen (im Rahmen gehalten)
-        let turn = self.turn_text.clone();
-        let half_turn = self.base().get_theme_default_font().map_or(60.0, |f| {
-            f.get_string_size_ex(&turn).font_size(13).done().x * 0.5 + 4.0
-        });
-        let mid = ((x0 + x1) * 0.5).clamp(half_turn.min(WIDTH * 0.5), (WIDTH - half_turn).max(WIDTH * 0.5));
-        self.text(&turn, Vector2::new(mid, LINE_Y + BIG_R + 18.0), 13, TEXT, HorizontalAlignment::CENTER);
     }
 }
 
 #[godot_api]
 impl PhaseTimeline {
-    /// Setzt Phasennamen (in Spielreihenfolge), Index der aktuellen Phase (-1 = vor Spielbeginn)
-    /// und den Text unter dem Zeitstrahl (z. B. „Runde 3 · Spieler“).
+    /// Setzt Phasennamen (in Spielreihenfolge) und Index der aktuellen Phase (-1 = vor Spielbeginn).
     #[func]
-    pub fn set_state(&mut self, titles: PackedStringArray, current: i64, turn_text: GString) {
+    pub fn set_state(&mut self, titles: PackedStringArray, current: i64) {
         if titles.len() != self.titles.len() || titles.as_slice().iter().zip(&self.titles).any(|(a, b)| a.to_string() != *b) {
             self.titles = titles.as_slice().iter().map(|t| t.to_string()).collect();
         }
         self.current = current;
-        self.turn_text = turn_text.to_string();
     }
 }
 
@@ -265,13 +254,14 @@ impl PhaseTimeline {
         }
     }
 
-    /// Stationen mit (animierter) Position und Größe, rechtsbündig: Abstand [STATION_GAP]; beim
-    /// Aufklappen des Kampfs kommen 3 × [SUB_GAP] dazu und die Reihe wächst nach links.
+    /// Stationen mit (animierter) Position und Größe, mittig: Abstand [STATION_GAP]; beim
+    /// Aufklappen des Kampfs kommen 3 × [SUB_GAP] dazu und die Reihe wächst nach beiden Seiten.
     fn dots(&self) -> Vec<Dot> {
         let e = self.expand;
         let spread = 3.0 * SUB_GAP * e;
         let total = 2.0 * STATION_GAP + spread;
-        let start = WIDTH - BIG_R - 6.0 - total;
+        // Mittig im Rahmen (über dem Hauptbutton); Aufklappen wächst nach beiden Seiten
+        let start = (WIDTH - total) * 0.5;
         let x = |u: f32| start + u;
         let opening_r = self.opening_r.unwrap_or_else(|| self.opening_target_r());
         let cur = self.current_index();

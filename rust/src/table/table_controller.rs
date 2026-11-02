@@ -3,7 +3,8 @@
 //! - Hover: Raycast Maus -> Karten (CARD_LAYER), liefert Trefferpunkt für den Tilt.
 //! - Drag: Karte aus einer Zone greifen; sie folgt der Maus flach auf dem Bildschirm (Ebene
 //!   parallel zum Bildschirm durch den Greifpunkt) und behält Ausrichtung und Größe von dort
-//!   (z. B. Handgröße) – kein Kippen, kein Schwung, die Kamera bleibt stehen. Erst beim Ablegen
+//!   (Handkarten gerade, ohne Fächer-Drehung, in Handgröße) – kein Kippen, kein Schwung, die
+//!   Kamera bleibt stehen. Erst beim Ablegen
 //!   gleitet sie auf Tischgröße. Per Raycast (ZONE_LAYER) das Drop-Ziel bestimmen und dort ablegen.
 //!   Ungültiger Drop -> Karte gleitet an ihren alten Platz zurück.
 //! - Rechtsklick: Nahaufnahme der Karte unter der Maus (erneut = zurück), Esc = Übersicht.
@@ -455,6 +456,12 @@ impl TableController {
     fn start_drag(&mut self, mut card: Gd<Card3D>, mut zone: Gd<Zone>) {
         self.clear_hover();
         let grab = card.get_global_transform();
+        // Aus der Hand: gerade halten (Neigung und Größe der Hand, aber ohne Fächer-Drehung)
+        let grab_basis = if zone.bind().zone_kind() == super::zone::ZoneKind::Hand {
+            zone.get_global_transform().basis
+        } else {
+            grab.basis
+        };
         let origin_index = zone.bind_mut().remove_card(card.clone());
         card.bind_mut().set_dragging(true);
         let pos = card.get_global_position();
@@ -467,7 +474,7 @@ impl TableController {
             grab_origin: pos,
             screen_point: pos,
             aura_target: None,
-            grab_basis: grab.basis,
+            grab_basis,
         });
     }
 

@@ -365,9 +365,7 @@ impl TurnHud {
         let active = tm.get_active_seat();
 
         if let Some(t) = self.timeline.as_mut() {
-            let who = if active >= 0 { tm.get_seat_name(active).to_string() } else { "—".into() };
-            let turn = trf!("Runde {}  ·  {who}", "Turn {}  ·  {who}", tm.get_turn());
-            t.bind_mut().set_state(tm.get_phase_titles(), current, GString::from(&turn));
+            t.bind_mut().set_state(tm.get_phase_titles(), current);
         }
 
         for (seat, badge) in [(1, self.opponent_badge.as_mut()), (0, self.player_badge.as_mut())] {

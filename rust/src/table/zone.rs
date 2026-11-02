@@ -218,6 +218,11 @@ impl Zone {
         self.free_placement
     }
 
+    /// Art der Zone (für Rust-Code; in Godot über die Eigenschaft `kind`).
+    pub fn zone_kind(&self) -> ZoneKind {
+        self.kind
+    }
+
     /// Entfernt eine Karte; gibt ihren bisherigen Index zurück (-1 falls nicht enthalten).
     #[func]
     pub fn remove_card(&mut self, mut card: Gd<Card3D>) -> i64 {

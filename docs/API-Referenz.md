@@ -174,13 +174,13 @@ Manavorrat eines Spielers.
 
 *Erbt von `Control` · Quelle: `rust/src/game/phase_timeline.rs`*
 
-Zeitstrahl der Phasen (HUD, unten rechts über dem Hauptbutton): ein mit Enttappen, Auffrischung, Ziehen und Hauptphase 1 wachsender Kreis, ein Punkt „Kampf“, der seine drei Schritte (Phasen-Index 4–6) erst während des Kampfs aufklappt, und ein Kreis für Hauptphase 2 und Ende, der im Endschritt kleiner wird. Die aktuelle Station leuchtet; erledigte sind golden, kommende hohl. Darüber steht der Name der aktuellen Phase, darunter Runde und Seite am Zug. Wird vom `TurnHud` jedes Frame über `set_state()` gefüttert.
+Zeitstrahl der Phasen (HUD, unten rechts über dem Hauptbutton): ein mit Enttappen, Auffrischung, Ziehen und Hauptphase 1 wachsender Kreis, ein Punkt „Kampf“, der seine drei Schritte (Phasen-Index 4–6) erst während des Kampfs aufklappt, und ein Kreis für Hauptphase 2 und Ende, der im Endschritt kleiner wird. Die aktuelle Station leuchtet; erledigte sind golden, kommende hohl. Darüber steht der Name der aktuellen Phase. Wird vom `TurnHud` jedes Frame über `set_state()` gefüttert.
 
 ### Funktionen
 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
-| `set_state(titles: PackedStringArray, current: int, turn_text: String)` | `void` | Setzt Phasennamen (in Spielreihenfolge), Index der aktuellen Phase (-1 = vor Spielbeginn) und den Text unter dem Zeitstrahl (z. B. „Runde 3 · Spieler“). |
+| `set_state(titles: PackedStringArray, current: int)` | `void` | Setzt Phasennamen (in Spielreihenfolge) und Index der aktuellen Phase (-1 = vor Spielbeginn). |
 
 ## PlayerSeat
 
