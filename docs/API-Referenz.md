@@ -10,6 +10,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 
 - [DebugPanel](#debugpanel) – erbt von `CanvasLayer` *(nur Test-Build)*
 - [CardCutout](#cardcutout) – erbt von `Control`
+- [HourglassIcon](#hourglassicon) – erbt von `Control`
 - [TurnHud](#turnhud) – erbt von `CanvasLayer`
 - [ManaCost](#manacost) – erbt von `Resource`
 - [ManaPool](#manapool) – erbt von `Node`
@@ -77,11 +78,23 @@ Vollbild-Hülle für HUD-Elemente: Ihre Nachfahren (mit `use_parent_material = t
 | `set_cutout(quad: PackedVector2Array)` | `void` | Setzt die Aussparung (4 Punkte oder leer). |
 | `set_greyed(on: bool)` | `void` | Schaltet das Ausgrauen ein oder aus. |
 
+## HourglassIcon
+
+*Erbt von `Control` · Quelle: `rust/src/game/hourglass.rs`*
+
+Sanduhr-Symbol (HUD), z. B. neben der Rundenzahl am linken Bildrand. Größe = `icon_size` (Breite × Höhe in Pixeln; die Mindestgröße des Controls).
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `icon_size` | `Vector2` | Breite × Höhe des Symbols in Pixeln. |
+
 ## TurnHud
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links, je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
+Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
 
 ### Eigenschaften
 

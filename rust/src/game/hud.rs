@@ -1,10 +1,13 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
 //! - unten rechts über dem Button: Zeitstrahl der Phasen ([`PhaseTimeline`])
-//! - Bildmitte: nur die Meldung zum Spielende (keine Hinweistexte); oben links: letzte Protokollzeilen
-//! - Medaillon ([`SeatBadge`]) mit Leben, daneben Name, Ressourcen und Mana: folgt je einem
-//!   3D-Ankerpunkt (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne
-//!   Anker oben links (Gegner) bzw. unten links (Spieler)
+//! - Bildmitte: nur die Meldung zum Spielende (keine Hinweistexte)
+//! - Medaillon ([`SeatBadge`]) mit Leben (ohne Text daneben): folgt je einem 3D-Ankerpunkt
+//!   (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne Anker oben links
+//!   (Gegner) bzw. unten links (Spieler)
+//! - linker Bildrand: Spielername, darüber die Rundenzahl mit Sanduhr ([`HourglassIcon`]) –
+//!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
+//! - oben links unter dem Gegnernamen: letzte Protokollzeilen
 //! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
 //!   belegtem Stack orange
 //! - Bildschirmmitte: Auswahlfenster für Heldenfähigkeiten
@@ -16,7 +19,7 @@
 use godot::classes::control::{GrowDirection, MouseFilter};
 use godot::classes::text_server::AutowrapMode;
 use godot::classes::{
-    Button, CanvasLayer, RichTextLabel, Control, ICanvasLayer, InputEvent, InputEventKey, Label, PanelContainer,
+    Button, CanvasLayer, Control, ICanvasLayer, InputEvent, InputEventKey, Label, PanelContainer,
     StyleBoxFlat, VBoxContainer,
 };
 use godot::builtin::Side;
@@ -24,6 +27,7 @@ use godot::global::Key;
 use godot::prelude::*;
 
 use super::card_cutout::CardCutout;
+use super::hourglass::HourglassIcon;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::stack_view::StackView;
@@ -41,8 +45,9 @@ const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
 const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
 
 /// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links,
-/// je ein [SeatBadge]-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an
-/// [member player_hero_anchor] / [member opponent_hero_anchor], sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
+/// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
+/// sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr
+/// ([HourglassIcon]; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
 /// blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten.
 /// Liest den Zustand jedes Frame vom [TurnManager].
 #[derive(GodotClass)]
@@ -62,8 +67,11 @@ pub struct TurnHud {
     opponent_hero_anchor: Option<Gd<Node3D>>,
 
     timeline: Option<Gd<PhaseTimeline>>,
-    opponent_info: Option<Gd<RichTextLabel>>,
-    player_info: Option<Gd<RichTextLabel>>,
+    /// Linker Bildrand: Name und Rundenzahl von Gegner (oben) und Spieler (unten).
+    opponent_name: Option<Gd<Label>>,
+    player_name: Option<Gd<Label>>,
+    opponent_turn: Option<Gd<Label>>,
+    player_turn: Option<Gd<Label>>,
     opponent_badge: Option<Gd<SeatBadge>>,
     player_badge: Option<Gd<SeatBadge>>,
     /// Zeilen (Medaillon + Text) von Gegner und Spieler, für die Positionierung am Anker.
@@ -94,8 +102,10 @@ impl ICanvasLayer for TurnHud {
         Self {
             turn_manager: None,
             timeline: None,
-            opponent_info: None,
-            player_info: None,
+            opponent_name: None,
+            player_name: None,
+            opponent_turn: None,
+            player_turn: None,
             opponent_badge: None,
             player_badge: None,
             opponent_row: None,
@@ -217,22 +227,26 @@ impl TurnHud {
         place(&mut hint, (0.5, 0.5), (0.0, 0.0), GrowDirection::BOTH, GrowDirection::BOTH);
         root.add_child(&hint);
 
-        // Letzte Protokollzeilen oben links, dezent
+        // Linker Bildrand: Rundenzahl mit Sanduhr, darunter der Name (Gegner oben, Spieler unten)
+        let (opp_turn, opp_name) = name_block(&mut root, (0.0, 0.0), (14.0, 10.0), GrowDirection::END);
+        let (me_turn, me_name) = name_block(&mut root, (0.0, 1.0), (14.0, -12.0), GrowDirection::BEGIN);
+
+        // Letzte Protokollzeilen oben links unter dem Gegnernamen, dezent
         let mut log = label(13, DIM);
         log.set_custom_minimum_size(Vector2::new(360.0, 0.0));
         log.set_autowrap_mode(AutowrapMode::WORD_SMART);
-        place(&mut log, (0.0, 0.0), (14.0, 12.0), GrowDirection::END, GrowDirection::END);
+        place(&mut log, (0.0, 0.0), (14.0, 66.0), GrowDirection::END, GrowDirection::END);
         root.add_child(&log);
 
-        // Medaillons mit Leben + Text für Ressourcen und Mana – je unter einer Maske, die
-        // schwebende Karten ausspart (Karten liegen so sichtbar über den Medaillons)
+        // Medaillons mit Leben – je unter einer Maske, die schwebende Karten ausspart
+        // (Karten liegen so sichtbar über den Medaillons)
         let opp_mask = CardCutout::new_alloc();
         root.add_child(&opp_mask);
         let me_mask = CardCutout::new_alloc();
         root.add_child(&me_mask);
-        let (opp_row, opp_badge, opp) =
+        let (opp_row, opp_badge) =
             seat_row(&mut opp_mask.clone().upcast(), OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
-        let (me_row, me_badge, me) =
+        let (me_row, me_badge) =
             seat_row(&mut me_mask.clone().upcast(), PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
 
         // Nur der Button unten rechts (Deck und Ablage bleiben sichtbar)
@@ -249,8 +263,10 @@ impl TurnHud {
         self.stack_view = Some(StackView::new(&mut root));
         self.base_mut().add_child(&root);
         self.timeline = Some(timeline);
-        self.opponent_info = Some(opp);
-        self.player_info = Some(me);
+        self.opponent_name = Some(opp_name);
+        self.player_name = Some(me_name);
+        self.opponent_turn = Some(opp_turn);
+        self.player_turn = Some(me_turn);
         self.opponent_badge = Some(opp_badge);
         self.player_badge = Some(me_badge);
         self.opponent_row = Some(opp_row);
@@ -319,28 +335,24 @@ impl TurnHud {
             t.bind_mut().set_state(tm.get_phase_titles(), current, GString::from(&turn));
         }
 
-        let info = |seat: i64| {
-            let r = tm.get_resource_counts(seat);
-            let marker = if seat == active { tr!("  [color=#f2c766](am Zug)[/color]", "  [color=#f2c766](to play)[/color]") } else { "" };
-            trf!(
-                "[font_size=17]{}[/font_size]{marker}\nRessourcen {}/{}\nMana: {}",
-                "[font_size=17]{}[/font_size]{marker}\nResources {}/{}\nMana: {}",
-                tm.get_seat_name(seat),
-                r.x,
-                r.y,
-                tm.get_pool_bbcode(seat)
-            )
-        };
         for (seat, badge) in [(1, self.opponent_badge.as_mut()), (0, self.player_badge.as_mut())] {
             if let Some(b) = badge {
                 b.bind_mut().set_state(tm.get_seat_name(seat), tm.get_life(seat), seat == active);
             }
         }
-        if let Some(l) = self.opponent_info.as_mut() {
-            l.set_text(&info(1));
-        }
-        if let Some(l) = self.player_info.as_mut() {
-            l.set_text(&info(0));
+        // Linker Bildrand: Name (golden = am Zug) und Rundenzahl neben der Sanduhr
+        let turn = tm.get_turn().to_string();
+        for (seat, name, turn_label) in [
+            (1, self.opponent_name.as_mut(), self.opponent_turn.as_mut()),
+            (0, self.player_name.as_mut(), self.player_turn.as_mut()),
+        ] {
+            if let Some(l) = name {
+                l.set_text(&tm.get_seat_name(seat));
+                l.add_theme_color_override("font_color", if seat == active { GOLD } else { PARCHMENT });
+            }
+            if let Some(l) = turn_label {
+                l.set_text(&turn);
+            }
         }
 
         // Keine Hinweistexte während des Spiels (Phase steht im Zeitstrahl, der Stack in der
@@ -436,15 +448,37 @@ fn paint_main_button(button: &mut Gd<Button>, color: Color) {
     button.add_theme_constant_override("outline_size", 4);
 }
 
-/// Medaillon + Infotext einer Seite, an einer Bildschirmecke verankert (Rückfall, falls kein
-/// 3D-Anker gesetzt ist). Gibt Zeile, Medaillon und Text zurück.
+/// Rundenzahl mit Sanduhr und darunter der Spielername, am linken Bildrand verankert
+/// (`anchor`/`offset` wie bei [`place`]). Gibt Rundenzahl- und Namens-Label zurück.
+fn name_block(root: &mut Gd<Control>, anchor: (f32, f32), offset: (f32, f32), grow_v: GrowDirection) -> (Gd<Label>, Gd<Label>) {
+    let mut col = VBoxContainer::new_alloc();
+    col.add_theme_constant_override("separation", 0);
+    col.set_mouse_filter(MouseFilter::IGNORE);
+    let mut turn_row = godot::classes::HBoxContainer::new_alloc();
+    turn_row.add_theme_constant_override("separation", 6);
+    turn_row.set_mouse_filter(MouseFilter::IGNORE);
+    let mut glass = HourglassIcon::new_alloc();
+    glass.set_v_size_flags(godot::classes::control::SizeFlags::SHRINK_CENTER);
+    turn_row.add_child(&glass);
+    let turn = label(16, PARCHMENT);
+    turn_row.add_child(&turn);
+    col.add_child(&turn_row);
+    let name = label(18, PARCHMENT);
+    col.add_child(&name);
+    place(&mut col, anchor, offset, GrowDirection::END, grow_v);
+    root.add_child(&col);
+    (turn, name)
+}
+
+/// Medaillon einer Seite, an einer Bildschirmecke verankert (Rückfall, falls kein
+/// 3D-Anker gesetzt ist). Gibt Zeile und Medaillon zurück.
 fn seat_row(
     root: &mut Gd<Control>,
     accent: Color,
     anchor: (f32, f32),
     offset: (f32, f32),
     grow_v: GrowDirection,
-) -> (Gd<Control>, Gd<SeatBadge>, Gd<RichTextLabel>) {
+) -> (Gd<Control>, Gd<SeatBadge>) {
     let mut row = godot::classes::HBoxContainer::new_alloc();
     row.add_theme_constant_override("separation", 4);
     row.set_mouse_filter(MouseFilter::IGNORE);
@@ -454,30 +488,9 @@ fn seat_row(
     badge.set("accent", &accent.to_variant());
     badge.set_use_parent_material(true);
     row.add_child(&badge);
-    let mut text = rich(14);
-    text.set_use_parent_material(true);
-    text.set_v_size_flags(godot::classes::control::SizeFlags::SHRINK_CENTER);
-    text.add_theme_constant_override("outline_size", 6);
-    row.add_child(&text);
     place(&mut row, anchor, offset, GrowDirection::END, grow_v);
     root.add_child(&row);
-    (row.upcast(), badge, text)
-}
-
-/// Mehrfarbiger Text (BBCode), z. B. für den Manapool.
-fn rich(size: i32) -> Gd<RichTextLabel> {
-    let mut l = RichTextLabel::new_alloc();
-    l.set_use_bbcode(true);
-    l.set_fit_content(true);
-    l.set_scroll_active(false);
-    l.set_autowrap_mode(AutowrapMode::OFF);
-    l.set_custom_minimum_size(Vector2::new(260.0, 0.0));
-    l.add_theme_font_size_override("normal_font_size", size);
-    l.add_theme_color_override("default_color", PARCHMENT);
-    l.add_theme_color_override("font_outline_color", Color::from_rgba(0.0, 0.0, 0.0, 0.8));
-    l.add_theme_constant_override("outline_size", 4);
-    l.set_mouse_filter(MouseFilter::IGNORE);
-    l
+    (row.upcast(), badge)
 }
 
 fn label(size: i32, color: Color) -> Gd<Label> {

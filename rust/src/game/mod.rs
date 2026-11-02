@@ -4,6 +4,7 @@ pub mod ability;
 pub mod card_cutout;
 pub mod cards;
 pub mod game_state;
+pub mod hourglass;
 pub mod hud;
 pub mod mana;
 pub mod phase_timeline;
