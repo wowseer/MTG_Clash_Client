@@ -564,6 +564,13 @@ impl TableController {
             target = match (is_aura, aura_target, target.clone()) {
                 // Aura auf eine Kreatur gezogen
                 (true, Some(host), _) => tm.bind_mut().resolve_aura_drop(card.clone(), origin_zone.clone(), host),
+                // Über der eigenen Hand losgelassen: abbrechen, Karte bleibt auf der Hand
+                (_, _, Some(zone)) if zone == origin_zone => None,
+                // Aus der Hand irgendwo auf den Tisch: immer ausspielen, Platz wird automatisch
+                // bestimmt (egal ob über Spielfeld, Friedhof, Gegnerseite oder freier Fläche)
+                _ if tm.bind().is_human_hand(origin_zone.clone()) => {
+                    tm.bind_mut().resolve_hand_drop(card.clone(), origin_zone.clone(), plane_point)
+                }
                 (_, _, Some(zone)) => {
                     tm.bind_mut().resolve_drop_at(card.clone(), origin_zone.clone(), zone, plane_point)
                 }

@@ -65,7 +65,7 @@ nach Art platziert, jeweils aus Sicht ihrer Seite („oben“ = zur Tischmitte; 
 | rechts | alles andere (Artefakte, Ausrüstung, Verzauberungen …) – rechtsbündiges Raster, eine Spalte je 3 Karten, höchstens 4 Spalten |
 
 Angelegte Ausrüstung und Auren hängen weiterhin versetzt unter ihrem Träger. Wo eine Karte
-losgelassen wird, spielt keine Rolle mehr.
+losgelassen wird, spielt keine Rolle mehr – irgendwo auf dem Tisch genügt.
 
 ### Kulisse und Bildschirm-Anzeige
 
@@ -126,7 +126,7 @@ die `HeroAnchor`-Marker mitziehen.
 | Aktion | Wirkung |
 |---|---|
 | Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons, Debug-Fenster oder die Stack-Anzeige hindurch |
-| Karte aus der Hand ziehen und loslassen | ausspielen (Regeln prüfen Phase, Stack und Mana). Danach gibst du die Priorität **automatisch** ab: Antwortet der Gegner nicht, löst sich die Karte ohne weiteren Klick auf und gleitet auf ihren automatischen Platz (siehe „Anordnung auf dem Spielfeld“). Antwortet er, hast du wieder Priorität („Weiter“ bzw. Sofortzauber) |
+| Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (Spielfeld, Friedhof, Gegnerseite, freie Fläche – nur nicht über der Hand) | ausspielen (Regeln prüfen Phase, Stack und Mana; `TurnManager.resolve_hand_drop`). Ressourcen kommen in die Ressourcen-Reihe, alles andere aufs eigene Spielfeld. Über der Hand losgelassen = abbrechen. Danach gibst du die Priorität **automatisch** ab: Antwortet der Gegner nicht, löst sich die Karte ohne weiteren Klick auf und gleitet auf ihren automatischen Platz (siehe „Anordnung auf dem Spielfeld“). Antwortet er, hast du wieder Priorität („Weiter“ bzw. Sofortzauber) |
 | Aura ziehen | über einer gültigen Zielkarte loslassen (Ziel wird gelb markiert) |
 | Klick auf eigene Ressource | tappen → +1 Mana in den Pool. Erneuter Klick auf die getappte Ressource nimmt den Tapp zurück (Ressource enttappt, Mana wieder aus dem Pool) – solange genau dieses Mana noch unbenutzt im Pool liegt. Nach dem Ausgeben oder Leeren des Pools nicht mehr möglich; automatisch beim Bezahlen getappte Ressourcen lassen sich nicht zurücknehmen |
 | Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |

@@ -427,6 +427,23 @@ impl TurnManager {
         true
     }
 
+    /// Ist `zone` die Hand eines menschlichen Spielers?
+    #[func]
+    pub fn is_human_hand(&self, zone: Gd<Zone>) -> bool {
+        self.game.as_ref().is_some_and(|g| (0..2).any(|seat| g.is_human(seat) && g.hand(seat).as_ref() == Some(&zone)))
+    }
+
+    /// Karte aus der Hand irgendwo auf dem Tisch losgelassen: wird auf das eigene Spielfeld
+    /// ausgespielt (Ressourcen in die Ressourcen-Reihe), der Platz wird automatisch bestimmt.
+    /// Liefert die Zielzone (Stack, Spielfeld, Ressourcen-Reihe) oder null (nicht erlaubt).
+    #[func]
+    pub fn resolve_hand_drop(&mut self, card: Gd<Card3D>, from: Gd<Zone>, point: Vector3) -> Option<Gd<Zone>> {
+        let g = self.game.as_ref()?;
+        let seat = g.seat_of_zone(&from)?;
+        let battlefield = g.battlefield(seat)?;
+        self.drop_impl(card, from, battlefield, Some(point))
+    }
+
     /// Darf diese Aura die Karte `target` verzaubern? (für die Zielmarkierung beim Ziehen)
     #[func]
     pub fn is_legal_aura_target(&self, aura: Gd<Card3D>, target: Gd<Card3D>) -> bool {
