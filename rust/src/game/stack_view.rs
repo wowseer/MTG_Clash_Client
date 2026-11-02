@@ -33,7 +33,7 @@ use crate::table::card3d::Card3D;
 use crate::table::placeholder;
 
 /// Höhe einer Stack-Karte in Pixeln (Breite folgt aus dem Kartenformat 256 × 358).
-const CARD_H: f32 = 290.0;
+pub const CARD_H: f32 = 290.0;
 /// Versatz jeder weiteren (darübergelegten) Karte.
 const STEP: Vector2 = Vector2::new(72.0, 12.0);
 const TOP_MARGIN: f32 = 12.0;
@@ -179,6 +179,33 @@ fn build_card(item: &Gd<StackItem>, scale: f32, top: bool) -> Gd<PanelContainer>
     let Ok(source) = source.try_to::<Gd<Card3D>>() else {
         return frame;
     };
+    // Bei Fähigkeiten den konkreten Effekt zeigen (Beschreibung des Stack-Elements)
+    let body = is_ability.then(|| description.split_once(": ").map_or(description.clone(), |(_, e)| e.to_string()));
+    fill_face(&mut card, &source, scale, body);
+
+    // Band: wer und was
+    let who = if controller == 0 { tr!("Spieler", "Player") } else { tr!("Gegner", "Opponent") };
+    let what = if is_ability { tr!("Fähigkeit", "Ability") } else { tr!("Zauber", "Spell") };
+    let mut ribbon = PanelContainer::new_alloc();
+    ribbon.set_mouse_filter(MouseFilter::IGNORE);
+    let ribbon_color = if controller == 0 { Color::from_rgba(0.12, 0.45, 0.2, 0.95) } else { Color::from_rgba(0.55, 0.1, 0.1, 0.95) };
+    ribbon.add_theme_stylebox_override("panel", &frame_style(ribbon_color, 0));
+    let mut ribbon_text = Label::new_alloc();
+    ribbon_text.set_text(&format!("{who} · {what}"));
+    ribbon_text.add_theme_font_size_override("font_size", (15.0 * scale).round() as i32);
+    ribbon_text.add_theme_color_override("font_color", Color::WHITE);
+    ribbon_text.set_mouse_filter(MouseFilter::IGNORE);
+    ribbon.add_child(&ribbon_text);
+    ribbon.set_position(Vector2::new(24.0, 66.0) * scale);
+    card.add_child(&ribbon);
+
+    frame
+}
+
+/// Füllt `card` (Control in Kartengröße 256 × 358 · `scale`) mit Kartenbild und Beschriftung von
+/// `source`. `body` ersetzt den Kartentext (z. B. den konkreten Effekt einer Fähigkeit).
+fn fill_face(card: &mut Gd<Control>, source: &Gd<Card3D>, scale: f32, body: Option<String>) {
+    let size = Vector2::new(256.0, 358.0) * scale;
     let (texture, texts) = {
         let c = source.bind();
         (c.face_tex(), c.face_texts())
@@ -218,32 +245,24 @@ fn build_card(item: &Gd<StackItem>, scale: f32, top: bool) -> Gd<PanelContainer>
         label(&texts.cost, Vector2::new(texts.cost_x, ty), Vector2::new(24.0, 24.0), 15, dark, false);
     }
     label(&texts.kind, Vector2::new(128.0, 219.0), Vector2::new(216.0, 22.0), 14, light, false);
-    // Bei Fähigkeiten den konkreten Effekt zeigen (Beschreibung des Stack-Elements)
-    let body = if is_ability {
-        description.split_once(": ").map_or(description.clone(), |(_, e)| e.to_string())
-    } else {
-        texts.body.clone()
-    };
+    let body = body.unwrap_or_else(|| texts.body.clone());
     label(&body, Vector2::new(128.0, 282.0), Vector2::new(206.0, 88.0), 14, dark, true);
     let mut stats = label(&texts.stats, Vector2::new(206.0, 334.0), Vector2::new(60.0, 28.0), 18, Color::WHITE, false);
     stats.add_theme_color_override("font_color", texts.stats_color);
+}
 
-    // Band: wer und was
-    let who = if controller == 0 { tr!("Spieler", "Player") } else { tr!("Gegner", "Opponent") };
-    let what = if is_ability { tr!("Fähigkeit", "Ability") } else { tr!("Zauber", "Spell") };
-    let mut ribbon = PanelContainer::new_alloc();
-    ribbon.set_mouse_filter(MouseFilter::IGNORE);
-    let ribbon_color = if controller == 0 { Color::from_rgba(0.12, 0.45, 0.2, 0.95) } else { Color::from_rgba(0.55, 0.1, 0.1, 0.95) };
-    ribbon.add_theme_stylebox_override("panel", &frame_style(ribbon_color, 0));
-    let mut ribbon_text = Label::new_alloc();
-    ribbon_text.set_text(&format!("{who} · {what}"));
-    ribbon_text.add_theme_font_size_override("font_size", (15.0 * scale).round() as i32);
-    ribbon_text.add_theme_color_override("font_color", Color::WHITE);
-    ribbon_text.set_mouse_filter(MouseFilter::IGNORE);
-    ribbon.add_child(&ribbon_text);
-    ribbon.set_position(Vector2::new(24.0, 66.0) * scale);
-    card.add_child(&ribbon);
-
+/// Große Vorschau einer Karte (goldener Rahmen, klickdurchlässig), z. B. im oberen Bildbereich,
+/// während die Karte aus der Hand gezogen wird. Höhe der Karte = [`CARD_H`] Pixel.
+pub fn build_preview(source: &Gd<Card3D>) -> Gd<PanelContainer> {
+    let scale = CARD_H / 358.0;
+    let mut frame = PanelContainer::new_alloc();
+    frame.set_mouse_filter(MouseFilter::IGNORE);
+    frame.add_theme_stylebox_override("panel", &frame_style(Color::from_rgb(1.0, 0.82, 0.35), 3));
+    let mut card = Control::new_alloc();
+    card.set_custom_minimum_size(Vector2::new(256.0, 358.0) * scale);
+    card.set_mouse_filter(MouseFilter::IGNORE);
+    frame.add_child(&card);
+    fill_face(&mut card, source, scale, None);
     frame
 }
 

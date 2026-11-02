@@ -11,6 +11,7 @@
 //!   belegtem Stack orange
 //! - Bildschirmmitte: Auswahlfenster für Heldenfähigkeiten
 //! - obere Bildschirmhälfte: große Stack-Anzeige ([`StackView`]), solange der Stack belegt ist
+//! - oberer Bildbereich, mittig: große Vorschau der Karte, die gerade gezogen wird
 //!
 //! Das HUD liest den Zustand jedes Frame vom TurnManager (keine Signal-Kopplung nötig).
 //! Alle Flächen lassen Mausklicks durch, nur der Button fängt sie ab.
@@ -29,7 +30,7 @@ use super::card_cutout::CardCutout;
 use super::hourglass::HourglassIcon;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
-use super::stack_view::StackView;
+use super::stack_view::{self, StackView};
 use super::turn_manager::TurnManager;
 use crate::table::table_controller::TableController;
 
@@ -87,6 +88,10 @@ pub struct TurnHud {
     button: Option<Gd<Button>>,
     /// Große Stack-Anzeige in der oberen Bildschirmhälfte.
     stack_view: Option<StackView>,
+    /// Große Vorschau der gerade gezogenen Karte im oberen Bildbereich (Karte + Anzeige).
+    drag_preview: Option<(InstanceId, Gd<godot::classes::PanelContainer>)>,
+    /// Elternknoten für die Vorschau (Vollbild-Root des HUD).
+    root: Option<Gd<Control>>,
     hero_panel: Option<Gd<PanelContainer>>,
     hero_title: Option<Gd<Label>>,
     hero_buttons: Vec<Gd<Button>>,
@@ -116,6 +121,8 @@ impl ICanvasLayer for TurnHud {
             game_over_label: None,
             button: None,
             stack_view: None,
+            drag_preview: None,
+            root: None,
             hero_panel: None,
             hero_title: None,
             hero_buttons: Vec::new(),
@@ -253,6 +260,7 @@ impl TurnHud {
         // Stack-Anzeige zuletzt: liegt über den übrigen Panels
         self.stack_view = Some(StackView::new(&mut root));
         self.base_mut().add_child(&root);
+        self.root = Some(root.clone());
         self.timeline = Some(timeline);
         self.opponent_name = Some(opp_name);
         self.player_name = Some(me_name);
@@ -300,10 +308,38 @@ impl TurnHud {
         }
     }
 
+    /// Während eine Karte gezogen wird: groß im oberen Bildbereich anzeigen (mittig, unter dem
+    /// Lebens-Edelstein des Gegners – wie die Stack-Anzeige). Beim Loslassen verschwindet sie.
+    fn update_drag_preview(&mut self, top: f32) {
+        let dragged = self
+            .base()
+            .get_parent()
+            .and_then(|p| p.try_cast::<TableController>().ok())
+            .and_then(|t| t.bind().get_dragged_card());
+        let id = dragged.as_ref().map(|c| c.instance_id());
+        if self.drag_preview.as_ref().map(|(i, _)| *i) == id {
+            return;
+        }
+        if let Some((_, old)) = self.drag_preview.take() {
+            old.free();
+        }
+        let (Some(card), Some(mut root)) = (dragged, self.root.clone()) else { return };
+        let mut preview = stack_view::build_preview(&card);
+        // Über allen anderen HUD-Elementen
+        preview.set_z_index(50);
+        root.add_child(&preview);
+        let screen = root.get_size();
+        let size = preview.get_combined_minimum_size();
+        preview.set_size(size);
+        preview.set_position(Vector2::new((screen.x - size.x) * 0.5, top + 6.0));
+        self.drag_preview = Some((card.instance_id(), preview));
+    }
+
     fn refresh(&mut self) {
         self.place_seat_rows();
         // Stack-Karten beginnen unter dem Lebens-Edelstein des Gegners (Leben bleibt lesbar)
         let below_opponent = self.opponent_badge.as_ref().map_or(0.0, |b| b.get_global_rect().end().y);
+        self.update_drag_preview(below_opponent);
         if let (Some(tm), Some(view)) = (self.turn_manager.clone(), self.stack_view.as_mut()) {
             let items: Vec<_> = tm.bind().get_stack_items().iter_shared().collect();
             view.update(&items, below_opponent);
