@@ -7,6 +7,9 @@
 //! innerhalb des Kartenvierecks wird verworfen. Die Aussparung ist das auf den Bildschirm
 //! projizierte Viereck der Karte ([`Card3D::screen_quad`](crate::table::card3d::Card3D::screen_quad)).
 //!
+//! Solange eine Karte gehovert oder gezogen wird, wird der ganze Inhalt außerdem weich
+//! durchsichtig ([`FADED_ALPHA`]), damit er nicht von der Karte ablenkt.
+//!
 //! Zusätzlich kann der Inhalt ausgegraut werden (z. B. das Gegner-Medaillon, solange die
 //! Stack-Anzeige darüber liegt).
 //!
@@ -15,6 +18,11 @@
 use godot::classes::control::{LayoutPreset, MouseFilter};
 use godot::classes::{Control, IControl, Shader, ShaderMaterial};
 use godot::prelude::*;
+
+/// Deckkraft des Inhalts, während eine Karte gehovert oder gezogen wird.
+pub const FADED_ALPHA: f32 = 0.3;
+/// Geschwindigkeit des Ein-/Ausblendens (je Sekunde, exponentiell).
+const FADE_SPEED: f32 = 10.0;
 
 /// Canvas-Shader: verwirft Pixel im konvexen Viereck `quad` (Canvas-Koordinaten) und graut bei
 /// `grey` = 1 aus. Die Canvas-Position wird im Vertex-Shader berechnet – unabhängig von
@@ -58,8 +66,9 @@ void fragment() {
 /// Vollbild-Hülle für HUD-Elemente: Ihre Nachfahren (mit `use_parent_material = true`) werden
 /// überall gezeichnet, außer innerhalb des konvexen Vierecks [member cutout]
 /// (Bildschirmkoordinaten, 4 Punkte). So wirkt eine 3D-Karte, die vor einem Medaillon schwebt,
-/// als läge sie darüber. Leeres [member cutout] = nichts ausgespart. [member greyed] graut den
-/// Inhalt aus. Der [TurnHud] setzt beides jedes Frame.
+/// als läge sie darüber. Leeres [member cutout] = nichts ausgespart. Ist eine Aussparung gesetzt
+/// (Karte gehovert/gezogen), wird der Inhalt zusätzlich weich auf 30 % Deckkraft ausgeblendet.
+/// [member greyed] graut den Inhalt aus. Der [TurnHud] setzt beides jedes Frame.
 #[derive(GodotClass)]
 #[class(base=Control)]
 pub struct CardCutout {
@@ -89,6 +98,19 @@ impl IControl for CardCutout {
         self.base_mut().set_mouse_filter(MouseFilter::IGNORE);
         let material = self.material.clone();
         self.base_mut().set_material(&material);
+    }
+
+    fn process(&mut self, delta: f64) {
+        // Weich durchsichtig, solange eine Karte gehovert/gezogen wird
+        let target = if self.cutout.len() == 4 { FADED_ALPHA } else { 1.0 };
+        let mut m = self.base().get_modulate();
+        if (m.a - target).abs() > 0.001 {
+            m.a += (target - m.a) * (1.0 - (-FADE_SPEED * delta as f32).exp());
+            if (m.a - target).abs() < 0.01 {
+                m.a = target;
+            }
+            self.base_mut().set_modulate(m);
+        }
     }
 }
 
