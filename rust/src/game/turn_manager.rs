@@ -17,7 +17,7 @@ use super::timing::{check_sorcery_timing, PlayError};
 use crate::table::card3d::CardMarker;
 use super::seat::PlayerSeat;
 use super::stack::{StackItem, StackManager};
-use crate::table::card3d::{Card3D, ATTACK_GLOW, BLOCK_GLOW, READY_GLOW};
+use crate::table::card3d::{Card3D, ABILITY_GLOW, ATTACK_GLOW, BLOCK_GLOW};
 use crate::table::target_arrows::ArrowSpec;
 
 /// Länge des Angriffspfeils (vom Angreifer nach vorn, Einheiten).
@@ -492,32 +492,32 @@ impl TurnManager {
             && source.bind().equipped_to.as_ref() != Some(target)
     }
 
-    /// Setzt das dezente Leuchten „kann handeln“ auf allen Karten der Spielfelder: in der
-    /// Angreifer-Phase des Menschen goldener Rand für Kreaturen, die angreifen können, in seiner
-    /// Blocker-Phase blauer Rand für mögliche Blocker. Sonst leuchtet nichts.
+    /// Setzt den dezenten Rand „kann handeln“ auf allen Karten der Spielfelder (nur für den
+    /// Menschen, nur solange er handeln darf):
+    /// - Rot: Kreatur kann angreifen (eigene Angreifer-Phase)
+    /// - Blau: möglicher Blocker (eigene Blocker-Phase)
+    /// - Gold: Karte kann eine Fähigkeit aktivieren (Held, Artefakt, Ausrüstung)
     pub fn refresh_ready_glow(&self) {
         let Some(g) = self.game.as_ref() else { return };
-        let phase = self.phase();
+        let Some(phase) = self.phase() else { return };
         let busy = self.stack_is_busy();
-        let ready: Vec<Gd<Card3D>> = match phase {
-            Some(Phase::Attackers) if g.is_human(g.active) && !busy => g
-                .untapped_creatures(g.active)
-                .into_iter()
-                .filter(|c| c.bind().get_current_attack() > 0 && !g.combat.attackers.contains(c))
-                .collect::<Vec<_>>(),
-            Some(Phase::Blockers) if g.is_human(g.defender()) && !busy => g
-                .untapped_creatures(g.defender())
-                .into_iter()
-                .filter(|c| !g.combat.blocks.iter().any(|(b, _)| b == c) && g.combat.selected.as_ref() != Some(c))
-                .collect::<Vec<_>>(),
-            _ => Vec::new(),
-        };
-        // Angreifer-Phase: Gold (kann angreifen); Blocker-Phase: Blau (kann blocken)
-        let color = if phase == Some(Phase::Blockers) { BLOCK_GLOW } else { READY_GLOW };
         for seat in 0..2 {
             for mut card in GameState::cards_in(g.battlefield(seat)) {
-                let on = ready.contains(&card);
-                card.bind_mut().set_ready_color(on.then_some(color));
+                let color = if !g.is_human(seat) {
+                    None
+                } else if phase == Phase::Attackers && seat == g.active && !busy {
+                    let c = card.bind();
+                    (c.is_creature() && !c.is_tapped() && c.get_current_attack() > 0 && !g.combat.attackers.contains(&card))
+                        .then_some(ATTACK_GLOW)
+                } else if phase == Phase::Blockers && seat == g.defender() && !busy {
+                    let c = card.bind();
+                    let free = !g.combat.blocks.iter().any(|(b, _)| b == &card) && g.combat.selected.as_ref() != Some(&card);
+                    (c.is_creature() && !c.is_tapped() && free).then_some(BLOCK_GLOW)
+                } else {
+                    None
+                };
+                let color = color.or_else(|| g.can_activate(seat, &card, phase).then_some(ABILITY_GLOW));
+                card.bind_mut().set_ready_color(color);
             }
         }
     }

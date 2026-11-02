@@ -1,6 +1,6 @@
 //! TargetArrows: gebogene, leuchtende Zielpfeile über dem Spieltisch.
 //!
-//! - Angreifer: Pfeil nach vorn (Richtung Gegner), orange.
+//! - Angreifer: Pfeil nach vorn (Richtung Gegner), rot.
 //! - Blocker: Pfeil vom Blocker auf seinen Angreifer, blau.
 //! - Zielwahl („wähle …“, z. B. Blocker zuweisen, Ausrüstung anlegen): goldener Pfeil von der
 //!   wählenden Karte zum Mauszeiger bzw. zur Karte darunter – beim Ziehen oder nach einem Klick.

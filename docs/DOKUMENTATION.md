@@ -119,7 +119,7 @@ die `HeroAnchor`-Marker mitziehen.
 | Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |
 | Pfeil von der Ausrüstung auf eine eigene Kreatur ziehen (oder: Klick auf Ausrüstung, goldener Pfeil folgt der Maus, dann Klick auf Kreatur) | Ausrüstung anlegen (kostet Mana) |
 | Klick auf Artefakt mit Fähigkeit | Fähigkeit aktivieren (tappt das Artefakt) |
-| Angreifer-Phase: Klick auf Kreaturen | als Angreifer markieren: kräftiger oranger Lichtsaum um die Karte und ein orangefarbener Pfeil nach vorn (Richtung Gegner). Kreaturen, die angreifen können, leuchten vorher dezent warmgold |
+| Angreifer-Phase: Klick auf Kreaturen | als Angreifer markieren: kräftiger roter Lichtsaum um die Karte und ein roter Pfeil nach vorn (Richtung Gegner). Kreaturen, die angreifen können, haben vorher einen dezenten roten Rand |
 | Blocker-Phase: Pfeil von eigener Kreatur auf einen Angreifer ziehen (oder: Kreatur anklicken – goldene Aura, Pfeil folgt der Maus – dann Angreifer anklicken) | Blocker zuweisen: blaue Aura und blauer Pfeil vom Blocker zum Angreifer. Loslassen ins Leere bricht ab; erneuter Klick auf einen Blocker löst die Zuweisung |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
 | Button „Nächste Phase“ / „Weiter (passen)“ bzw. Leertaste | Phase beenden bzw. bei belegtem Stack Priorität abgeben |
@@ -127,8 +127,10 @@ die `HeroAnchor`-Marker mitziehen.
 
 **Zielpfeile und Auren (`TargetArrows`, `target_arrows.rs`; Aura-Shader in `card3d.rs`):**
 Karten bekommen einen schmalen, weichen Lichtsaum am Kartenrand, der ruhig „atmet“:
-dezent warmgold = kann angreifen (eigene Angreifer-Phase), dezent blau = möglicher Blocker
-(eigene Blocker-Phase), kräftig orange = Angreifer, blau = Blocker,
+dezent rot = kann angreifen (eigene Angreifer-Phase), dezent blau = möglicher Blocker
+(eigene Blocker-Phase), dezent gold = kann eine Fähigkeit aktivieren (Held, Artefakt mit
+Tapp-Fähigkeit, Ausrüstung – sobald Timing und Mana passen; `GameState::can_activate`),
+kräftig rot = Angreifer, kräftig blau = Blocker,
 gold = ausgewählt bzw. wählt ein Ziel (`TurnManager.refresh_ready_glow()`,
 `Card3D.set_ready_glow()`). **Getappte** Karten werden leicht schräg gestellt (15°,
 `zone::TAP_ANGLE_DEGREES`), ausgegraut (Vorderseite und Beschriftung abgedunkelt) und zeigen mittig

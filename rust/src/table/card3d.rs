@@ -47,12 +47,14 @@ pub const CARD_WIDTH: f32 = 0.63;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
 
-/// Farbe der Aura: Angreifer (Orange), Blocker (Blau), ausgewählte Karte (Gold),
-/// Karte kann angreifen (warmes Gold, dezent); mögliche Blocker leuchten dezent blau.
-pub const ATTACK_GLOW: Color = Color::from_rgb(1.0, 0.5, 0.12);
+/// Farben des Lichtsaums – dezent = „kann“, kräftig = Markierung:
+/// Rot = kann angreifen / greift an, Blau = möglicher Blocker / blockt,
+/// Gold = kann eine Fähigkeit aktivieren / ausgewählt (wählt ein Ziel).
+pub const ATTACK_GLOW: Color = Color::from_rgb(1.0, 0.22, 0.15);
 pub const BLOCK_GLOW: Color = Color::from_rgb(0.3, 0.65, 1.0);
 pub const SELECT_GLOW: Color = Color::from_rgb(1.0, 0.85, 0.35);
-pub const READY_GLOW: Color = Color::from_rgb(1.0, 0.7, 0.28);
+/// Gold: Karte kann eine Fähigkeit aktivieren (Held, Artefakt mit Tapp-Fähigkeit, Ausrüstung).
+pub const ABILITY_GLOW: Color = Color::from_rgb(1.0, 0.75, 0.28);
 /// Helligkeit des Leuchtens „kann handeln“ und der Markierungen (Angreifer/Blocker/Auswahl);
 /// höhere Stärke = heller und etwas breiterer Schein.
 const READY_STRENGTH: f32 = 0.7;
@@ -487,14 +489,14 @@ impl Card3D {
         self.defense + self.equip_defense + self.global_defense - self.damage
     }
 
-    /// Leuchten „diese Karte kann gerade handeln“ (z. B. als Angreifer erklärt oder als Blocker
-    /// zugewiesen werden). Dezenter als die Markierungen; eine Markierung hat Vorrang.
+    /// Dezenter goldener Rand „diese Karte kann eine Fähigkeit aktivieren“ an/aus (für Skripte;
+    /// Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang.
     #[func]
     pub fn set_ready_glow(&mut self, on: bool) {
-        self.set_ready_color(on.then_some(READY_GLOW));
+        self.set_ready_color(on.then_some(ABILITY_GLOW));
     }
 
-    /// Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau),
+    /// Aura um die Karte setzen: 0 = keine, 1 = Angreifer (rot), 2 = Blocker (blau),
     /// 3 = ausgewählt/wählt ein Ziel (gold).
     #[func]
     pub fn set_marker_kind(&mut self, kind: i64) {
@@ -662,8 +664,8 @@ impl Card3D {
         self.apply_tapped_look();
     }
 
-    /// Dezentes Leuchten „kann handeln“ in `color` (z. B. Gold = kann angreifen,
-    /// Blau = kann blocken); None = aus. Eine Markierung hat Vorrang.
+    /// Dezentes Leuchten „kann handeln“ in `color` (Rot = kann angreifen, Blau = kann blocken,
+    /// Gold = kann eine Fähigkeit aktivieren); None = aus. Eine Markierung hat Vorrang.
     pub fn set_ready_color(&mut self, color: Option<Color>) {
         if self.ready_glow != color {
             self.ready_glow = color;

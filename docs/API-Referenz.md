@@ -427,8 +427,8 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `stop_motion()` | `void` | Bricht eine laufende Gleit-Animation ab. |
 | `get_current_attack()` | `int` | Angriff inklusive temporärer Boni. |
 | `get_remaining_defense()` | `int` | Verteidigung abzüglich erlittenen Schadens in dieser Runde. |
-| `set_ready_glow(on: bool)` | `void` | Leuchten „diese Karte kann gerade handeln“ (z. B. als Angreifer erklärt oder als Blocker zugewiesen werden). Dezenter als die Markierungen; eine Markierung hat Vorrang. |
-| `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
+| `set_ready_glow(on: bool)` | `void` | Dezenter goldener Rand „diese Karte kann eine Fähigkeit aktivieren“ an/aus (für Skripte; Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang. |
+| `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (rot), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
 | `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (schräg, ausgegraut, Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
 | `is_tapped()` | `bool` | Ist die Karte getappt (leicht schräg, ausgegraut, Tapp-Symbol)? |
 | `is_artifact()` | `bool` | Artefakt (inkl. Ausrüstung)? |

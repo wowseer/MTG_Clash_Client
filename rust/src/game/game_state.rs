@@ -962,6 +962,38 @@ impl GameState {
         Ok(ability)
     }
 
+    /// Kann `card` (auf dem Spielfeld von `seat`) gerade eine Fähigkeit aktivieren? Held: eine
+    /// seiner Fähigkeiten ist erlaubt; Artefakt: Tapp-Fähigkeit (ungetappt, Timing und Mana
+    /// passen); Ausrüstung: Anlegen an eine eigene Kreatur möglich. Ressourcen zählen nicht.
+    pub fn can_activate(&self, seat: usize, card: &Gd<Card3D>, phase: Phase) -> bool {
+        if !self.is_on_battlefield(card, seat) {
+            return false;
+        }
+        let kind = card.bind().kind();
+        match kind {
+            CardKind::Hero => {
+                let n = card.bind().hero_abilities.len();
+                (0..n).any(|i| self.check_hero(seat, card, i, phase).is_ok())
+            }
+            CardKind::Artifact => {
+                let Some(ability) = card.bind().activated else { return false };
+                if card.bind().is_tapped() {
+                    return false;
+                }
+                let ctx = self.play_context(seat, phase, &ability.cost);
+                check_play(CardKind::Instant, &ctx).is_ok()
+            }
+            CardKind::Equipment => {
+                let Some(stats) = card.bind().equip else { return false };
+                let host = card.bind().equipped_to.clone();
+                let has_target = self.creatures(seat).iter().any(|c| Some(c) != host.as_ref());
+                let ctx = self.play_context(seat, phase, &stats.cost);
+                check_equip(&ctx, has_target).is_ok()
+            }
+            _ => false,
+        }
+    }
+
     /// Aktiviert Fähigkeit `index` eines Helden (1× pro Runde).
     pub fn activate_hero(&mut self, seat: usize, hero: &mut Gd<Card3D>, index: usize, phase: Phase) -> Result<(), PlayError> {
         let ability = self.check_hero(seat, hero, index, phase)?;
