@@ -83,6 +83,7 @@ alles wird prozedural in Rust erzeugt.
 | Rand | flacher Steinrand (nur 0,06 über dem Brett) mit Goldeinlage; in den Ecken eingelassene Leuchtkristalle in Goldfassung – das Brett wirkt wie eine flache Spielmatte |
 | Umgebung | gestufter Sockel, Schieferboden, zwei Feuerschalen, Säulenruinen, runde Arenamauer mit Bannern in Spieler- (`player_color`) und Gegnerfarbe (`opponent_color`) |
 
+Das Brett ist breit angelegt (`board_size` = 19 × 9,6 in der Szene), damit es fast die ganze Bildbreite füllt; die Spielfelder sind 16,4 breit, Deck/Friedhof liegen rechts außen (x = ±8,6), die Ressourcen-Reihen links außen (x = ∓6,6). Der Lichtkegel (`Lantern.spot_angle` 46°) deckt das ganze Brett ab.
 Einstellbar im Inspector: `board_size`, `texture_resolution` (Pixel pro Einheit der Brett-Textur),
 `rune_glow`, `player_color`, `opponent_color`. Die alte Kulisse `Tavern` existiert weiter: in
 `table.tscn` den Knoten `Arena` durch einen `Tavern`-Knoten ersetzen (dann `Lantern.light_energy`
