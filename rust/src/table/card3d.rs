@@ -7,7 +7,8 @@
 //! └── Visual (Node3D)                              <- Tilt / Hover-Zoom / Drag-Schwung
 //!     ├── Body  (BoxMesh, dünner Kartenkörper)
 //!     ├── Face  (PlaneMesh, +Y, Vorderseiten-Textur)
-//!     └── Back  (PlaneMesh, -Y, Rückseiten-Textur)
+//!     ├── Back  (PlaneMesh, -Y, Rückseiten-Textur)
+//!     └── Marker (PlaneMesh unter der Karte, leuchtende Aura bei Angriff/Block/Auswahl)
 //! ```
 //! Die Karte liegt in ihrem lokalen Raum flach in der XZ-Ebene, Vorderseite zeigt
 //! nach +Y, die Oberkante der Karte zeigt nach -Z.
@@ -22,7 +23,7 @@ use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::tween::{EaseType, TransitionType};
 use godot::classes::{
     Area3D, BoxMesh, BoxShape3D, CollisionShape3D, IArea3D, MeshInstance3D, PlaneMesh,
-    StandardMaterial3D, Texture2D, Tween,
+    Shader, ShaderMaterial, StandardMaterial3D, Texture2D, Tween,
 };
 use godot::prelude::*;
 
@@ -40,6 +41,43 @@ use super::zone::Zone;
 pub const CARD_WIDTH: f32 = 0.63;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
+
+/// Farbe der Aura: Angreifer (glühendes Orange), Blocker (Blau), ausgewählte Karte (Gold).
+pub const ATTACK_GLOW: Color = Color::from_rgb(1.0, 0.5, 0.12);
+pub const BLOCK_GLOW: Color = Color::from_rgb(0.3, 0.65, 1.0);
+pub const SELECT_GLOW: Color = Color::from_rgb(1.0, 0.85, 0.35);
+/// Wie weit die Aura über den Kartenrand hinausragt (Einheiten).
+const GLOW_MARGIN: f32 = 0.22;
+
+/// Aura-Shader: weicher, flackernder Schein um ein abgerundetes Rechteck (Kartenform).
+/// Flammenartig durch wandernde Zacken entlang des Umfangs; additiv, ohne Licht.
+const GLOW_SHADER: &str = r#"
+shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec4 glow_color : source_color = vec4(1.0, 0.5, 0.12, 1.0);
+uniform vec2 quad_size;
+uniform vec2 card_half;
+
+float sd_round_rect(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + vec2(r);
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void fragment() {
+    vec2 p = (UV - 0.5) * quad_size;
+    float d = sd_round_rect(p, card_half, 0.04);
+    float ang = atan(p.y, p.x);
+    // Flammenzacken: zwei gegenläufige Wellen entlang des Umfangs, dazu Pulsieren
+    float flick = 0.5 + 0.25 * sin(ang * 9.0 + TIME * 5.0) + 0.25 * sin(ang * 23.0 - TIME * 8.3);
+    float reach = 0.07 + 0.09 * flick;
+    float glow = exp(-max(d, 0.0) / reach);
+    float rim = smoothstep(0.035, 0.0, abs(d - 0.012));
+    float pulse = 0.85 + 0.15 * sin(TIME * 3.0);
+    float a = (glow * 0.85 + rim * 0.9) * pulse * smoothstep(-0.02, 0.0, d);
+    ALBEDO = glow_color.rgb * (1.0 + rim * 0.6);
+    ALPHA = clamp(a, 0.0, 1.0);
+}
+"#;
 
 /// Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung,
 /// Hover-Neigung und Hover-Zoom (offene Karten werden groß und lesbar), Raycast-Ziel
@@ -143,7 +181,7 @@ pub struct Card3D {
 
     labels: Option<CardLabels>,
     marker_mesh: Option<Gd<MeshInstance3D>>,
-    marker_material: Option<Gd<StandardMaterial3D>>,
+    marker_material: Option<Gd<ShaderMaterial>>,
     visual: Option<Gd<Node3D>>,
     meshes: Vec<Gd<MeshInstance3D>>,
     face_material: Option<Gd<StandardMaterial3D>>,
@@ -426,6 +464,19 @@ impl Card3D {
     }
 
     /// Ist die Karte getappt (um 90° gedreht)?
+    /// Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau),
+    /// 3 = ausgewählt/wählt ein Ziel (gold).
+    #[func]
+    pub fn set_marker_kind(&mut self, kind: i64) {
+        let marker = match kind {
+            1 => CardMarker::Attacking,
+            2 => CardMarker::Blocking,
+            3 => CardMarker::Selected,
+            _ => CardMarker::None,
+        };
+        self.set_marker(marker);
+    }
+
     #[func]
     pub fn is_tapped(&self) -> bool {
         self.tapped
@@ -581,15 +632,14 @@ impl Card3D {
         self.marker = marker;
         let color = match marker {
             CardMarker::None => None,
-            CardMarker::Attacking => Some(Color::from_rgb(1.0, 0.25, 0.15)),
-            CardMarker::Blocking => Some(Color::from_rgb(0.3, 0.6, 1.0)),
-            CardMarker::Selected => Some(Color::from_rgb(1.0, 0.85, 0.3)),
+            CardMarker::Attacking => Some(ATTACK_GLOW),
+            CardMarker::Blocking => Some(BLOCK_GLOW),
+            CardMarker::Selected => Some(SELECT_GLOW),
         };
         if let (Some(mesh), Some(mat)) = (self.marker_mesh.as_mut(), self.marker_material.as_mut()) {
             mesh.set_visible(color.is_some());
             if let Some(c) = color {
-                mat.set_albedo(c);
-                mat.set_emission(c);
+                mat.set_shader_parameter("glow_color", &c.to_variant());
             }
         }
     }
@@ -819,19 +869,24 @@ impl Card3D {
 
         self.base_mut().add_child(&visual);
         self.visual = Some(visual.clone());
-        // Kampfmarkierung: leuchtender Rand unter der Karte (sonst unsichtbar)
-        let mut marker_mat = StandardMaterial3D::new_gd();
-        marker_mat.set_shading_mode(ShadingMode::UNSHADED);
-        marker_mat.set_feature(godot::classes::base_material_3d::Feature::EMISSION, true);
-        marker_mat.set_emission_energy_multiplier(2.0);
+        // Kampfmarkierung: flackernde Aura rund um die Karte (sonst unsichtbar)
+        let mut glow_shader = Shader::new_gd();
+        glow_shader.set_code(GLOW_SHADER);
+        let mut marker_mat = ShaderMaterial::new_gd();
+        marker_mat.set_shader(&glow_shader);
+        let quad = Vector2::new(CARD_WIDTH, CARD_HEIGHT) + Vector2::splat(2.0 * GLOW_MARGIN);
+        marker_mat.set_shader_parameter("quad_size", &quad.to_variant());
+        marker_mat.set_shader_parameter("card_half", &(Vector2::new(CARD_WIDTH, CARD_HEIGHT) * 0.5).to_variant());
         let mut marker_mesh = PlaneMesh::new_gd();
-        marker_mesh.set_size(Vector2::new(CARD_WIDTH + 0.09, CARD_HEIGHT + 0.09));
+        marker_mesh.set_size(quad);
         marker_mesh.set_material(&marker_mat);
         let mut marker = MeshInstance3D::new_alloc();
         marker.set_name("Marker");
         marker.set_mesh(&marker_mesh);
         marker.set_cast_shadows_setting(ShadowCastingSetting::OFF);
         marker.set_visible(false);
+        // Knapp unter der Karte: die Karte verdeckt die Mitte, nur der Schein ragt heraus
+        marker.set_position(Vector3::new(0.0, -CARD_THICKNESS, 0.0));
         visual.add_child(&marker);
         self.marker_mesh = Some(marker);
         self.marker_material = Some(marker_mat);

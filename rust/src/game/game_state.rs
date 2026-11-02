@@ -1067,19 +1067,36 @@ impl GameState {
             return true;
         }
         if self.combat.attackers.contains(&card) {
-            let Some(mut blocker) = self.combat.selected.take() else {
-                return true;
-            };
-            // Ein Blocker pro Angreifer
-            if let Some(pos) = self.combat.blocks.iter().position(|(_, a)| a == &card) {
-                let (mut old, _) = self.combat.blocks.remove(pos);
-                old.bind_mut().set_marker(CardMarker::None);
+            if let Some(blocker) = self.combat.selected.clone() {
+                self.assign_block(blocker, card);
             }
-            blocker.bind_mut().set_marker(CardMarker::Blocking);
-            self.combat.blocks.push((blocker, card));
             return true;
         }
         false
+    }
+
+    /// Weist `blocker` (ungetappte Kreatur des Verteidigers) dem Angreifer `attacker` zu – per
+    /// Klickfolge oder gezogenem Pfeil. Ein Blocker pro Angreifer: eine bestehende Zuweisung
+    /// des Blockers oder des Angreifers wird ersetzt. false = ungültig.
+    pub fn assign_block(&mut self, mut blocker: Gd<Card3D>, attacker: Gd<Card3D>) -> bool {
+        let valid = self.combat.attackers.contains(&attacker)
+            && self.is_on_battlefield(&blocker, self.defender())
+            && blocker.bind().is_creature()
+            && !blocker.bind().is_tapped();
+        if !valid {
+            return false;
+        }
+        if let Some(mut sel) = self.combat.selected.take() {
+            sel.bind_mut().set_marker(CardMarker::None);
+        }
+        self.combat.blocks.retain(|(b, _)| b != &blocker);
+        if let Some(pos) = self.combat.blocks.iter().position(|(_, a)| a == &attacker) {
+            let (mut old, _) = self.combat.blocks.remove(pos);
+            old.bind_mut().set_marker(CardMarker::None);
+        }
+        blocker.bind_mut().set_marker(CardMarker::Blocking);
+        self.combat.blocks.push((blocker, attacker));
+        true
     }
 
     /// Schadensberechnung: Blocker und Angreifer tauschen Schaden aus,

@@ -7,5 +7,6 @@ pub mod table_camera;
 pub mod table_controller;
 pub mod arena;
 pub mod tavern;
+pub mod target_arrows;
 mod textures;
 pub mod zone;

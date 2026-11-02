@@ -99,7 +99,7 @@ die `HeroAnchor`-Marker mitziehen.
 
 | Ordner / Datei | Inhalt |
 |---|---|
-| `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`) |
+| `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Zielpfeile (`target_arrows.rs`) |
 | `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD, Spieler-Medaillon (`seat_badge.rs`), Stack-Anzeige (`stack_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
 | `rust/src/debug.rs` | Debug-Tool (nur Test-Build) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
@@ -117,13 +117,23 @@ die `HeroAnchor`-Marker mitziehen.
 | Aura ziehen | über einer gültigen Zielkarte loslassen (Ziel wird gelb markiert) |
 | Klick auf eigene Ressource | tappen → +1 Mana in den Pool |
 | Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |
-| Klick auf Ausrüstung, dann auf eigene Kreatur | Ausrüstung anlegen (kostet Mana) |
+| Pfeil von der Ausrüstung auf eine eigene Kreatur ziehen (oder: Klick auf Ausrüstung, goldener Pfeil folgt der Maus, dann Klick auf Kreatur) | Ausrüstung anlegen (kostet Mana) |
 | Klick auf Artefakt mit Fähigkeit | Fähigkeit aktivieren (tappt das Artefakt) |
-| Angreifer-Phase: Klick auf Kreaturen | als Angreifer markieren (rot) |
-| Blocker-Phase: eigene Kreatur, dann Angreifer | Blocker zuweisen (gelb → blau) |
+| Angreifer-Phase: Klick auf Kreaturen | als Angreifer markieren: flackernde orange Aura um die Karte und ein orangefarbener Pfeil nach vorn (Richtung Gegner) |
+| Blocker-Phase: Pfeil von eigener Kreatur auf einen Angreifer ziehen (oder: Kreatur anklicken – goldene Aura, Pfeil folgt der Maus – dann Angreifer anklicken) | Blocker zuweisen: blaue Aura und blauer Pfeil vom Blocker zum Angreifer. Loslassen ins Leere bricht ab; erneuter Klick auf einen Blocker löst die Zuweisung |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
 | Button „Nächste Phase“ / „Weiter (passen)“ bzw. Leertaste | Phase beenden bzw. bei belegtem Stack Priorität abgeben |
 | Maus über eine Karte der großen Stack-Anzeige | holt sie nach vorn (auch tiefer liegende Elemente lesbar) |
+
+**Zielpfeile und Auren (`TargetArrows`, `target_arrows.rs`; Aura-Shader in `card3d.rs`):**
+Karten im Kampf bekommen eine flackernde, leuchtende Aura rund um den Rand (orange = Angreifer,
+blau = Blocker, gold = ausgewählt bzw. wählt ein Ziel). Pfeile sind gebogene, leuchtende Bänder
+über dem Tisch mit Chevrons, die zur Spitze laufen: Angreifer zeigen nach vorn, Blocker auf ihren
+Angreifer. Bei jeder Zielwahl („wähle …“: Blocker zuweisen, Ausrüstung anlegen) zieht man einen
+goldenen Pfeil von der Karte zum Ziel; über einer Karte rastet die Spitze auf deren Mitte ein.
+Während der Zielwahl werden Karten nicht gezoomt. Neue Zielwahl-Karten melden sich über
+`TurnManager.can_aim_from()` / `aim_at()` an. Für Skripte: `Card3D.set_marker_kind(int)`
+(0 = keine, 1 = Angreifer, 2 = Blocker, 3 = ausgewählt) und `TargetArrows.set_arrow_pairs()`.
 
 ---
 
@@ -170,7 +180,7 @@ Beide Spieler starten mit 20 Leben; bei 0 Leben ist die Partie verloren.
 Prüfung im Code: `TurnManager.can_play_card(karte, sitz)` / `get_play_error(karte, sitz)`.
 
 **Helden:** einmal pro Runde eine Fähigkeit (ändert die Willenskraft); bei 0 Willenskraft zerstört.
-**Ausrüstung:** Klick auf Ausrüstung, dann eigene Kreatur → Bonus auf die Kreatur. Stirbt die Kreatur, bleibt die Ausrüstung liegen.
+**Ausrüstung:** Pfeil von der Ausrüstung auf eine eigene Kreatur ziehen (oder Klick, Klick) → Bonus auf die Kreatur. Stirbt die Kreatur, bleibt die Ausrüstung liegen.
 **Auren:** haben eine Zielklasse (Kreatur, Ressource, Artefakt, Verzauberung, Held oder jede bleibende Karte)
 und eine Wirkung (Werte ±, Zusatzmana, enttappt nicht, Willenskraft).
 

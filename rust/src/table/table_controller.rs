@@ -6,6 +6,10 @@
 //!   Ungültiger Drop -> Karte gleitet an ihren alten Platz zurück.
 //! - Rechtsklick: Nahaufnahme der Karte unter der Maus (erneut = zurück), Esc = Übersicht.
 //! - Klick auf das Deck (`click_to_draw`) zieht eine Karte auf die Hand.
+//! - Zielpfeile ([`TargetArrows`]): Angriffs- und Blockpfeile aus dem Kampf; bei der Zielwahl
+//!   (Blocker zuweisen, Ausrüstung anlegen) wird von der Karte ein Pfeil gezogen und über dem
+//!   Ziel losgelassen – oder Karte anklicken, dann folgt ein Pfeil der Maus bis zum Zielklick.
+//!   Während der Zielwahl werden Karten nicht gezoomt.
 
 use godot::classes::{
     INode3D, InputEvent, InputEventKey, InputEventMouseButton, PhysicsRayQueryParameters3D,
@@ -28,6 +32,8 @@ use super::layers::{CARD_LAYER, ZONE_LAYER};
 use super::placeholder;
 use super::table_camera::TableCamera;
 use super::zone::Zone;
+use super::target_arrows::{ArrowSpec, TargetArrows};
+use super::card3d::SELECT_GLOW;
 
 struct DragState {
     card: Gd<Card3D>,
@@ -104,6 +110,14 @@ pub struct TableController {
     hovered: Option<Gd<Card3D>>,
     hover_zone: Option<Gd<Zone>>,
     drag: Option<DragState>,
+    /// Pfeil-Ebene über dem Tisch.
+    arrows: Option<Gd<TargetArrows>>,
+    /// Karte, von der gerade ein Zielpfeil gezogen wird (Maustaste gedrückt).
+    aim_drag: Option<Gd<Card3D>>,
+    /// Schnittpunkt des Mausstrahls mit der Tischebene.
+    mouse_point: Option<Vector3>,
+    /// Lief im letzten Physik-Tick eine Zielwahl? (danach Hover neu aufbauen)
+    was_aiming: bool,
 
     base: Base<Node3D>,
 }
@@ -131,11 +145,18 @@ impl INode3D for TableController {
             hovered: None,
             hover_zone: None,
             drag: None,
+            arrows: None,
+            aim_drag: None,
+            mouse_point: None,
+            was_aiming: false,
             base,
         }
     }
 
     fn ready(&mut self) {
+        let arrows = TargetArrows::new_alloc();
+        self.base_mut().add_child(&arrows);
+        self.arrows = Some(arrows);
         if self.demo_deck_size > 0 {
             self.spawn_demo_cards();
         }
@@ -150,6 +171,7 @@ impl INode3D for TableController {
 
     /// Kartenbewegung beim Ziehen: jedes Frame für flüssige Bewegung.
     fn process(&mut self, delta: f64) {
+        self.update_arrows();
         let Some(drag) = self.drag.as_mut() else {
             return;
         };
@@ -175,6 +197,18 @@ impl INode3D for TableController {
         let Some((origin, dir)) = self.mouse_ray() else {
             return;
         };
+        // Mauspunkt auf der Tischebene (Spitze des Zielpfeils)
+        let table_y = self.base().get_global_position().y;
+        self.mouse_point = (dir.y.abs() > 1e-4)
+            .then(|| (table_y - origin.y) / dir.y)
+            .filter(|t| *t > 0.0)
+            .map(|t| origin + dir * t);
+        // Zielwahl beendet: Hover neu aufbauen (war während der Wahl nur unsichtbar gemerkt)
+        let aiming = self.is_aiming();
+        if self.was_aiming && !aiming {
+            self.hovered = None;
+        }
+        self.was_aiming = aiming;
 
         if self.drag.is_some() {
             self.update_drag_target(origin, dir);
@@ -253,7 +287,11 @@ impl TableController {
 
     /// Die Karte, die gerade unter dem Mauszeiger liegt.
     #[func]
+    /// Während einer Zielwahl (Zielpfeil) null: Karten werden dann nicht gezoomt.
     pub fn get_hovered_card(&self) -> Option<Gd<Card3D>> {
+        if self.is_aiming() {
+            return None;
+        }
         self.hovered.clone()
     }
 
@@ -265,6 +303,40 @@ impl TableController {
 }
 
 impl TableController {
+    // ------------------------------------------------------------------ Zielpfeile
+
+    /// Läuft eine Zielwahl? (Pfeil wird gezogen oder eine Karte wartet auf ihr Ziel)
+    fn is_aiming(&self) -> bool {
+        self.aim_drag.is_some() || self.turn_manager.as_ref().is_some_and(|tm| tm.bind().aim_source().is_some())
+    }
+
+    /// Pfeile neu zusammenstellen: Kampfpfeile plus ggf. Zielpfeil zur Maus bzw. zur Karte darunter.
+    fn update_arrows(&mut self) {
+        let Some(mut layer) = self.arrows.clone() else { return };
+        let mut specs: Vec<ArrowSpec> = Vec::new();
+        let mut source = self.aim_drag.clone();
+        if let Some(tm) = self.turn_manager.as_ref() {
+            let tm = tm.bind();
+            specs.extend(tm.combat_arrows());
+            source = source.or_else(|| tm.aim_source());
+        }
+        if let Some(src) = source.filter(|c| c.is_instance_valid()) {
+            let from = src.get_global_position();
+            // Über einer anderen Karte: Pfeil rastet auf deren Mitte ein
+            let target = self
+                .hovered
+                .as_ref()
+                .filter(|c| c.is_instance_valid() && **c != src)
+                .map(|c| c.get_global_position())
+                .or(self.mouse_point);
+            if let Some(to) = target {
+                let dir = (to - from).normalized_or_zero();
+                specs.push(ArrowSpec { from: from + dir * 0.3, to, color: SELECT_GLOW });
+            }
+        }
+        layer.bind_mut().set_arrows(&specs);
+    }
+
     // ------------------------------------------------------------------ Raycasting
 
     fn mouse_ray(&self) -> Option<(Vector3, Vector3)> {
@@ -314,16 +386,21 @@ impl TableController {
         };
 
         let new_card = hit.as_ref().map(|(c, _)| c.clone());
+        // Während der Zielwahl nur merken (Pfeilziel), nicht zoomen
+        let aiming = self.is_aiming();
         if new_card != self.hovered {
             if let Some(mut old) = self.hovered.take() {
                 if old.is_instance_valid() {
                     old.bind_mut().set_hovered(false);
                 }
             }
-            if let Some(mut new) = new_card.clone() {
+            if let Some(mut new) = new_card.clone().filter(|_| !aiming) {
                 new.bind_mut().set_hovered(true);
             }
             self.hovered = new_card;
+        }
+        if aiming {
+            return;
         }
         if let Some((mut card, point)) = hit {
             card.bind_mut().update_hover_point(point);
@@ -354,6 +431,12 @@ impl TableController {
         // Mit Regeln: Kampfauswahl per Klick, Ziehen nur in der Zieh-Phase,
         // greifen nur eigene Karten.
         if let Some(mut tm) = self.turn_manager.clone() {
+            // Zielwahl: Pfeil von dieser Karte ziehen (Loslassen auf ihr selbst = normaler Klick)
+            if tm.bind().can_aim_from(card.clone()) {
+                card.clone().bind_mut().set_hovered(false);
+                self.aim_drag = Some(card);
+                return;
+            }
             if tm.bind_mut().on_card_clicked(card.clone()) {
                 return;
             }
@@ -443,6 +526,22 @@ impl TableController {
     }
 
     fn on_left_released(&mut self) {
+        if let Some(source) = self.aim_drag.take() {
+            let target = self.hovered.clone().filter(|c| c.is_instance_valid());
+            if let Some(mut tm) = self.turn_manager.clone() {
+                match target {
+                    // Auf der Karte selbst losgelassen: wie ein Klick (auswählen, Pfeil folgt der Maus)
+                    Some(t) if t == source => {
+                        tm.bind_mut().on_card_clicked(source);
+                    }
+                    Some(t) => {
+                        tm.bind_mut().aim_at(source, t);
+                    }
+                    None => {}
+                }
+            }
+            return;
+        }
         let Some(drag) = self.drag.take() else {
             return;
         };

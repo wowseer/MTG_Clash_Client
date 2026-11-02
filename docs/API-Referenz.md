@@ -24,6 +24,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [Card3D](#card3d) – erbt von `Area3D`
 - [TableCamera](#tablecamera) – erbt von `Camera3D`
 - [TableController](#tablecontroller) – erbt von `Node3D`
+- [TargetArrows](#targetarrows) – erbt von `Node3D`
 - [FlickerLight](#flickerlight) – erbt von `OmniLight3D`
 - [Tavern](#tavern) – erbt von `Node3D`
 - [Zone](#zone) – erbt von `Area3D`
@@ -324,6 +325,8 @@ Steuert die Partie: Rundenablauf als State Machine (Enttappen → Auffrischung �
 | `get_play_error(card: Card3D, seat: int)` | `String` | Grund, warum die Karte nicht gespielt werden darf ("" = erlaubt). |
 | `resolve_drop(card: Card3D, from: Zone, to: Zone)` | `Zone` | Wird vor dem Ablegen gefragt und liefert die tatsächliche Zielzone (null = nicht erlaubt, Karte gleitet zurück). - Umsortieren innerhalb einer Zone: immer erlaubt. - Hand -> eigene Tischzone: Timing-Regeln je Kartentyp; Ressourcen landen in der Reihe, Zauber werden aufgelöst und landen auf dem Ablagestapel. |
 | `resolve_drop_at(card: Card3D, from: Zone, to: Zone, point: Vector3)` | `Zone` | Wie `resolve_drop`, mit Ablagepunkt (Welt) als Wunschplatz für bleibende Karten. |
+| `can_aim_from(card: Card3D)` | `bool` | Kann von dieser Karte ein Zielpfeil gezogen werden? (Zielwahl: eigene ungetappte Kreatur beim Blocken, eigene Ausrüstung in der eigenen Hauptphase.) |
+| `aim_at(source: Card3D, target: Card3D)` | `bool` | Zielpfeil von `source` auf `target` losgelassen: Blocker zuweisen bzw. Ausrüstung anlegen. true = ausgeführt (bei ungültigem Ziel steht der Grund im Protokoll). |
 | `is_legal_aura_target(aura: Card3D, target: Card3D)` | `bool` | Darf diese Aura die Karte `target` verzaubern? (für die Zielmarkierung beim Ziehen) |
 | `resolve_aura_drop(card: Card3D, from: Zone, target: Card3D)` | `Zone` | Aura aus der Hand auf eine bleibende Karte ziehen. Liefert die Zielzone (Stack) oder null. |
 | `on_card_clicked(card: Card3D)` | `bool` | Klick auf eine Karte. true = Klick verbraucht (kein Drag starten). - eigene Ressource in der Reihe: tappen (+1 Mana), jederzeit - eigener Held: Fähigkeitenauswahl im HUD öffnen - eigene Ausrüstung: auswählen, danach eigene Kreatur anklicken = anlegen - sonst entscheidet die Phase (z. B. Kampfauswahl) |
@@ -423,7 +426,8 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `stop_motion()` | `void` | Bricht eine laufende Gleit-Animation ab. |
 | `get_current_attack()` | `int` | Angriff inklusive temporärer Boni. |
 | `get_remaining_defense()` | `int` | Verteidigung abzüglich erlittenen Schadens in dieser Runde. |
-| `is_tapped()` | `bool` | Ist die Karte getappt (um 90° gedreht)? |
+| `set_marker_kind(kind: int)` | `void` | Ist die Karte getappt (um 90° gedreht)? Aura um die Karte setzen: 0 = keine, 1 = Angreifer (orange), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
+| `is_tapped()` | `bool` |  |
 | `is_artifact()` | `bool` | Artefakt (inkl. Ausrüstung)? |
 | `is_enchantment()` | `bool` | Verzauberung (inkl. Aura)? |
 | `get_enchanted()` | `Card3D` | Kreatur, die diese Aura verzaubert (null = keine). |
@@ -492,7 +496,6 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Klick, Drag-and-Drop per Raycast), K
 | `static move_top_card(from: Zone, to: Zone, delay: float)` | `Card3D` | Bewegt die oberste Karte von `from` nach `to` (z. B. Gegner zieht / spielt aus). |
 | `set_language(code: String)` | `void` | Stellt die Sprache des Spiels um: `"de"` = Deutsch, `"en"` = Englisch. HUD, Hinweise und neue Protokolleinträge wechseln sofort; alle Karten werden neu beschriftet. Bereits geschriebene Protokolleinträge bleiben unverändert. |
 | `get_language()` | `String` | Aktuelle Sprache: `"de"` oder `"en"`. |
-| `get_hovered_card()` | `Card3D` | Die Karte, die gerade unter dem Mauszeiger liegt. |
 | `get_dragged_card()` | `Card3D` | Die Karte, die gerade gezogen wird. |
 
 ### Signale
@@ -501,6 +504,18 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Klick, Drag-and-Drop per Raycast), K
 |---|---|
 | `card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | Wird ausgelöst, wenn eine Karte per Drag-and-Drop in eine Zone gelegt wurde. |
 | `card_drawn(card: Card3D)` | Wird ausgelöst, wenn eine Karte vom Deck auf die Hand gezogen wurde. |
+
+## TargetArrows
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/target_arrows.rs`*
+
+Zeichnet gebogene, leuchtende Zielpfeile über dem Tisch (Angriff, Block, Zielwahl). Wird vom `TableController` erzeugt und jedes Frame mit den aktuellen Pfeilen gefüttert; Höhe des Tisches = y dieses Nodes.
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `set_arrow_pairs(points: PackedVector3Array, colors: PackedColorArray)` | `void` | Setzt Pfeile aus Skripten: `points` enthält je zwei Punkte (Start, Ziel; Welt) pro Pfeil, `colors` eine Farbe pro Pfeil (fehlt sie: Gold). Der `TableController` überschreibt die Pfeile jedes Frame, solange er läuft. |
 
 ## FlickerLight
 

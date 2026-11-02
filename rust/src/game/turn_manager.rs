@@ -17,7 +17,11 @@ use super::timing::{check_sorcery_timing, PlayError};
 use crate::table::card3d::CardMarker;
 use super::seat::PlayerSeat;
 use super::stack::{StackItem, StackManager};
-use crate::table::card3d::Card3D;
+use crate::table::card3d::{Card3D, ATTACK_GLOW, BLOCK_GLOW};
+use crate::table::target_arrows::ArrowSpec;
+
+/// Länge des Angriffspfeils (vom Angreifer nach vorn, Einheiten).
+const ATTACK_ARROW_LENGTH: f32 = 2.4;
 use crate::table::zone::Zone;
 
 /// Steuert die Partie: Rundenablauf als State Machine (Enttappen → Auffrischung → Ziehen →
@@ -377,6 +381,48 @@ impl TurnManager {
         self.drop_impl(card, from, to, Some(point))
     }
 
+    /// Kann von dieser Karte ein Zielpfeil gezogen werden? (Zielwahl: eigene ungetappte Kreatur
+    /// beim Blocken, eigene Ausrüstung in der eigenen Hauptphase.)
+    #[func]
+    pub fn can_aim_from(&self, card: Gd<Card3D>) -> bool {
+        let phase = self.phase().unwrap_or(Phase::Untap);
+        let Some(g) = self.game.as_ref() else { return false };
+        let c = card.bind();
+        let defender = g.defender();
+        if phase == Phase::Blockers && g.is_human(defender) && !self.stack_is_busy() {
+            return g.is_on_battlefield(&card, defender) && c.is_creature() && !c.is_tapped();
+        }
+        let Some(owner) = g.seat_of_card(&card) else { return false };
+        c.kind() == CardKind::Equipment
+            && g.is_human(owner)
+            && g.is_on_battlefield(&card, owner)
+            && check_sorcery_timing(&g.play_context(owner, phase, &Cost::default())).is_ok()
+    }
+
+    /// Zielpfeil von `source` auf `target` losgelassen: Blocker zuweisen bzw. Ausrüstung anlegen.
+    /// true = ausgeführt (bei ungültigem Ziel steht der Grund im Protokoll).
+    #[func]
+    pub fn aim_at(&mut self, source: Gd<Card3D>, mut target: Gd<Card3D>) -> bool {
+        if !self.can_aim_from(source.clone()) {
+            return false;
+        }
+        let phase = self.phase().unwrap_or(Phase::Untap);
+        let Some(g) = self.game.as_mut() else { return false };
+        if phase == Phase::Blockers {
+            return g.assign_block(source, target);
+        }
+        let Some(owner) = g.seat_of_card(&source) else { return false };
+        let mut eq = source;
+        g.clear_pending();
+        if !(g.is_on_battlefield(&target, owner) && target.bind().is_creature()) {
+            return false;
+        }
+        if let Err(e) = g.equip(owner, &mut eq, &mut target, phase) {
+            g.log(trf!("Anlegen nicht möglich: {}", "Cannot equip: {}", e.message()));
+        }
+        true
+    }
+
     /// Darf diese Aura die Karte `target` verzaubern? (für die Zielmarkierung beim Ziehen)
     #[func]
     pub fn is_legal_aura_target(&self, aura: Gd<Card3D>, target: Gd<Card3D>) -> bool {
@@ -398,6 +444,33 @@ impl TurnManager {
 }
 
 impl TurnManager {
+    /// Karte, die gerade ein Ziel wählt (nach einem Klick): ausgewählter Blocker oder
+    /// Ausrüstung, die angelegt werden soll. Von ihr führt ein Zielpfeil zum Mauszeiger.
+    pub fn aim_source(&self) -> Option<Gd<Card3D>> {
+        let g = self.game.as_ref()?;
+        let selected = if self.phase() == Some(Phase::Blockers) { g.combat.selected.clone() } else { None };
+        selected.or_else(|| g.pending_equip.clone()).filter(|c| c.is_instance_valid())
+    }
+
+    /// Dauerhafte Pfeile des Kampfs: jeder Angreifer zeigt nach vorn (Richtung Gegner),
+    /// jeder Blocker auf seinen Angreifer.
+    pub fn combat_arrows(&self) -> Vec<ArrowSpec> {
+        let Some(g) = self.game.as_ref() else { return Vec::new() };
+        let mut arrows = Vec::new();
+        for a in g.combat.attackers.iter().filter(|c| c.is_instance_valid()) {
+            // Spieler (Sitz 0) greift nach -z an, der Gegner nach +z
+            let forward = if g.seat_of_card(a) == Some(0) { Vector3::FORWARD } else { Vector3::BACK };
+            let p = a.get_global_position();
+            arrows.push(ArrowSpec { from: p + forward * 0.5, to: p + forward * ATTACK_ARROW_LENGTH, color: ATTACK_GLOW });
+        }
+        for (b, a) in g.combat.blocks.iter().filter(|(b, a)| b.is_instance_valid() && a.is_instance_valid()) {
+            let (from, to) = (b.get_global_position(), a.get_global_position());
+            let dir = (to - from).normalized_or_zero();
+            arrows.push(ArrowSpec { from: from + dir * 0.35, to: to - dir * 0.3, color: BLOCK_GLOW });
+        }
+        arrows
+    }
+
     fn drop_impl(&mut self, card: Gd<Card3D>, from: Gd<Zone>, to: Gd<Zone>, point: Option<Vector3>) -> Option<Gd<Zone>> {
         if from == to {
             return Some(to);
