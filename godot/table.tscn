@@ -58,6 +58,7 @@ mana_pool = NodePath("ManaPool")
 [node name="Battlefield" type="Zone" parent="Player" unique_id=66267130]
 size = Vector3(11.6, 0.1, 3.0)
 free_placement = true
+auto_arrange = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0, 1.7)
 
 [node name="Deck" type="Zone" parent="Player" unique_id=1898977070]
@@ -106,6 +107,7 @@ accepts_drops = false
 cards_draggable = false
 grid_columns = 9
 grid_spacing = Vector2(1, 1.05)
+auto_arrange = true
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.2, 0, -1.7)
 
 [node name="Deck" type="Zone" parent="Opponent" unique_id=131863721]

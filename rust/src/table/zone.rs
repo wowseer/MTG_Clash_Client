@@ -17,6 +17,7 @@ use godot::prelude::*;
 
 use std::collections::HashMap;
 
+use crate::game::cards::CardKind;
 use crate::game::mana::ManaType;
 
 use super::card3d::{CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, Card3D};
@@ -25,6 +26,11 @@ use super::layers::ZONE_LAYER;
 pub const ZONE_GROUP: &str = "card_zones";
 /// Drehung getappter Karten im Uhrzeigersinn (Grad) – nur leicht schräg statt quer.
 pub const TAP_ANGLE_DEGREES: f32 = 15.0;
+/// Automatische Anordnung: Abstand zwischen Karten (x); der rechte Bereich bekommt eine Spalte
+/// je [AUTO_OTHER_PER_COLUMN] Karten, höchstens [AUTO_OTHER_MAX_COLUMNS].
+const AUTO_GAP: f32 = 0.12;
+const AUTO_OTHER_PER_COLUMN: usize = 3;
+const AUTO_OTHER_MAX_COLUMNS: usize = 4;
 
 /// Art der Zone: 0 = Hand (Fächer), 1 = Stapel, 2 = Spielfeld, 3 = Ressourcen-Reihe, 4 = Stack.
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Debug)]
@@ -94,6 +100,12 @@ pub struct Zone {
     /// Karten bleiben dort liegen, wo sie abgelegt werden (statt Raster).
     #[export]
     free_placement: bool,
+    /// Automatische Anordnung nach Kartenart (hat Vorrang vor Raster und freier Ablage),
+    /// aus Sicht der Seite (lokal −z = zur Tischmitte = „oben“): Helden oben links,
+    /// Kreaturen oben in der Mitte (mehrere Reihen bei Bedarf), alles andere rechts.
+    /// Ressourcen liegen in einer eigenen Ressourcen-Zone (unten links).
+    #[export]
+    auto_arrange: bool,
 
     cards: Vec<Gd<Card3D>>,
     /// Freie Positionen (lokal x/z) je Karte.
@@ -123,6 +135,7 @@ impl IArea3D for Zone {
             grid_columns: 6,
             grid_spacing: Vector2::new(0.78, 1.02),
             free_placement: false,
+            auto_arrange: false,
             show_area: false,
             cards: Vec::new(),
             free_positions: HashMap::new(),
@@ -395,11 +408,13 @@ impl Zone {
         let nb = base.len();
         // Ressourcen-Spalten nur aus freien Karten (Auren auf Ressourcen hängen darunter)
         let resource_slots = if self.kind == ZoneKind::Resources { self.resource_slots(&base) } else { Vec::new() };
+        let auto_slots = if self.auto_arrange && self.kind == ZoneKind::Battlefield { self.auto_slots(&base) } else { Vec::new() };
         let mut targets: HashMap<InstanceId, Transform3D> = HashMap::new();
         for (bi, &i) in base.iter().enumerate() {
             let card = &self.cards[i];
             let mut local = match self.free_positions.get(&card.instance_id()) {
                 _ if self.kind == ZoneKind::Resources => resource_slots[bi],
+                _ if !auto_slots.is_empty() => auto_slots[bi],
                 Some(p) if self.free_placement => {
                     // Später abgelegte Karten liegen minimal höher (kein Z-Fighting bei Überlappung).
                     Transform3D::new(Basis::IDENTITY, Vector3::new(p.x, CARD_THICKNESS * 0.5 + i as f32 * 0.002, p.y))
@@ -446,6 +461,81 @@ impl Zone {
             };
             card.bind_mut().move_to(zone_xf * local, delay);
         }
+    }
+
+    /// Slots der automatischen Anordnung (siehe [member auto_arrange]) für die freien Karten
+    /// `base`, in deren Reihenfolge. Lokal: −z = oben (zur Tischmitte), −x = links.
+    fn auto_slots(&self, base: &[usize]) -> Vec<Transform3D> {
+        #[derive(PartialEq)]
+        enum Group {
+            Hero,
+            Creature,
+            Other,
+        }
+        let groups: Vec<Group> = base
+            .iter()
+            .map(|&i| match self.cards[i].bind().kind() {
+                CardKind::Hero => Group::Hero,
+                CardKind::Creature => Group::Creature,
+                _ => Group::Other,
+            })
+            .collect();
+        let count = |g: Group| groups.iter().filter(|x| **x == g).count();
+        let (n_creatures, n_other) = (count(Group::Creature), count(Group::Other));
+
+        let step_x = CARD_WIDTH + AUTO_GAP;
+        let (half_x, half_z) = (self.size.x * 0.5, self.size.z * 0.5);
+        let left = -half_x + CARD_WIDTH * 0.5 + 0.1;
+        let right = half_x - CARD_WIDTH * 0.5 - 0.1;
+        let top = -half_z + CARD_HEIGHT * 0.5 + 0.1;
+        let bottom = half_z - CARD_HEIGHT * 0.5;
+        // Zeilenabstand: bei vielen Reihen enger (überlappend), damit alles in die Zone passt
+        let row_step = |rows: usize| {
+            if rows <= 1 { 0.0 } else { (CARD_HEIGHT + 0.15).min((bottom - top) / (rows - 1) as f32) }
+        };
+
+        // Kreaturen: Mitte zwischen Helden-Spalte und rechtem Bereich, so viele pro Reihe wie passen
+        let other_cols = n_other.div_ceil(AUTO_OTHER_PER_COLUMN).clamp(1, AUTO_OTHER_MAX_COLUMNS);
+        let center_left = left + step_x; // rechts neben dem Helden
+        let center_right = right - other_cols as f32 * step_x;
+        let per_row = (((center_right - center_left) / step_x).floor() as usize + 1).max(1);
+        let creature_rows = n_creatures.div_ceil(per_row).max(1);
+        let creature_center = (center_left + center_right) * 0.5;
+        let other_rows = n_other.div_ceil(other_cols).max(1);
+
+        let (mut heroes, mut creatures, mut others) = (0usize, 0usize, 0usize);
+        groups
+            .iter()
+            .enumerate()
+            .map(|(i, g)| {
+                let (x, z) = match g {
+                    Group::Hero => {
+                        // Helden oben links, untereinander (leicht versetzt) bei mehreren
+                        let k = heroes;
+                        heroes += 1;
+                        (left, top + k as f32 * 0.3)
+                    }
+                    Group::Creature => {
+                        let k = creatures;
+                        creatures += 1;
+                        let row = k / per_row;
+                        let in_row = per_row.min(n_creatures - row * per_row);
+                        let col = k % per_row;
+                        let x = creature_center + (col as f32 - (in_row as f32 - 1.0) * 0.5) * step_x;
+                        (x, top + row as f32 * row_step(creature_rows))
+                    }
+                    Group::Other => {
+                        let k = others;
+                        others += 1;
+                        let (row, col) = (k / other_cols, k % other_cols);
+                        // rechtsbündig: Spalte 0 ganz rechts
+                        (right - col as f32 * step_x, top + row as f32 * row_step(other_rows))
+                    }
+                };
+                let y = CARD_THICKNESS * 0.5 + i as f32 * 0.002;
+                Transform3D::new(Basis::IDENTITY, Vector3::new(x, y, z))
+            })
+            .collect()
     }
 
     /// Slots der Ressourcen-Reihe: Spalten nach Manafarbe (in fester Farbreihenfolge),

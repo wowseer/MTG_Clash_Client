@@ -571,6 +571,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `grid_columns` | `int` | Spielfeld im Rastermodus: Anzahl Spalten. |
 | `grid_spacing` | `Vector2` | Spielfeld im Rastermodus: Abstand der Karten (x, z). |
 | `free_placement` | `bool` | Karten bleiben dort liegen, wo sie abgelegt werden (statt Raster). |
+| `auto_arrange` | `bool` | Automatische Anordnung nach Kartenart (hat Vorrang vor Raster und freier Ablage), aus Sicht der Seite (lokal −z = zur Tischmitte = „oben“): Helden oben links, Kreaturen oben in der Mitte (mehrere Reihen bei Bedarf), alles andere rechts. Ressourcen liegen in einer eigenen Ressourcen-Zone (unten links). |
 
 ### Funktionen
 

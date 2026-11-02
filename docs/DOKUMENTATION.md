@@ -38,7 +38,7 @@ Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Demo-Decks
 ├── Arena (Arena)                prozedurale Arena mit Spielbrett (Kulisse)
 ├── Camera (TableCamera)         Übersicht / Nahaufnahme
 ├── Player (PlayerSeat)          Spieler unten
-│   ├── Battlefield (Zone)       Spielfeld (freie Platzierung)
+│   ├── Battlefield (Zone)       Spielfeld (automatische Anordnung, `auto_arrange`)
 │   ├── Deck, Discard (Zone)     Deck, Friedhof
 │   ├── Resources (Zone)         Ressourcen-Reihe
 │   ├── ManaPool (ManaPool)      Manavorrat
@@ -53,6 +53,19 @@ Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Demo-Decks
 ```
 
 In Test-Builds hängt der `TableController` zusätzlich ein `DebugPanel` an (nicht in der Szenendatei).
+
+**Anordnung auf dem Spielfeld** (`Zone.auto_arrange`, beide Spielfelder): Karten werden automatisch
+nach Art platziert, jeweils aus Sicht ihrer Seite („oben“ = zur Tischmitte; beim Gegner gespiegelt):
+
+| Bereich | Karten |
+|---|---|
+| unten links | Ressourcen (eigene Ressourcen-Reihe, Spalten nach Manafarbe) |
+| oben links | Helden |
+| oben Mitte | Kreaturen – eine Reihe, bei vielen Kreaturen weitere Reihen darunter (bei Platzmangel überlappend) |
+| rechts | alles andere (Artefakte, Ausrüstung, Verzauberungen …) – rechtsbündiges Raster, eine Spalte je 3 Karten, höchstens 4 Spalten |
+
+Angelegte Ausrüstung und Auren hängen weiterhin versetzt unter ihrem Träger. Wo eine Karte
+losgelassen wird, spielt keine Rolle mehr.
 
 ### Kulisse und Bildschirm-Anzeige
 
@@ -113,7 +126,7 @@ die `HeroAnchor`-Marker mitziehen.
 | Aktion | Wirkung |
 |---|---|
 | Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons, Debug-Fenster oder die Stack-Anzeige hindurch |
-| Karte aus der Hand ziehen und loslassen | ausspielen (Regeln prüfen Phase, Stack und Mana) |
+| Karte aus der Hand ziehen und loslassen | ausspielen (Regeln prüfen Phase, Stack und Mana). Die Karte wird automatisch platziert (siehe „Anordnung auf dem Spielfeld“) |
 | Aura ziehen | über einer gültigen Zielkarte loslassen (Ziel wird gelb markiert) |
 | Klick auf eigene Ressource | tappen → +1 Mana in den Pool. Erneuter Klick auf die getappte Ressource nimmt den Tapp zurück (Ressource enttappt, Mana wieder aus dem Pool) – solange genau dieses Mana noch unbenutzt im Pool liegt. Nach dem Ausgeben oder Leeren des Pools nicht mehr möglich; automatisch beim Bezahlen getappte Ressourcen lassen sich nicht zurücknehmen |
 | Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |
