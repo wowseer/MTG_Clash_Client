@@ -80,7 +80,7 @@ Vollbild-Hülle für HUD-Elemente: Ihre Nachfahren (mit `use_parent_material = t
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten links), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links, je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
+Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links, je ein `SeatBadge`-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
 
 ### Eigenschaften
 
@@ -159,7 +159,7 @@ Manavorrat eines Spielers.
 
 *Erbt von `Control` · Quelle: `rust/src/game/phase_timeline.rs`*
 
-Zeitstrahl der Phasen (HUD): Punkte für die Phasen, kleinere Unterpunkte für die Kampfschritte (Phasen-Index 4–6) hinter einem Punkt „Kampf“. Eine leuchtende Markierung gleitet zur aktuellen Phase; erledigte Punkte sind golden, kommende hohl. Darüber steht der Name der aktuellen Phase, darunter Runde und Seite am Zug. Wird vom `TurnHud` jedes Frame über `set_state()` gefüttert.
+Zeitstrahl der Phasen (HUD, unten rechts über dem Hauptbutton): ein mit Enttappen, Auffrischung, Ziehen und Hauptphase 1 wachsender Kreis, ein Punkt „Kampf“, der seine drei Schritte (Phasen-Index 4–6) erst während des Kampfs aufklappt, ein großer Kreis für Hauptphase 2 und ein kleiner für das Ende. Die aktuelle Station leuchtet; erledigte sind golden, kommende hohl. Darüber steht der Name der aktuellen Phase, darunter Runde und Seite am Zug. Wird vom `TurnHud` jedes Frame über `set_state()` gefüttert.
 
 ### Funktionen
 

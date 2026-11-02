@@ -1,6 +1,6 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
-//! - unten links: Zeitstrahl der Phasen ([`PhaseTimeline`])
+//! - unten rechts über dem Button: Zeitstrahl der Phasen ([`PhaseTimeline`])
 //! - Bildmitte: nur die Meldung zum Spielende (keine Hinweistexte); oben links: letzte Protokollzeilen
 //! - Medaillon ([`SeatBadge`]) mit Leben, daneben Name, Ressourcen und Mana: folgt je einem
 //!   3D-Ankerpunkt (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne
@@ -40,7 +40,7 @@ const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
 const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
 const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
 
-/// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten links), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links,
+/// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, letzte Protokollzeilen oben links,
 /// je ein [SeatBadge]-Medaillon mit Leben plus Ressourcen und Mana beider Spieler (an
 /// [member player_hero_anchor] / [member opponent_hero_anchor], sonst links oben / unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
 /// blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten.
@@ -203,9 +203,9 @@ impl TurnHud {
         root.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
         root.set_mouse_filter(MouseFilter::IGNORE);
 
-        // Zeitstrahl der Phasen unten links (gegenüber dem Button, unter dem Spielbrett)
+        // Zeitstrahl der Phasen unten rechts, direkt über dem Button (56 px hoch, 14 px Rand)
         let mut timeline = PhaseTimeline::new_alloc();
-        place(&mut timeline, (0.0, 1.0), (14.0, -4.0), GrowDirection::END, GrowDirection::BEGIN);
+        place(&mut timeline, (1.0, 1.0), (-14.0, -76.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
         root.add_child(&timeline);
 
         // Bildmitte: nur die Meldung zum Spielende

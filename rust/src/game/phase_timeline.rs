@@ -1,9 +1,16 @@
-//! PhaseTimeline: Zeitstrahl der Phasen für das HUD.
+//! PhaseTimeline: Zeitstrahl der Phasen für das HUD (unten rechts über dem Button „Nächste Phase“).
 //!
-//! Waagerechte Linie mit Punkten für die Phasen und kleineren Unterpunkten für die
-//! Kampfschritte (hinter einem eigenen Punkt „Kampf“). Eine leuchtende Markierung gleitet
-//! zur aktuellen Phase; erledigte Strecke und Punkte sind golden, kommende hohl. Über der
-//! Markierung steht der Name der aktuellen Phase, darunter Runde und wer am Zug ist.
+//! Waagerechte Linie mit vier Stationen:
+//! 1. **Rundenbeginn** – ein Kreis für Enttappen, Auffrischung, Ziehen und Hauptphase 1, der mit
+//!    jedem dieser Schritte größer wird (Hauptphase 1 = großer Kreis).
+//! 2. **Kampf** – ein mittlerer Punkt; seine drei Schritte (Angreifer, Blocker, Schaden) sind
+//!    eingeklappt und klappen erst auf, wenn der Kampf beginnt (danach wieder zu).
+//! 3. **Hauptphase 2** – großer Kreis.
+//! 4. **Ende** – kleiner Kreis.
+//!
+//! Die aktuelle Station leuchtet (weiß mit goldenem Rand, pulsierender Schein); erledigte Strecke
+//! und Stationen sind golden, kommende hohl. Größe, Aufklappen und Position gleiten weich.
+//! Über der Linie steht der Name der aktuellen Phase, darunter Runde und wer am Zug ist.
 
 use std::f32::consts::TAU;
 use std::ops::RangeInclusive;
@@ -19,42 +26,75 @@ const DIM: Color = Color::from_rgba(0.93, 0.87, 0.74, 0.55);
 const LINE: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.22);
 const HOLLOW: Color = Color::from_rgba(0.05, 0.06, 0.08, 0.9);
 
-/// Phasen-Indizes der Kampfschritte (Angreifer, Blocker, Schaden) – als Unterpunkte gezeichnet.
+/// Phasen-Indizes des Rundenbeginns (Enttappen, Auffrischung, Ziehen, Hauptphase 1) – ein wachsender Kreis.
+const OPENING: RangeInclusive<usize> = 0..=3;
+/// Phasen-Indizes der Kampfschritte (Angreifer, Blocker, Schaden) – eingeklappte Unterpunkte.
 const COMBAT: RangeInclusive<usize> = 4..=6;
-const WIDTH: f32 = 330.0;
-const HEIGHT: f32 = 64.0;
-const LINE_Y: f32 = 34.0;
-const MAIN_R: f32 = 6.0;
-const SUB_R: f32 = 3.5;
+const MAIN2: usize = 7;
+const END: usize = 8;
 
-/// Zeitstrahl der Phasen (HUD): Punkte für die Phasen, kleinere Unterpunkte für die Kampfschritte
-/// (Phasen-Index 4–6) hinter einem Punkt „Kampf“. Eine leuchtende Markierung gleitet zur aktuellen
-/// Phase; erledigte Punkte sind golden, kommende hohl. Darüber steht der Name der aktuellen Phase,
-/// darunter Runde und Seite am Zug. Wird vom [TurnHud] jedes Frame über [method set_state] gefüttert.
+const WIDTH: f32 = 270.0;
+const HEIGHT: f32 = 78.0;
+const LINE_Y: f32 = 40.0;
+/// Radien: Rundenbeginn wächst von OPENING_R[0] bis BIG_R; Kampf mittel, Unterpunkte und Ende klein.
+const OPENING_R: [f32; 4] = [5.0, 7.0, 9.0, BIG_R];
+const BIG_R: f32 = 12.0;
+const COMBAT_R: f32 = 7.0;
+const SUB_R: f32 = 4.0;
+const END_R: f32 = 5.5;
+/// Zusätzlicher Abstand (in Stationseinheiten), den die aufgeklappten Kampfschritte einnehmen.
+const COMBAT_SPREAD: f32 = 1.5;
+
+/// Zeitstrahl der Phasen (HUD, unten rechts über dem Hauptbutton): ein mit Enttappen, Auffrischung,
+/// Ziehen und Hauptphase 1 wachsender Kreis, ein Punkt „Kampf“, der seine drei Schritte (Phasen-Index
+/// 4–6) erst während des Kampfs aufklappt, ein großer Kreis für Hauptphase 2 und ein kleiner für das
+/// Ende. Die aktuelle Station leuchtet; erledigte sind golden, kommende hohl. Darüber steht der Name
+/// der aktuellen Phase, darunter Runde und Seite am Zug. Wird vom [TurnHud] jedes Frame über
+/// [method set_state] gefüttert.
 #[derive(GodotClass)]
 #[class(base=Control)]
 pub struct PhaseTimeline {
     titles: Vec<String>,
     current: i64,
     turn_text: String,
-    /// Aktuelle (animierte) x-Position der Markierung; None = noch nicht gesetzt.
+    /// Animierte Werte (None = noch nicht gesetzt): x der Markierung, Radius des
+    /// Rundenbeginn-Kreises, Aufklappgrad des Kampfs (0 = zu, 1 = offen).
     marker_x: Option<f32>,
+    opening_r: Option<f32>,
+    expand: f32,
     time: f32,
     base: Base<Control>,
+}
+
+/// Zustand einer Station relativ zur aktuellen Phase.
+#[derive(Clone, Copy, PartialEq)]
+enum State {
+    Done,
+    Current,
+    Upcoming,
 }
 
 /// Ein Punkt auf dem Zeitstrahl.
 struct Dot {
     x: f32,
-    sub: bool,
-    /// Phasen-Index; None für den Gruppenpunkt „Kampf“.
-    phase: Option<usize>,
+    r: f32,
+    alpha: f32,
+    state: State,
 }
 
 #[godot_api]
 impl IControl for PhaseTimeline {
     fn init(base: Base<Control>) -> Self {
-        Self { titles: Vec::new(), current: -1, turn_text: String::new(), marker_x: None, time: 0.0, base }
+        Self {
+            titles: Vec::new(),
+            current: -1,
+            turn_text: String::new(),
+            marker_x: None,
+            opening_r: None,
+            expand: 0.0,
+            time: 0.0,
+            base,
+        }
     }
 
     fn ready(&mut self) {
@@ -63,56 +103,69 @@ impl IControl for PhaseTimeline {
     }
 
     fn process(&mut self, delta: f64) {
+        let k = 1.0 - (-8.0 * delta as f32).exp();
         self.time += delta as f32;
-        let dots = self.dots();
-        let target = self.target_x(&dots);
-        let x = match self.marker_x {
+        // Neue Runde: Größe springt zurück statt zu schrumpfen
+        let target_r = self.opening_target_r();
+        self.opening_r = Some(match self.opening_r {
+            Some(r) if target_r >= r - 0.1 => r + (target_r - r) * k,
+            _ => target_r,
+        });
+        let target_e = if self.combat_step().is_some() { 1.0 } else { 0.0 };
+        self.expand += (target_e - self.expand) * k;
+
+        let target = self.target_x(&self.dots());
+        self.marker_x = Some(match self.marker_x {
             // Neue Runde (zurück zum Anfang): springen statt rückwärts gleiten
-            Some(x) if target >= x - 0.5 => x + (target - x) * (1.0 - (-8.0 * delta as f32).exp()),
+            Some(x) if target >= x - 0.5 => x + (target - x) * k,
             _ => target,
-        };
-        self.marker_x = Some(x);
+        });
         self.base_mut().queue_redraw();
     }
 
     fn draw(&mut self) {
         let dots = self.dots();
-        if dots.is_empty() {
-            return;
-        }
         let marker = self.marker_x.unwrap_or(dots[0].x);
         let (x0, x1) = (dots[0].x, dots[dots.len() - 1].x);
 
         // Linie: gesamt gedimmt, erledigte Strecke golden
         self.line(x0, x1, LINE, 2.0);
-        self.line(x0, marker, GOLD, 3.0);
+        if self.current >= 0 {
+            self.line(x0, marker, GOLD, 3.0);
+        }
 
+        let pulse = 0.5 + 0.5 * (self.time * 3.0).sin();
         for d in &dots {
-            let r = if d.sub { SUB_R } else { MAIN_R };
+            if d.alpha < 0.02 {
+                continue;
+            }
             let c = Vector2::new(d.x, LINE_Y);
-            if d.x <= marker + 0.5 {
-                self.base_mut().draw_circle(c, r, GOLD);
-            } else {
-                self.base_mut().draw_circle(c, r, HOLLOW);
-                self.base_mut().draw_arc_ex(c, r, 0.0, TAU, 20, DIM).width(1.5).antialiased(true).done();
+            let fade = |col: Color| Color::from_rgba(col.r, col.g, col.b, col.a * d.alpha);
+            match d.state {
+                State::Done => self.base_mut().draw_circle(c, d.r, fade(GOLD)),
+                State::Upcoming => {
+                    self.base_mut().draw_circle(c, d.r, fade(HOLLOW));
+                    self.base_mut().draw_arc_ex(c, d.r, 0.0, TAU, 28, fade(DIM)).width(1.5).antialiased(true).done();
+                }
+                State::Current => {
+                    let glow = Color::from_rgba(GOLD.r, GOLD.g, GOLD.b, (0.18 + 0.15 * pulse) * d.alpha);
+                    self.base_mut().draw_circle(c, d.r + 4.0 + 2.0 * pulse, glow);
+                    self.base_mut().draw_circle(c, d.r, fade(Color::WHITE));
+                    self.base_mut().draw_arc_ex(c, d.r, 0.0, TAU, 28, fade(GOLD)).width(2.5).antialiased(true).done();
+                }
             }
         }
 
-        // Markierung mit pulsierendem Schein
-        if self.current >= 0 {
-            let c = Vector2::new(marker, LINE_Y);
-            let pulse = 0.5 + 0.5 * (self.time * 3.0).sin();
-            self.base_mut().draw_circle(c, 11.0 + 2.0 * pulse, Color::from_rgba(GOLD.r, GOLD.g, GOLD.b, 0.18 + 0.15 * pulse));
-            self.base_mut().draw_circle(c, 7.5, Color::WHITE);
-            self.base_mut().draw_arc_ex(c, 7.5, 0.0, TAU, 24, GOLD).width(2.5).antialiased(true).done();
-        }
-
-        // Name der aktuellen Phase über der Markierung (im Rahmen gehalten)
+        // Name der aktuellen Phase über der Linie (im Rahmen gehalten)
         let title = self.current_title();
-        let tx = marker.clamp(70.0, WIDTH - 70.0);
-        self.text(&title, Vector2::new(tx, LINE_Y - 15.0), 16, GOLD, HorizontalAlignment::CENTER);
+        // Über der Markierung, aber anhand der echten Textbreite im Rahmen gehalten
+        let half = self.base().get_theme_default_font().map_or(100.0, |f| {
+            f.get_string_size_ex(&title).font_size(16).done().x * 0.5 + 4.0
+        });
+        let tx = marker.clamp(half.min(WIDTH * 0.5), (WIDTH - half).max(WIDTH * 0.5));
+        self.text(&title, Vector2::new(tx, LINE_Y - BIG_R - 8.0), 16, GOLD, HorizontalAlignment::CENTER);
         let turn = self.turn_text.clone();
-        self.text(&turn, Vector2::new(WIDTH * 0.5, LINE_Y + 26.0), 13, TEXT, HorizontalAlignment::CENTER);
+        self.text(&turn, Vector2::new(WIDTH * 0.5, LINE_Y + BIG_R + 20.0), 13, TEXT, HorizontalAlignment::CENTER);
     }
 }
 
@@ -131,41 +184,78 @@ impl PhaseTimeline {
 }
 
 impl PhaseTimeline {
-    /// Punkte mit x-Position: Hauptphasen im Abstand 1, Kampf-Unterpunkte im Abstand 0,5.
-    fn dots(&self) -> Vec<Dot> {
-        let mut units = Vec::new();
-        let mut u = 0.0f32;
-        for i in 0..self.titles.len() {
-            let sub = COMBAT.contains(&i);
-            if i > 0 {
-                let first_sub = i == *COMBAT.start();
-                u += if sub && !first_sub { 0.5 } else if COMBAT.contains(&(i - 1)) { 0.75 } else { 1.0 };
-            }
-            if i == *COMBAT.start() {
-                // Gruppenpunkt „Kampf“ vor den Unterpunkten
-                units.push((u, false, None));
-                u += 0.5;
-            }
-            units.push((u, sub, Some(i)));
-        }
-        let total = units.last().map_or(1.0, |d| d.0).max(1.0);
-        let (left, right) = (14.0, WIDTH - 14.0);
-        units
-            .into_iter()
-            .map(|(u, sub, phase)| Dot { x: left + (right - left) * u / total, sub, phase })
-            .collect()
+    fn current_index(&self) -> Option<usize> {
+        usize::try_from(self.current).ok()
     }
 
+    /// Index des aktuellen Kampfschritts (0–2) oder None außerhalb des Kampfs.
+    fn combat_step(&self) -> Option<usize> {
+        self.current_index().filter(|i| COMBAT.contains(i)).map(|i| i - COMBAT.start())
+    }
+
+    /// Zielradius des Rundenbeginn-Kreises: wächst mit Enttappen → Hauptphase 1, danach groß.
+    fn opening_target_r(&self) -> f32 {
+        match self.current_index() {
+            None => OPENING_R[0],
+            Some(i) if OPENING.contains(&i) => OPENING_R[i],
+            Some(_) => BIG_R,
+        }
+    }
+
+    /// Zustand einer Station, die die Phasen `range` umfasst.
+    fn state(&self, range: RangeInclusive<usize>) -> State {
+        match self.current_index() {
+            None => State::Upcoming,
+            Some(i) if range.contains(&i) => State::Current,
+            Some(i) if i > *range.end() => State::Done,
+            Some(_) => State::Upcoming,
+        }
+    }
+
+    /// Stationen mit (animierter) Position und Größe. Einheiten: Rundenbeginn 0, Kampf 1,
+    /// Hauptphase 2 bei 2, Ende bei 3 – aufgeklappte Kampfschritte schieben beide um bis zu
+    /// [COMBAT_SPREAD] nach rechts.
+    fn dots(&self) -> Vec<Dot> {
+        let e = self.expand;
+        let total = 3.0 + COMBAT_SPREAD * e;
+        let (left, right) = (BIG_R + 4.0, WIDTH - BIG_R - 4.0);
+        let x = |u: f32| left + (right - left) * u / total;
+        let opening_r = self.opening_r.unwrap_or_else(|| self.opening_target_r());
+
+        let mut dots = vec![Dot { x: x(0.0), r: opening_r, alpha: 1.0, state: self.state(OPENING) }];
+        // Kampf: Gruppenpunkt; ist er aufgeklappt, übernimmt der aktuelle Schritt die Hervorhebung
+        let mut combat_state = self.state(COMBAT);
+        if combat_state == State::Current && e > 0.5 {
+            combat_state = State::Done;
+        }
+        dots.push(Dot { x: x(1.0), r: COMBAT_R, alpha: 1.0, state: combat_state });
+        let step = self.combat_step();
+        for k in 0..3 {
+            let state = match step {
+                Some(s) if s == k => State::Current,
+                Some(s) if s > k => State::Done,
+                _ => State::Upcoming,
+            };
+            let u = 1.0 + (k as f32 + 1.0) * 0.5 * e;
+            dots.push(Dot { x: x(u), r: SUB_R, alpha: e, state });
+        }
+        dots.push(Dot { x: x(2.0 + COMBAT_SPREAD * e), r: BIG_R, alpha: 1.0, state: self.state(MAIN2..=MAIN2) });
+        dots.push(Dot { x: x(3.0 + COMBAT_SPREAD * e), r: END_R, alpha: 1.0, state: self.state(END..=END) });
+        dots
+    }
+
+    /// x-Position der aktuellen Station (vor Spielbeginn: erste Station; nach dem Ende: letzte).
     fn target_x(&self, dots: &[Dot]) -> f32 {
-        let cur = usize::try_from(self.current).ok();
-        dots.iter()
-            .find(|d| d.phase.is_some() && d.phase == cur)
-            .or(dots.first())
-            .map_or(0.0, |d| d.x)
+        let current = dots.iter().filter(|d| d.state == State::Current).max_by(|a, b| a.alpha.total_cmp(&b.alpha));
+        match (current, self.current_index()) {
+            (Some(d), _) => d.x,
+            (None, Some(_)) => dots[dots.len() - 1].x,
+            (None, None) => dots[0].x,
+        }
     }
 
     fn current_title(&self) -> String {
-        let Ok(i) = usize::try_from(self.current) else {
+        let Some(i) = self.current_index() else {
             return tr!("Austeilen …", "Dealing …").to_string();
         };
         let title = self.titles.get(i).cloned().unwrap_or_default();
