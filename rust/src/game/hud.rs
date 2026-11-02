@@ -11,7 +11,8 @@
 //!   belegtem Stack orange
 //! - Bildschirmmitte: Auswahlfenster für Heldenfähigkeiten
 //! - obere Bildschirmhälfte: große Stack-Anzeige ([`StackView`]), solange der Stack belegt ist
-//! - oberer Bildbereich, mittig: große Vorschau der Karte, die gerade gezogen wird
+//! - ganz oben, mittig: große Vorschau der Karte, die gerade gezogen wird; das Gegner-Medaillon
+//!   liegt dann durchsichtig darüber
 //!
 //! Das HUD liest den Zustand jedes Frame vom TurnManager (keine Signal-Kopplung nötig).
 //! Alle Flächen lassen Mausklicks durch, nur der Button fängt sie ab.
@@ -43,6 +44,9 @@ const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
 /// Hauptbutton: blau (Phase beenden) bzw. orange (Priorität abgeben, Stack belegt).
 const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
 const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
+/// Vorschau der gezogenen Karte: Abstand zum oberen Bildrand und Zeichenebene (z-Index).
+const PREVIEW_TOP: f32 = 8.0;
+const PREVIEW_Z: i32 = 50;
 
 /// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte,
 /// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
@@ -308,9 +312,10 @@ impl TurnHud {
         }
     }
 
-    /// Während eine Karte gezogen wird: groß im oberen Bildbereich anzeigen (mittig, unter dem
-    /// Lebens-Edelstein des Gegners – wie die Stack-Anzeige). Beim Loslassen verschwindet sie.
-    fn update_drag_preview(&mut self, top: f32) {
+    /// Während eine Karte gezogen wird: groß ganz oben in der Bildmitte anzeigen; das
+    /// Gegner-Medaillon liegt dann durchsichtig darüber (die Maske blendet es beim Ziehen ohnehin
+    /// auf 30 % aus). Beim Loslassen verschwindet die Vorschau.
+    fn update_drag_preview(&mut self) {
         let dragged = self
             .base()
             .get_parent()
@@ -323,15 +328,19 @@ impl TurnHud {
         if let Some((_, old)) = self.drag_preview.take() {
             old.free();
         }
+        // Gegner-Medaillon über die Vorschau legen, solange sie angezeigt wird
+        if let Some(mask) = self.opponent_mask.as_mut() {
+            mask.set_z_index(if dragged.is_some() { PREVIEW_Z + 1 } else { 0 });
+        }
         let (Some(card), Some(mut root)) = (dragged, self.root.clone()) else { return };
         let mut preview = stack_view::build_preview(&card);
-        // Über allen anderen HUD-Elementen
-        preview.set_z_index(50);
+        // Über den übrigen HUD-Elementen (nur das Gegner-Medaillon liegt darüber)
+        preview.set_z_index(PREVIEW_Z);
         root.add_child(&preview);
         let screen = root.get_size();
         let size = preview.get_combined_minimum_size();
         preview.set_size(size);
-        preview.set_position(Vector2::new((screen.x - size.x) * 0.5, top + 6.0));
+        preview.set_position(Vector2::new((screen.x - size.x) * 0.5, PREVIEW_TOP));
         self.drag_preview = Some((card.instance_id(), preview));
     }
 
@@ -339,7 +348,7 @@ impl TurnHud {
         self.place_seat_rows();
         // Stack-Karten beginnen unter dem Lebens-Edelstein des Gegners (Leben bleibt lesbar)
         let below_opponent = self.opponent_badge.as_ref().map_or(0.0, |b| b.get_global_rect().end().y);
-        self.update_drag_preview(below_opponent);
+        self.update_drag_preview();
         if let (Some(tm), Some(view)) = (self.turn_manager.clone(), self.stack_view.as_mut()) {
             let items: Vec<_> = tm.bind().get_stack_items().iter_shared().collect();
             view.update(&items, below_opponent);
