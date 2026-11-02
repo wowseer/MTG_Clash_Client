@@ -60,19 +60,21 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 
 *Erbt von `Control` · Quelle: `rust/src/game/card_cutout.rs`*
 
-Vollbild-Maske für HUD-Elemente: Ihre Kinder werden überall gezeichnet, außer innerhalb des konvexen Vierecks `cutout` (Bildschirmkoordinaten, 4 Punkte). So wirkt eine 3D-Karte, die vor einem Medaillon schwebt, als läge sie darüber. Leeres `cutout` = nichts ausgespart. Der `TurnHud` setzt die Aussparung jedes Frame auf die gehoverte bzw. gezogene Karte.
+Vollbild-Hülle für HUD-Elemente: Ihre Nachfahren (mit `use_parent_material = true`) werden überall gezeichnet, außer innerhalb des konvexen Vierecks `cutout` (Bildschirmkoordinaten, 4 Punkte). So wirkt eine 3D-Karte, die vor einem Medaillon schwebt, als läge sie darüber. Leeres `cutout` = nichts ausgespart. `greyed` graut den Inhalt aus. Der `TurnHud` setzt beides jedes Frame.
 
 ### Eigenschaften
 
 | Name | Typ | Beschreibung |
 |---|---|---|
-| `cutout` | `PackedVector2Array` | Konvexes Viereck (4 Punkte, Bildschirmkoordinaten), in dem die Kinder unsichtbar sind. Leer = keine Aussparung. |
+| `cutout` | `PackedVector2Array` | Konvexes Viereck (4 Punkte, Bildschirmkoordinaten), in dem die Nachfahren unsichtbar sind. Leer = keine Aussparung. |
+| `greyed` | `bool` | Inhalt ausgrauen (graustufig und abgedunkelt), z. B. während die Stack-Anzeige darüber liegt. |
 
 ### Funktionen
 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
-| `set_cutout(quad: PackedVector2Array)` | `void` | Setzt die Aussparung (4 Punkte oder leer) und zeichnet die Maske bei Änderung neu. |
+| `set_cutout(quad: PackedVector2Array)` | `void` | Setzt die Aussparung (4 Punkte oder leer). |
+| `set_greyed(on: bool)` | `void` | Schaltet das Ausgrauen ein oder aus. |
 
 ## TurnHud
 
@@ -360,7 +362,7 @@ Beispiel-Node: zeigt, dass die Rust-Extension geladen wird.
 
 *Erbt von `Node3D` · Quelle: `rust/src/table/arena.rs`*
 
-Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte, großer Raute, Mittellinie und eingelassenen Kartenfächern (automatisch unter jeder Stapel- und Ressourcen-`Zone` der Szene), flacher Steinrand mit Goldeinlage, Leuchtkristalle in den Ecken, gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern. Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0, Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
+Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte, großer Raute und Mittellinie (ohne eingelassene Felder für Deck, Ablage und Ressourcen), flacher Steinrand mit Goldeinlage, Leuchtkristalle in den Ecken, gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern. Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0, Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
 
 ### Eigenschaften
 

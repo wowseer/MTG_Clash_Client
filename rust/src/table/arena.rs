@@ -18,8 +18,7 @@ use godot::classes::{
 use godot::prelude::*;
 
 use super::tavern::{glow, solid, textured, FlickerLight};
-use super::textures::{self, BoardSlot};
-use super::zone::Zone;
+use super::textures;
 
 /// Farbe der leuchtenden Runen und Kristalle.
 const ARCANE: Color = Color::from_rgb(0.35, 0.85, 1.0);
@@ -29,8 +28,8 @@ const RIM_TOP: f32 = 0.06;
 const FIRE: Color = Color::from_rgb(1.0, 0.55, 0.2);
 
 /// Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte,
-/// großer Raute, Mittellinie und eingelassenen Kartenfächern (automatisch unter jeder
-/// Stapel- und Ressourcen-[Zone] der Szene), flacher Steinrand mit Goldeinlage, Leuchtkristalle in den Ecken,
+/// großer Raute und Mittellinie (ohne eingelassene Felder für Deck, Ablage und Ressourcen),
+/// flacher Steinrand mit Goldeinlage, Leuchtkristalle in den Ecken,
 /// gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern.
 /// Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0,
 /// Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
@@ -157,39 +156,11 @@ impl Arena {
         self.base_mut().add_child(&light);
     }
 
-    /// Kartenfächer: je eine Stapel- (kind 1) und Ressourcen-Zone (kind 3) der Szene.
-    fn collect_slots(&self) -> Vec<BoardSlot> {
-        let mut slots = Vec::new();
-        let Some(parent) = self.base().get_parent() else {
-            return slots;
-        };
-        let mut stack = vec![parent];
-        while let Some(node) = stack.pop() {
-            for child in node.get_children().iter_shared() {
-                stack.push(child.clone());
-                let Ok(zone) = child.try_cast::<Zone>() else { continue };
-                let kind = zone.get("kind").try_to::<i64>().unwrap_or(-1);
-                // Auch unsichtbare Zonen: ihre Karten liegen trotzdem auf dem Brett.
-                if !(kind == 1 || kind == 3) {
-                    continue;
-                }
-                let size = zone.get("size").try_to::<Vector3>().unwrap_or(Vector3::ONE);
-                let origin = zone.get_global_position();
-                slots.push(BoardSlot {
-                    center: Vector2::new(origin.x, origin.z),
-                    half: Vector2::new(size.x, size.z) * 0.5 + Vector2::splat(0.1),
-                });
-            }
-        }
-        slots
-    }
-
     // ------------------------------------------------------------ Spielbrett
 
     fn build_board(&mut self, m: &Materials) {
         let bs = self.board_size;
-        let slots = self.collect_slots();
-        let tex = textures::arena_board(bs, self.texture_resolution, &slots);
+        let tex = textures::arena_board(bs, self.texture_resolution);
 
         let mut mat = StandardMaterial3D::new_gd();
         mat.set_texture(TextureParam::ALBEDO, &tex.albedo);

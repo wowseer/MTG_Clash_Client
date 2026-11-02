@@ -1,79 +1,119 @@
-//! CardCutout: Maske, die HUD-Elemente dort ausspart, wo eine 3D-Karte davor schwebt.
+//! CardCutout: Hülle für HUD-Elemente, die dort ausgespart werden, wo eine 3D-Karte davor schwebt.
 //!
 //! Das HUD (CanvasLayer) wird immer über der 3D-Szene gezeichnet. Damit eine gezoomte
-//! oder gezogene Karte trotzdem **über** den Spieler-Medaillons liegt, hängen die
-//! Medaillon-Zeilen unter dieser Maske (`clip_children = CLIP_CHILDREN_ONLY`): Die Maske
-//! zeichnet den ganzen Bildschirm außer dem Kartenviereck – Kinder sind nur dort sichtbar.
-//! Die Aussparung ist das auf den Bildschirm projizierte Viereck der Karte
-//! ([`Card3D::screen_quad`](crate::table::card3d::Card3D::screen_quad)).
+//! oder gezogene Karte trotzdem **über** einem Spieler-Medaillon liegt (das Medaillon also in
+//! den Hintergrund rückt), hängt jede Medaillon-Zeile unter einem `CardCutout`. Dieser trägt ein
+//! Canvas-Shader-Material, das seine Nachfahren (mit `use_parent_material`) erben: Jeder Pixel
+//! innerhalb des Kartenvierecks wird verworfen. Die Aussparung ist das auf den Bildschirm
+//! projizierte Viereck der Karte ([`Card3D::screen_quad`](crate::table::card3d::Card3D::screen_quad)).
+//!
+//! Zusätzlich kann der Inhalt ausgegraut werden (z. B. das Gegner-Medaillon, solange die
+//! Stack-Anzeige darüber liegt).
+//!
+//! (Früher per `clip_children` gelöst – das blendete die Medaillons in der Praxis komplett aus.)
 
-use godot::classes::canvas_item::ClipChildrenMode;
 use godot::classes::control::{LayoutPreset, MouseFilter};
-use godot::classes::{Control, IControl};
+use godot::classes::{Control, IControl, Shader, ShaderMaterial};
 use godot::prelude::*;
 
-/// Ausdehnung der Halbebenen, aus denen das Komplement des Vierecks zusammengesetzt wird (Pixel).
-const FAR: f32 = 100_000.0;
+/// Canvas-Shader: verwirft Pixel im konvexen Viereck `quad` (Canvas-Koordinaten) und graut bei
+/// `grey` = 1 aus. Die Canvas-Position wird im Vertex-Shader berechnet – unabhängig von
+/// Fenster-Skalierung, da `unproject_position` dieselben Koordinaten liefert.
+const SHADER: &str = r#"
+shader_type canvas_item;
+uniform vec2 quad[4];
+uniform bool has_quad = false;
+uniform float grey : hint_range(0.0, 1.0) = 0.0;
+varying vec2 canvas_pos;
 
-/// Vollbild-Maske für HUD-Elemente: Ihre Kinder werden überall gezeichnet, außer innerhalb des
-/// konvexen Vierecks [member cutout] (Bildschirmkoordinaten, 4 Punkte). So wirkt eine 3D-Karte,
-/// die vor einem Medaillon schwebt, als läge sie darüber. Leeres [member cutout] = nichts ausgespart.
-/// Der [TurnHud] setzt die Aussparung jedes Frame auf die gehoverte bzw. gezogene Karte.
+void vertex() {
+    canvas_pos = (CANVAS_MATRIX * MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
+}
+
+float edge(vec2 a, vec2 b, vec2 p) {
+    vec2 e = b - a;
+    vec2 d = p - a;
+    return e.x * d.y - e.y * d.x;
+}
+
+void fragment() {
+    if (has_quad) {
+        float s0 = edge(quad[0], quad[1], canvas_pos);
+        float s1 = edge(quad[1], quad[2], canvas_pos);
+        float s2 = edge(quad[2], quad[3], canvas_pos);
+        float s3 = edge(quad[3], quad[0], canvas_pos);
+        bool all_pos = s0 >= 0.0 && s1 >= 0.0 && s2 >= 0.0 && s3 >= 0.0;
+        bool all_neg = s0 <= 0.0 && s1 <= 0.0 && s2 <= 0.0 && s3 <= 0.0;
+        if (all_pos || all_neg) {
+            discard;
+        }
+    }
+    vec4 c = COLOR;
+    float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+    c.rgb = mix(c.rgb, vec3(l * 0.6), grey);
+    COLOR = c;
+}
+"#;
+
+/// Vollbild-Hülle für HUD-Elemente: Ihre Nachfahren (mit `use_parent_material = true`) werden
+/// überall gezeichnet, außer innerhalb des konvexen Vierecks [member cutout]
+/// (Bildschirmkoordinaten, 4 Punkte). So wirkt eine 3D-Karte, die vor einem Medaillon schwebt,
+/// als läge sie darüber. Leeres [member cutout] = nichts ausgespart. [member greyed] graut den
+/// Inhalt aus. Der [TurnHud] setzt beides jedes Frame.
 #[derive(GodotClass)]
 #[class(base=Control)]
 pub struct CardCutout {
-    /// Konvexes Viereck (4 Punkte, Bildschirmkoordinaten), in dem die Kinder unsichtbar sind.
+    /// Konvexes Viereck (4 Punkte, Bildschirmkoordinaten), in dem die Nachfahren unsichtbar sind.
     /// Leer = keine Aussparung.
     #[var(set = set_cutout)]
     cutout: PackedVector2Array,
+    /// Inhalt ausgrauen (graustufig und abgedunkelt), z. B. während die Stack-Anzeige darüber liegt.
+    #[var(set = set_greyed)]
+    greyed: bool,
+    material: Gd<ShaderMaterial>,
     base: Base<Control>,
 }
 
 #[godot_api]
 impl IControl for CardCutout {
     fn init(base: Base<Control>) -> Self {
-        Self { cutout: PackedVector2Array::new(), base }
+        let mut shader = Shader::new_gd();
+        shader.set_code(SHADER);
+        let mut material = ShaderMaterial::new_gd();
+        material.set_shader(&shader);
+        Self { cutout: PackedVector2Array::new(), greyed: false, material, base }
     }
 
     fn ready(&mut self) {
         self.base_mut().set_anchors_preset(LayoutPreset::FULL_RECT);
         self.base_mut().set_mouse_filter(MouseFilter::IGNORE);
-        self.base_mut().set_clip_children_mode(ClipChildrenMode::ONLY);
-    }
-
-    fn draw(&mut self) {
-        let quad: Vec<Vector2> = self.cutout.as_slice().to_vec();
-        if quad.len() != 4 {
-            let rect = Rect2::new(Vector2::splat(-FAR), Vector2::splat(2.0 * FAR));
-            self.base_mut().draw_rect(rect, Color::WHITE);
-            return;
-        }
-        // Komplement eines konvexen Vierecks = Vereinigung der Halbebenen außerhalb jeder Kante.
-        let center = quad.iter().fold(Vector2::ZERO, |a, p| a + *p) / 4.0;
-        for i in 0..4 {
-            let (a, b) = (quad[i], quad[(i + 1) % 4]);
-            let dir = (b - a).normalized_or_zero();
-            if dir == Vector2::ZERO {
-                continue;
-            }
-            let mut n = Vector2::new(-dir.y, dir.x);
-            if n.dot(center - a) > 0.0 {
-                n = -n;
-            }
-            let poly = [a - dir * FAR, b + dir * FAR, b + dir * FAR + n * FAR, a - dir * FAR + n * FAR];
-            self.base_mut().draw_colored_polygon(&PackedVector2Array::from(&poly[..]), Color::WHITE);
-        }
+        let material = self.material.clone();
+        self.base_mut().set_material(&material);
     }
 }
 
 #[godot_api]
 impl CardCutout {
-    /// Setzt die Aussparung (4 Punkte oder leer) und zeichnet die Maske bei Änderung neu.
+    /// Setzt die Aussparung (4 Punkte oder leer).
     #[func]
     pub fn set_cutout(&mut self, quad: PackedVector2Array) {
-        if quad != self.cutout {
-            self.cutout = quad;
-            self.base_mut().queue_redraw();
+        if quad == self.cutout {
+            return;
+        }
+        self.cutout = quad;
+        let has = self.cutout.len() == 4;
+        self.material.set_shader_parameter("has_quad", &has.to_variant());
+        if has {
+            self.material.set_shader_parameter("quad", &self.cutout.to_variant());
+        }
+    }
+
+    /// Schaltet das Ausgrauen ein oder aus.
+    #[func]
+    pub fn set_greyed(&mut self, on: bool) {
+        if on != self.greyed {
+            self.greyed = on;
+            self.material.set_shader_parameter("grey", &(if on { 1.0f32 } else { 0.0 }).to_variant());
         }
     }
 }

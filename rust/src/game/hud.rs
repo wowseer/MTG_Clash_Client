@@ -69,8 +69,10 @@ pub struct TurnHud {
     /// Zeilen (Medaillon + Text) von Gegner und Spieler, für die Positionierung am Anker.
     opponent_row: Option<Gd<Control>>,
     player_row: Option<Gd<Control>>,
-    /// Maske über beiden Medaillon-Zeilen: spart die gehoverte/gezogene Karte aus.
-    seat_mask: Option<Gd<CardCutout>>,
+    /// Masken über den Medaillon-Zeilen (Gegner, Spieler): sparen die gehoverte/gezogene Karte
+    /// aus; die Gegner-Maske graut aus, solange der Stack belegt ist.
+    opponent_mask: Option<Gd<CardCutout>>,
+    player_mask: Option<Gd<CardCutout>>,
     /// Farbe, mit der der Hauptbutton zuletzt gestaltet wurde (nur bei Wechsel neu setzen).
     button_color: Option<Color>,
     /// Meldung „Spielende – X gewinnt!“ in der Bildmitte (sonst leer).
@@ -98,7 +100,8 @@ impl ICanvasLayer for TurnHud {
             player_badge: None,
             opponent_row: None,
             player_row: None,
-            seat_mask: None,
+            opponent_mask: None,
+            player_mask: None,
             player_hero_anchor: None,
             opponent_hero_anchor: None,
             button_color: None,
@@ -221,13 +224,16 @@ impl TurnHud {
         place(&mut log, (0.0, 0.0), (14.0, 12.0), GrowDirection::END, GrowDirection::END);
         root.add_child(&log);
 
-        // Medaillons mit Leben + Text für Ressourcen und Mana – unter einer Maske, die
+        // Medaillons mit Leben + Text für Ressourcen und Mana – je unter einer Maske, die
         // schwebende Karten ausspart (Karten liegen so sichtbar über den Medaillons)
-        let mask = CardCutout::new_alloc();
-        root.add_child(&mask);
-        let mut mask_ctrl = mask.clone().upcast::<Control>();
-        let (opp_row, opp_badge, opp) = seat_row(&mut mask_ctrl, OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
-        let (me_row, me_badge, me) = seat_row(&mut mask_ctrl, PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
+        let opp_mask = CardCutout::new_alloc();
+        root.add_child(&opp_mask);
+        let me_mask = CardCutout::new_alloc();
+        root.add_child(&me_mask);
+        let (opp_row, opp_badge, opp) =
+            seat_row(&mut opp_mask.clone().upcast(), OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
+        let (me_row, me_badge, me) =
+            seat_row(&mut me_mask.clone().upcast(), PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
 
         // Nur der Button unten rechts (Deck und Ablage bleiben sichtbar)
         let mut button = styled_button(20);
@@ -249,7 +255,8 @@ impl TurnHud {
         self.player_badge = Some(me_badge);
         self.opponent_row = Some(opp_row);
         self.player_row = Some(me_row);
-        self.seat_mask = Some(mask);
+        self.opponent_mask = Some(opp_mask);
+        self.player_mask = Some(me_mask);
         self.game_over_label = Some(hint);
         self.log_label = Some(log);
         self.button = Some(button);
@@ -265,8 +272,8 @@ impl TurnHud {
             t.get_dragged_card().or_else(|| t.get_hovered_card())
         });
         let quad = card.map(|c| c.bind().screen_quad()).unwrap_or_default();
-        if let Some(mask) = self.seat_mask.as_mut() {
-            mask.bind_mut().set_cutout(quad);
+        for mask in [self.opponent_mask.as_mut(), self.player_mask.as_mut()].into_iter().flatten() {
+            mask.bind_mut().set_cutout(quad.clone());
         }
         for (anchor, row, is_player) in [
             (self.player_hero_anchor.clone(), self.player_row.clone(), true),
@@ -294,6 +301,10 @@ impl TurnHud {
         if let (Some(tm), Some(view)) = (self.turn_manager.clone(), self.stack_view.as_mut()) {
             let items: Vec<_> = tm.bind().get_stack_items().iter_shared().collect();
             view.update(&items, below_opponent);
+            // Gegner-Medaillon ausgrauen, solange die Stack-Anzeige darüber liegt
+            if let Some(mask) = self.opponent_mask.as_mut() {
+                mask.bind_mut().set_greyed(!items.is_empty());
+            }
         }
         let Some(tm) = self.turn_manager.clone() else {
             return;
@@ -437,10 +448,14 @@ fn seat_row(
     let mut row = godot::classes::HBoxContainer::new_alloc();
     row.add_theme_constant_override("separation", 4);
     row.set_mouse_filter(MouseFilter::IGNORE);
+    // Material (Aussparung/Ausgrauen) der umgebenden CardCutout-Maske erben
+    row.set_use_parent_material(true);
     let mut badge = SeatBadge::new_alloc();
     badge.set("accent", &accent.to_variant());
+    badge.set_use_parent_material(true);
     row.add_child(&badge);
     let mut text = rich(14);
+    text.set_use_parent_material(true);
     text.set_v_size_flags(godot::classes::control::SizeFlags::SHRINK_CENTER);
     text.add_theme_constant_override("outline_size", 6);
     row.add_child(&text);

@@ -199,14 +199,6 @@ fn sd_round_rect(p: Vector2, center: Vector2, half: Vector2, radius: f32) -> f32
     outside + q.x.max(q.y).min(0.0) - radius
 }
 
-/// Ein ins Brett eingelassenes Kartenfach (Rechteck in Welt-Koordinaten x/z).
-pub struct BoardSlot {
-    /// Mittelpunkt (x, z) auf dem Brett.
-    pub center: Vector2,
-    /// Halbe Größe (x, z) inklusive Rand.
-    pub half: Vector2,
-}
-
 /// Texturen der Arena-Spielfläche.
 pub struct BoardTextures {
     pub albedo: Gd<Texture2D>,
@@ -215,10 +207,10 @@ pub struct BoardTextures {
 }
 
 /// Sandstein-Spielbrett mit gemeißelten Ornamenten: Runenkreis in der Mitte (leuchtet über die
-/// Emissionstextur), große Raute, Mittellinie, doppelter Rahmen mit Eck-Ringen und eingelassene
-/// Kartenfächer (`slots`). `size` = Brettgröße in Welt-Einheiten (x, z), Brettmitte = (0, 0).
+/// Emissionstextur), große Raute, Mittellinie und doppelter Rahmen mit Eck-Ringen (keine
+/// eingelassenen Kartenfelder). `size` = Brettgröße in Welt-Einheiten (x, z), Brettmitte = (0, 0).
 /// u läuft entlang +x, v entlang +z.
-pub fn arena_board(size: Vector2, px_per_unit: f32, slots: &[BoardSlot]) -> BoardTextures {
+pub fn arena_board(size: Vector2, px_per_unit: f32) -> BoardTextures {
     let w = (size.x * px_per_unit) as i32;
     let h = (size.y * px_per_unit) as i32;
     let half = size * 0.5;
@@ -292,24 +284,16 @@ pub fn arena_board(size: Vector2, px_per_unit: f32, slots: &[BoardSlot]) -> Boar
             carved = carved.max(groove((dc - 0.32).abs(), 0.026));
             carved = carved.max(groove((dc - 0.16).abs(), 0.02));
 
-            // --- Kartenfächer: Rand-Rille + leicht vertiefte Fläche
-            let mut recess = 0.0f32;
-            for s in slots {
-                let sd = sd_round_rect(p, s.center, s.half, 0.08);
-                carved = carved.max(groove(sd.abs(), 0.032));
-                recess = recess.max(1.0 - smoothstep(-0.03, 0.0, sd));
-            }
-
             // Steinstruktur
             let big = fbm(u, v, 4, 3, 4, 101);
             let fine = fbm(u, v, 48, 34, 3, 202);
             let pits = smoothstep(0.76, 0.84, fbm(u, v, 40, 28, 2, 303)) * 0.6;
             let depth = carved.max(lit);
-            let hgt = 0.85 - depth * 0.55 - recess * 0.12 - (fine - 0.5) * 0.12 - pits * 0.12;
+            let hgt = 0.85 - depth * 0.55 - (fine - 0.5) * 0.12 - pits * 0.12;
             height[(py * w + px) as usize] = (hgt.clamp(0.0, 1.0) * 255.0) as u8;
 
             let mut col = mix(dark, light, 0.25 + big * 0.9 + (fine - 0.5) * 0.4);
-            col = col * (1.0 - depth * 0.5) * (1.0 - recess * 0.1) * (1.0 - pits * 0.25);
+            col = col * (1.0 - depth * 0.5) * (1.0 - pits * 0.25);
             col.a = 1.0;
             albedo.put(px, py, col);
             emission.put(px, py, glow_col * lit);
