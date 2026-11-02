@@ -23,10 +23,12 @@ use godot::builtin::Side;
 use godot::global::Key;
 use godot::prelude::*;
 
+use super::card_cutout::CardCutout;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::stack_view::StackView;
 use super::turn_manager::TurnManager;
+use crate::table::table_controller::TableController;
 
 const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
 const PARCHMENT: Color = Color::from_rgb(0.93, 0.87, 0.74);
@@ -50,8 +52,8 @@ pub struct TurnHud {
     #[export]
     turn_manager: Option<Gd<TurnManager>>,
     /// 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand).
-    /// Leer = Medaillon unten links. Liegt die Maus unterhalb des Medaillons im Handbereich, wird es
-    /// durchscheinend, damit gezoomte Handkarten lesbar bleiben.
+    /// Leer = Medaillon unten links. Gezoomte oder gezogene Karten liegen sichtbar über dem
+    /// Medaillon (Aussparung per [CardCutout]).
     #[export]
     player_hero_anchor: Option<Gd<Node3D>>,
     /// 3D-Punkt, an dem das Gegner-Medaillon sitzt (Oberkante mittig, z. B. direkt unter dessen Hand).
@@ -67,6 +69,8 @@ pub struct TurnHud {
     /// Zeilen (Medaillon + Text) von Gegner und Spieler, für die Positionierung am Anker.
     opponent_row: Option<Gd<Control>>,
     player_row: Option<Gd<Control>>,
+    /// Maske über beiden Medaillon-Zeilen: spart die gehoverte/gezogene Karte aus.
+    seat_mask: Option<Gd<CardCutout>>,
     /// Farbe, mit der der Hauptbutton zuletzt gestaltet wurde (nur bei Wechsel neu setzen).
     button_color: Option<Color>,
     /// Meldung „Spielende – X gewinnt!“ in der Bildmitte (sonst leer).
@@ -94,6 +98,7 @@ impl ICanvasLayer for TurnHud {
             player_badge: None,
             opponent_row: None,
             player_row: None,
+            seat_mask: None,
             player_hero_anchor: None,
             opponent_hero_anchor: None,
             button_color: None,
@@ -216,9 +221,13 @@ impl TurnHud {
         place(&mut log, (0.0, 0.0), (14.0, 12.0), GrowDirection::END, GrowDirection::END);
         root.add_child(&log);
 
-        // Medaillons mit Leben + Text für Ressourcen und Mana
-        let (opp_row, opp_badge, opp) = seat_row(&mut root, OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
-        let (me_row, me_badge, me) = seat_row(&mut root, PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
+        // Medaillons mit Leben + Text für Ressourcen und Mana – unter einer Maske, die
+        // schwebende Karten ausspart (Karten liegen so sichtbar über den Medaillons)
+        let mask = CardCutout::new_alloc();
+        root.add_child(&mask);
+        let mut mask_ctrl = mask.clone().upcast::<Control>();
+        let (opp_row, opp_badge, opp) = seat_row(&mut mask_ctrl, OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
+        let (me_row, me_badge, me) = seat_row(&mut mask_ctrl, PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
 
         // Nur der Button unten rechts (Deck und Ablage bleiben sichtbar)
         let mut button = styled_button(20);
@@ -240,16 +249,25 @@ impl TurnHud {
         self.player_badge = Some(me_badge);
         self.opponent_row = Some(opp_row);
         self.player_row = Some(me_row);
+        self.seat_mask = Some(mask);
         self.game_over_label = Some(hint);
         self.log_label = Some(log);
         self.button = Some(button);
     }
 
-    /// Setzt die Medaillon-Zeilen an ihre 3D-Anker (Medaillon mittig über/unter dem Ankerpunkt).
+    /// Setzt die Medaillon-Zeilen an ihre 3D-Anker (Medaillon mittig über/unter dem Ankerpunkt)
+    /// und spart die gehoverte bzw. gezogene Karte aus der Medaillon-Maske aus.
     fn place_seat_rows(&mut self) {
         let Some(viewport) = self.base().get_viewport() else { return };
         let Some(cam) = viewport.get_camera_3d() else { return };
-        let mouse = viewport.get_mouse_position();
+        let card = self.base().get_parent().and_then(|p| p.try_cast::<TableController>().ok()).and_then(|t| {
+            let t = t.bind();
+            t.get_dragged_card().or_else(|| t.get_hovered_card())
+        });
+        let quad = card.map(|c| c.bind().screen_quad()).unwrap_or_default();
+        if let Some(mask) = self.seat_mask.as_mut() {
+            mask.bind_mut().set_cutout(quad);
+        }
         for (anchor, row, is_player) in [
             (self.player_hero_anchor.clone(), self.player_row.clone(), true),
             (self.opponent_hero_anchor.clone(), self.opponent_row.clone(), false),
@@ -266,17 +284,16 @@ impl TurnHud {
             let badge_w = row.get_child(0).map(|b| b.cast::<Control>().get_combined_minimum_size().x).unwrap_or(0.0);
             let top = if is_player { p.y - size.y } else { p.y };
             row.set_position(Vector2::new(p.x - badge_w * 0.5, top));
-            // Spieler: durchscheinend, solange die Maus im Handbereich darunter ist
-            let alpha = if is_player && mouse.y > top + size.y * 0.5 && (mouse.x - p.x).abs() < 380.0 { 0.3 } else { 1.0 };
-            row.set_modulate(Color::from_rgba(1.0, 1.0, 1.0, alpha));
         }
     }
 
     fn refresh(&mut self) {
         self.place_seat_rows();
+        // Stack-Karten beginnen unter dem Lebens-Edelstein des Gegners (Leben bleibt lesbar)
+        let below_opponent = self.opponent_badge.as_ref().map_or(0.0, |b| b.get_global_rect().end().y);
         if let (Some(tm), Some(view)) = (self.turn_manager.clone(), self.stack_view.as_mut()) {
             let items: Vec<_> = tm.bind().get_stack_items().iter_shared().collect();
-            view.update(&items);
+            view.update(&items, below_opponent);
         }
         let Some(tm) = self.turn_manager.clone() else {
             return;

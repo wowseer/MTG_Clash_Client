@@ -326,6 +326,26 @@ impl Card3D {
         self.zoomed
     }
 
+    /// Die vier Ecken der Karte, wie sie gerade auf dem Bildschirm erscheint (inklusive
+    /// Hover-Zoom, Neigung und Drag-Schwung), in Pixeln. Leer, wenn die Karte hinter der Kamera liegt.
+    #[func]
+    pub fn screen_quad(&self) -> PackedVector2Array {
+        let (Some(visual), Some(cam)) = (self.visual.as_ref(), self.base().get_viewport().and_then(|v| v.get_camera_3d())) else {
+            return PackedVector2Array::new();
+        };
+        let xf = visual.get_global_transform();
+        let (w, h) = (CARD_WIDTH * 0.5, CARD_HEIGHT * 0.5);
+        let mut quad = PackedVector2Array::new();
+        for (x, z) in [(-w, -h), (w, -h), (w, h), (-w, h)] {
+            let world = xf * Vector3::new(x, 0.0, z);
+            if cam.is_position_behind(world) {
+                return PackedVector2Array::new();
+            }
+            quad.push(cam.unproject_position(world));
+        }
+        quad
+    }
+
     /// Übergibt den Raycast-Trefferpunkt (Weltkoordinaten) für den Tilt-Effekt.
     #[func]
     pub fn update_hover_point(&mut self, world_point: Vector3) {

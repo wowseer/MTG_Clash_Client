@@ -9,6 +9,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 ## Inhalt
 
 - [DebugPanel](#debugpanel) – erbt von `CanvasLayer` *(nur Test-Build)*
+- [CardCutout](#cardcutout) – erbt von `Control`
 - [TurnHud](#turnhud) – erbt von `CanvasLayer`
 - [ManaCost](#manacost) – erbt von `Resource`
 - [ManaPool](#manapool) – erbt von `Node`
@@ -55,6 +56,24 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 | `on_kind_selected(index: int)` | `void` | Typ gewechselt: passende Fähigkeiten und Hinweis anzeigen. |
 | `on_create(to_hand: bool)` | `void` | Knopf „Erstellen“: baut eine Karte aus Name, Typ, Fähigkeit, Kosten, Angriff und Verteidigung. `to_hand` = true legt sie zusätzlich direkt auf die Hand. |
 
+## CardCutout
+
+*Erbt von `Control` · Quelle: `rust/src/game/card_cutout.rs`*
+
+Vollbild-Maske für HUD-Elemente: Ihre Kinder werden überall gezeichnet, außer innerhalb des konvexen Vierecks `cutout` (Bildschirmkoordinaten, 4 Punkte). So wirkt eine 3D-Karte, die vor einem Medaillon schwebt, als läge sie darüber. Leeres `cutout` = nichts ausgespart. Der `TurnHud` setzt die Aussparung jedes Frame auf die gehoverte bzw. gezogene Karte.
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `cutout` | `PackedVector2Array` | Konvexes Viereck (4 Punkte, Bildschirmkoordinaten), in dem die Kinder unsichtbar sind. Leer = keine Aussparung. |
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `set_cutout(quad: PackedVector2Array)` | `void` | Setzt die Aussparung (4 Punkte oder leer) und zeichnet die Maske bei Änderung neu. |
+
 ## TurnHud
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
@@ -66,7 +85,7 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | Name | Typ | Beschreibung |
 |---|---|---|
 | `turn_manager` | `TurnManager` | Der `TurnManager`, dessen Zustand angezeigt wird. |
-| `player_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand). Leer = Medaillon unten links. Liegt die Maus unterhalb des Medaillons im Handbereich, wird es durchscheinend, damit gezoomte Handkarten lesbar bleiben. |
+| `player_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand). Leer = Medaillon unten links. Gezoomte oder gezogene Karten liegen sichtbar über dem Medaillon (Aussparung per `CardCutout`). |
 | `opponent_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Gegner-Medaillon sitzt (Oberkante mittig, z. B. direkt unter dessen Hand). Leer = Medaillon oben links. |
 
 ### Funktionen
@@ -392,6 +411,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_hovered(hovered: bool)` | `void` | Aktiviert/deaktiviert den Hover-Zustand. |
 | `is_hovered()` | `bool` | Liegt der Mauszeiger gerade auf der Karte? |
 | `is_zoomed()` | `bool` | Wird die Karte gerade vergrößert angezeigt? |
+| `screen_quad()` | `PackedVector2Array` | Die vier Ecken der Karte, wie sie gerade auf dem Bildschirm erscheint (inklusive Hover-Zoom, Neigung und Drag-Schwung), in Pixeln. Leer, wenn die Karte hinter der Kamera liegt. |
 | `update_hover_point(world_point: Vector3)` | `void` | Übergibt den Raycast-Trefferpunkt (Weltkoordinaten) für den Tilt-Effekt. |
 | `set_dragging(dragging: bool)` | `void` | Markiert die Karte als gezogen (Hover aus, laufende Animation stoppt). Setzt der `TableController`. |
 | `is_dragging()` | `bool` | Wird die Karte gerade gezogen? |

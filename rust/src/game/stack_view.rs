@@ -1,5 +1,8 @@
 //! StackView: zeigt den Stack groß in der oberen Bildschirmhälfte.
 //!
+//! - Liegt über dem Gegner-Medaillon: Dahinter wird die obere Bildhälfte leicht grau
+//!   abgedunkelt (Medaillon und Tisch bleiben durchscheinend sichtbar). Die Karten beginnen
+//!   direkt unter dem Lebens-Edelstein des Gegners, sodass sein Leben lesbar bleibt.
 //! - Sichtbar, solange etwas auf dem Stack liegt – also bei jedem Ausspielen einer
 //!   Karte (außer Ressourcen, die nicht über den Stack gehen) und in jeder
 //!   Prioritätsrunde.
@@ -19,7 +22,8 @@
 use godot::classes::control::MouseFilter;
 use godot::classes::texture_rect::{ExpandMode, StretchMode};
 use godot::classes::tween::{EaseType, TransitionType};
-use godot::classes::{Control, Label, PanelContainer, StyleBoxFlat, TextureRect};
+use godot::classes::gradient_texture_2d::Fill;
+use godot::classes::{ColorRect, Control, Gradient, GradientTexture2D, Label, PanelContainer, StyleBoxFlat, TextureRect};
 use godot::global::{HorizontalAlignment, VerticalAlignment};
 use godot::prelude::*;
 
@@ -33,11 +37,16 @@ const CARD_H: f32 = 290.0;
 /// Versatz jeder weiteren (darübergelegten) Karte.
 const STEP: Vector2 = Vector2::new(72.0, 12.0);
 const TOP_MARGIN: f32 = 12.0;
+/// Abdunkelung hinter dem Stack (leicht grau, durchscheinend).
+const DIM: Color = Color::from_rgba(0.08, 0.08, 0.1, 0.45);
+/// Höhe des weichen Übergangs am unteren Rand der Abdunkelung.
+const DIM_FADE: f32 = 70.0;
 
 pub struct StackView {
     root: Gd<Control>,
     shown: Vec<InstanceId>,
     lang: Option<Lang>,
+    top: f32,
 }
 
 impl StackView {
@@ -48,16 +57,18 @@ impl StackView {
         root.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
         root.set_mouse_filter(MouseFilter::IGNORE);
         parent.add_child(&root);
-        Self { root, shown: Vec::new(), lang: None }
+        Self { root, shown: Vec::new(), lang: None, top: 0.0 }
     }
 
-    /// Mit den aktuellen Stack-Elementen (unterstes zuerst) abgleichen.
-    pub fn update(&mut self, items: &[Gd<StackItem>]) {
+    /// Mit den aktuellen Stack-Elementen (unterstes zuerst) abgleichen. `top` = Bildschirm-y,
+    /// unter dem die Karten beginnen (Unterkante des Gegner-Medaillons; 0 = oberer Rand).
+    pub fn update(&mut self, items: &[Gd<StackItem>], top: f32) {
         let ids: Vec<InstanceId> = items.iter().map(|i| i.instance_id()).collect();
         let lang = Some(crate::i18n::lang());
-        if ids == self.shown && lang == self.lang {
+        if ids == self.shown && lang == self.lang && (top - self.top).abs() < 1.0 {
             return;
         }
+        self.top = top;
         let new_top = ids.last().copied().filter(|id| !self.shown.contains(id));
         for child in self.root.get_children().iter_shared() {
             child.free();
@@ -76,7 +87,11 @@ impl StackView {
         let max_width = screen.x * 0.8;
         let step_x = if n > 1 { STEP.x.min((max_width - card_size.x) / (n - 1) as f32).max(18.0) } else { 0.0 };
         let group_w = card_size.x + step_x * (n - 1) as f32;
-        let start = Vector2::new((screen.x - group_w) * 0.5, TOP_MARGIN);
+        // Unter dem Gegner-Medaillon beginnen, aber nie unten aus dem Bild ragen
+        let y = (top + TOP_MARGIN * 0.5).min(screen.y - card_size.y - STEP.y * (n - 1) as f32 - 120.0).max(TOP_MARGIN);
+        let start = Vector2::new((screen.x - group_w) * 0.5, y);
+        let bottom = y + card_size.y + STEP.y * (n - 1) as f32 + 16.0;
+        add_dim(&mut self.root, screen.x, bottom);
 
         for (i, item) in items.iter().enumerate() {
             let top = i + 1 == n;
@@ -97,6 +112,34 @@ impl StackView {
             }
         }
     }
+}
+
+/// Leicht graue Abdunkelung vom oberen Bildrand bis `bottom`, darunter weich auslaufend.
+/// Klickdurchlässig; liegt über dem Gegner-Medaillon, das durchscheinend sichtbar bleibt.
+fn add_dim(root: &mut Gd<Control>, width: f32, bottom: f32) {
+    let mut dim = ColorRect::new_alloc();
+    dim.set_color(DIM);
+    dim.set_mouse_filter(MouseFilter::IGNORE);
+    dim.set_position(Vector2::ZERO);
+    dim.set_size(Vector2::new(width, bottom));
+    root.add_child(&dim);
+
+    let mut gradient = Gradient::new_gd();
+    gradient.set_color(0, DIM);
+    gradient.set_color(1, Color::from_rgba(DIM.r, DIM.g, DIM.b, 0.0));
+    let mut tex = GradientTexture2D::new_gd();
+    tex.set_gradient(&gradient);
+    tex.set_fill(Fill::LINEAR);
+    tex.set_fill_from(Vector2::new(0.0, 0.0));
+    tex.set_fill_to(Vector2::new(0.0, 1.0));
+    let mut fade = TextureRect::new_alloc();
+    fade.set_texture(&tex);
+    fade.set_expand_mode(ExpandMode::IGNORE_SIZE);
+    fade.set_stretch_mode(StretchMode::SCALE);
+    fade.set_mouse_filter(MouseFilter::IGNORE);
+    fade.set_position(Vector2::new(0.0, bottom));
+    fade.set_size(Vector2::new(width, DIM_FADE));
+    root.add_child(&fade);
 }
 
 /// Eine große Karte für ein Stack-Element: Kartenbild mit Beschriftung, Rahmen
