@@ -8,6 +8,12 @@
 //! 3. **Rundenende** – ein Kreis für Hauptphase 2 und Ende: groß in Hauptphase 2, schrumpft
 //!    im Endschritt auf einen kleinen Kreis.
 //!
+//! Die Stationen liegen eng beieinander (rechtsbündig); beginnt der Kampf, klappt er nach links auf
+//! und schafft Platz für seine drei Schritte, danach rückt alles wieder zusammen.
+//! In den Kreisen steht ein Symbol für den Schritt: Enttappen = Kreispfeil gegen den
+//! Uhrzeigersinn, Auffrischung = Sonne, Ziehen = Karte mit Plus, Hauptphase = aufgefächerte
+//! Karten, Ende = Mondsichel, Kampf = gekreuzte Schwerter.
+//!
 //! Die aktuelle Station leuchtet (weiß mit goldenem Rand, pulsierender Schein); erledigte Strecke
 //! und Stationen sind golden, kommende hohl. Größe, Aufklappen und Position gleiten weich.
 //! Über der Linie steht der Name der aktuellen Phase, darunter Runde und wer am Zug ist.
@@ -39,13 +45,16 @@ const HEIGHT: f32 = 78.0;
 const LINE_Y: f32 = 40.0;
 /// Radien: Rundenbeginn wächst von OPENING_R[0] bis BIG_R; Kampf mittel, Unterpunkte klein;
 /// Rundenende groß (BIG_R) und im Endschritt klein (END_R).
-const OPENING_R: [f32; 4] = [5.0, 7.0, 9.0, BIG_R];
-const BIG_R: f32 = 12.0;
-const COMBAT_R: f32 = 7.0;
-const SUB_R: f32 = 4.0;
-const END_R: f32 = 5.5;
-/// Zusätzlicher Abstand (in Stationseinheiten), den die aufgeklappten Kampfschritte einnehmen.
-const COMBAT_SPREAD: f32 = 1.5;
+const OPENING_R: [f32; 4] = [9.0, 10.5, 12.0, BIG_R];
+const BIG_R: f32 = 14.0;
+const COMBAT_R: f32 = 9.0;
+const SUB_R: f32 = 4.5;
+const END_R: f32 = 9.5;
+/// Abstand zwischen zwei Stationen (Pixel) und zwischen aufgeklappten Kampfschritten.
+const STATION_GAP: f32 = 54.0;
+const SUB_GAP: f32 = 26.0;
+/// Dunkle Symbolfarbe auf hellen/goldenen Kreisen.
+const ICON_DARK: Color = Color::from_rgb(0.16, 0.12, 0.08);
 
 /// Zeitstrahl der Phasen (HUD, unten rechts über dem Hauptbutton): ein mit Enttappen, Auffrischung,
 /// Ziehen und Hauptphase 1 wachsender Kreis, ein Punkt „Kampf“, der seine drei Schritte (Phasen-Index
@@ -77,12 +86,24 @@ enum State {
     Upcoming,
 }
 
+/// Symbol in einem Kreis des Zeitstrahls.
+#[derive(Clone, Copy, PartialEq)]
+enum Icon {
+    Untap,
+    Upkeep,
+    Draw,
+    Main,
+    End,
+    Combat,
+}
+
 /// Ein Punkt auf dem Zeitstrahl.
 struct Dot {
     x: f32,
     r: f32,
     alpha: f32,
     state: State,
+    icon: Option<Icon>,
 }
 
 #[godot_api]
@@ -151,18 +172,26 @@ impl IControl for PhaseTimeline {
             }
             let c = Vector2::new(d.x, LINE_Y);
             let fade = |col: Color| Color::from_rgba(col.r, col.g, col.b, col.a * d.alpha);
-            match d.state {
-                State::Done => self.base_mut().draw_circle(c, d.r, fade(GOLD)),
+            let (fill, ink) = match d.state {
+                State::Done => {
+                    self.base_mut().draw_circle(c, d.r, fade(GOLD));
+                    (GOLD, ICON_DARK)
+                }
                 State::Upcoming => {
                     self.base_mut().draw_circle(c, d.r, fade(HOLLOW));
                     self.base_mut().draw_arc_ex(c, d.r, 0.0, TAU, 28, fade(DIM)).width(1.5).antialiased(true).done();
+                    (HOLLOW, DIM)
                 }
                 State::Current => {
                     let glow = Color::from_rgba(GOLD.r, GOLD.g, GOLD.b, (0.18 + 0.15 * pulse) * d.alpha);
                     self.base_mut().draw_circle(c, d.r + 4.0 + 2.0 * pulse, glow);
                     self.base_mut().draw_circle(c, d.r, fade(Color::WHITE));
                     self.base_mut().draw_arc_ex(c, d.r, 0.0, TAU, 28, fade(GOLD)).width(2.5).antialiased(true).done();
+                    (Color::WHITE, ICON_DARK)
                 }
+            };
+            if let Some(icon) = d.icon {
+                self.draw_icon(icon, c, d.r * 0.62, fade(ink), fill);
             }
         }
 
@@ -174,8 +203,13 @@ impl IControl for PhaseTimeline {
         });
         let tx = marker.clamp(half.min(WIDTH * 0.5), (WIDTH - half).max(WIDTH * 0.5));
         self.text(&title, Vector2::new(tx, LINE_Y - BIG_R - 8.0), 16, GOLD, HorizontalAlignment::CENTER);
+        // Runde/Seite mittig unter den Stationen (im Rahmen gehalten)
         let turn = self.turn_text.clone();
-        self.text(&turn, Vector2::new(WIDTH * 0.5, LINE_Y + BIG_R + 20.0), 13, TEXT, HorizontalAlignment::CENTER);
+        let half_turn = self.base().get_theme_default_font().map_or(60.0, |f| {
+            f.get_string_size_ex(&turn).font_size(13).done().x * 0.5 + 4.0
+        });
+        let mid = ((x0 + x1) * 0.5).clamp(half_turn.min(WIDTH * 0.5), (WIDTH - half_turn).max(WIDTH * 0.5));
+        self.text(&turn, Vector2::new(mid, LINE_Y + BIG_R + 18.0), 13, TEXT, HorizontalAlignment::CENTER);
     }
 }
 
@@ -227,23 +261,31 @@ impl PhaseTimeline {
         }
     }
 
-    /// Stationen mit (animierter) Position und Größe. Einheiten: Rundenbeginn 0, Kampf 1,
-    /// Rundenende 2 – aufgeklappte Kampfschritte schieben das Rundenende um bis zu
-    /// [COMBAT_SPREAD] nach rechts.
+    /// Stationen mit (animierter) Position und Größe, rechtsbündig: Abstand [STATION_GAP]; beim
+    /// Aufklappen des Kampfs kommen 3 × [SUB_GAP] dazu und die Reihe wächst nach links.
     fn dots(&self) -> Vec<Dot> {
         let e = self.expand;
-        let total = 2.0 + COMBAT_SPREAD * e;
-        let (left, right) = (BIG_R + 4.0, WIDTH - BIG_R - 4.0);
-        let x = |u: f32| left + (right - left) * u / total;
+        let spread = 3.0 * SUB_GAP * e;
+        let total = 2.0 * STATION_GAP + spread;
+        let start = WIDTH - BIG_R - 6.0 - total;
+        let x = |u: f32| start + u;
         let opening_r = self.opening_r.unwrap_or_else(|| self.opening_target_r());
+        let cur = self.current_index();
+        let opening_icon = match cur {
+            None | Some(0) => Icon::Untap,
+            Some(1) => Icon::Upkeep,
+            Some(2) => Icon::Draw,
+            Some(_) => Icon::Main,
+        };
+        let closing_icon = if cur == Some(END) { Icon::End } else { Icon::Main };
 
-        let mut dots = vec![Dot { x: x(0.0), r: opening_r, alpha: 1.0, state: self.state(OPENING) }];
+        let mut dots = vec![Dot { x: x(0.0), r: opening_r, alpha: 1.0, state: self.state(OPENING), icon: Some(opening_icon) }];
         // Kampf: Gruppenpunkt; ist er aufgeklappt, übernimmt der aktuelle Schritt die Hervorhebung
         let mut combat_state = self.state(COMBAT);
         if combat_state == State::Current && e > 0.5 {
             combat_state = State::Done;
         }
-        dots.push(Dot { x: x(1.0), r: COMBAT_R, alpha: 1.0, state: combat_state });
+        dots.push(Dot { x: x(STATION_GAP), r: COMBAT_R, alpha: 1.0, state: combat_state, icon: Some(Icon::Combat) });
         let step = self.combat_step();
         for k in 0..3 {
             let state = match step {
@@ -251,11 +293,11 @@ impl PhaseTimeline {
                 Some(s) if s > k => State::Done,
                 _ => State::Upcoming,
             };
-            let u = 1.0 + (k as f32 + 1.0) * 0.5 * e;
-            dots.push(Dot { x: x(u), r: SUB_R, alpha: e, state });
+            let u = STATION_GAP + (k as f32 + 1.0) * SUB_GAP * e;
+            dots.push(Dot { x: x(u), r: SUB_R, alpha: e, state, icon: None });
         }
         let closing_r = self.closing_r.unwrap_or_else(|| self.closing_target_r());
-        dots.push(Dot { x: x(2.0 + COMBAT_SPREAD * e), r: closing_r, alpha: 1.0, state: self.state(CLOSING) });
+        dots.push(Dot { x: x(2.0 * STATION_GAP + spread), r: closing_r, alpha: 1.0, state: self.state(CLOSING), icon: Some(closing_icon) });
         dots
     }
 
@@ -278,6 +320,73 @@ impl PhaseTimeline {
             trf!("Kampf · {title}", "Combat · {title}")
         } else {
             title
+        }
+    }
+
+    /// Zeichnet ein Schritt-Symbol mittig bei `c` (Größe `s` ≈ halbe Symbolbreite) in `ink`;
+    /// `bg` = Füllfarbe des Kreises (für die Aussparung der Mondsichel).
+    fn draw_icon(&mut self, icon: Icon, c: Vector2, s: f32, ink: Color, bg: Color) {
+        let w = (s * 0.28).max(1.2);
+        let mut b = self.base_mut();
+        match icon {
+            Icon::Untap => {
+                // Kreispfeil gegen den Uhrzeigersinn (Lücke oben rechts, Spitze zeigt nach oben)
+                let r = s * 0.78;
+                let (a0, a1) = (-0.35 * std::f32::consts::PI, 1.25 * std::f32::consts::PI);
+                b.draw_arc_ex(c, r, a0, a1, 20, ink).width(w).antialiased(true).done();
+                let tip = c + Vector2::new(a0.cos(), a0.sin()) * r;
+                let along = Vector2::new(a0.sin(), -a0.cos()); // Laufrichtung am Bogenanfang (gegen den Uhrzeigersinn)
+                let side = Vector2::new(a0.cos(), a0.sin());
+                let head = [tip + along * (s * 0.55), tip + side * (s * 0.42), tip - side * (s * 0.42)];
+                b.draw_colored_polygon(&PackedVector2Array::from(&head[..]), ink);
+            }
+            Icon::Upkeep => {
+                // Sonne: Scheibe mit acht Strahlen
+                b.draw_circle(c, s * 0.42, ink);
+                for k in 0..8 {
+                    let a = k as f32 * TAU / 8.0;
+                    let d = Vector2::new(a.cos(), a.sin());
+                    b.draw_line_ex(c + d * (s * 0.62), c + d * (s * 0.95), ink).width(w * 0.8).antialiased(true).done();
+                }
+            }
+            Icon::Draw => {
+                // Karte (Hochformat) mit kleinem Plus
+                let size = Vector2::new(s * 1.05, s * 1.45);
+                let rect = Rect2::new(c - size * 0.5 - Vector2::new(s * 0.18, 0.0), size);
+                b.draw_rect_ex(rect, ink).filled(false).width(w).done();
+                let p = c + Vector2::new(s * 0.62, -s * 0.45);
+                b.draw_line_ex(p - Vector2::new(s * 0.3, 0.0), p + Vector2::new(s * 0.3, 0.0), ink).width(w).done();
+                b.draw_line_ex(p - Vector2::new(0.0, s * 0.3), p + Vector2::new(0.0, s * 0.3), ink).width(w).done();
+            }
+            Icon::Main => {
+                // Drei aufgefächerte Karten
+                for k in [-1.0f32, 0.0, 1.0] {
+                    let a = k * 0.38;
+                    let (sin, cos) = a.sin_cos();
+                    let rot = |p: Vector2| c + Vector2::new(0.0, s * 0.35) + Vector2::new(p.x * cos - p.y * sin, p.x * sin + p.y * cos);
+                    let (hw, h) = (s * 0.36, s * 1.2);
+                    let quad = [rot(Vector2::new(-hw, -h)), rot(Vector2::new(hw, -h)), rot(Vector2::new(hw, 0.0)), rot(Vector2::new(-hw, 0.0))];
+                    b.draw_colored_polygon(&PackedVector2Array::from(&quad[..]), bg);
+                    let outline = [quad[0], quad[1], quad[2], quad[3], quad[0]];
+                    b.draw_polyline_ex(&PackedVector2Array::from(&outline[..]), ink).width(w * 0.8).antialiased(true).done();
+                }
+            }
+            Icon::End => {
+                // Mondsichel: Scheibe, davon eine versetzte Scheibe in Hintergrundfarbe ausgespart
+                b.draw_circle(c, s * 0.8, ink);
+                b.draw_circle(c + Vector2::new(s * 0.38, -s * 0.22), s * 0.68, bg);
+            }
+            Icon::Combat => {
+                // Zwei gekreuzte Schwerter (Klinge + Parierstange)
+                for dir in [1.0f32, -1.0] {
+                    let tip = c + Vector2::new(dir * s * 0.8, -s * 0.8);
+                    let hilt = c + Vector2::new(-dir * s * 0.75, s * 0.75);
+                    b.draw_line_ex(hilt, tip, ink).width(w).antialiased(true).done();
+                    let g = c + Vector2::new(-dir * s * 0.4, s * 0.4);
+                    let n = Vector2::new(dir, dir).normalized() * (s * 0.3);
+                    b.draw_line_ex(g - n, g + n, ink).width(w).antialiased(true).done();
+                }
+            }
         }
     }
 
