@@ -7,6 +7,7 @@ pub mod game_state;
 pub mod hourglass;
 pub mod hud;
 pub mod mana;
+pub mod mana_view;
 pub mod phase_timeline;
 pub mod phases;
 pub mod timing;

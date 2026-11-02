@@ -305,6 +305,20 @@ impl TurnManager {
         Vector2i::new(g.untapped_resources(seat).len() as i32, total as i32)
     }
 
+    /// Mana im Pool von `seat`, je Art in der Reihenfolge Weiß, Blau, Schwarz, Rot, Grün,
+    /// Farblos (Indizes 0–5). Leer bei Debug „unendlich Mana“.
+    #[func]
+    pub fn get_pool_amounts(&self, seat: i64) -> PackedInt64Array {
+        let Some(pool) = self.seat(seat).and_then(|s| s.bind().mana_pool.clone()) else {
+            return PackedInt64Array::new();
+        };
+        if self.seat(seat).is_some_and(|s| s.bind().infinite_mana) {
+            return PackedInt64Array::new();
+        }
+        let mana = pool.bind().mana();
+        ManaType::ALL.into_iter().map(|t| mana.get(t) as i64).collect()
+    }
+
     /// Manapool als BBCode (farbig) für das HUD, z. B. "[color=#e64d33]Rot 2[/color]".
     #[func]
     pub fn get_pool_bbcode(&self, seat: i64) -> GString {

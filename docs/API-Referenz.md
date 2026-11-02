@@ -14,6 +14,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [TurnHud](#turnhud) – erbt von `CanvasLayer`
 - [ManaCost](#manacost) – erbt von `Resource`
 - [ManaPool](#manapool) – erbt von `Node`
+- [ManaPoolView](#manapoolview) – erbt von `Control`
 - [PhaseTimeline](#phasetimeline) – erbt von `Control`
 - [PlayerSeat](#playerseat) – erbt von `Node3D`
 - [SeatBadge](#seatbadge) – erbt von `Control`
@@ -169,6 +170,18 @@ Manavorrat eines Spielers.
 | Signal | Beschreibung |
 |---|---|
 | `pool_changed()` | Wird nach jeder Änderung ausgelöst. |
+
+## ManaPoolView
+
+*Erbt von `Control` · Quelle: `rust/src/game/mana_view.rs`*
+
+Manapool als Reihe runder Symbole (HUD). Wird vom `TurnHud` jedes Frame über `set_amounts()` gefüttert; die Breite passt sich der Anzahl der Kreise an.
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `set_amounts(amounts: PackedInt64Array)` | `void` | Setzt die Mana-Mengen je Art (Reihenfolge Weiß, Blau, Schwarz, Rot, Grün, Farblos). Leeres Array = nichts anzeigen. Zuwachs lässt den Kreis aufspringen. |
 
 ## PhaseTimeline
 
@@ -332,6 +345,7 @@ Steuert die Partie: Rundenablauf als State Machine (Enttappen → Auffrischung �
 | `get_seat_name(seat: int)` | `String` | Name des Sitzplatzes `seat` (0 = Spieler, 1 = Gegner). |
 | `get_life(seat: int)` | `int` | Lebenspunkte von `seat` (0 = Spieler, 1 = Gegner). |
 | `get_resource_counts(seat: int)` | `Vector2i` | Ressourcen-Karten: (ungetappt, gesamt). |
+| `get_pool_amounts(seat: int)` | `PackedInt64Array` | Mana im Pool von `seat`, je Art in der Reihenfolge Weiß, Blau, Schwarz, Rot, Grün, Farblos (Indizes 0–5). Leer bei Debug „unendlich Mana“. |
 | `get_pool_bbcode(seat: int)` | `String` | Manapool als BBCode (farbig) für das HUD, z. B. "[color=#e64d33]Rot 2[/color]". |
 | `get_winner_name()` | `String` | Name des Gewinners (leer, solange die Partie läuft). |
 | `can_drag(card: Card3D, zone: Zone)` | `bool` | Darf der Mensch diese Karte greifen? (eigene Hand / eigenes Spielfeld) |

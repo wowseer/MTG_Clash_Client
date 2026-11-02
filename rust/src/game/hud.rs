@@ -5,6 +5,7 @@
 //! - Medaillon ([`SeatBadge`]) mit Leben (ohne Text daneben): folgt je einem 3D-Ankerpunkt
 //!   (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne Anker oben links
 //!   (Gegner) bzw. unten links (Spieler)
+//! - rechts neben dem Spieler-Medaillon: Manapool als runde Symbole ([`ManaPoolView`])
 //! - linker Bildrand: Spielername, darüber die Rundenzahl mit Sanduhr ([`HourglassIcon`]) –
 //!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
 //! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
@@ -29,6 +30,7 @@ use godot::prelude::*;
 
 use super::card_cutout::CardCutout;
 use super::hourglass::HourglassIcon;
+use super::mana_view::ManaPoolView;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::stack_view::{self, StackView};
@@ -81,6 +83,8 @@ pub struct TurnHud {
     /// Zeilen (Medaillon + Text) von Gegner und Spieler, für die Positionierung am Anker.
     opponent_row: Option<Gd<Control>>,
     player_row: Option<Gd<Control>>,
+    /// Manapool des Spielers als runde Symbole, rechts neben seinem Medaillon.
+    player_mana: Option<Gd<ManaPoolView>>,
     /// Masken über den Medaillon-Zeilen (Gegner, Spieler): sparen die gehoverte/gezogene Karte
     /// aus; die Gegner-Maske graut aus, solange der Stack belegt ist.
     opponent_mask: Option<Gd<CardCutout>>,
@@ -117,6 +121,7 @@ impl ICanvasLayer for TurnHud {
             player_badge: None,
             opponent_row: None,
             player_row: None,
+            player_mana: None,
             opponent_mask: None,
             player_mask: None,
             player_hero_anchor: None,
@@ -250,6 +255,11 @@ impl TurnHud {
             seat_row(&mut opp_mask.clone().upcast(), OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
         let (me_row, me_badge) =
             seat_row(&mut me_mask.clone().upcast(), PLAYER_ACCENT, (0.0, 1.0), (8.0, -8.0), GrowDirection::BEGIN);
+        // Manapool des Spielers: runde Symbole rechts neben dem Medaillon (erbt die Maske)
+        let mut mana = ManaPoolView::new_alloc();
+        mana.set_use_parent_material(true);
+        me_mask.clone().add_child(&mana);
+        self.player_mana = Some(mana);
 
         // Nur der Button unten rechts (Deck und Ablage bleiben sichtbar)
         let mut button = styled_button(20);
@@ -309,6 +319,15 @@ impl TurnHud {
             let badge_w = row.get_child(0).map(|b| b.cast::<Control>().get_combined_minimum_size().x).unwrap_or(0.0);
             let top = if is_player { p.y - size.y } else { p.y };
             row.set_position(Vector2::new(p.x - badge_w * 0.5, top));
+            // Manapool rechts neben dem Spieler-Medaillon, auf Höhe der Rautenmitte
+            if is_player {
+                if let Some(mana) = self.player_mana.as_mut() {
+                    let min = mana.get_combined_minimum_size();
+                    let h = min.y;
+                    mana.set_size(min);
+                    mana.set_position(Vector2::new(p.x + badge_w * 0.5 + 10.0, top + size.y * 0.42 - h * 0.5));
+                }
+            }
         }
     }
 
@@ -368,6 +387,9 @@ impl TurnHud {
             t.bind_mut().set_state(tm.get_phase_titles(), current);
         }
 
+        if let Some(m) = self.player_mana.as_mut() {
+            m.bind_mut().set_amounts(tm.get_pool_amounts(0));
+        }
         for (seat, badge) in [(1, self.opponent_badge.as_mut()), (0, self.player_badge.as_mut())] {
             if let Some(b) = badge {
                 b.bind_mut().set_state(tm.get_seat_name(seat), tm.get_life(seat), seat == active);
