@@ -1,12 +1,12 @@
 //! PhaseTimeline: Zeitstrahl der Phasen für das HUD (unten rechts über dem Button „Nächste Phase“).
 //!
-//! Waagerechte Linie mit vier Stationen:
+//! Waagerechte Linie mit drei Stationen:
 //! 1. **Rundenbeginn** – ein Kreis für Enttappen, Auffrischung, Ziehen und Hauptphase 1, der mit
 //!    jedem dieser Schritte größer wird (Hauptphase 1 = großer Kreis).
 //! 2. **Kampf** – ein mittlerer Punkt; seine drei Schritte (Angreifer, Blocker, Schaden) sind
 //!    eingeklappt und klappen erst auf, wenn der Kampf beginnt (danach wieder zu).
-//! 3. **Hauptphase 2** – großer Kreis.
-//! 4. **Ende** – kleiner Kreis.
+//! 3. **Rundenende** – ein Kreis für Hauptphase 2 und Ende: groß in Hauptphase 2, schrumpft
+//!    im Endschritt auf einen kleinen Kreis.
 //!
 //! Die aktuelle Station leuchtet (weiß mit goldenem Rand, pulsierender Schein); erledigte Strecke
 //! und Stationen sind golden, kommende hohl. Größe, Aufklappen und Position gleiten weich.
@@ -30,13 +30,15 @@ const HOLLOW: Color = Color::from_rgba(0.05, 0.06, 0.08, 0.9);
 const OPENING: RangeInclusive<usize> = 0..=3;
 /// Phasen-Indizes der Kampfschritte (Angreifer, Blocker, Schaden) – eingeklappte Unterpunkte.
 const COMBAT: RangeInclusive<usize> = 4..=6;
-const MAIN2: usize = 7;
+/// Phasen-Indizes des Rundenendes (Hauptphase 2, Ende) – ein schrumpfender Kreis.
+const CLOSING: RangeInclusive<usize> = 7..=8;
 const END: usize = 8;
 
 const WIDTH: f32 = 270.0;
 const HEIGHT: f32 = 78.0;
 const LINE_Y: f32 = 40.0;
-/// Radien: Rundenbeginn wächst von OPENING_R[0] bis BIG_R; Kampf mittel, Unterpunkte und Ende klein.
+/// Radien: Rundenbeginn wächst von OPENING_R[0] bis BIG_R; Kampf mittel, Unterpunkte klein;
+/// Rundenende groß (BIG_R) und im Endschritt klein (END_R).
 const OPENING_R: [f32; 4] = [5.0, 7.0, 9.0, BIG_R];
 const BIG_R: f32 = 12.0;
 const COMBAT_R: f32 = 7.0;
@@ -47,8 +49,8 @@ const COMBAT_SPREAD: f32 = 1.5;
 
 /// Zeitstrahl der Phasen (HUD, unten rechts über dem Hauptbutton): ein mit Enttappen, Auffrischung,
 /// Ziehen und Hauptphase 1 wachsender Kreis, ein Punkt „Kampf“, der seine drei Schritte (Phasen-Index
-/// 4–6) erst während des Kampfs aufklappt, ein großer Kreis für Hauptphase 2 und ein kleiner für das
-/// Ende. Die aktuelle Station leuchtet; erledigte sind golden, kommende hohl. Darüber steht der Name
+/// 4–6) erst während des Kampfs aufklappt, und ein Kreis für Hauptphase 2 und Ende, der im
+/// Endschritt kleiner wird. Die aktuelle Station leuchtet; erledigte sind golden, kommende hohl. Darüber steht der Name
 /// der aktuellen Phase, darunter Runde und Seite am Zug. Wird vom [TurnHud] jedes Frame über
 /// [method set_state] gefüttert.
 #[derive(GodotClass)]
@@ -58,9 +60,10 @@ pub struct PhaseTimeline {
     current: i64,
     turn_text: String,
     /// Animierte Werte (None = noch nicht gesetzt): x der Markierung, Radius des
-    /// Rundenbeginn-Kreises, Aufklappgrad des Kampfs (0 = zu, 1 = offen).
+    /// Rundenbeginn- und Rundenende-Kreises, Aufklappgrad des Kampfs (0 = zu, 1 = offen).
     marker_x: Option<f32>,
     opening_r: Option<f32>,
+    closing_r: Option<f32>,
     expand: f32,
     time: f32,
     base: Base<Control>,
@@ -91,6 +94,7 @@ impl IControl for PhaseTimeline {
             turn_text: String::new(),
             marker_x: None,
             opening_r: None,
+            closing_r: None,
             expand: 0.0,
             time: 0.0,
             base,
@@ -110,6 +114,12 @@ impl IControl for PhaseTimeline {
         self.opening_r = Some(match self.opening_r {
             Some(r) if target_r >= r - 0.1 => r + (target_r - r) * k,
             _ => target_r,
+        });
+        // Rundenende: schrumpft im Endschritt, springt bei neuer Runde zurück auf groß
+        let target_c = self.closing_target_r();
+        self.closing_r = Some(match self.closing_r {
+            Some(r) if target_c <= r + 0.1 => r + (target_c - r) * k,
+            _ => target_c,
         });
         let target_e = if self.combat_step().is_some() { 1.0 } else { 0.0 };
         self.expand += (target_e - self.expand) * k;
@@ -202,6 +212,11 @@ impl PhaseTimeline {
         }
     }
 
+    /// Zielradius des Rundenende-Kreises: groß, im Endschritt klein.
+    fn closing_target_r(&self) -> f32 {
+        if self.current_index() == Some(END) { END_R } else { BIG_R }
+    }
+
     /// Zustand einer Station, die die Phasen `range` umfasst.
     fn state(&self, range: RangeInclusive<usize>) -> State {
         match self.current_index() {
@@ -213,11 +228,11 @@ impl PhaseTimeline {
     }
 
     /// Stationen mit (animierter) Position und Größe. Einheiten: Rundenbeginn 0, Kampf 1,
-    /// Hauptphase 2 bei 2, Ende bei 3 – aufgeklappte Kampfschritte schieben beide um bis zu
+    /// Rundenende 2 – aufgeklappte Kampfschritte schieben das Rundenende um bis zu
     /// [COMBAT_SPREAD] nach rechts.
     fn dots(&self) -> Vec<Dot> {
         let e = self.expand;
-        let total = 3.0 + COMBAT_SPREAD * e;
+        let total = 2.0 + COMBAT_SPREAD * e;
         let (left, right) = (BIG_R + 4.0, WIDTH - BIG_R - 4.0);
         let x = |u: f32| left + (right - left) * u / total;
         let opening_r = self.opening_r.unwrap_or_else(|| self.opening_target_r());
@@ -239,8 +254,8 @@ impl PhaseTimeline {
             let u = 1.0 + (k as f32 + 1.0) * 0.5 * e;
             dots.push(Dot { x: x(u), r: SUB_R, alpha: e, state });
         }
-        dots.push(Dot { x: x(2.0 + COMBAT_SPREAD * e), r: BIG_R, alpha: 1.0, state: self.state(MAIN2..=MAIN2) });
-        dots.push(Dot { x: x(3.0 + COMBAT_SPREAD * e), r: END_R, alpha: 1.0, state: self.state(END..=END) });
+        let closing_r = self.closing_r.unwrap_or_else(|| self.closing_target_r());
+        dots.push(Dot { x: x(2.0 + COMBAT_SPREAD * e), r: closing_r, alpha: 1.0, state: self.state(CLOSING) });
         dots
     }
 
