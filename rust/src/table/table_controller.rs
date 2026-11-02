@@ -1,9 +1,10 @@
 //! TableController: verbindet Kamera, Zonen und Karten.
 //!
 //! - Hover: Raycast Maus -> Karten (CARD_LAYER), liefert Trefferpunkt für den Tilt.
-//! - Drag: Karte aus einer Zone greifen, auf einer Ebene über dem Tisch bewegen (sie behält dabei
-//!   ihre Bildschirmgröße, z. B. Handgröße, und schrumpft erst beim Ablegen auf Tischgröße),
-//!   per Raycast (ZONE_LAYER) das Drop-Ziel bestimmen und dort ablegen.
+//! - Drag: Karte aus einer Zone greifen; sie folgt der Maus flach auf dem Bildschirm (Ebene
+//!   parallel zum Bildschirm durch den Greifpunkt) und behält Ausrichtung und Größe von dort
+//!   (z. B. Handgröße) – kein Kippen, kein Schwung, die Kamera bleibt stehen. Erst beim Ablegen
+//!   gleitet sie auf Tischgröße. Per Raycast (ZONE_LAYER) das Drop-Ziel bestimmen und dort ablegen.
 //!   Ungültiger Drop -> Karte gleitet an ihren alten Platz zurück.
 //! - Rechtsklick: Nahaufnahme der Karte unter der Maus (erneut = zurück), Esc = Übersicht.
 //! - Klick auf das Deck (`click_to_draw`) zieht eine Karte auf die Hand.
@@ -40,16 +41,16 @@ struct DragState {
     card: Gd<Card3D>,
     origin_zone: Gd<Zone>,
     origin_index: i64,
-    /// Aktueller Zielpunkt auf der Drag-Ebene (Welt).
+    /// Mauspunkt auf dem Tisch (Höhe der Drag-Ebene) – Ablagepunkt für das Drop-Ziel.
     plane_point: Vector3,
-    last_position: Vector3,
+    /// Greifpunkt (Welt): durch ihn läuft die bildschirmparallele Ebene.
+    grab_origin: Vector3,
+    /// Mauspunkt auf der bildschirmparallelen Ebene durch den Greifpunkt: hier liegt die Karte.
+    screen_point: Vector3,
     /// Nur für Auren: Kreatur unter dem Mauszeiger (mögliches Ziel).
     aura_target: Option<Gd<Card3D>>,
-    /// Weltgröße der Karte beim Greifen (z. B. Handgröße) und ihr Kameraabstand dabei:
-    /// Beim Ziehen wird die Größe mit dem Abstand mitskaliert, damit die Karte auf dem
-    /// Bildschirm so groß bleibt wie auf der Hand.
-    grab_scale: f32,
-    grab_distance: f32,
+    /// Ausrichtung und Größe der Karte beim Greifen (z. B. Hand): bleibt beim Ziehen erhalten.
+    grab_basis: Basis,
 }
 
 struct RayHit {
@@ -82,9 +83,6 @@ pub struct TableController {
     /// Wie schnell die gezogene Karte der Maus folgt.
     #[export]
     drag_follow_speed: f32,
-    /// Stärke der Schwung-Neigung beim Ziehen.
-    #[export]
-    drag_sway_amount: f32,
     /// Länge der Maus-Raycasts in Einheiten.
     #[export]
     ray_length: f32,
@@ -138,7 +136,6 @@ impl INode3D for TableController {
             deck_zone: None,
             drag_height: 0.35,
             drag_follow_speed: 20.0,
-            drag_sway_amount: 0.035,
             ray_length: 100.0,
             demo_deck_size: 30,
             demo_hand_size: 5,
@@ -184,24 +181,12 @@ impl INode3D for TableController {
         let dt = (delta as f32).max(1e-4);
         let mut card = drag.card.clone();
         let current = card.get_global_transform();
-        // Bildschirmgröße wie beim Greifen halten: Weltgröße wächst mit dem Kameraabstand
-        let cam_pos = self.camera.as_ref().map(|c| c.get_global_position());
-        let scale = match cam_pos {
-            Some(cp) if drag.grab_distance > 1e-3 => drag.grab_scale * cp.distance_to(drag.plane_point) / drag.grab_distance,
-            _ => drag.grab_scale,
-        };
-        let target = Transform3D::new(Basis::from_scale(Vector3::splat(scale)), drag.plane_point);
+        // Flach auf dem Bildschirm: Ausrichtung/Größe vom Greifen, Position auf der Bildschirmebene
+        let target = Transform3D::new(drag.grab_basis, drag.screen_point);
         let w = 1.0 - (-self.drag_follow_speed * dt).exp();
         let next = current.interpolate_with(&target, w);
-
-        // Schwung: Bewegung in X kippt um Z, Bewegung in Z kippt um X.
-        let vel = (next.origin - drag.last_position) / dt;
-        drag.last_position = next.origin;
-        let s = self.drag_sway_amount;
-        let sway = Vector2::new((-vel.x * s).clamp(-0.5, 0.5), (vel.z * s).clamp(-0.5, 0.5));
-
+        // Kein Schwung/Kippen: die Karte bleibt flach zum Bildschirm
         card.set_global_transform(next);
-        card.bind_mut().set_drag_sway(sway);
     }
 
     /// Raycasts gehören in den Physik-Tick (Zugriff auf den Physics-Space).
@@ -470,34 +455,41 @@ impl TableController {
     fn start_drag(&mut self, mut card: Gd<Card3D>, mut zone: Gd<Zone>) {
         self.clear_hover();
         let grab = card.get_global_transform();
-        let grab_scale = grab.basis.get_scale().x.max(0.01);
-        let grab_distance = self.camera.as_ref().map_or(0.0, |c| c.get_global_position().distance_to(grab.origin));
         let origin_index = zone.bind_mut().remove_card(card.clone());
         card.bind_mut().set_dragging(true);
         let pos = card.get_global_position();
-        if let Some(cam) = self.camera.as_mut() {
-            cam.bind_mut().follow(card.clone().upcast());
-        }
+        // Kamera bleibt stehen (kein Mitführen), damit die Karte rein auf dem Bildschirm wandert
         self.drag = Some(DragState {
             card,
             origin_zone: zone,
             origin_index,
             plane_point: pos,
-            last_position: pos,
+            grab_origin: pos,
+            screen_point: pos,
             aura_target: None,
-            grab_scale,
-            grab_distance,
+            grab_basis: grab.basis,
         });
     }
 
     fn update_drag_target(&mut self, origin: Vector3, dir: Vector3) {
-        // 1) Schnittpunkt Mausstrahl mit der horizontalen Drag-Ebene.
+        // 1) Schnittpunkte des Mausstrahls: mit der waagerechten Tischebene (Ablagepunkt) und mit
+        //    der bildschirmparallelen Ebene durch den Greifpunkt (dort wird die Karte gezeigt).
         let plane_y = self.base().get_global_position().y + self.drag_height;
-        if dir.y.abs() > 1e-4 {
-            let t = (plane_y - origin.y) / dir.y;
-            if t > 0.0 {
-                if let Some(drag) = self.drag.as_mut() {
+        let cam_forward = self.camera.as_ref().map(|c| -c.get_global_transform().basis.col_c());
+        if let Some(drag) = self.drag.as_mut() {
+            if dir.y.abs() > 1e-4 {
+                let t = (plane_y - origin.y) / dir.y;
+                if t > 0.0 {
                     drag.plane_point = origin + dir * t;
+                }
+            }
+            if let Some(n) = cam_forward {
+                let denom = dir.dot(n);
+                if denom.abs() > 1e-4 {
+                    let t = (drag.grab_origin.dot(n) - origin.dot(n)) / denom;
+                    if t > 0.0 {
+                        drag.screen_point = origin + dir * t;
+                    }
                 }
             }
         }

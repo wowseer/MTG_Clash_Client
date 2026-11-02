@@ -483,7 +483,6 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Klick, Drag-and-Drop per Raycast), K
 | `deck_zone` | `Zone` | Zone, aus der die Demo-Karten erzeugt werden. |
 | `drag_height` | `float` | Höhe der Drag-Ebene über dem Tisch (Tischoberfläche = y dieses Nodes). |
 | `drag_follow_speed` | `float` | Wie schnell die gezogene Karte der Maus folgt. |
-| `drag_sway_amount` | `float` | Stärke der Schwung-Neigung beim Ziehen. |
 | `ray_length` | `float` | Länge der Maus-Raycasts in Einheiten. |
 | `demo_deck_size` | `int` | Anzahl der Demo-Karten im Deck (0 = keine Demo). |
 | `demo_hand_size` | `int` | Anzahl der Demo-Karten, die zu Beginn ausgeteilt werden. |

@@ -90,7 +90,7 @@ wieder auf ca. 10 stellen, die Arena braucht wegen des hellen Steins nur ca. 3).
 **Kamera und Aufteilung** (wie in digitalen Kartenspielen): Die Übersichtskamera schaut steil
 von oben (ca. 75°) aus großer Entfernung mit kleinem Blickwinkel (`fov` 30°,
 `Camera.overview_position` (0, 23.2, 6.4)) – dadurch fast keine Perspektive, das Spielfeld wirkt
-flach wie in Arena. Nahaufnahme- und Mitführ-Abstand (`focus_distance` 2,4, `follow_distance` 6,6)
+flach wie in Arena. Nahaufnahme- und Mitführ-Abstand (`focus_distance` 2,4, `follow_distance` 6,6; beim Ziehen einer Karte wird die Kamera nicht mehr mitgeführt)
 sind an den kleinen Blickwinkel angepasst. Die eigene Hand liegt vergrößert (Skalierung 2,8) knapp
 über dem Brett vor dessen Vorderkante am unteren Bildrand (die untere Kartenhälfte ist
 abgeschnitten, Hover zoomt die ganze Karte), die Gegnerhand am oberen Rand. Beide Spielfelder sind 3,0 Einheiten tief (Mittellinie bis
@@ -126,7 +126,7 @@ die `HeroAnchor`-Marker mitziehen.
 | Aktion | Wirkung |
 |---|---|
 | Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons, Debug-Fenster oder die Stack-Anzeige hindurch |
-| Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (Spielfeld, Friedhof, Gegnerseite, freie Fläche – nur nicht über der Hand) | ausspielen (Regeln prüfen Phase, Stack und Mana; `TurnManager.resolve_hand_drop`). Ressourcen kommen in die Ressourcen-Reihe, alles andere aufs eigene Spielfeld. Über der Hand losgelassen = abbrechen. Beim Ziehen behält die Karte ihre Handgröße (Bildschirmgröße bleibt gleich, die Weltgröße wird mit dem Kameraabstand mitskaliert); erst beim Ausspielen gleitet sie auf Tischgröße. Danach gibst du die Priorität **automatisch** ab: Antwortet der Gegner nicht, löst sich die Karte ohne weiteren Klick auf und gleitet auf ihren automatischen Platz (siehe „Anordnung auf dem Spielfeld“). Antwortet er, hast du wieder Priorität („Weiter“ bzw. Sofortzauber) |
+| Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (Spielfeld, Friedhof, Gegnerseite, freie Fläche – nur nicht über der Hand) | ausspielen (Regeln prüfen Phase, Stack und Mana; `TurnManager.resolve_hand_drop`). Ressourcen kommen in die Ressourcen-Reihe, alles andere aufs eigene Spielfeld. Über der Hand losgelassen = abbrechen. Beim Ziehen folgt die Karte der Maus flach auf dem Bildschirm (Ebene parallel zum Bildschirm durch den Greifpunkt): Ausrichtung und Größe bleiben wie auf der Hand, kein Kippen oder Schwingen, die Kamera bleibt stehen. Erst beim Ausspielen gleitet sie auf Tischgröße. Danach gibst du die Priorität **automatisch** ab: Antwortet der Gegner nicht, löst sich die Karte ohne weiteren Klick auf und gleitet auf ihren automatischen Platz (siehe „Anordnung auf dem Spielfeld“). Antwortet er, hast du wieder Priorität („Weiter“ bzw. Sofortzauber) |
 | Aura ziehen | über einer gültigen Zielkarte loslassen (Ziel wird gelb markiert) |
 | Klick auf eigene Ressource | tappen → +1 Mana in den Pool. Erneuter Klick auf die getappte Ressource nimmt den Tapp zurück (Ressource enttappt, Mana wieder aus dem Pool) – solange genau dieses Mana noch unbenutzt im Pool liegt. Nach dem Ausgeben oder Leeren des Pools nicht mehr möglich; automatisch beim Bezahlen getappte Ressourcen lassen sich nicht zurücknehmen |
 | Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |
