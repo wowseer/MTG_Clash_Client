@@ -3,6 +3,7 @@
 pub mod ability;
 pub mod card_cutout;
 pub mod card_preview;
+pub mod choice_panel;
 pub mod cards;
 pub mod hourglass;
 pub mod hud;

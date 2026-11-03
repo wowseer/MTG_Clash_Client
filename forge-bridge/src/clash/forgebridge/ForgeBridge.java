@@ -49,7 +49,7 @@ import forge.util.MyRandom;
  */
 public final class ForgeBridge {
     /** Version des Protokolls; wird in "ready" gemeldet. */
-    public static final int PROTOCOL_VERSION = 1;
+    public static final int PROTOCOL_VERSION = 2;
 
     private static PrintStream out;
     private static final Object OUT_LOCK = new Object();

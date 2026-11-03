@@ -48,6 +48,7 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
 - [x] Mulligan (`mulliganKeepHand`): Auswahlfenster im HUD
+- [x] Allgemeine Auswahl (`request` kind `choice`, `RemoteChoice.java`, `choice_panel.rs`): Modi, Optionen, Ja/Nein, Zahlen, Farben, Kartennamen, optionale Kosten, Startspieler (Muster M9–M12)
 
 Angezeigt:
 - [x] Hand, Spielfeld, Länder-Reihe, Friedhof, verdeckte Gegnerhand, getappt
@@ -66,7 +67,6 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 4. Manabezahlung (`payManaCost`, `chooseManaFromPool`): Länder antippen; mit Automatik-Button
 5. Aktivierte Fähigkeiten bleibender Karten: Klick auf die Karte, bei mehreren Fähigkeiten ein Auswahlmenü
 6. Auswahl aus Karten (`chooseCardsForEffect`, Abwerfen, Opfern, Scry/Surveil, Reihenfolge)
-7. Modi, X-Kosten, Zahlen, Farben, Ja/Nein (`chooseModeForAbility`, `announceRequirements`, `chooseNumber`, `chooseColor`, `confirmAction`)
 8. Kampfschaden verteilen (`assignCombatDamage`), optionale und zusätzliche Kosten
 
 **Zustand, der noch fehlt:**
@@ -90,9 +90,11 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 | Spiel starten | Godot öffnen, F5 (Hauptszene `godot/table.tscn`) |
 | API-Referenz | `python3 tools/gen_api_doc.py` → muss „ohne Beschreibung: 0“ melden |
 
+**Testdecks:** `forge-bridge/testdecks/` (`rot.dck`, `gruen.dck`; `auswahl.dck` löst viele Auswahl-Dialoge aus).
+
 **Partie ohne Fenster testen:** ein temporäres SceneTree-Skript (z. B. `godot/_probe.gd`, danach
 wieder löschen), das `res://table.tscn` lädt, sich an `ForgeBridge.decision_requested` hängt und im
-nächsten `_process` über `ForgeTable` antwortet (`hud_choose`, `pass_priority`). Nicht direkt im
+nächsten `_process` über `ForgeTable` bzw. das HUD antwortet (`submit_choice`, `pass_priority`, `TurnHud.on_choice_option`). Nicht direkt im
 Signal-Handler antworten. Start:
 `godot --headless --path godot -s res://_probe.gd`. Forge braucht ca. 5 s zum Laden; das
 Brücken-Log steht in `~/.local/share/godot/app_userdata/MTG Clash/forge-bridge.log`.

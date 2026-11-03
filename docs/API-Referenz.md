@@ -79,7 +79,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 
 *Erbt von `Node` · Quelle: `rust/src/forge/table.rs`*
 
-Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, Kamera, Drag-and-Drop und HUD sind dieselben wie im normalen Spiel, nur die Regeln kommen von Forge (über `ForgeBridge`). Forge-Sitzplatz 0 ist der Spieler (unten, von dir gesteuert), Sitzplatz 1 der Gegner (oben, Forge-KI). Länder liegen in der Ressourcen-Reihe, alle anderen bleibenden Karten auf dem Spielfeld, der Friedhof im Ablagestapel; die Gegnerhand wird verdeckt angezeigt. Bedienung: Hat der Spieler Priorität, leuchten alle Handkarten, die er jetzt spielen kann. Eine solche Karte aus der Hand auf den Tisch ziehen = spielen (Mana zahlt Forge automatisch). Hauptbutton / Leertaste = passen. Mulligan im Auswahlfenster. Ziele, Angreifer und Blocker wählt vorerst die Forge-KI für dich.
+Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, Kamera, Drag-and-Drop und HUD sind dieselben wie im normalen Spiel, nur die Regeln kommen von Forge (über `ForgeBridge`). Forge-Sitzplatz 0 ist der Spieler (unten, von dir gesteuert), Sitzplatz 1 der Gegner (oben, Forge-KI). Länder liegen in der Ressourcen-Reihe, alle anderen bleibenden Karten auf dem Spielfeld, der Friedhof im Ablagestapel; die Gegnerhand wird verdeckt angezeigt. Bedienung: Hat der Spieler Priorität, leuchten alle Handkarten, die er jetzt spielen kann. Eine solche Karte aus der Hand auf den Tisch ziehen = spielen (Mana zahlt Forge automatisch). Hauptbutton / Leertaste = passen. Mulligan und alle allgemeinen Entscheidungen (Optionen, Modi, Ja/Nein, Zahlen, Farben, Kartennamen) im Auswahlfenster des HUD; die Karte, um die es geht, wird dabei golden markiert. Ziele, Angreifer, Blocker und Manabezahlung wählt vorerst die Forge-KI für dich.
 
 ### Eigenschaften
 
@@ -101,10 +101,10 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 |---|---|---|
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene Prioritätsanfrage mit -1. |
-| `hud_choose(index: int)` | `void` | Auswahl im HUD-Fenster: beim Mulligan 0 = behalten, 1 = Mulligan. |
+| `submit_choice(choice: Variant)` | `void` | Antwort aus dem Auswahlfenster des HUD auf die offene Entscheidung (Mulligan oder `choice`). Form je Modus: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Text = String, Abbrechen = null. |
 | `get_card(forge_id: int)` | `Card3D` | Karte auf dem Tisch zur Forge-Karten-ID (null, wenn nicht sichtbar). |
 | `get_state()` | `Dictionary` | Zuletzt von Forge empfangener Spielzustand (Aufbau siehe `docs/Forge-Schnittstelle.md`). |
-| `get_pending_kind()` | `String` | Hat der Spieler gerade eine offene Entscheidung? Liefert deren Art ("priority", "mulligan") oder einen leeren Text. |
+| `get_pending_kind()` | `String` | Hat der Spieler gerade eine offene Entscheidung? Liefert deren Art ("priority", "mulligan", "choice") oder einen leeren Text. |
 | `on_bridge_ready(protocol: int)` | `void` | Brücke bereit → Partie starten (bei `autostart`). |
 | `on_state(state: Dictionary)` | `void` | Neuer Spielzustand von Forge (Spielstart oder Abfrage): Tisch abgleichen. |
 | `on_forge_event(event: Dictionary)` | `void` | Forge-Ereignis: Zustand bald neu abfragen (gebündelt, siehe `refresh_interval`). |
@@ -164,9 +164,11 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
-| `on_choice_0()` | `void` | Erste Option im Auswahlfenster (Mulligan: „Behalten“). |
-| `on_choice_1()` | `void` | Zweite Option im Auswahlfenster (Mulligan: „Mulligan“). |
-| `on_choice_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster. |
+| `on_choice_option(index: int)` | `void` | Option `index` im Auswahlfenster angeklickt (eine Option / Ja-Nein: Antwort senden; Mehrfachauswahl: an-/abwählen). |
+| `on_choice_done()` | `void` | Knopf „Fertig“ / „OK“ im Auswahlfenster (Mehrfachauswahl, Zahl, Text). |
+| `on_choice_text_submitted(text: String)` | `void` | Eingabetaste im Textfeld des Auswahlfensters (wie „OK“). |
+| `on_choice_filter_changed(text: String)` | `void` | Suchfeld des Auswahlfensters geändert: Optionen filtern. |
+| `on_choice_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster: Antwort null. |
 | `on_next_pressed()` | `void` | Button „Passen“ bzw. Leertaste: ruft `ForgeTable.pass_priority()` auf. |
 
 ## ManaCost

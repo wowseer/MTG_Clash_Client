@@ -34,6 +34,8 @@ use super::mana_view::ManaPoolView;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::card_preview;
+use super::choice_panel::ChoicePanel;
+pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
 use crate::table::table_controller::TableController;
 
@@ -101,9 +103,8 @@ pub struct TurnHud {
     drag_preview: Option<(InstanceId, Gd<godot::classes::PanelContainer>)>,
     /// Elternknoten für die Vorschau (Vollbild-Root des HUD).
     root: Option<Gd<Control>>,
-    choice_panel: Option<Gd<PanelContainer>>,
-    choice_title: Option<Gd<Label>>,
-    choice_buttons: Vec<Gd<Button>>,
+    /// Auswahlfenster in der Bildschirmmitte (alle allgemeinen Forge-Entscheidungen).
+    choice: Option<ChoicePanel>,
 
     base: Base<CanvasLayer>,
 }
@@ -133,9 +134,7 @@ impl ICanvasLayer for TurnHud {
             button: None,
             drag_preview: None,
             root: None,
-            choice_panel: None,
-            choice_title: None,
-            choice_buttons: Vec::new(),
+            choice: None,
             base,
         }
     }
@@ -159,22 +158,43 @@ impl ICanvasLayer for TurnHud {
 
 #[godot_api]
 impl TurnHud {
-    /// Erste Option im Auswahlfenster (Mulligan: „Behalten“).
+    /// Option `index` im Auswahlfenster angeklickt (eine Option / Ja-Nein: Antwort senden;
+    /// Mehrfachauswahl: an-/abwählen).
     #[func]
-    fn on_choice_0(&mut self) {
-        self.choose(0);
+    fn on_choice_option(&mut self, index: i64) {
+        let answer = self.choice.as_mut().and_then(|c| c.on_option(index.max(0) as usize));
+        if let Some(answer) = answer {
+            self.submit(answer);
+        }
     }
 
-    /// Zweite Option im Auswahlfenster (Mulligan: „Mulligan“).
+    /// Knopf „Fertig“ / „OK“ im Auswahlfenster (Mehrfachauswahl, Zahl, Text).
     #[func]
-    fn on_choice_1(&mut self) {
-        self.choose(1);
+    fn on_choice_done(&mut self) {
+        let answer = self.choice.as_ref().and_then(|c| c.on_done());
+        if let Some(answer) = answer {
+            self.submit(answer);
+        }
     }
 
-    /// Knopf „Abbrechen“ im Auswahlfenster.
+    /// Eingabetaste im Textfeld des Auswahlfensters (wie „OK“).
+    #[func]
+    fn on_choice_text_submitted(&mut self, _text: GString) {
+        self.on_choice_done();
+    }
+
+    /// Suchfeld des Auswahlfensters geändert: Optionen filtern.
+    #[func]
+    fn on_choice_filter_changed(&mut self, text: GString) {
+        if let Some(c) = self.choice.as_mut() {
+            c.filter(&text.to_string());
+        }
+    }
+
+    /// Knopf „Abbrechen“ im Auswahlfenster: Antwort null.
     #[func]
     fn on_choice_cancel(&mut self) {
-        self.choose(-1);
+        self.submit(Variant::nil());
     }
 
     /// Button „Passen“ bzw. Leertaste: ruft [method ForgeTable.pass_priority] auf.
@@ -187,36 +207,11 @@ impl TurnHud {
 }
 
 impl TurnHud {
-    fn choose(&mut self, index: i64) {
+    /// Antwort auf die offene Entscheidung an den [ForgeTable] geben.
+    fn submit(&mut self, answer: Variant) {
         if let Some(ft) = self.forge_table.as_mut() {
-            ft.bind_mut().hud_choose(index);
+            ft.bind_mut().submit_choice(answer);
         }
-    }
-
-    /// Auswahlfenster (Bildschirmmitte).
-    fn build_choice_panel(&mut self, root: &mut Gd<Control>) {
-        let mut col = VBoxContainer::new_alloc();
-        col.add_theme_constant_override("separation", 6);
-        col.set_custom_minimum_size(Vector2::new(420.0, 0.0));
-        let title = label(17, GOLD);
-        col.add_child(&title);
-        for (i, method) in ["on_choice_0", "on_choice_1", "on_choice_cancel"].into_iter().enumerate() {
-            let mut b = styled_button(if i == 2 { 15 } else { 16 });
-            if i == 2 {
-                b.set_text(tr!("Abbrechen", "Cancel"));
-            }
-            b.connect("pressed", &Callable::from_object_method(&self.to_gd(), method));
-            col.add_child(&b);
-            self.choice_buttons.push(b);
-        }
-        let mut p = panel();
-        p.add_child(&col);
-        p.set_visible(false);
-        // Bildschirmmitte (unten Mitte sitzen Hand und Spieler-Medaillon)
-        place(&mut p, (0.5, 0.5), (0.0, 0.0), GrowDirection::BOTH, GrowDirection::BOTH);
-        root.add_child(&p);
-        self.choice_panel = Some(p);
-        self.choice_title = Some(title);
     }
 
     fn build(&mut self) {
@@ -269,7 +264,7 @@ impl TurnHud {
         place(&mut button, (1.0, 1.0), (-14.0, -14.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
         root.add_child(&button);
 
-        self.build_choice_panel(&mut root);
+        self.choice = Some(ChoicePanel::new(&mut root));
         self.base_mut().add_child(&root);
         self.root = Some(root.clone());
         self.timeline = Some(timeline);
@@ -424,36 +419,12 @@ impl TurnHud {
             }
         }
 
-        // Auswahlfenster (z. B. Mulligan)
-        if let Some(p) = self.choice_panel.as_mut() {
-            p.set_visible(view.choice.is_some());
-        }
-        if let Some(choice) = &view.choice {
-            if let Some(t) = self.choice_title.as_mut() {
-                t.set_text(&choice.title);
-            }
-            if let Some(b) = self.choice_buttons.get_mut(2) {
-                b.set_visible(choice.cancelable);
-                b.set_text(tr!("Abbrechen", "Cancel"));
-            }
-            for (i, b) in self.choice_buttons.iter_mut().take(2).enumerate() {
-                let entry = choice.options.get(i);
-                b.set_visible(entry.is_some());
-                if let Some((text, enabled)) = entry {
-                    b.set_text(text);
-                    b.set_disabled(!enabled);
-                }
-            }
+        // Auswahlfenster (Mulligan, Optionen, Ja/Nein, Zahlen, Text)
+        let hud = self.to_gd().upcast::<Object>();
+        if let Some(panel) = self.choice.as_mut() {
+            panel.show(view.choice.as_ref(), &hud);
         }
     }
-}
-
-/// Auswahlfenster in der Bildmitte: Titel, bis zu zwei Optionen (Text, wählbar) und ob
-/// „Abbrechen“ angeboten wird.
-pub struct HudChoice {
-    pub title: String,
-    pub options: Vec<(String, bool)>,
-    pub cancelable: bool,
 }
 
 /// Alles, was das HUD anzeigt (geliefert vom [ForgeTable]). Sitzplatz 0 = Spieler (unten),
@@ -478,7 +449,7 @@ pub struct HudView {
     pub choice: Option<HudChoice>,
 }
 
-fn styled_button(font_size: i32) -> Gd<Button> {
+pub(super) fn styled_button(font_size: i32) -> Gd<Button> {
     let mut button = Button::new_alloc();
     button.set_focus_mode(godot::classes::control::FocusMode::NONE);
     button.set_custom_minimum_size(Vector2::new(0.0, 38.0));
@@ -565,7 +536,7 @@ fn seat_row(
     (row.upcast(), badge)
 }
 
-fn label(size: i32, color: Color) -> Gd<Label> {
+pub(super) fn label(size: i32, color: Color) -> Gd<Label> {
     let mut l = Label::new_alloc();
     l.add_theme_font_size_override("font_size", size);
     l.add_theme_color_override("font_color", color);
@@ -575,7 +546,7 @@ fn label(size: i32, color: Color) -> Gd<Label> {
     l
 }
 
-fn style(bg: Color, radius: f32) -> Gd<StyleBoxFlat> {
+pub(super) fn style(bg: Color, radius: f32) -> Gd<StyleBoxFlat> {
     let mut s = StyleBoxFlat::new_gd();
     s.set_bg_color(bg);
     s.set_border_color(Color::from_rgba(0.78, 0.6, 0.3, 0.9));
@@ -585,7 +556,7 @@ fn style(bg: Color, radius: f32) -> Gd<StyleBoxFlat> {
     s
 }
 
-fn panel() -> Gd<PanelContainer> {
+pub(super) fn panel() -> Gd<PanelContainer> {
     let mut p = PanelContainer::new_alloc();
     p.add_theme_stylebox_override("panel", &style(Color::from_rgba(0.05, 0.06, 0.08, 0.82), 8.0));
     p.set_mouse_filter(MouseFilter::IGNORE);
@@ -593,7 +564,7 @@ fn panel() -> Gd<PanelContainer> {
 }
 
 /// Verankert ein Control an einer Bildschirmecke (anchor 0/1) mit Abstand `offset`.
-fn place<T: Inherits<Control>>(c: &mut Gd<T>, anchor: (f32, f32), offset: (f32, f32), grow_h: GrowDirection, grow_v: GrowDirection) {
+pub(super) fn place<T: Inherits<Control>>(c: &mut Gd<T>, anchor: (f32, f32), offset: (f32, f32), grow_h: GrowDirection, grow_v: GrowDirection) {
     for (side, a, o) in [
         (Side::LEFT, anchor.0, offset.0),
         (Side::RIGHT, anchor.0, offset.0),

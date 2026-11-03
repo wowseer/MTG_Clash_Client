@@ -30,9 +30,9 @@ Jede Zeile wird in der Brücke als eine `request`-Art umgesetzt (`RemotePlayerCo
 | M7 | **Blocker erklären**: Pfeil vom Blocker auf den Angreifer, mehrere Blocker pro Angreifer, Mehrfachblock | `declareBlockers` | offen |
 | M8 | **Schaden verteilen**: Zahlen-Schieber je Empfänger, Pflichtmenge (tödlicher Schaden) vorbelegt | `assignCombatDamage`, `divideShield` | offen |
 | M9 | **Option wählen** (Liste/Knöpfe im Auswahlfenster): Modi, Ersatzeffekte, statische Fähigkeiten, Kartenseite, Marken-Typ, Schlüsselwort, Kreaturtyp, Schutz-Art, Zufalls- und Würfelentscheidungen | `chooseModeForAbility`, `chooseSingleReplacementEffect`, `chooseSingleStaticAbility`, `chooseSingleCardFace`, `chooseSingleCardState`, `chooseCounterType`, `chooseKeywordForPump`, `chooseSomeType`, `chooseProtectionType`, `chooseSector`, `chooseSprocket`, `chooseFlipResult`, `chooseDiceToReroll`, `chooseRollToIgnore`, `chooseRollToModify`, `chooseRollToSwap`, `chooseRollSwapValue`, `choosePDRollToIgnore`, `chooseContraptionsToCrank`, `chooseCardsPile`, `vote`, `chooseStartingPlayer` | teilweise (nur Mulligan) |
-| M10 | **Ja/Nein bestätigen**: Fenster mit Kartenvorschau der Quelle | `confirmAction`, `confirmTrigger`, `confirmReplacementEffect`, `confirmStaticApplication`, `confirmBidAction`, `chooseBinary`, `mulliganKeepHand` | teilweise (nur Mulligan) |
-| M11 | **Zahl wählen**: Zahlenrad bzw. Schieber mit Min/Max (X-Kosten, „beliebig viele“) | `announceRequirements`, `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost`, `chooseOptionalCosts` (Mehrfachauswahl) | offen |
-| M12 | **Farbe / Kartenname wählen**: fünf Farbknöpfe (+ farblos); Kartenname per Suchfeld mit Vorschlägen aus Forges Kartendatenbank | `chooseColor`, `chooseColors`, `chooseColorAllowColorless`, `chooseCardName` | offen |
+| M10 | **Ja/Nein bestätigen**: Fenster mit Kartenvorschau der Quelle | `confirmAction`, `confirmTrigger`, `confirmReplacementEffect`, `confirmStaticApplication`, `confirmBidAction`, `chooseBinary`, `mulliganKeepHand` | **fertig** außer `confirmBidAction`; `willPutCardOnTop`, `chooseFlipResult` ebenfalls fertig |
+| M11 | **Zahl wählen**: Zahlenrad bzw. Schieber mit Min/Max (X-Kosten, „beliebig viele“) | `announceRequirements`, `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost`, `chooseOptionalCosts` (Mehrfachauswahl) | **fertig**; X-Kosten beim Zaubern legt aber noch die KI fest (kommt mit M5) |
+| M12 | **Farbe / Kartenname wählen**: fünf Farbknöpfe (+ farblos); Kartenname per Suchfeld mit Vorschlägen aus Forges Kartendatenbank | `chooseColor`, `chooseColors`, `chooseColorAllowColorless`, `chooseCardName` | **fertig** (Kartenname: Liste bei ≤ 60 erlaubten Karten, sonst Texteingabe) |
 | M13 | **Information zeigen** (keine Antwort nötig, nur „OK“): aufgedeckte Karten als Fächer, Werte, Würfelergebnis | `reveal`, `revealAnte`, `revealAISkipCards`, `revealUnsupported`, `notifyOfValue` | offen |
 
 Kein eigenes Muster brauchen: `tuckCardsViaMulligan` (= M3), `sideboard` und
@@ -40,7 +40,9 @@ Kein eigenes Muster brauchen: `tuckCardsViaMulligan` (= M3), `sideboard` und
 `awaitNextInput`, `cancelAwaitNextInput` (interne Steuerung der Brücke).
 
 **Rückfall:** Solange ein Muster fehlt, entscheidet die Forge-KI (`PlayerControllerAi`). Das ist
-der aktuelle Zustand für alles außer M1 (teilweise), M9/M10 (Mulligan).
+der aktuelle Zustand für M2–M8 und M13; M1 ist teilweise, M9–M12 sind umgesetzt (Anfrage
+`choice`, siehe `docs/Forge-Schnittstelle.md`). Mehrfachwahl desselben Modus (z. B. „Wähle drei,
+derselbe Modus darf mehrfach gewählt werden“) ist noch nicht möglich.
 
 ---
 
@@ -67,11 +69,11 @@ erhöht ggf. die Protokollversion und wird in `docs/Forge-Schnittstelle.md` besc
 | Fähigkeit | Wofür | Heute |
 |---|---|---|
 | **Kartenbild aus Forge-Daten** mit Regeltext, Schriftgrößen-Anpassung bei langem Text, Symbol-Ersetzung (`{T}`, `{2}{R}` → eigene Symbole) | jede Karte lesbar | nur Name/Typ/Kosten/Werte |
-| **Auswahlmodus** (Zustandsautomat im `ForgeTable`): genau eine offene Anfrage bestimmt, was klickbar ist, was leuchtet und was Buttons tun | alle Muster M1–M13 | nur Priorität/Mulligan |
+| **Auswahlmodus** (Zustandsautomat im `ForgeTable`): genau eine offene Anfrage bestimmt, was klickbar ist, was leuchtet und was Buttons tun | alle Muster M1–M13 | Priorität, Mulligan, `choice` (Quellkarte golden markiert) |
 | **Leuchten mit Bedeutung**: spielbar, gültiges Ziel, ausgewählt, Angreifer, Blocker (verschiedene Farben) | M1–M7 | `set_ready_glow`, `set_marker` vorhanden |
 | **Pfeile** (neu bauen): Quelle → Ziel, Angreifer → Ziel, Blocker → Angreifer, Stack-Eintrag → Ziele | M2, M6, M7, Stack | gelöscht, wird neu gebaut |
 | **Kartenfächer-Overlay** (Karten groß in Bildschirmmitte, scrollbar, Mehrfachauswahl, Umsortieren per Drag, Min/Max-Zähler, „Fertig“) | M3, M4, M13, Friedhof/Exil ansehen | fehlt |
-| **Auswahlfenster** für Listen, Ja/Nein, Zahlen, Farben, Kartennamen mit Suche | M9–M12 | Grundgerüst (`HudChoice`) |
+| **Auswahlfenster** für Listen, Ja/Nein, Zahlen, Farben, Kartennamen mit Suche | M9–M12 | **fertig** (`ChoicePanel`) |
 | **Kosten-Anzeige** über der Karte, die bezahlt wird, plus Manapool zum Anklicken | M5 | Manapool-Anzeige vorhanden |
 | **Stack-Anzeige** mit Quelle, Text und Zielen | Antworten, Trigger | fehlt |
 | **Kartenverwandlungen**: umdrehen (Rückseite/Transform), verdeckt, Spielstein erscheinen/verschwinden, Kopie | doppelseitige Karten, Morph, Token | fehlt |
@@ -85,7 +87,7 @@ erhöht ggf. die Protokollversion und wird in `docs/Forge-Schnittstelle.md` besc
 
 ## 4. Empfohlene Reihenfolge
 
-1. Auswahlmodus-Gerüst im `ForgeTable` + allgemeines Auswahlfenster (M9, M10, M11, M12): viele Karten mit einem Schlag
+1. ~~Auswahlmodus-Gerüst im `ForgeTable` + allgemeines Auswahlfenster (M9, M10, M11, M12)~~ – erledigt
 2. Ziele (M2) inkl. neuer Pfeile, Stack-Anzeige mit Zielen
 3. Angreifer/Blocker (M6, M7), Schaden verteilen (M8)
 4. Mana bezahlen (M5), aktivierte Fähigkeiten auf dem Spielfeld (M1 vollständig)

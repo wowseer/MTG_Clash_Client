@@ -16,11 +16,12 @@ use godot::prelude::*;
 
 use super::bridge::ForgeBridge;
 use crate::game::cards::{CardDef, CardKind};
-use crate::game::hud::{HudChoice, HudView};
+use crate::game::choice_panel::{self, ChoiceMode, ChoiceOption, HudChoice};
+use crate::game::hud::HudView;
 use crate::game::mana::{Cost, ManaType};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
-use crate::table::card3d::Card3D;
+use crate::table::card3d::{Card3D, CardMarker};
 use crate::table::placeholder;
 use crate::table::table_controller::TableController;
 use crate::table::zone::Zone;
@@ -38,8 +39,10 @@ const LOCAL_SEAT: i64 = 0;
 ///
 /// Bedienung: Hat der Spieler Priorität, leuchten alle Handkarten, die er jetzt spielen kann.
 /// Eine solche Karte aus der Hand auf den Tisch ziehen = spielen (Mana zahlt Forge automatisch).
-/// Hauptbutton / Leertaste = passen. Mulligan im Auswahlfenster. Ziele, Angreifer und Blocker
-/// wählt vorerst die Forge-KI für dich.
+/// Hauptbutton / Leertaste = passen. Mulligan und alle allgemeinen Entscheidungen (Optionen,
+/// Modi, Ja/Nein, Zahlen, Farben, Kartennamen) im Auswahlfenster des HUD; die Karte, um die es
+/// geht, wird dabei golden markiert. Ziele, Angreifer, Blocker und Manabezahlung wählt vorerst
+/// die Forge-KI für dich.
 #[derive(GodotClass)]
 #[class(base=Node)]
 pub struct ForgeTable {
@@ -79,8 +82,10 @@ pub struct ForgeTable {
     deck_cards: [Vec<Gd<Card3D>>; 2],
     /// Zuletzt angewandter Kartenstand je ID (zum Erkennen geänderter Werte).
     signatures: HashMap<i64, String>,
-    /// Offene Entscheidung (priority / mulligan) des Spielers.
+    /// Offene Entscheidung (priority / mulligan / choice) des Spielers.
     pending: Option<VarDictionary>,
+    /// Karte, um die es in der offenen Auswahl geht (golden markiert).
+    marked: Option<Gd<Card3D>>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -109,6 +114,7 @@ impl INode for ForgeTable {
             deck_cards: [Vec::new(), Vec::new()],
             signatures: HashMap::new(),
             pending: None,
+            marked: None,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -177,11 +183,13 @@ impl ForgeTable {
         }
     }
 
-    /// Auswahl im HUD-Fenster: beim Mulligan 0 = behalten, 1 = Mulligan.
+    /// Antwort aus dem Auswahlfenster des HUD auf die offene Entscheidung (Mulligan oder
+    /// `choice`). Form je Modus: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und
+    /// Mulligan = bool (true = erste Option / behalten), Zahl = int, Text = String, Abbrechen = null.
     #[func]
-    pub fn hud_choose(&mut self, index: i64) {
-        if self.pending_kind().as_deref() == Some("mulligan") && index >= 0 {
-            self.answer((index == 0).to_variant());
+    pub fn submit_choice(&mut self, choice: Variant) {
+        if matches!(self.pending_kind().as_deref(), Some("mulligan") | Some("choice")) {
+            self.answer(choice);
         }
     }
 
@@ -198,7 +206,7 @@ impl ForgeTable {
     }
 
     /// Hat der Spieler gerade eine offene Entscheidung? Liefert deren Art ("priority",
-    /// "mulligan") oder einen leeren Text.
+    /// "mulligan", "choice") oder einen leeren Text.
     #[func]
     pub fn get_pending_kind(&self) -> GString {
         GString::from(self.pending_kind().unwrap_or_default().as_str())
@@ -230,6 +238,13 @@ impl ForgeTable {
         if let Some(state) = request.get("state").and_then(|v| v.try_to::<VarDictionary>().ok()) {
             self.apply_state(state);
         }
+        // Karte, um die es geht, golden markieren
+        let source = request
+            .get("source")
+            .and_then(|v| v.try_to::<VarDictionary>().ok())
+            .map(|s| get_int(&s, "id"))
+            .and_then(|id| self.cards.get(&id).cloned());
+        self.set_marked(source);
         self.pending = Some(request);
         self.update_glow();
     }
@@ -295,18 +310,25 @@ impl ForgeTable {
         let kind = self.pending_kind();
         let my_priority = kind.as_deref() == Some("priority");
 
-        let choice = (kind.as_deref() == Some("mulligan")).then(|| HudChoice {
-            title: tr!("Starthand behalten?", "Keep your opening hand?").to_string(),
-            options: vec![
-                (tr!("Behalten", "Keep").to_string(), true),
-                (tr!("Mulligan", "Mulligan").to_string(), true),
-            ],
-            cancelable: false,
-        });
+        let choice = match (kind.as_deref(), self.pending.as_ref()) {
+            (Some("mulligan"), Some(req)) => Some(HudChoice {
+                key: get_int(req, "id"),
+                title: tr!("Starthand behalten?", "Keep your opening hand?").to_string(),
+                detail: String::new(),
+                mode: ChoiceMode::Confirm,
+                options: vec![
+                    ChoiceOption { text: tr!("Behalten", "Keep").to_string(), color: None },
+                    ChoiceOption { text: tr!("Mulligan", "Mulligan").to_string(), color: None },
+                ],
+                cancelable: false,
+            }),
+            (Some("choice"), Some(req)) => choice_panel::from_forge_request(req),
+            _ => None,
+        };
         let button_text = if my_priority {
             tr!("Passen  »", "Pass  »")
         } else if choice.is_some() {
-            tr!("Starthand wählen …", "Choose your opening hand …")
+            tr!("Auswahl treffen …", "Make a choice …")
         } else if !self.winner.is_empty() {
             tr!("Spielende", "Game over")
         } else if self.match_running {
@@ -361,6 +383,7 @@ impl ForgeTable {
     fn answer(&mut self, choice: Variant) {
         let Some(req) = self.pending.take() else { return };
         let id = get_int(&req, "id");
+        self.set_marked(None);
         self.update_glow();
         if let Some(b) = self.bridge.as_mut() {
             b.bind_mut().answer(id, choice);
@@ -384,6 +407,17 @@ impl ForgeTable {
             best.get_or_insert(index);
         }
         best
+    }
+
+    /// Markiert `card` golden (Quelle der offenen Auswahl); hebt die alte Markierung auf.
+    fn set_marked(&mut self, card: Option<Gd<Card3D>>) {
+        if let Some(mut old) = self.marked.take().filter(|c| c.is_instance_valid()) {
+            old.bind_mut().set_marker(CardMarker::None);
+        }
+        if let Some(mut c) = card.clone() {
+            c.bind_mut().set_marker(CardMarker::Selected);
+        }
+        self.marked = card;
     }
 
     fn forge_id(&self, card: &Gd<Card3D>) -> Option<i64> {

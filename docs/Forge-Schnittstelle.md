@@ -48,7 +48,8 @@ Manueller Test ohne Godot: `forge-bridge/run.sh` starten und JSON-Zeilen eintipp
 |---|---|
 | Priorität: Karte/Fähigkeit spielen oder passen | **MTG Clash** (`request` kind `priority`) |
 | Mulligan | **MTG Clash** (`request` kind `mulligan`) |
-| Ziele, Manabezahlung, Angreifer, Blocker, sonstige Auswahl | vorerst Forge-KI |
+| Allgemeine Auswahl: Modi, Optionen (Kreaturtyp, Marken-Typ, Schutz, Schlüsselwort, Ersatzeffekt, Kartenseite …), Ja/Nein (optionale Trigger, „Darfst du …“, Kopf/Zahl), Zahlen, Farben, Kartennamen, optionale Kosten, Startspieler, Abstimmungen, Würfel | **MTG Clash** (`request` kind `choice`) |
+| Ziele, Manabezahlung (inkl. X-Wert), Angreifer, Blocker, Auswahl von Karten | vorerst Forge-KI |
 | Gegner (nicht ferngesteuerte Sitzplätze) | Forge-KI |
 
 Erweitern: in `RemotePlayerController.java` weitere Methoden von Forges `PlayerController`
@@ -56,10 +57,12 @@ Erweitern: in `RemotePlayerController.java` weitere Methoden von Forges `PlayerC
 `ForgeBridge.request("<kind>", seat, payload)` aufrufen.
 
 Angeboten werden nur Optionen, die jetzt spielbar und bezahlbar sind; Manafähigkeiten werden
-nicht angeboten (Mana wird beim Ausführen automatisch bezahlt). Lehnt Forge die gewählte Option
-ab (z. B. kein gültiges Ziel), kommt `rejected` und eine neue Anfrage.
+nicht angeboten (Mana wird beim Ausführen automatisch bezahlt). Ist die gewählte Option nicht
+ausführbar (nicht spielbar, nicht bezahlbar, kein gültiges Ziel), kommt `rejected` und eine neue
+Anfrage. Ob die Forge-KI den Zug für sinnvoll hält, spielt keine Rolle (bis Protokoll 1 hat ihre
+Einschätzung manche legalen Züge verhindert).
 
-## Protokoll (Version 1)
+## Protokoll (Version 2)
 
 JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 
@@ -81,7 +84,7 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `pong` | `nonce` |
 | `match_started` | `state` |
 | `event` | `event` (Forge-Klassenname, z. B. `GameEventCardChangeZone`, `GameEventTurnPhase`), `text`, `turn`, `phase` |
-| `request` | `id`, `kind`, `player` (Sitzplatz), dazu je nach `kind`: **priority**: `options`, `state` → `choice` = Index oder -1 (passen) · **mulligan**: `cards_to_return`, `state` → `choice` = true (behalten) / false |
+| `request` | `id`, `kind`, `player` (Sitzplatz), dazu je nach `kind`: **priority**: `options`, `state` → `choice` = Index oder -1 (passen) · **mulligan**: `cards_to_return`, `state` → `choice` = true (behalten) / false · **choice**: siehe unten |
 | `rejected` | `player`, `option`, `reason` – gewählte Option nicht ausführbar |
 | `state` | `state` |
 | `game_over` | `winner` (Name oder null), `draw`, `reason` |
@@ -89,6 +92,26 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `error` | `code` (`init_failed`, `bad_command`, `unknown_command`, `deck_not_found`, `match_running`, `no_match`, `unknown_request`, `game_crashed`), `message` |
 
 Der Spiel-Thread wartet bei jeder `request`, bis die passende `answer` kommt.
+
+**`request` kind `choice`** (allgemeine Auswahl, `RemoteChoice.java`)
+
+| Feld | Bedeutung |
+|---|---|
+| `mode` | `single` (eine Option) · `multi` (mehrere) · `confirm` (Ja/Nein) · `number` (Zahl) · `text` (freie Eingabe, z. B. Kartenname) |
+| `title` | Frage (von Forge oder der Brücke; `CARDNAME` ist bereits ersetzt) |
+| `source` | `{id, name}` der Karte, um die es geht (optional) |
+| `ability` | Text der Fähigkeit (optional) |
+| `options` | Liste `{text, color?}` für `single`/`multi`/`confirm`; `color` = `W U B R G C` bei Farbwahl |
+| `min`, `max` | Anzahl bei `multi`, Grenzen bei `number` |
+| `error` | bei `text`: Hinweis nach ungültiger Eingabe (die Frage kommt dann erneut, höchstens 5-mal) |
+| `cancelable` | Abbrechen erlaubt |
+| `state` | Spielzustand |
+
+Antwort `choice`: `single` → Index · `multi` → Liste von Indizes · `confirm` → true (erste Option)
+/ false · `number` → Zahl · `text` → Text · Abbrechen → null. Ungültige Antworten (falscher Typ,
+Index außerhalb, falsche Anzahl) gelten als Abbruch; ist Abbrechen nicht erlaubt, entscheidet dann
+die Forge-KI. Gibt es bei `single` nur eine Option und ist Abbrechen nicht erlaubt, wird gar
+nicht gefragt; `multi` mit genau einer Wahl wird als `single` gefragt.
 
 **`state`**
 
@@ -151,6 +174,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt; `library` = verdeckter Stapel in der Deck-Zone, neue Handkarten werden von dort gezogen |
 | `request` priority | spielbare Handkarten leuchten; Handkarte auf den Tisch ziehen → `answer(index)`; Hauptbutton / Leertaste → `answer(-1)` |
 | `request` mulligan | HUD-Auswahlfenster „Behalten“ / „Mulligan“ |
+| `request` choice | HUD-Auswahlfenster je `mode` (Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Textfeld, Suchfeld ab 13 Optionen); Quellkarte golden markiert |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
 ## Stand und nächste Schritte
@@ -159,5 +183,10 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   zum Spielende; Karten wandern korrekt zwischen Hand, Ressourcen, Spielfeld und Friedhof.
 - Getestet mit der Projektkopie `forge-bridge/forge/` (KI gegen KI bis zum Spielende).
 - Ein eigenes Regelwerk gibt es nicht mehr: Forge ist die einzige Regel-Engine.
-- Noch nicht ferngesteuert: Angreifer, Blocker, Ziele, aktivierte Fähigkeiten bleibender Karten;
+- Allgemeine Auswahl (`choice`) getestet mit `forge-bridge/testdecks/auswahl.dck` (Startspieler,
+  Kreaturtyp, Kartenname, Modus, Farbe) und mit künstlichen Anfragen (Mehrfachauswahl, Ja/Nein,
+  Zahl, Abbrechen).
+- Noch nicht ferngesteuert: Angreifer, Blocker, Ziele, Manabezahlung (auch der X-Wert: den legt
+  die KI beim Bezahlen fest), Auswahl von Karten, aktivierte Fähigkeiten bleibender Karten;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.
+- Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.
