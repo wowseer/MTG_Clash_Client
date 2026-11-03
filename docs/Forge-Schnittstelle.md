@@ -63,7 +63,9 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | Startspieler, Abstimmung, Marken-Typ, Schutz, Schlüsselwort, Ersatzeffekt, statische Fähigkeit, Kartenseite/-zustand, Sektor, Würfel, Zahl aus Liste, Ja/Nein mit eigenen Beschriftungen (Kopf/Zahl, Tappen/Enttappen …), Farbe inkl. farblos | `ChooseOption` (**Erweiterung**) | `Number(index)` |
 | `chooseOptionalCosts`, `chooseColors` (mehrere), `chooseDiceToReroll` | `ChooseOptions` (**Erweiterung**) | `Modes([…])` |
 | `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost`, angesagte Werte ≠ X | `ChooseNumber` (**Erweiterung**) | `Number(n)` |
-| Manabezahlung, Angreifer, Blocker, Schaden verteilen, Kartenauswahl, Ziele ausgelöster Fähigkeiten | (`PayMana`, `DeclareAttackers`, `DeclareBlockers`, `AssignCombatDamage`, `ChooseCards` …) | **vorerst Forge-KI** |
+| `declareAttackers` | `DeclareAttackers { candidates, defenders }` | `Attackers([[karte, ziel], …])`; leer = kein Angriff |
+| `declareBlockers` | `DeclareBlockers { candidates, attackers }` | `Blocks([[blocker, angreifer], …])`; leer = nicht blocken |
+| Manabezahlung, Schaden verteilen, Kartenauswahl, Ziele ausgelöster Fähigkeiten | (`PayMana`, `AssignCombatDamage`, `ChooseCards` …) | **vorerst Forge-KI** |
 | Gegner (nicht ferngesteuerte Sitzplätze) | – | Forge-KI |
 
 **Ablauf beim Spielen** (`RemotePlayerController.prepareRemote`, nachgebaut nach Forges Ablauf für
@@ -71,6 +73,13 @@ menschliche Spieler, `PlaySpellAbility` im Forge-Quellcode): Zusatzkosten/option
 Modi (`CharmEffect.makeChoices`) → angesagter Typ → X-Wert (`announceRequirements`) →
 `SpellAbility.setupTargets()` (ruft je gezielter Teilfähigkeit `chooseTargetsFor`) → Bezahlen
 durch Forge (vorerst automatisch). Zauber, deren Schaden frei verteilt wird, bereitet noch die KI vor.
+
+**Kampf** (`RemotePlayerController.declareAttackers` / `declareBlockers`): Kandidaten sind die
+Kreaturen, für die Forge `CombatUtil.canAttack` bzw. `canBlock` erlaubt; jede Antwort wird mit
+`canAttack(karte, ziel)` / `canBlock(angreifer, blocker)` und danach `CombatUtil.validateAttackers`
+bzw. `validateBlocks` geprüft (Angriffspflichten, „kann nur mit zwei Kreaturen geblockt werden“ …).
+Ungültige Erklärungen werden zurückgenommen und mit Hinweis im `prompt` erneut gefragt (höchstens
+4-mal, dann entscheidet die KI).
 
 **Priority-Aktionen**: Land → `PlayLand(card)` (weitere Land-Seiten derselben Karte `PlayLandAlt`),
 Zauber → `Cast(card)` (weitere Zauber-Varianten derselben Karte `CastAlt(card, n)`), aktivierte
@@ -166,6 +175,9 @@ Forge-KI. Eine Einfachauswahl mit nur einer Option und ohne Abbrechen wird gar n
 
 Karten: `id`, `name`, `type`, `tapped`, bei Kreaturen zusätzlich `power`, `toughness`.
 
+`combat` (laufender Kampf, sonst leere Listen): `attackers` = Liste `{card, target}` (`target` als
+`Target`), `blocks` = Liste `[blocker, angreifer]`.
+
 Phasen (`phase`): Forges `PhaseType`-Namen, z. B. `UNTAP`, `UPKEEP`, `DRAW`, `MAIN1`,
 `COMBAT_BEGIN`, `COMBAT_DECLARE_ATTACKERS`, `COMBAT_DECLARE_BLOCKERS`, `COMBAT_DAMAGE`,
 `COMBAT_END`, `MAIN2`, `END_OF_TURN`, `CLEANUP`.
@@ -209,7 +221,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | Forge | 3D-Tisch |
 |---|---|
 | `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt; `library` = verdeckter Stapel in der Deck-Zone, neue Handkarten werden von dort gezogen |
-| `Priority` | Karten mit einer Aktion leuchten; Karte ziehen und loslassen → `Action` dieser Karte (aus der Hand `PlayLand`/`Cast`, auf dem Spielfeld `Activate`); Hauptbutton / Leertaste → `Action::Pass` |
+| `Priority` | Karten mit einer Aktion leuchten; Handkarte auf den Tisch ziehen → `PlayLand`/`Cast`; Klick auf eine Karte außerhalb der Hand → ihre `Activate`-Aktion (mehrere: Menü „Fähigkeit wählen“, nur UI); Hauptbutton / Leertaste → `Action::Pass` |
+| `ChooseTargets` | gültige Karten leuchten, wählbare Spieler-Medaillons pulsieren golden; Klick wählt (Signal `ForgeTable.choice_option_clicked` → Auswahlfenster am rechten Rand); gewählte Ziele golden markiert, Pfeile Quelle → Ziel (`TargetArrows`) |
+| `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
@@ -227,7 +241,10 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Protokoll v3 (NeoForge-Modell) getestet: Startspieler (`ChooseOption`), `Mulligan`, `NameCard`
   (34.457 Namen, Suche), Kicker (`ChooseOptions`), Farbe, `ChooseTargets` für Ausrüsten, `Priority`
   mit `Cast` und `Activate`.
-- Noch nicht ferngesteuert: Angreifer, Blocker, Manabezahlung, Auswahl von Karten, Ziele
+- Ziele per Klick (Karte, Medaillon, Mehrfachziele, Pfeile) und Aktivieren per Klick (inkl. Menü)
+  getestet; Angriff und Block per Klick getestet (Angreifen mit 1–3 Kreaturen, „Nicht angreifen“,
+  Blocken gegen 1–3 Angreifer, Kampfpfeile der KI aus `combat`).
+- Noch nicht ferngesteuert: Manabezahlung, Kampfschaden verteilen, Auswahl von Karten, Ziele
   ausgelöster Fähigkeiten; Ziele werden noch als Liste gewählt, nicht per Klick auf dem Tisch;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

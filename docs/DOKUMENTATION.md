@@ -120,7 +120,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 
 | Ordner / Datei | Inhalt |
 |---|---|
-| `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Kartenbilder (`placeholder.rs`) |
+| `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Ziel- und Kampfpfeile `TargetArrows` (`target_arrows.rs`), Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Kartenbilder (`placeholder.rs`) |
 | `rust/src/game/` | Anzeige-Bausteine: `PlayerSeat`, Kartendaten (`cards.rs`, `ability.rs`), Mana-Typen und -Pool (`mana.rs`), Phasen-Liste (`phases.rs`), HUD (`hud.rs`), Spieler-Medaillon (`seat_badge.rs`), Sanduhr (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Phasen-Zeitstrahl (`phase_timeline.rs`), Kartenvorschau (`card_preview.rs`), Auswahlfenster (`choice_panel.rs`), Engine-Entscheidung → Auswahlfenster → Antwort (`decision_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
 | `rust/src/rules/` | Engine-Grenze: NeoForges Entscheidungsmodell (`Decision`, `Choice`, `Action`, `Target` …, `decision.rs`), offene Anfrage `Request` und Schnittstelle `RulesEngine` (`mod.rs`). Die UI kennt nur diese Typen |
 | `rust/src/forge/` | `ForgeBridge` (Java-Prozess mit Forge, setzt `RulesEngine` um) und `ForgeTable` (Partie auf dem 3D-Tisch) |
@@ -143,6 +143,9 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | Leuchtende Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (nicht über der Hand) | spielen: Forge bekommt die passende Option, zahlt das Mana automatisch und legt die Karte hin (Länder in die Länder-Reihe, bleibende Karten aufs Spielfeld, Zauber auf den Friedhof). Solange du ziehst, wird die Karte zusätzlich **groß ganz oben in der Bildmitte** angezeigt. Ungültige Züge springen an ihren Platz zurück |
 | Button „Passen“ bzw. Leertaste | Priorität abgeben |
 | Auswahlfenster (Bildschirmmitte) | erscheint bei jeder allgemeinen Entscheidung von Forge (Mulligan, Startspieler, Modi, Kreaturtyp, Farbe, Kartenname, Ja/Nein, Zahl …). Die Karte, um die es geht, ist golden markiert. **Eine Option:** Knopf anklicken. **Mehrere:** Knöpfe an-/abwählen (golden = gewählt), dann „Fertig (n/…)“ – aktiv erst bei gültiger Anzahl. **Zahl:** Zahlenfeld, „OK“. Ab 13 Optionen gibt es ein **Suchfeld** (Treffer, die mit dem Suchtext beginnen, zuerst); angezeigt werden höchstens 40 Knöpfe – bei „Kartennamen nennen“ (alle über 34.000 Namen) also einfach den Namen eintippen und anklicken. „Abbrechen“ nur, wo Forge das erlaubt. Farb-Optionen sind in der Manafarbe eingefärbt |
+| **Klick vs. Ziehen** | Kurz klicken (Maus bewegt sich weniger als 6 Pixel) = Klick; erst bei Bewegung wird die Karte gezogen |
+| Klick auf eine leuchtende Karte auf dem Spielfeld | Fähigkeit aktivieren (z. B. Ausrüsten). Hat die Karte mehrere Fähigkeiten, erscheint ein Menü „Fähigkeit wählen“ (mit „Abbrechen“). Handkarten spielt man weiter durch Ziehen |
+| **Ziel wählen** | Gültige Ziele leuchten (Karten) bzw. bekommen einen pulsierenden goldenen Ring (Spieler-Medaillons). Klick auf die Karte bzw. das Medaillon wählt das Ziel; bei nur einem Ziel geht es sofort weiter, bei mehreren erneuter Klick = abwählen, dann „Fertig (n/…)“. Gewählte Ziele sind golden markiert und bekommen einen goldenen **Pfeil** von der Quellkarte; ein blasser Pfeil zeigt auf das gültige Ziel unter dem Mauszeiger. Das Auswahlfenster steht dabei am rechten Bildrand (Liste aller Ziele als Ausweichweg, „Abbrechen“ nimmt den Zauber zurück) |
 | **Angreifen** (Angriffsschritt) | Kreaturen, die angreifen können, leuchten. Klick = angreifen (roter Pfeil zum Gegner, rote Markierung), erneuter Klick = nicht angreifen. Gibt es mehrere Angriffsziele (z. B. Planeswalker), danach Klick auf das gewünschte Ziel (Karte bzw. golden pulsierendes Medaillon) = der zuletzt gewählte Angreifer greift es an. Bestätigen mit „Angreifen (n)“ bzw. „Nicht angreifen“ im Fenster am rechten Rand. Ungültige Angriffe (z. B. eine Kreatur muss angreifen) werden mit Hinweis erneut gefragt |
 | **Blocken** (Blockschritt) | Eigene Kreaturen, die blocken können, leuchten. Klick auf eine davon (goldene Markierung), dann Klick auf einen Angreifer = blocken (blauer Pfeil, blaue Markierung; ein blasser Pfeil zeigt vorher auf den Angreifer unter der Maus). Klick auf einen Blocker = Block aufheben. Mehrere Blocker auf denselben Angreifer sind möglich. Bestätigen mit „Blocken (n)“ bzw. „Nicht blocken“; ungültige Blocks werden mit Forges Begründung erneut gefragt |
 | Kampf der KI | Angriffe der KI erscheinen als rote Pfeile (Angreifer → Ziel), Blocks als blaue Pfeile, solange der Kampf läuft |
@@ -151,12 +154,10 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 **Getappte** Karten werden leicht schräg gestellt (15°, `zone::TAP_ANGLE_DEGREES`), ausgegraut und
 zeigen mittig ein graues Tapp-Symbol (`textures::tap_icon()`).
 
-**Zauber und Fähigkeiten mit Zielen:** Nach dem Ausspielen fragt das Auswahlfenster nacheinander
-alles, was der Zauber braucht: optionale Kosten (z. B. Kicker), Modus, X-Wert und das **Ziel**
-(Liste aller gültigen Spieler und Karten, „Abbrechen“ nimmt den Zug zurück). Aktivierte
-Fähigkeiten bleibender Karten (z. B. Ausrüsten) sind ebenfalls spielbar: Die Karte leuchtet, wenn
-die Fähigkeit möglich ist; zum Aktivieren die Karte ein Stück ziehen und loslassen (ein Klick
-zum Aktivieren folgt mit dem Zielen auf dem Tisch).
+**Zauber und Fähigkeiten mit Zielen:** Nach dem Ausspielen fragt das Spiel nacheinander alles, was
+der Zauber braucht: optionale Kosten (z. B. Kicker), Modus, X-Wert und das **Ziel** (Klick auf
+Karte oder Medaillon, siehe oben). Aktivierte Fähigkeiten bleibender Karten (z. B. Ausrüsten)
+leuchten, wenn sie möglich sind, und werden per Klick aktiviert.
 
 Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Manabezahlung,
 Kampfschaden verteilen, Auswahl von Karten, Ziele ausgelöster Fähigkeiten. Ziele werden noch aus einer

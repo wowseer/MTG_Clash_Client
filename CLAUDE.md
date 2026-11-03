@@ -80,7 +80,9 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 **Protokoll v3 steht:** NeoForges `Decision`/`Choice` in `rust/src/rules/` (Engine-Grenze,
 `RulesEngine`), Java-Übersetzer `forge-bridge/.../Decisions.java`, UI-Abbildung
 `rust/src/game/decision_view.rs`. Jedes weitere Bedienmuster direkt gegen die passende
-`Decision`-Variante bauen. Nächster Schritt: `ChooseTargets` per Klick/Pfeil auf dem Tisch.
+`Decision`-Variante bauen. Fertig: `ChooseTargets` per Klick/Pfeil, Aktivieren per Klick,
+`DeclareAttackers` / `DeclareBlockers` per Klick mit Kampfpfeilen. Nächster Schritt laut Fahrplan:
+`PayMana` (Länder antippen, `AutoPay`).
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
@@ -99,11 +101,11 @@ Jeder Punkt ist ein eigener Schritt: Brücke (Java), Protokoll, Rust/UI, Doku, T
 Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabdeckung.md`.
 
 **Entscheidungen des Spielers** (NeoForge-`Decision` → Forge-Methode in `RemotePlayerController`):
-1. `ChooseTargets` (`chooseTargetsFor`, `chooseSingleEntityForEffect`, `chooseEntitiesForEffect`): gültige Ziele leuchten, Klick auf Karte/Medaillon oder Pfeil (heute nur Liste)
-2. `DeclareAttackers` (`declareAttackers`): Klick auf Kreaturen, Ziel Spieler/Planeswalker
-3. `DeclareBlockers` (`declareBlockers`): Blocker einem Angreifer zuweisen. Die Zielpfeile werden dafür neu gebaut; die alten wurden mit dem eigenen Regelwerk gelöscht
+1. `ChooseTargets` (`chooseTargetsFor` ✔ beim Wirken; offen: Ziele ausgelöster Fähigkeiten, `chooseSingleEntityForEffect`, `chooseEntitiesForEffect`)
+2. ~~`DeclareAttackers`~~ ✔ (offen: Erschöpfen/Rekrutieren)
+3. ~~`DeclareBlockers`~~ ✔ (offen: Reihenfolge der Blocker)
 4. `PayMana` mit `PayAction` (`payManaCost`, `chooseManaFromPool`): Länder antippen; `AutoPay`, `Cancel`
-5. `Priority` mit `Action::Activate`: aktivierte Fähigkeiten per Klick, bei mehreren ein Auswahlmenü
+5. ~~`Priority` mit `Action::Activate` per Klick, Menü bei mehreren~~ ✔
 6. `ChooseCards` (mit `CardChoiceReason`), `Scry` (`Choice::Arrange`), `OrderTriggers`, `MulliganBottom`
 7. `AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`
 
@@ -161,7 +163,10 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
   2. `docs/DOKUMENTATION.md` (Bedienung, Szenenaufbau, Stand)
   3. `docs/Forge-Schnittstelle.md` bei jeder Protokolländerung
   4. `python3 tools/gen_api_doc.py`
-- **Nach jeder Aufgabe committen** auf `main` (`git add . && git commit`).
+- **Nach jeder Aufgabe committen** auf `main` (`git add . && git commit`). Vorher `git status`
+  ansehen: nur eigene Änderungen committen, fremde (z. B. vom User gelöschte Dateien) erwähnen.
+- Shell ist zsh: Platzhalter ohne Treffer (`rm godot/_probe*.uid`) brechen den ganzen Befehl ab.
+  Doku-Skripte in einem eigenen Aufruf ausführen und ihre Ausgabe prüfen, nie an `rm` & Co. hängen.
 - Rust-Build ohne Warnungen halten; toten Code löschen statt mit `allow` zu verstecken. Einzige
   Ausnahme: noch ungenutzte Teile des NeoForge-Modells (`rules/decision.rs`) mit
   `#[expect(dead_code, reason = …)]` – `expect` meldet sich, sobald sie benutzt werden.
