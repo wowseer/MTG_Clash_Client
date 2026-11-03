@@ -24,6 +24,7 @@ Beides wird aus denselben Rust-Doku-Kommentaren (`///`) erzeugt (gdext-Feature `
 | Unit-Tests | `cd rust && cargo test` |
 | Spiel starten | Godot-Projekt `godot/` öffnen, F5 (Hauptszene `table.tscn`) |
 | API-Referenz neu erzeugen | `python3 tools/gen_api_doc.py` |
+| Forge-Brücke bauen (optional) | `forge-bridge/build.sh` (siehe Abschnitt 9) |
 
 Nach jedem Rust-Build das Spiel neu starten, damit die neue Bibliothek geladen wird.
 `godot/rust.gdextension` zeigt im Debug auf `rust/target/debug/`, im Export auf `rust/target/release/`.
@@ -89,6 +90,13 @@ Einstellbar im Inspector: `board_size`, `texture_resolution` (Pixel pro Einheit 
 `table.tscn` den Knoten `Arena` durch einen `Tavern`-Knoten ersetzen (dann `Lantern.light_energy`
 wieder auf ca. 10 stellen, die Arena braucht wegen des hellen Steins nur ca. 3).
 
+**Sichtbar im Editor:** `Arena`, `Tavern` und `FlickerLight` sind Tool-Klassen – die Kulisse wird
+auch im Godot-Editor gebaut, wenn `table.tscn` geöffnet ist. Die erzeugten Knoten haben keinen
+Owner, erscheinen nicht im Szenenbaum und werden nicht in die `.tscn` gespeichert. Ändert man im
+Inspector eine Eigenschaft der `Arena`, baut sie sich sofort neu auf (`Arena.rebuild()`). Karten,
+Medaillons und HUD entstehen weiterhin erst beim Spielstart (F5). Nach einem neuen Rust-Build
+ggf. die Szene neu laden (*Szene → Gespeicherte Szene neu laden*) oder den Editor neu starten.
+
 **Kamera und Aufteilung** (wie in digitalen Kartenspielen): Die Übersichtskamera schaut steil
 von oben (ca. 75°) aus großer Entfernung mit kleinem Blickwinkel (`fov` 30°,
 `Camera.overview_position` (0, 23.2, 6.4)) – dadurch fast keine Perspektive, das Spielfeld wirkt
@@ -117,6 +125,8 @@ die `HeroAnchor`-Marker mitziehen.
 |---|---|
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Zielpfeile (`target_arrows.rs`) |
 | `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD, Spieler-Medaillon (`seat_badge.rs`), Sanduhr-Symbol (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Stack-Anzeige (`stack_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
+| `rust/src/forge/` | `ForgeBridge`: Verbindung zur Forge-Regel-Engine (Java-Prozess), siehe Abschnitt 9 |
+| `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks |
 | `rust/src/debug.rs` | Debug-Tool (nur Test-Build) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
 | `docs/` | diese Dokumentation und die API-Referenz |
@@ -353,3 +363,17 @@ $Table/StackManager.push(item)
 - Kreaturen können keine Helden angreifen.
 - Neu ausgespielte Kreaturen dürfen sofort angreifen.
 - Die Demo-Decks (je 30 Karten, Spieler Rot/Grün, Gegner Blau/Schwarz) sind Platzhalter.
+
+---
+
+## 9. Forge-Regel-Engine (Java)
+
+Optional kann die Regel-Engine von **Forge** angebunden werden. Forge läuft als eigener
+Java-Prozess (`forge-bridge/`, GPL-3.0), der Godot-Knoten `ForgeBridge` (`rust/src/forge/bridge.rs`)
+startet ihn und tauscht JSON-Zeilen über stdin/stdout aus. Prioritäts- und Mulligan-Entscheidungen
+ferngesteuerter Spieler kommen als Signal `decision_requested` und werden mit `answer()`
+beantwortet; alle Forge-Spielereignisse kommen als `forge_event`. Der Knoten ist **nicht** in
+`table.tscn` eingebaut, das eigene Regelwerk (`TurnManager`) läuft unverändert weiter.
+
+Einrichtung, Protokoll, GDScript-Beispiel und Grenzen: [Forge-Schnittstelle.md](Forge-Schnittstelle.md).
+

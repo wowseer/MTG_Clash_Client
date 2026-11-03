@@ -1,0 +1,94 @@
+package clash.forgebridge;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+
+import forge.game.Game;
+import forge.game.card.Card;
+import forge.game.phase.PhaseHandler;
+import forge.game.player.Player;
+import forge.game.spellability.SpellAbility;
+import forge.game.zone.ZoneType;
+
+/** Wandelt Forge-Spielzustand in JSON für den Client um. */
+final class StateJson {
+    private StateJson() {}
+
+    /**
+     * Momentaufnahme des Spiels. {@code viewer} = Sitzplatz, dessen Handkarten offen
+     * mitgeschickt werden (-1 = keine Hand offen; Gegnerhände nur als Anzahl).
+     */
+    static JsonObject snapshot(Game game, int viewer) {
+        JsonObject s = new JsonObject();
+        PhaseHandler ph = game.getPhaseHandler();
+        s.addProperty("turn", ph.getTurn());
+        s.addProperty("phase", ph.getPhase() == null ? null : ph.getPhase().name());
+        Player active = ph.getPlayerTurn();
+        s.addProperty("active_player", active == null ? -1 : indexOf(game, active));
+
+        JsonArray players = new JsonArray();
+        int i = 0;
+        for (Player p : game.getPlayers()) {
+            JsonObject po = new JsonObject();
+            po.addProperty("seat", i);
+            po.addProperty("name", p.getName());
+            po.addProperty("life", p.getLife());
+            po.addProperty("library", p.getCardsIn(ZoneType.Library).size());
+            po.addProperty("hand_count", p.getCardsIn(ZoneType.Hand).size());
+            if (i == viewer) {
+                po.add("hand", cards(p, ZoneType.Hand));
+            }
+            po.add("battlefield", cards(p, ZoneType.Battlefield));
+            po.add("graveyard", cards(p, ZoneType.Graveyard));
+            po.add("exile", cards(p, ZoneType.Exile));
+            players.add(po);
+            i++;
+        }
+        s.add("players", players);
+        return s;
+    }
+
+    static JsonArray cards(Player p, ZoneType zone) {
+        JsonArray arr = new JsonArray();
+        for (Card c : p.getCardsIn(zone)) {
+            arr.add(card(c));
+        }
+        return arr;
+    }
+
+    static JsonObject card(Card c) {
+        JsonObject o = new JsonObject();
+        o.addProperty("id", c.getId());
+        o.addProperty("name", c.getName());
+        o.addProperty("type", String.valueOf(c.getType()));
+        o.addProperty("tapped", c.isTapped());
+        if (c.isCreature()) {
+            o.addProperty("power", c.getNetPower());
+            o.addProperty("toughness", c.getNetToughness());
+        }
+        return o;
+    }
+
+    static JsonObject ability(int index, SpellAbility sa) {
+        JsonObject o = new JsonObject();
+        o.addProperty("index", index);
+        Card host = sa.getHostCard();
+        o.addProperty("card_id", host == null ? -1 : host.getId());
+        o.addProperty("card", host == null ? null : host.getName());
+        o.addProperty("land", sa.isLandAbility());
+        o.addProperty("spell", sa.isSpell());
+        o.addProperty("text", sa.toUnsuppressedString());
+        return o;
+    }
+
+    static int indexOf(Game game, Player player) {
+        int i = 0;
+        for (Player p : game.getPlayers()) {
+            if (p == player) {
+                return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+}

@@ -1,0 +1,8 @@
+//! Schnittstelle zur Forge-Regel-Engine (Java).
+//!
+//! Forge läuft als eigener Java-Prozess (`forge-bridge/`, GPL-3.0) und spricht über
+//! stdin/stdout ein JSON-Lines-Protokoll (siehe `docs/Forge-Schnittstelle.md`).
+//! Auf Godot-Seite kapselt der Node [`bridge::ForgeBridge`] den Prozess und meldet alle
+//! Nachrichten als Signale.
+
+pub mod bridge;

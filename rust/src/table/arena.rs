@@ -33,24 +33,35 @@ const FIRE: Color = Color::from_rgb(1.0, 0.55, 0.2);
 /// gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern.
 /// Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0,
 /// Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
+///
+/// Tool-Klasse: Die Kulisse wird auch im Godot-Editor gebaut, damit die Szene dort sichtbar ist.
+/// Die erzeugten Kinder haben keinen Owner und werden daher nicht in die `.tscn` gespeichert.
+/// Nach Änderungen an den Eigenschaften im Inspektor baut sich die Kulisse neu auf.
 #[derive(GodotClass)]
-#[class(base=Node3D)]
+#[class(tool, base=Node3D)]
 pub struct Arena {
     /// Größe des Spielbretts (x = Breite, y = Tiefe) in Einheiten.
     #[export]
+    #[var(set = set_board_size)]
     board_size: Vector2,
     /// Auflösung der Brett-Textur in Pixeln pro Einheit (höher = schärfere Ornamente, längerer Start).
     #[export(range = (20.0, 160.0))]
+    #[var(set = set_texture_resolution)]
     texture_resolution: f32,
     /// Leuchtstärke des Runenkreises (0 = aus).
     #[export(range = (0.0, 8.0))]
+    #[var(set = set_rune_glow)]
     rune_glow: f32,
     /// Bannerfarbe der Spielerseite.
     #[export]
+    #[var(set = set_player_color)]
     player_color: Color,
     /// Bannerfarbe der Gegnerseite.
     #[export]
+    #[var(set = set_opponent_color)]
     opponent_color: Color,
+    /// Neuaufbau ist bereits (verzögert) angefordert.
+    rebuild_pending: bool,
     base: Base<Node3D>,
 }
 
@@ -63,11 +74,82 @@ impl INode3D for Arena {
             rune_glow: 1.6,
             player_color: Color::from_rgb(0.12, 0.32, 0.62),
             opponent_color: Color::from_rgb(0.55, 0.1, 0.1),
+            rebuild_pending: false,
             base,
         }
     }
 
     fn ready(&mut self) {
+        self.build();
+    }
+}
+
+#[godot_api]
+impl Arena {
+    /// Baut die gesamte Kulisse neu auf (entfernt vorher alle erzeugten Kinder).
+    /// Wird in `ready()` aufgerufen und im Editor automatisch nach Änderungen im Inspektor.
+    #[func]
+    fn rebuild(&mut self) {
+        self.rebuild_pending = false;
+        self.build();
+    }
+
+    /// Setter für [member board_size]; baut die Kulisse (verzögert) neu auf, wenn sie schon steht.
+    #[func]
+    fn set_board_size(&mut self, value: Vector2) {
+        self.board_size = value;
+        self.request_rebuild();
+    }
+
+    /// Setter für [member texture_resolution]; baut die Kulisse (verzögert) neu auf, wenn sie schon steht.
+    #[func]
+    fn set_texture_resolution(&mut self, value: f32) {
+        self.texture_resolution = value;
+        self.request_rebuild();
+    }
+
+    /// Setter für [member rune_glow]; baut die Kulisse (verzögert) neu auf, wenn sie schon steht.
+    #[func]
+    fn set_rune_glow(&mut self, value: f32) {
+        self.rune_glow = value;
+        self.request_rebuild();
+    }
+
+    /// Setter für [member player_color]; baut die Kulisse (verzögert) neu auf, wenn sie schon steht.
+    #[func]
+    fn set_player_color(&mut self, value: Color) {
+        self.player_color = value;
+        self.request_rebuild();
+    }
+
+    /// Setter für [member opponent_color]; baut die Kulisse (verzögert) neu auf, wenn sie schon steht.
+    #[func]
+    fn set_opponent_color(&mut self, value: Color) {
+        self.opponent_color = value;
+        self.request_rebuild();
+    }
+}
+
+impl Arena {
+    /// Fordert einen Neuaufbau am Frame-Ende an (mehrere Änderungen = ein Neuaufbau).
+    /// Vor `ready()` (Laden der Szene) passiert nichts – dort baut `ready()` ohnehin.
+    fn request_rebuild(&mut self) {
+        if self.rebuild_pending || !self.base().is_node_ready() {
+            return;
+        }
+        self.rebuild_pending = true;
+        self.base_mut().call_deferred("rebuild", &[]);
+    }
+
+    fn build(&mut self) {
+        // Nur selbst erzeugte Kinder (ohne Owner) entfernen – im Editor von Hand
+        // hinzugefügte Kinder bleiben erhalten.
+        for mut child in self.base().get_children().iter_shared() {
+            if child.get_owner().is_none() {
+                self.base_mut().remove_child(&child);
+                child.queue_free();
+            }
+        }
         let m = Materials::new();
         self.build_board(&m);
         self.build_rim(&m);

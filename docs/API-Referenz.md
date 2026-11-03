@@ -9,6 +9,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 ## Inhalt
 
 - [DebugPanel](#debugpanel) – erbt von `CanvasLayer` *(nur Test-Build)*
+- [ForgeBridge](#forgebridge) – erbt von `Node`
 - [CardCutout](#cardcutout) – erbt von `Control`
 - [HourglassIcon](#hourglassicon) – erbt von `Control`
 - [TurnHud](#turnhud) – erbt von `CanvasLayer`
@@ -58,6 +59,53 @@ Debug-Tool (nur in Test-Builds): Sprache umschalten (Deutsch / English), Ressour
 | `on_give_selected()` | `void` | Knopf „Auf die Hand“: legt die in der Liste gewählte Karte auf die Hand. |
 | `on_kind_selected(index: int)` | `void` | Typ gewechselt: passende Fähigkeiten und Hinweis anzeigen. |
 | `on_create(to_hand: bool)` | `void` | Knopf „Erstellen“: baut eine Karte aus Name, Typ, Fähigkeit, Kosten, Angriff und Verteidigung. `to_hand` = true legt sie zusätzlich direkt auf die Hand. |
+
+## ForgeBridge
+
+*Erbt von `Node` · Quelle: `rust/src/forge/bridge.rs`*
+
+Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) als eigenen Prozess und spricht mit ihr über JSON-Zeilen (Protokoll: `docs/Forge-Schnittstelle.md`). Ablauf: `start_bridge()` → Signal [signal bridge_ready] → `start_match()` → Signale [signal forge_event] (jedes Spielereignis) und [signal decision_requested] (ferngesteuerter Spieler hat Priorität / Mulligan) → Antwort mit `answer()` → [signal game_over]. Ferngesteuert sind die Sitzplätze aus `remote_seats`; alle anderen spielt die Forge-KI. Zahlen in empfangenen Dictionaries sind ganzzahlig (int), wenn sie keinen Nachkommaanteil haben (Godots JSON liefert sonst immer float).
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `java_path` | `String` | Java-Programm (Name im PATH oder absoluter Pfad). Java 17 oder neuer. |
+| `forge_dir` | `String` | Forge-Installationsordner (enthält `res/`). Leer = Umgebungsvariable `FORGE_DIR`, sonst `~/Games/Forge`. |
+| `forge_jar` | `String` | Forge-Jar mit allen Abhängigkeiten. Leer = erste Datei `forge-gui-desktop-*-jar-with-dependencies.jar` in `forge_dir`. |
+| `bridge_jar` | `String` | Gebaute Brücke (`forge-bridge/build.sh`). `res://`-Pfade werden umgerechnet. |
+| `java_max_memory_mb` | `int` | Maximaler Java-Heap in MB (`-Xmx`). |
+| `autostart` | `bool` | Brücke automatisch in `ready()` starten. |
+| `log_messages` | `bool` | Jede empfangene Nachricht in die Godot-Konsole schreiben (zum Debuggen). |
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `start_bridge()` | `bool` | Startet den Java-Prozess. Gibt false zurück, wenn er schon läuft oder nicht starten konnte (dann zusätzlich [signal bridge_error]). Fertig ist er erst mit [signal bridge_ready] (Forge braucht einige Sekunden zum Laden). |
+| `stop_bridge()` | `void` | Beendet die Brücke (Befehl "quit", nach 2 s hart beendet). Sendet [signal bridge_stopped] mit -1, falls sie lief. |
+| `is_running()` | `bool` | Läuft der Java-Prozess? |
+| `is_ready()` | `bool` | Hat Forge fertig geladen ([signal bridge_ready] empfangen)? |
+| `send_command(command: Dictionary)` | `bool` | Schickt einen beliebigen Befehl (Dictionary mit "cmd", siehe Protokoll). false, wenn die Brücke nicht läuft. |
+| `ping(nonce: int)` | `bool` | Verbindungstest; Antwort kommt als Nachricht `{type: "pong", nonce}`. |
+| `start_match(decks: PackedStringArray, remote_seats: PackedInt32Array, names: PackedStringArray, seed: int)` | `bool` | Startet eine Partie. `decks`: Pfade zu Forge-`.dck`-Dateien (`res://` erlaubt) oder Namen von Decks aus Forges Constructed-Sammlung, einer je Sitzplatz (mind. 2). `remote_seats`: Sitzplätze, die MTG Clash steuert (Rest = Forge-KI). `names`: Spielernamen (darf kürzer sein). `seed` < 0 = zufällig. |
+| `answer(request_id: int, choice: Variant)` | `bool` | Beantwortet eine Anfrage aus [signal decision_requested]. `choice`: bei "priority" der Index der Option oder -1 (passen), bei "mulligan" true (behalten) / false. |
+| `request_state(viewer: int)` | `bool` | Fragt den aktuellen Spielzustand ab → [signal state_received]. `viewer` = Sitzplatz, dessen Handkarten mitgeschickt werden (-1 = keiner). |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `bridge_ready(protocol: int)` | Die Brücke ist gestartet und Forge geladen; `protocol` = Protokollversion. |
+| `message_received(message: Dictionary)` | Jede empfangene Nachricht (vor den speziellen Signalen), z. B. für eigene Auswertung. |
+| `forge_event(event: Dictionary)` | Ein Forge-Spielereignis: `{event, text, turn, phase}` (`event` = Forge-Klassenname, z. B. "GameEventCardChangeZone"). |
+| `decision_requested(request: Dictionary)` | Ein ferngesteuerter Spieler muss entscheiden: `{id, kind, player, …}`. kind "priority": `options` (Liste `{index, card, card_id, land, spell, text}`) und `state` – Antwort mit `answer()` (Index oder -1 = passen). kind "mulligan": `state`, `cards_to_return` – Antwort true = behalten. |
+| `decision_rejected(info: Dictionary)` | Die gewählte Option wurde von Forge abgelehnt (`{player, option, reason}`); es folgt eine neue Anfrage. |
+| `match_started(state: Dictionary)` | Die Partie hat begonnen; `state` = Spielzustand (siehe Protokoll). |
+| `state_received(state: Dictionary)` | Antwort auf `request_state()`. |
+| `game_over(result: Dictionary)` | Die Partie ist vorbei: `{winner, draw, reason}`. |
+| `bridge_error(code: String, message: String)` | Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed"). |
+| `bridge_stopped(exit_code: int)` | Der Java-Prozess ist beendet (`exit_code` -1 = unbekannt / von uns beendet). |
 
 ## CardCutout
 
@@ -396,7 +444,7 @@ Beispiel-Node: zeigt, dass die Rust-Extension geladen wird.
 
 *Erbt von `Node3D` · Quelle: `rust/src/table/arena.rs`*
 
-Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte, großer Raute und Mittellinie (ohne eingelassene Felder für Deck, Ablage und Ressourcen), flacher Steinrand mit Goldeinlage, Leuchtkristalle in den Ecken, gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern. Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0, Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0).
+Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in der Mitte, großer Raute und Mittellinie (ohne eingelassene Felder für Deck, Ablage und Ressourcen), flacher Steinrand mit Goldeinlage, Leuchtkristalle in den Ecken, gestufter Sockel, Schieferboden, Säulenruinen, Feuerschalen und Arenamauer mit Bannern. Alles wird beim Start prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Brettoberfläche bei y = 0, Mittellinie bei z = 0 (Spieler z > 0, Gegner z < 0). Tool-Klasse: Die Kulisse wird auch im Godot-Editor gebaut, damit die Szene dort sichtbar ist. Die erzeugten Kinder haben keinen Owner und werden daher nicht in die `.tscn` gespeichert. Nach Änderungen an den Eigenschaften im Inspektor baut sich die Kulisse neu auf.
 
 ### Eigenschaften
 
@@ -407,6 +455,17 @@ Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in 
 | `rune_glow` | `float` | Leuchtstärke des Runenkreises (0 = aus). |
 | `player_color` | `Color` | Bannerfarbe der Spielerseite. |
 | `opponent_color` | `Color` | Bannerfarbe der Gegnerseite. |
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `rebuild()` | `void` | Baut die gesamte Kulisse neu auf (entfernt vorher alle erzeugten Kinder). Wird in `ready()` aufgerufen und im Editor automatisch nach Änderungen im Inspektor. |
+| `set_board_size(value: Vector2)` | `void` | Setter für `board_size`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
+| `set_texture_resolution(value: float)` | `void` | Setter für `texture_resolution`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
+| `set_rune_glow(value: float)` | `void` | Setter für `rune_glow`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
+| `set_player_color(value: Color)` | `void` | Setter für `player_color`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
+| `set_opponent_color(value: Color)` | `void` | Setter für `opponent_color`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
 
 ## Card3D
 
@@ -553,7 +612,7 @@ Zeichnet gebogene, leuchtende Zielpfeile über dem Tisch (Angriff, Block, Zielwa
 
 *Erbt von `OmniLight3D` · Quelle: `rust/src/table/tavern.rs`*
 
-Punktlicht, das wie eine Kerzen-/Kaminflamme flackert.
+Punktlicht, das wie eine Kerzen-/Kaminflamme flackert. Tool-Klasse: flackert auch im Editor (wird von `Arena` und `Tavern` dort mit erzeugt).
 
 ### Eigenschaften
 
@@ -567,7 +626,7 @@ Punktlicht, das wie eine Kerzen-/Kaminflamme flackert.
 
 *Erbt von `Node3D` · Quelle: `rust/src/table/tavern.rs`*
 
-Tavernen-Kulisse: Holztisch mit Messing-Trennlinie, Kerzen, Krüge, Münzen sowie Gastraum mit Kamin, Fachwerk, Regalen, Fässern, Bank und Hockern – alles prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Tischoberfläche bei y = 0, Trennlinie bei z = 0.
+Tavernen-Kulisse: Holztisch mit Messing-Trennlinie, Kerzen, Krüge, Münzen sowie Gastraum mit Kamin, Fachwerk, Regalen, Fässern, Bank und Hockern – alles prozedural erzeugt. Maßstab: 1 Einheit = 10 cm; Tischoberfläche bei y = 0, Trennlinie bei z = 0. Tool-Klasse: Die Kulisse wird auch im Godot-Editor gebaut (Kinder ohne Owner, werden nicht in die `.tscn` gespeichert).
 
 ### Eigenschaften
 

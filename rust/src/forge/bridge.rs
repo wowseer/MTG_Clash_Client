@@ -1,0 +1,486 @@
+//! `ForgeBridge`: startet die Java-Brücke zu Forge und übersetzt das JSON-Lines-Protokoll
+//! in Godot-Signale und -Methoden.
+//!
+//! - Ein Lesethread liest stdout des Java-Prozesses zeilenweise und schickt die Zeilen über
+//!   einen Kanal an den Hauptthread; `process()` parst sie (Godot-`JSON`) und sendet Signale.
+//! - Befehle werden als eine JSON-Zeile auf stdin geschrieben.
+//! - stderr (Forge-Logausgaben) landet in `user://forge-bridge.log`.
+
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
+use std::time::Duration;
+
+use godot::classes::{INode, Json, Node, ProjectSettings};
+use godot::prelude::*;
+
+/// Höchstens so viele Nachrichten werden pro Frame verarbeitet (Forge sendet in Spitzen
+/// Hunderte Ereignisse auf einmal).
+const MAX_MESSAGES_PER_FRAME: usize = 400;
+
+enum Incoming {
+    Line(String),
+    Closed,
+}
+
+/// Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) als eigenen
+/// Prozess und spricht mit ihr über JSON-Zeilen (Protokoll: `docs/Forge-Schnittstelle.md`).
+///
+/// Ablauf: [method start_bridge] → Signal [signal bridge_ready] → [method start_match] →
+/// Signale [signal forge_event] (jedes Spielereignis) und [signal decision_requested]
+/// (ferngesteuerter Spieler hat Priorität / Mulligan) → Antwort mit [method answer] →
+/// [signal game_over]. Ferngesteuert sind die Sitzplätze aus `remote_seats`; alle anderen
+/// spielt die Forge-KI.
+///
+/// Zahlen in empfangenen Dictionaries sind ganzzahlig (int), wenn sie keinen Nachkommaanteil
+/// haben (Godots JSON liefert sonst immer float).
+#[derive(GodotClass)]
+#[class(base=Node)]
+pub struct ForgeBridge {
+    /// Java-Programm (Name im PATH oder absoluter Pfad). Java 17 oder neuer.
+    #[export]
+    java_path: GString,
+    /// Forge-Installationsordner (enthält `res/`). Leer = Umgebungsvariable `FORGE_DIR`,
+    /// sonst `~/Games/Forge`.
+    #[export(global_dir)]
+    forge_dir: GString,
+    /// Forge-Jar mit allen Abhängigkeiten. Leer = erste Datei
+    /// `forge-gui-desktop-*-jar-with-dependencies.jar` in [member forge_dir].
+    #[export(global_file = "*.jar")]
+    forge_jar: GString,
+    /// Gebaute Brücke (`forge-bridge/build.sh`). `res://`-Pfade werden umgerechnet.
+    #[export]
+    bridge_jar: GString,
+    /// Maximaler Java-Heap in MB (`-Xmx`).
+    #[export(range = (256.0, 16384.0))]
+    java_max_memory_mb: i32,
+    /// Brücke automatisch in `ready()` starten.
+    #[export]
+    autostart: bool,
+    /// Jede empfangene Nachricht in die Godot-Konsole schreiben (zum Debuggen).
+    #[export]
+    log_messages: bool,
+
+    child: Option<Child>,
+    stdin: Option<ChildStdin>,
+    rx: Option<Receiver<Incoming>>,
+    ready: bool,
+    base: Base<Node>,
+}
+
+#[godot_api]
+impl INode for ForgeBridge {
+    fn init(base: Base<Node>) -> Self {
+        Self {
+            java_path: "java".into(),
+            forge_dir: GString::new(),
+            forge_jar: GString::new(),
+            bridge_jar: "res://../forge-bridge/build/forge-bridge.jar".into(),
+            java_max_memory_mb: 2048,
+            autostart: false,
+            log_messages: false,
+            child: None,
+            stdin: None,
+            rx: None,
+            ready: false,
+            base,
+        }
+    }
+
+    fn ready(&mut self) {
+        if self.autostart {
+            self.start_bridge();
+        }
+    }
+
+    fn process(&mut self, _delta: f64) {
+        let mut lines = Vec::new();
+        let mut closed = false;
+        if let Some(rx) = &self.rx {
+            while lines.len() < MAX_MESSAGES_PER_FRAME {
+                match rx.try_recv() {
+                    Ok(Incoming::Line(l)) => lines.push(l),
+                    Ok(Incoming::Closed) | Err(TryRecvError::Disconnected) => {
+                        closed = true;
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                }
+            }
+        }
+        for line in lines {
+            self.dispatch(&line);
+        }
+        if closed {
+            self.on_closed();
+        }
+    }
+
+    fn exit_tree(&mut self) {
+        self.stop_bridge();
+    }
+}
+
+#[godot_api]
+impl ForgeBridge {
+    /// Die Brücke ist gestartet und Forge geladen; `protocol` = Protokollversion.
+    #[signal]
+    fn bridge_ready(protocol: i64);
+
+    /// Jede empfangene Nachricht (vor den speziellen Signalen), z. B. für eigene Auswertung.
+    #[signal]
+    fn message_received(message: VarDictionary);
+
+    /// Ein Forge-Spielereignis: `{event, text, turn, phase}` (`event` = Forge-Klassenname,
+    /// z. B. "GameEventCardChangeZone").
+    #[signal]
+    fn forge_event(event: VarDictionary);
+
+    /// Ein ferngesteuerter Spieler muss entscheiden: `{id, kind, player, …}`.
+    /// kind "priority": `options` (Liste `{index, card, card_id, land, spell, text}`) und
+    /// `state` – Antwort mit [method answer] (Index oder -1 = passen).
+    /// kind "mulligan": `state`, `cards_to_return` – Antwort true = behalten.
+    #[signal]
+    fn decision_requested(request: VarDictionary);
+
+    /// Die gewählte Option wurde von Forge abgelehnt (`{player, option, reason}`);
+    /// es folgt eine neue Anfrage.
+    #[signal]
+    fn decision_rejected(info: VarDictionary);
+
+    /// Die Partie hat begonnen; `state` = Spielzustand (siehe Protokoll).
+    #[signal]
+    fn match_started(state: VarDictionary);
+
+    /// Antwort auf [method request_state].
+    #[signal]
+    fn state_received(state: VarDictionary);
+
+    /// Die Partie ist vorbei: `{winner, draw, reason}`.
+    #[signal]
+    fn game_over(result: VarDictionary);
+
+    /// Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed").
+    #[signal]
+    fn bridge_error(code: GString, message: GString);
+
+    /// Der Java-Prozess ist beendet (`exit_code` -1 = unbekannt / von uns beendet).
+    #[signal]
+    fn bridge_stopped(exit_code: i64);
+
+    /// Startet den Java-Prozess. Gibt false zurück, wenn er schon läuft oder nicht starten
+    /// konnte (dann zusätzlich [signal bridge_error]). Fertig ist er erst mit
+    /// [signal bridge_ready] (Forge braucht einige Sekunden zum Laden).
+    #[func]
+    fn start_bridge(&mut self) -> bool {
+        if self.child.is_some() {
+            return false;
+        }
+        let forge_dir = self.resolved_forge_dir();
+        let forge_jar = match self.resolved_forge_jar(&forge_dir) {
+            Some(j) => j,
+            None => {
+                self.emit_error("forge_jar_not_found", &format!("Kein Forge-Jar in {}", forge_dir.display()));
+                return false;
+            }
+        };
+        let bridge_jar = PathBuf::from(globalize(&self.bridge_jar));
+        if !bridge_jar.is_file() {
+            self.emit_error(
+                "bridge_jar_not_found",
+                &format!("{} fehlt – forge-bridge/build.sh ausführen", bridge_jar.display()),
+            );
+            return false;
+        }
+        let log_path = globalize(&GString::from("user://forge-bridge.log"));
+        let stderr = File::create(&log_path).map(Stdio::from).unwrap_or_else(|_| Stdio::null());
+
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let classpath = format!("{}{}{}", bridge_jar.display(), sep, forge_jar.display());
+        let spawned = Command::new(self.java_path.to_string())
+            .arg(format!("-Xmx{}m", self.java_max_memory_mb))
+            .arg("-Dfile.encoding=UTF-8")
+            .arg("-Djava.awt.headless=true")
+            .arg("-cp")
+            .arg(classpath)
+            .arg("clash.forgebridge.ForgeBridge")
+            .current_dir(&forge_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(stderr)
+            .spawn();
+        let mut child = match spawned {
+            Ok(c) => c,
+            Err(e) => {
+                self.emit_error("spawn_failed", &format!("{}: {e}", self.java_path));
+                return false;
+            }
+        };
+
+        let stdout = child.stdout.take().expect("stdout ist gepiped");
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                match line {
+                    Ok(l) => {
+                        if tx.send(Incoming::Line(l)).is_err() {
+                            return;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = tx.send(Incoming::Closed);
+        });
+
+        self.stdin = child.stdin.take();
+        self.child = Some(child);
+        self.rx = Some(rx);
+        self.ready = false;
+        true
+    }
+
+    /// Beendet die Brücke (Befehl "quit", nach 2 s hart beendet). Sendet
+    /// [signal bridge_stopped] mit -1, falls sie lief.
+    #[func]
+    fn stop_bridge(&mut self) {
+        let Some(mut child) = self.child.take() else {
+            return;
+        };
+        if let Some(mut stdin) = self.stdin.take() {
+            let _ = stdin.write_all(b"{\"cmd\":\"quit\"}\n");
+            let _ = stdin.flush();
+        }
+        self.rx = None;
+        self.ready = false;
+        thread::spawn(move || {
+            for _ in 0..20 {
+                if matches!(child.try_wait(), Ok(Some(_))) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+        });
+        self.signals().bridge_stopped().emit(-1);
+    }
+
+    /// Läuft der Java-Prozess?
+    #[func]
+    fn is_running(&self) -> bool {
+        self.child.is_some()
+    }
+
+    /// Hat Forge fertig geladen ([signal bridge_ready] empfangen)?
+    #[func]
+    fn is_ready(&self) -> bool {
+        self.ready
+    }
+
+    /// Schickt einen beliebigen Befehl (Dictionary mit "cmd", siehe Protokoll).
+    /// false, wenn die Brücke nicht läuft.
+    #[func]
+    fn send_command(&mut self, command: VarDictionary) -> bool {
+        let line = Json::stringify(&command.to_variant());
+        let Some(stdin) = self.stdin.as_mut() else {
+            return false;
+        };
+        let ok = writeln!(stdin, "{line}").and_then(|_| stdin.flush()).is_ok();
+        if !ok {
+            self.emit_error("write_failed", "Befehl konnte nicht gesendet werden");
+        }
+        ok
+    }
+
+    /// Verbindungstest; Antwort kommt als Nachricht `{type: "pong", nonce}`.
+    #[func]
+    fn ping(&mut self, nonce: i64) -> bool {
+        let mut d = VarDictionary::new();
+        d.set("cmd", "ping");
+        d.set("nonce", nonce);
+        self.send_command(d)
+    }
+
+    /// Startet eine Partie. `decks`: Pfade zu Forge-`.dck`-Dateien (`res://` erlaubt) oder
+    /// Namen von Decks aus Forges Constructed-Sammlung, einer je Sitzplatz (mind. 2).
+    /// `remote_seats`: Sitzplätze, die MTG Clash steuert (Rest = Forge-KI).
+    /// `names`: Spielernamen (darf kürzer sein). `seed` < 0 = zufällig.
+    #[func]
+    fn start_match(
+        &mut self,
+        decks: PackedStringArray,
+        remote_seats: PackedInt32Array,
+        names: PackedStringArray,
+        seed: i64,
+    ) -> bool {
+        let mut deck_arr = VarArray::new();
+        let mut remote_arr = VarArray::new();
+        for (i, d) in decks.as_slice().iter().enumerate() {
+            let path = if d.to_string().starts_with("res://") || d.to_string().starts_with("user://") {
+                GString::from(globalize(d).as_str())
+            } else {
+                d.clone()
+            };
+            deck_arr.push(&path.to_variant());
+            remote_arr.push(&remote_seats.as_slice().contains(&(i as i32)).to_variant());
+        }
+        let mut name_arr = VarArray::new();
+        for n in names.as_slice() {
+            name_arr.push(&n.to_variant());
+        }
+        let mut d = VarDictionary::new();
+        d.set("cmd", "start_match");
+        d.set("decks", &deck_arr);
+        d.set("remote", &remote_arr);
+        d.set("names", &name_arr);
+        if seed >= 0 {
+            d.set("seed", seed);
+        }
+        self.send_command(d)
+    }
+
+    /// Beantwortet eine Anfrage aus [signal decision_requested]. `choice`: bei "priority"
+    /// der Index der Option oder -1 (passen), bei "mulligan" true (behalten) / false.
+    #[func]
+    fn answer(&mut self, request_id: i64, choice: Variant) -> bool {
+        let mut d = VarDictionary::new();
+        d.set("cmd", "answer");
+        d.set("id", request_id);
+        d.set("choice", &normalize_numbers(choice));
+        self.send_command(d)
+    }
+
+    /// Fragt den aktuellen Spielzustand ab → [signal state_received]. `viewer` = Sitzplatz,
+    /// dessen Handkarten mitgeschickt werden (-1 = keiner).
+    #[func]
+    fn request_state(&mut self, viewer: i64) -> bool {
+        let mut d = VarDictionary::new();
+        d.set("cmd", "state");
+        d.set("viewer", viewer);
+        self.send_command(d)
+    }
+}
+
+impl ForgeBridge {
+    fn resolved_forge_dir(&self) -> PathBuf {
+        if !self.forge_dir.is_empty() {
+            return PathBuf::from(globalize(&self.forge_dir));
+        }
+        if let Ok(d) = std::env::var("FORGE_DIR") {
+            return PathBuf::from(d);
+        }
+        let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
+        Path::new(&home).join("Games").join("Forge")
+    }
+
+    fn resolved_forge_jar(&self, forge_dir: &Path) -> Option<PathBuf> {
+        if !self.forge_jar.is_empty() {
+            let p = PathBuf::from(globalize(&self.forge_jar));
+            return p.is_file().then_some(p);
+        }
+        let mut jars: Vec<PathBuf> = std::fs::read_dir(forge_dir)
+            .ok()?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    n.starts_with("forge-gui-desktop-") && n.ends_with("-jar-with-dependencies.jar")
+                })
+            })
+            .collect();
+        jars.sort();
+        jars.pop()
+    }
+
+    fn emit_error(&mut self, code: &str, message: &str) {
+        godot_warn!("ForgeBridge: {code}: {message}");
+        self.signals().bridge_error().emit(&GString::from(code), &GString::from(message));
+    }
+
+    fn dispatch(&mut self, line: &str) {
+        let parsed = Json::parse_string(line);
+        let Ok(dict) = normalize_numbers(parsed).try_to::<VarDictionary>() else {
+            self.emit_error("bad_message", line);
+            return;
+        };
+        if self.log_messages {
+            godot_print!("ForgeBridge <- {line}");
+        }
+        self.signals().message_received().emit(&dict);
+        let get_dict = |key: &str| {
+            dict.get(key).and_then(|v| v.try_to::<VarDictionary>().ok()).unwrap_or_default()
+        };
+        let kind = dict.get("type").map(|v| v.to_string()).unwrap_or_default();
+        match kind.as_str() {
+            "ready" => {
+                self.ready = true;
+                let protocol = dict.get("protocol").and_then(|v| v.try_to::<i64>().ok()).unwrap_or(0);
+                self.signals().bridge_ready().emit(protocol);
+            }
+            "event" => self.signals().forge_event().emit(&dict),
+            "request" => self.signals().decision_requested().emit(&dict),
+            "rejected" => self.signals().decision_rejected().emit(&dict),
+            "match_started" => self.signals().match_started().emit(&get_dict("state")),
+            "state" => self.signals().state_received().emit(&get_dict("state")),
+            "game_over" => self.signals().game_over().emit(&dict),
+            "error" => {
+                let s = |k: &str| dict.get(k).map(|v| v.to_string()).unwrap_or_default();
+                let (code, msg) = (s("code"), s("message"));
+                self.emit_error(&code, &msg);
+            }
+            _ => {}
+        }
+    }
+
+    fn on_closed(&mut self) {
+        self.rx = None;
+        self.stdin = None;
+        self.ready = false;
+        let code = self
+            .child
+            .take()
+            .and_then(|mut c| c.wait().ok())
+            .and_then(|s| s.code())
+            .map_or(-1, i64::from);
+        self.signals().bridge_stopped().emit(code);
+    }
+}
+
+/// `res://`/`user://` → absoluter Pfad (andere Pfade unverändert).
+fn globalize(path: &GString) -> String {
+    ProjectSettings::singleton().globalize_path(path).to_string()
+}
+
+/// Wandelt ganzzahlige floats (Godot-JSON kennt nur float) rekursiv in int um.
+fn normalize_numbers(v: Variant) -> Variant {
+    match v.get_type() {
+        VariantType::FLOAT => {
+            let f = v.to::<f64>();
+            if f.fract() == 0.0 && f.abs() < 9.0e15 {
+                (f as i64).to_variant()
+            } else {
+                v
+            }
+        }
+        VariantType::DICTIONARY => {
+            let src = v.to::<VarDictionary>();
+            let mut out = VarDictionary::new();
+            for (k, val) in src.iter_shared() {
+                out.set(&k, &normalize_numbers(val));
+            }
+            out.to_variant()
+        }
+        VariantType::ARRAY => {
+            let src = v.to::<VarArray>();
+            let mut out = VarArray::new();
+            for val in src.iter_shared() {
+                out.push(&normalize_numbers(val));
+            }
+            out.to_variant()
+        }
+        _ => v,
+    }
+}
