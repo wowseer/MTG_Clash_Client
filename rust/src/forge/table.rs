@@ -2,6 +2,8 @@
 //!
 //! - Baut aus Forges Spielzustand (`state`) echte [`Card3D`]-Karten in den Zonen der beiden
 //!   [`PlayerSeat`]s auf und hält sie synchron (Forge-Karten-ID → Karte).
+//! - Zeigt die Bibliothek als verdeckten Stapel in der Deck-Zone; gezogene Karten gleiten von
+//!   dort auf die Hand.
 //! - Hand → Tisch per Drag-and-Drop ([`TableController`]-Signal `card_dropped`) spielt die
 //!   Karte über Forge; spielbare Karten leuchten.
 //! - Liefert dem [`TurnHud`](crate::game::hud::TurnHud) seine Anzeige ([`HudView`]).
@@ -72,6 +74,9 @@ pub struct ForgeTable {
 
     /// Forge-Karten-ID → Karte auf dem Tisch. Verdeckte Gegner-Handkarten: negative Schlüssel.
     cards: HashMap<i64, Gd<Card3D>>,
+    /// Verdeckte Karten im Deck je Sitzplatz (Anzahl = Forges Bibliothek). Wird eine Karte
+    /// gezogen, wandert die oberste davon auf die Hand.
+    deck_cards: [Vec<Gd<Card3D>>; 2],
     /// Zuletzt angewandter Kartenstand je ID (zum Erkennen geänderter Werte).
     signatures: HashMap<i64, String>,
     /// Offene Entscheidung (priority / mulligan) des Spielers.
@@ -101,6 +106,7 @@ impl INode for ForgeTable {
             autostart: true,
             refresh_interval: 0.25,
             cards: HashMap::new(),
+            deck_cards: [Vec::new(), Vec::new()],
             signatures: HashMap::new(),
             pending: None,
             state: None,
@@ -442,25 +448,44 @@ impl ForgeTable {
             }
         }
 
-        // Nicht mehr sichtbare Karten entfernen (Bibliothek, Exil, gespielte Gegnerkarten …)
+        // Nicht mehr sichtbare Karten entfernen (Bibliothek, Exil …). Verdeckte Gegner-Handkarten
+        // werden aufgehoben: Taucht beim Gegner eine neue Karte auf (ausgespielt), nimmt sie deren
+        // Platz ein und gleitet so sichtbar aus seiner Hand.
         let keep: HashSet<i64> = wanted.iter().map(|w| w.0).collect();
         let gone: Vec<i64> = self.cards.keys().copied().filter(|k| !keep.contains(k)).collect();
+        let mut from_hidden_hand: [Vec<Gd<Card3D>>; 2] = [Vec::new(), Vec::new()];
         for key in gone {
-            if let Some(mut card) = self.cards.remove(&key) {
-                let zone = card.bind().get_zone();
-                if let Some(mut zone) = zone {
-                    zone.bind_mut().remove_card(card.clone());
-                }
-                card.queue_free();
-            }
             self.signatures.remove(&key);
+            let Some(card) = self.cards.remove(&key) else { continue };
+            if key < 0 {
+                let seat = card.bind().owner_seat.clamp(0, 1) as usize;
+                from_hidden_hand[seat].push(card);
+            } else {
+                discard_card(card);
+            }
+        }
+
+        // Deck auffüllen: Bibliothek + alle Karten, die diesmal neu auf die Hand kommen (die
+        // werden gleich von oben gezogen).
+        for (seat, p) in players.iter().enumerate().take(2) {
+            let hand = self.zones(seat).hand;
+            let drawn = wanted
+                .iter()
+                .filter(|w| w.3 == seat && Some(&w.2) == hand.as_ref() && !self.cards.contains_key(&w.0))
+                .count();
+            self.sync_deck(seat, get_int(p, "library").max(0) as usize + drawn);
         }
 
         for (key, data, mut zone, seat) in wanted {
             let card = match self.cards.get(&key) {
                 Some(c) => c.clone(),
                 None => {
-                    let c = self.spawn_card(seat);
+                    let to_hand = self.zones(seat).hand.as_ref() == Some(&zone);
+                    // Neue Handkarte: oberste Deckkarte ziehen; sonst aus der verdeckten Hand
+                    // (Gegner spielt aus); sonst neu über dem Deck erzeugen (z. B. Spielsteine)
+                    let c = if to_hand { self.deck_cards[seat].pop() } else { None }
+                        .or_else(|| from_hidden_hand[seat].pop())
+                        .unwrap_or_else(|| self.spawn_card(seat));
                     self.cards.insert(key, c.clone());
                     c
                 }
@@ -503,7 +528,29 @@ impl ForgeTable {
                 zone.bind_mut().layout();
             }
         }
+        for card in from_hidden_hand.into_iter().flatten() {
+            discard_card(card);
+        }
+        for (seat, p) in players.iter().enumerate().take(2) {
+            self.sync_deck(seat, get_int(p, "library").max(0) as usize);
+        }
         self.update_glow();
+    }
+
+    /// Bringt den verdeckten Stapel in der Deck-Zone von `seat` auf `count` Karten (neue Karten
+    /// unten einschieben, überzählige von oben entfernen).
+    fn sync_deck(&mut self, seat: usize, count: usize) {
+        let Some(mut deck) = self.zones(seat).deck else { return };
+        while self.deck_cards[seat].len() < count {
+            let card = self.spawn_card(seat);
+            deck.bind_mut().add_card(card.clone(), 0, 0.0);
+            self.deck_cards[seat].insert(0, card);
+        }
+        while self.deck_cards[seat].len() > count {
+            if let Some(card) = self.deck_cards[seat].pop() {
+                discard_card(card);
+            }
+        }
     }
 
     /// Neue Karte über dem Deck ihres Besitzers erzeugen (gleitet dann in die Zielzone).
@@ -527,6 +574,15 @@ impl ForgeTable {
         }
         card
     }
+}
+
+/// Karte aus ihrer Zone nehmen und löschen.
+fn discard_card(mut card: Gd<Card3D>) {
+    let zone = card.bind().get_zone();
+    if let Some(mut zone) = zone {
+        zone.bind_mut().remove_card(card.clone());
+    }
+    card.queue_free();
 }
 
 /// Forge-Phase (`PhaseType`-Name) → Index in [`Phase::ORDER`].

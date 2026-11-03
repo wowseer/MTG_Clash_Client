@@ -135,6 +135,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | Aktion | Wirkung |
 |---|---|
 | Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons hindurch |
+| Deck (rechts außen) | verdeckter Stapel, so groß wie deine Bibliothek in Forge. Gezogen wird automatisch im Ziehschritt (Forge); die Karte gleitet sichtbar vom Deck auf die Hand |
 | Spielbare Handkarten | leuchten, sobald Forge auf deine Priorität wartet und du sie jetzt spielen und bezahlen kannst |
 | Leuchtende Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (nicht über der Hand) | spielen: Forge bekommt die passende Option, zahlt das Mana automatisch und legt die Karte hin (Länder in die Länder-Reihe, bleibende Karten aufs Spielfeld, Zauber auf den Friedhof). Solange du ziehst, wird die Karte zusätzlich **groß ganz oben in der Bildmitte** angezeigt. Ungültige Züge springen an ihren Platz zurück |
 | Button „Passen“ bzw. Leertaste | Priorität abgeben |
@@ -178,7 +179,10 @@ vor `~/Games/Forge` verwendet.
 - Baut bei jedem neuen Forge-Zustand den Tisch ab: Für jede Forge-Karte eine `Card3D` (Bild aus
   Name, Typ, Kosten, Stärke/Widerstand); Hand → Hand, Länder → Länder-Reihe, übrige
   bleibende Karten → Spielfeld, Friedhof → Ablagestapel, Gegnerhand verdeckt; getappt wird
-  übernommen. Karten gleiten animiert an ihren Platz. Während Forge Ereignisse
+  übernommen. Karten gleiten animiert an ihren Platz. **Deck:** Die Bibliothek liegt als verdeckter
+  Stapel in der Deck-Zone (Anzahl = Forges `library`). Zieht Forge eine Karte, gleitet die oberste
+  Deckkarte auf die Hand und wird dort aufgedeckt (beim Gegner bleibt sie verdeckt). Spielt der
+  Gegner eine Karte aus, gleitet sie aus seiner verdeckten Hand auf den Tisch. Während Forge Ereignisse
   sendet, wird der Zustand gebündelt alle `refresh_interval` Sekunden neu abgefragt.
 - Liefert dem HUD Phase, Leben, Namen, Runde, Sieger, Button und Auswahlfenster (`hud_view()`).
 
