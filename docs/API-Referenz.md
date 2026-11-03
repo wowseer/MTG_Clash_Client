@@ -181,6 +181,7 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | `on_fan_done()` | `void` | „Fertig“ im Kartenfächer: Auswahl bzw. Anordnung an den `ForgeTable`. |
 | `on_fan_cancel()` | `void` | „Abbrechen“ im Kartenfächer. |
 | `on_badge_clicked(seat: int)` | `void` | Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den `ForgeTable` weitergeben. |
+| `on_choice_values_changed(value: float)` | `void` | Ein Zahlenfeld beim Verteilen wurde geändert: Summe und „Fertig“ aktualisieren. |
 | `on_choice_filter_changed(text: String)` | `void` | Suchfeld des Auswahlfensters geändert: Optionen filtern. |
 | `on_choice_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster: Antwort null. |
 | `on_next_pressed()` | `void` | Button „Passen“ bzw. Leertaste: ruft `ForgeTable.pass_priority()` auf. |

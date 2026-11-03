@@ -18,7 +18,6 @@ import forge.StaticData;
 import forge.card.ColorSet;
 import forge.card.ICardFace;
 import forge.card.MagicColor;
-import forge.ai.AiPlayDecision;
 import forge.ai.ComputerUtilMana;
 import forge.ai.PlayerControllerAi;
 import forge.game.Game;
@@ -28,6 +27,7 @@ import forge.game.card.CardState;
 import forge.game.card.CardCollection;
 import forge.game.card.CardCollectionView;
 import forge.game.card.CounterType;
+import forge.game.keyword.Keyword;
 import forge.game.player.DelayedReveal;
 import forge.util.collect.FCollectionView;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -40,10 +40,12 @@ import forge.game.player.PlayerActionConfirmMode;
 import forge.game.player.PlaySpellAbility;
 import forge.game.cost.CostPartMana;
 import forge.game.cost.CostPayment;
+import forge.game.cost.CostDecisionMakerBase;
 import forge.game.mana.ManaConversionMatrix;
 import forge.game.mana.ManaCostBeingPaid;
 import forge.card.mana.ManaCost;
 import forge.ai.AiCostDecision;
+import forge.ai.ComputerUtilCost;
 import forge.game.replacement.ReplacementEffect;
 import forge.game.spellability.AbilitySub;
 import forge.game.spellability.OptionalCostValue;
@@ -133,16 +135,6 @@ public class RemotePlayerController extends PlayerControllerAi {
             }
             choice -= 1;
             SpellAbility sa = options.get(choice);
-            if (sa.isDividedAsYouChoose()) {
-                // Schaden frei verteilen kommt später (Muster M8): Ziele und Verteilung von der KI.
-                // Ihre Meinung, ob der Zug sinnvoll ist, zählt nicht: abgelehnt wird nur, was
-                // wirklich nicht geht (nicht spielbar, nicht bezahlbar, kein gültiges Ziel).
-                AiPlayDecision decision = getAi().canPlaySa(sa);
-                if (!isPlayable(sa, decision)) {
-                    sendRejected(choice, action, String.valueOf(decision));
-                    continue;
-                }
-            }
             lastChoice = choice;
             lastAction = action;
             List<SpellAbility> result = new ArrayList<>();
@@ -170,18 +162,24 @@ public class RemotePlayerController extends PlayerControllerAi {
      * X, Ziele und das Bezahlen fragen dabei diese Klasse ({@link #chooseOptionalCosts},
      * {@link #chooseModeForAbility}, {@link #announceRequirements}, {@link #chooseTargetsFor},
      * {@link #applyManaToCost}). Abgebrochen → "rejected", Forge fragt erneut nach Priorität.
-     * Zauber mit frei verteiltem Schaden laufen vorerst über die KI.
      */
     @Override
     public boolean playChosenSpellAbility(SpellAbility sa) {
-        if (sa.isDividedAsYouChoose()) {
-            return super.playChosenSpellAbility(sa);
-        }
         boolean ok = PlaySpellAbility.playSpellAbility(this, getPlayer(), sa);
         if (!ok) {
             sendRejected(lastChoice, lastAction, "Abgebrochen oder kein gültiges Ziel");
         }
         return ok;
+    }
+
+    /**
+     * Kosten-Entscheider beim Bezahlen: Karten, die als Kosten geopfert, abgeworfen, getappt oder
+     * zurückgegeben werden, wählt der Spieler ({@link RemoteCostDecision}).
+     */
+    @Override
+    public CostDecisionMakerBase getCostDecisionMaker(Player player, SpellAbility ability, boolean effect,
+            String prompt) {
+        return new RemoteCostDecision(seat, player, ability, effect);
     }
 
     /** Manakosten: Forges Ablauf für menschliche Spieler, der {@link #applyManaToCost} fragt. */
@@ -201,6 +199,14 @@ public class RemotePlayerController extends PlayerControllerAi {
     public boolean applyManaToCost(ManaCostBeingPaid toPay, SpellAbility sa, String prompt,
             ManaConversionMatrix matrix, boolean effect) {
         Player me = getPlayer();
+        // Phyrexianisches Mana (CR 107.4f): je Symbol fragen, ob es mit 2 Leben bezahlt wird
+        while (toPay.containsPhyrexianMana() && me.canPayLife(2, false, sa)) {
+            Boolean life = Decisions.phyrexian(getGame(), seat, sa, toPay.toString());
+            if (life == null || !life || !toPay.payPhyrexian()) {
+                break;
+            }
+            me.payLife(2, sa, false);
+        }
         while (true) {
             if (!me.getManaPool().isEmpty()) {
                 me.getManaPool().payManaCostFromPool(toPay, sa, false, new ArrayList<>());
@@ -302,7 +308,31 @@ public class RemotePlayerController extends PlayerControllerAi {
             }
             cur.getTargets().add(e);
         }
-        return cur.isTargetNumberValid();
+        if (!cur.isTargetNumberValid()) {
+            return false;
+        }
+        // „… beliebig auf eine Anzahl Ziele aufgeteilt“ (CR 601.2d): Verteilung wählen
+        if (cur.isDividedAsYouChoose() && cur.getDividedValue() != null) {
+            int total = cur.getDividedValue();
+            List<GameEntity> picked = new ArrayList<>();
+            List<String> pickedLabels = new ArrayList<>();
+            for (int i : chosen) {
+                picked.add(candidates.get(i));
+                pickedLabels.add(labels.get(i));
+            }
+            if (picked.size() == 1) {
+                cur.addDividedAllocation(picked.get(0), total);
+            } else {
+                List<Integer> parts = Decisions.divide(getGame(), seat, cur, total, picked, pickedLabels, 1);
+                if (parts == null) {
+                    return false;
+                }
+                for (int i = 0; i < picked.size(); i++) {
+                    cur.addDividedAllocation(picked.get(i), parts.get(i));
+                }
+            }
+        }
+        return true;
     }
 
     /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */
@@ -328,15 +358,65 @@ public class RemotePlayerController extends PlayerControllerAi {
         return true;
     }
 
-    private static boolean isPlayable(SpellAbility sa, AiPlayDecision decision) {
-        if (decision != null && decision.willingToPlay()) {
-            return true;
+    /**
+     * {@code Decision::AssignCombatDamage} (CR 510.1c–d): Kampfschaden auf mehrere Blocker bzw. mit
+     * Trampelschaden verteilen. Ein Blocker ohne Trampeln: kein Fragen. Ungültig (Summe falsch,
+     * Trampelschaden ohne tödlichen Schaden an allen Blockern) → KI verteilt.
+     */
+    @Override
+    public Map<Card, Integer> assignCombatDamage(Card attacker, CardCollectionView blockers,
+            CardCollectionView remaining, int damageDealt, GameEntity defender, boolean overrideOrder) {
+        List<Card> bl = new ArrayList<>(blockers);
+        boolean trample = attacker.hasKeyword(Keyword.TRAMPLE) && defender != null;
+        if (bl.size() == 1 && !trample) {
+            Map<Card, Integer> one = new HashMap<>();
+            one.put(bl.get(0), damageDealt);
+            return one;
         }
-        if (decision == AiPlayDecision.CantPlaySa || decision == AiPlayDecision.CantAfford
-                || decision == AiPlayDecision.CantAffordX) {
+        boolean deathtouch = attacker.hasKeyword(Keyword.DEATHTOUCH);
+        List<Integer> lethal = new ArrayList<>();
+        bl.forEach(b -> lethal.add(deathtouch ? Math.min(1, b.getLethalDamage()) : Math.max(0, b.getLethalDamage())));
+        List<Integer> values = Decisions.assignDamage(getGame(), seat, attacker, damageDealt, bl, lethal,
+                trample ? defender : null);
+        if (values != null) {
+            int sum = values.stream().mapToInt(Integer::intValue).sum();
+            int toDefender = values.size() > bl.size() ? values.get(bl.size()) : 0;
+            boolean allLethal = true;
+            for (int i = 0; i < bl.size(); i++) {
+                allLethal &= values.get(i) >= lethal.get(i);
+            }
+            boolean ok = sum == damageDealt && values.stream().allMatch(v -> v >= 0) && (toDefender == 0 || allLethal);
+            if (ok) {
+                Map<Card, Integer> map = new HashMap<>();
+                for (int i = 0; i < bl.size(); i++) {
+                    if (values.get(i) > 0) {
+                        map.put(bl.get(i), values.get(i));
+                    }
+                }
+                if (toDefender > 0) {
+                    map.put(null, toDefender);
+                }
+                return map;
+            }
+        }
+        return super.assignCombatDamage(attacker, blockers, remaining, damageDealt, defender, overrideOrder);
+    }
+
+    /**
+     * {@code Decision::PayUnlessCost} (CR 118.12): „…, es sei denn, du zahlst …“. Nur wenn die
+     * Kosten bezahlbar sind; Ja → Bezahlen wie beim Wirken (Mana über {@code PayMana}).
+     */
+    @Override
+    public boolean payCostToPreventEffect(Cost cost, SpellAbility sa, boolean alreadyPaid,
+            FCollectionView<Player> allPayers) {
+        if (!ComputerUtilCost.canPayCost(cost, sa, getPlayer(), true)) {
             return false;
         }
-        return !sa.usesTargeting() || sa.isTargetNumberValid();
+        Boolean pay = Decisions.payUnless(getGame(), seat, sa, cost.toSimpleString());
+        if (pay == null) {
+            return super.payCostToPreventEffect(cost, sa, alreadyPaid, allPayers);
+        }
+        return pay && PlaySpellAbility.payCostDuringAbilityResolve(this, getPlayer(), cost, sa, null);
     }
 
     /** Höchstens so viele ungültige Kampf-Erklärungen, danach entscheidet die KI. */
@@ -613,6 +693,31 @@ public class RemotePlayerController extends PlayerControllerAi {
         CardCollection result = new CardCollection();
         order.forEach(i -> result.add(list.get(i)));
         return result;
+    }
+
+    /**
+     * Eigene ausgelöste Fähigkeiten auf den Stapel legen wie Forges menschlicher Controller:
+     * Reihenfolge ({@link #orderSimultaneousSa}), dann je Trigger
+     * {@code PlaySpellAbility.playSpellAbility} – Modi, Ziele ({@code ChooseTargets}) und Kosten
+     * wählt dabei der Spieler. Kopien (z. B. von Zaubern) laufen wie bisher über die KI-Logik.
+     */
+    @Override
+    public void orderAndPlaySimultaneousSa(List<SpellAbility> activePlayerSAs) {
+        for (SpellAbility sa : orderSimultaneousSa(activePlayerSAs)) {
+            if (sa.isTrigger() && !sa.isCopied()) {
+                PlaySpellAbility.playSpellAbility(this, getPlayer(), sa);
+            } else {
+                List<SpellAbility> single = new ArrayList<>();
+                single.add(sa);
+                super.orderAndPlaySimultaneousSa(single);
+            }
+        }
+    }
+
+    /** Trigger, die ohne Stapel wirken: wie Forges menschlicher Controller (Ziele wählt der Spieler). */
+    @Override
+    public boolean playTrigger(Card host, WrappedAbility wrapperAbility, boolean isMandatory) {
+        return PlaySpellAbility.playSpellAbilityNoStack(this, getPlayer(), wrapperAbility, false);
     }
 
     /** {@code Decision::OrderTriggers} (CR 603.3b): eigene gleichzeitige Trigger ordnen. */

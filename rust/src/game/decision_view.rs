@@ -9,12 +9,12 @@ use godot::prelude::*;
 
 use super::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::mana::ManaType;
-use crate::rules::{Choice, Color, Decision, OptionText, Request};
+use crate::rules::{Choice, Color, Decision, OptionText, Request, Target};
 
 /// Auswahlfenster für die Anfrage, oder `None`, wenn sie nicht im Fenster beantwortet wird.
-/// `name_of(i)` liefert den Anzeigenamen des Kandidaten `i` von `ChooseTargets`, falls die
+/// `name_of(t)` liefert den Anzeigenamen eines Ziels bzw. einer Karte, falls die
 /// Anfrage keine `labels` mitbringt.
-pub fn hud_choice(req: &Request, name_of: &dyn Fn(usize) -> String) -> Option<HudChoice> {
+pub fn hud_choice(req: &Request, name_of: &dyn Fn(Target) -> String) -> Option<HudChoice> {
     let plain = |texts: Vec<String>| -> Vec<ChoiceOption> {
         texts.into_iter().map(|text| ChoiceOption { text, color: None }).collect()
     };
@@ -34,7 +34,7 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(usize) -> String) -> Option<Hu
             single_or_multi(*min, *max),
             plain(
                 (0..candidates.len())
-                    .map(|i| Some(req.label(i)).filter(|l| !l.is_empty()).unwrap_or_else(|| name_of(i)))
+                    .map(|i| Some(req.label(i)).filter(|l| !l.is_empty()).unwrap_or_else(|| name_of(candidates[i])))
                     .collect(),
             ),
         ),
@@ -53,6 +53,16 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(usize) -> String) -> Option<Hu
             (tr!("Typ wählen", "Choose a type").into(), ChoiceMode::Single, plain(options.clone()))
         }
         Decision::Confirm { prompt, .. } => (prompt.clone(), ChoiceMode::Confirm, yes_no()),
+        Decision::PayUnlessCost { cost, .. } => (
+            trf!("Zahlen, um den Effekt zu verhindern: {cost}?", "Pay {cost} to prevent the effect?"),
+            ChoiceMode::Confirm,
+            plain(vec![tr!("Zahlen", "Pay").into(), tr!("Nicht zahlen", "Don't pay").into()]),
+        ),
+        Decision::PayLifeForPhyrexian { symbol, .. } => (
+            trf!("Phyrexianisches Mana ({symbol}): mit 2 Leben bezahlen?", "Phyrexian mana ({symbol}): pay 2 life?"),
+            ChoiceMode::Confirm,
+            plain(vec![tr!("2 Leben zahlen", "Pay 2 life").into(), tr!("Mit Mana zahlen", "Pay with mana").into()]),
+        ),
         Decision::OptionalTrigger { description, .. } => (
             trf!("Ausgelöste Fähigkeit nutzen?\n{description}", "Use the triggered ability?\n{description}"),
             ChoiceMode::Confirm,
@@ -61,6 +71,51 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(usize) -> String) -> Option<Hu
         Decision::ChooseOption { prompt, options, .. } => (prompt.clone(), ChoiceMode::Single, ext_options(options)),
         Decision::ChooseOptions { prompt, options, min, max, .. } => {
             (prompt.clone(), single_or_multi(*min, *max), ext_options(options))
+        }
+        Decision::AssignCombatDamage { attacker, amount, blockers, lethal, trample_to, .. } => {
+            let mut options: Vec<String> = blockers
+                .iter()
+                .zip(lethal.iter().chain(std::iter::repeat(&0)))
+                .map(|(b, l)| trf!("{} (tödlich: {})", "{} (lethal: {})", name_of(Target::Card(*b)), l))
+                .collect();
+            // Vorbelegung: tödlicher Schaden der Reihe nach, Rest aufs Trampel-Ziel bzw. den letzten Blocker
+            let mut left = *amount as i64;
+            let mut initial: Vec<i64> = lethal
+                .iter()
+                .take(blockers.len())
+                .map(|l| {
+                    let v = (*l as i64).min(left);
+                    left -= v;
+                    v
+                })
+                .collect();
+            initial.resize(blockers.len(), 0);
+            if let Some(t) = trample_to {
+                options.push(trf!("{} (Trampeln)", "{} (trample)", name_of(*t)));
+                initial.push(left);
+            } else if let Some(last) = initial.last_mut() {
+                *last += left;
+            }
+            (
+                trf!("Kampfschaden von {} verteilen", "Assign combat damage of {}", name_of(Target::Card(*attacker))),
+                ChoiceMode::Distribute { total: *amount as i64, mins: vec![0; options.len()], initial },
+                plain(options),
+            )
+        }
+        Decision::DivideAmount { amount, targets, min_each, .. } => {
+            let options: Vec<String> = (0..targets.len())
+                .map(|i| Some(req.label(i)).filter(|l| !l.is_empty()).unwrap_or_else(|| name_of(targets[i])))
+                .collect();
+            let min = *min_each as i64;
+            let mut initial = vec![min; targets.len()];
+            if let Some(first) = initial.first_mut() {
+                *first += *amount as i64 - min * targets.len() as i64;
+            }
+            (
+                trf!("{amount} auf die Ziele verteilen", "Divide {amount} among the targets"),
+                ChoiceMode::Distribute { total: *amount as i64, mins: vec![min; targets.len()], initial },
+                plain(options),
+            )
         }
         Decision::OrderTriggers { descriptions, .. } => (
             tr!("Reihenfolge wählen: in der Reihenfolge anklicken (erste zuerst)", "Choose the order: click in order (first goes first)").into(),
@@ -125,7 +180,14 @@ pub fn to_choice(decision: &Decision, raw: &Variant) -> Option<Choice> {
         }
         Decision::ChooseOptions { .. } => Choice::Modes(indices()?),
         Decision::OrderTriggers { .. } => Choice::Order(indices()?),
-        Decision::Confirm { .. } | Decision::OptionalTrigger { .. } => {
+        Decision::AssignCombatDamage { .. } | Decision::DivideAmount { .. } => {
+            let arr = raw.try_to::<VarArray>().ok()?;
+            Choice::Damage(arr.iter_shared().map(|v| v.try_to::<i64>().ok().map(|n| n.max(0) as u32)).collect::<Option<_>>()?)
+        }
+        Decision::Confirm { .. }
+        | Decision::OptionalTrigger { .. }
+        | Decision::PayUnlessCost { .. }
+        | Decision::PayLifeForPhyrexian { .. } => {
             if yes()? {
                 Choice::Yes
             } else {

@@ -554,6 +554,91 @@ final class Decisions {
         return valid(order, descriptions.size(), descriptions.size(), descriptions.size(), false) ? order : null;
     }
 
+    /**
+     * {@code AssignCombatDamage} (CR 510.1c–d): Schaden von {@code attacker} ({@code amount}) auf die
+     * Blocker verteilen; {@code lethal[i]} = tödlicher Schaden für Blocker i, {@code trampleTo} =
+     * angegriffener Spieler/Planeswalker bei Trampelschaden (sonst null). Gibt die Mengen je Blocker
+     * zurück, bei Trampelschaden gefolgt von der Menge an {@code trampleTo}; null = unlesbar.
+     */
+    static List<Integer> assignDamage(Game game, int seat, Card attacker, int amount, List<Card> blockers,
+            List<Integer> lethal, GameEntity trampleTo) {
+        JsonObject d = decision("AssignCombatDamage", seat);
+        d.addProperty("attacker", attacker.getId());
+        d.addProperty("amount", amount);
+        JsonArray bl = new JsonArray();
+        blockers.forEach(b -> bl.add(b.getId()));
+        d.add("blockers", bl);
+        JsonArray le = new JsonArray();
+        lethal.forEach(le::add);
+        d.add("lethal", le);
+        if (trampleTo != null) {
+            d.add("trample_to", targetJson(game, trampleTo));
+        }
+        List<Card> info = new ArrayList<>(blockers);
+        info.add(0, attacker);
+        JsonElement raw = askRaw(game, seat, d, "Kampfschaden von " + attacker.getName() + " verteilen (" + amount + ")",
+                null, attacker, false, null, info);
+        List<Integer> values = raw != null && raw.isJsonObject() ? intList(raw.getAsJsonObject(), "Damage", "amounts") : null;
+        int expected = blockers.size() + (trampleTo != null ? 1 : 0);
+        if (values == null || values.size() < blockers.size() || values.size() > expected) {
+            return null;
+        }
+        return values;
+    }
+
+    /**
+     * Erweiterung {@code DivideAmount} (CR 601.2d): {@code amount} beim Wirken auf die gewählten
+     * Ziele verteilen, jedes Ziel mindestens {@code min_each}. Gibt die Mengen je Ziel zurück oder
+     * null (abgebrochen / unlesbar).
+     */
+    static List<Integer> divide(Game game, int seat, SpellAbility sa, int amount, List<GameEntity> targets,
+            List<String> labels, int minEach) {
+        JsonObject d = decision("DivideAmount", seat);
+        d.addProperty("source", sa.getHostCard() == null ? -1 : sa.getHostCard().getId());
+        d.addProperty("amount", amount);
+        JsonArray ts = new JsonArray();
+        targets.forEach(t -> ts.add(targetJson(game, t)));
+        d.add("targets", ts);
+        d.addProperty("min_each", minEach);
+        JsonObject c = ask(game, seat, d, amount + " verteilen", sa, null, true, labels);
+        List<Integer> values = c == null ? null : intList(c, "Damage", "amounts");
+        if (values == null || values.size() != targets.size()) {
+            return null;
+        }
+        int sum = 0;
+        for (int v : values) {
+            if (v < minEach) {
+                return null;
+            }
+            sum += v;
+        }
+        return sum == amount ? values : null;
+    }
+
+    /** {@code PayUnlessCost} (CR 118.12): Kosten zahlen, um den Effekt zu verhindern? */
+    static Boolean payUnless(Game game, int seat, SpellAbility sa, String cost) {
+        JsonObject d = decision("PayUnlessCost", seat);
+        d.addProperty("cost", cost);
+        JsonObject c = ask(game, seat, d, "Zahlen, um den Effekt zu verhindern: " + cost + "?", sa, null, false, null);
+        return switch (type(c)) {
+            case "Yes" -> true;
+            case "No" -> false;
+            default -> null;
+        };
+    }
+
+    /** {@code PayLifeForPhyrexian}: phyrexianisches Symbol mit 2 Leben bezahlen? */
+    static Boolean phyrexian(Game game, int seat, SpellAbility sa, String symbol) {
+        JsonObject d = decision("PayLifeForPhyrexian", seat);
+        d.addProperty("symbol", symbol);
+        JsonObject c = ask(game, seat, d, "Phyrexianisches Mana " + symbol + " mit 2 Leben bezahlen?", sa, null, false, null);
+        return switch (type(c)) {
+            case "Yes" -> true;
+            case "No" -> false;
+            default -> null;
+        };
+    }
+
     // ------------------------------------------------------------------ Erweiterungen
 
     /** Erweiterung {@code ChooseOption}: Index der Option. Eine Option ohne Abbrechen: nicht fragen. */

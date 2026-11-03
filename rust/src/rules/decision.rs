@@ -142,11 +142,13 @@ pub enum Decision {
     ChooseOptions { player: PlayerId, prompt: String, options: Vec<OptionText>, min: u32, max: u32 },
     /// **Erweiterung:** Zahl zwischen `min` und `max`; Antwort `Choice::Number(n)`.
     ChooseNumber { player: PlayerId, prompt: String, min: u32, max: u32 },
+    /// **Erweiterung** (CR 601.2d): `amount` beim Wirken auf die gewählten `targets` verteilen,
+    /// jedes mindestens `min_each`; Antwort `Choice::Damage(mengen)` in Ziel-Reihenfolge.
+    DivideAmount { player: PlayerId, source: CardId, amount: u32, targets: Vec<Target>, min_each: u32 },
 }
 
 /// Antwort des Spielers.
 #[derive(Debug, Clone, PartialEq)]
-#[expect(dead_code, reason = "vollständiges NeoForge-Modell; Pay, Attackers, Blocks … folgen mit den nächsten Bedienmustern")]
 pub enum Choice {
     Keep,
     Mulligan,
@@ -197,7 +199,8 @@ impl Decision {
             | Confirm { player, .. }
             | ChooseOption { player, .. }
             | ChooseOptions { player, .. }
-            | ChooseNumber { player, .. } => *player,
+            | ChooseNumber { player, .. }
+            | DivideAmount { player, .. } => *player,
         }
     }
 }
@@ -496,6 +499,13 @@ impl Decision {
             "ChooseNumber" => {
                 Decision::ChooseNumber { player, prompt: o.str("prompt"), min: o.u32("min"), max: o.u32("max") }
             }
+            "DivideAmount" => Decision::DivideAmount {
+                player,
+                source: o.u32("source"),
+                amount: o.u32("amount"),
+                targets: targets("targets"),
+                min_each: o.u32("min_each"),
+            },
             _ => return None,
         })
     }

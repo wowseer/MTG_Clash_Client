@@ -84,8 +84,10 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 `DeclareAttackers` / `DeclareBlockers` per Klick mit Kampfpfeilen, `PayMana` (Quellen anklicken,
 Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.playSpellAbility`
 (im Jar), der die überschriebenen Controller-Methoden fragt. Kartenfächer (`card_fan.rs`) für
-`ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Nächster Schritt laut
-Fahrplan: `AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`, Kosten-Auswahlen.
+`ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Kosten-Auswahlen
+(`RemoteCostDecision`), `AssignCombatDamage`, `DivideAmount`, `PayUnlessCost`,
+`PayLifeForPhyrexian`, Trigger über den menschlichen Ablauf. Nächster Schritt laut Fahrplan:
+fehlender Zustand (Stack, Exil, Marken, angelegte Karten, Regeltext, Protokoll).
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
@@ -111,7 +113,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 4. ~~`PayMana`~~ ✔ (offen: Pool-Mana gezielt wählen, `chooseManaFromPool`, andere Kosten wie Opfern/Abwerfen)
 5. ~~`Priority` mit `Action::Activate` per Klick, Menü bei mehreren~~ ✔
 6. ~~`ChooseCards`, `Scry`, `OrderTriggers`, `MulliganBottom`~~ ✔ (offen: Kosten-Auswahlen wie Opfern/Abwerfen als Kosten, Delve, Convoke)
-7. `AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`
+7. ~~`AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`, Kosten, Trigger-Ziele~~ ✔ (offen: Exil als Kosten, Delve, Convoke, Erschöpfen/Rekrutieren, Blocker-Reihenfolge, Kopien)
 
 **Zustand, der noch fehlt:**
 - Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile
@@ -146,7 +148,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 | Spiel starten | Godot öffnen, F5 (Hauptszene `godot/table.tscn`) |
 | API-Referenz | `python3 tools/gen_api_doc.py` → muss „ohne Beschreibung: 0“ melden |
 
-**Testdecks:** `forge-bridge/testdecks/` (`spieler.dck` / `gegner.dck` = gemischte Standard-Decks; `auswahl.dck` löst viele Auswahl-Dialoge aus; `kartenwahl.dck` Hellsicht, Abwerfen, Bibliothek durchsuchen; `rot.dck` / `gruen.dck` nur Länder + eine Kreatur).
+**Testdecks:** `forge-bridge/testdecks/` (`spieler.dck` / `gegner.dck` = gemischte Standard-Decks; `auswahl.dck` löst viele Auswahl-Dialoge aus; `kartenwahl.dck` Hellsicht, Abwerfen, Bibliothek durchsuchen; `kosten.dck` + `gegner_counter.dck` Kosten, Verteilen, phyrexianisches Mana, Trigger-Ziele, Mana Leak; `rot.dck` / `gruen.dck` nur Länder + eine Kreatur).
 
 **Partie ohne Fenster testen:** ein temporäres SceneTree-Skript (z. B. `godot/_probe.gd`, danach
 wieder löschen), das `res://table.tscn` lädt, sich an `ForgeBridge.decision_requested` hängt und im

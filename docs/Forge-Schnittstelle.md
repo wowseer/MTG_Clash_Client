@@ -71,7 +71,13 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `arrangeForScry`, `arrangeForSurveil` | `Scry { cards, graveyard }` | `Arrange { top, bottom }` |
 | `orderSimultaneousSa` (eigene Trigger), `orderMoveToZoneList` | `OrderTriggers { descriptions }` | `Order([…])` (erstes zuerst) |
 | `tuckCardsViaMulligan` | `MulliganBottom { hand, count }` | `Cards([…])` |
-| Schaden verteilen, andere Kosten (Opfern, Abwerfen als Kosten …), Ziele ausgelöster Fähigkeiten | (`AssignCombatDamage` …) | **vorerst Forge-KI** |
+| Kosten: Opfern, Abwerfen, Tappen, Zurückgeben (`getCostDecisionMaker` → `RemoteCostDecision`) | `ChooseCards { reason: SacrificeCost / DiscardCost / TapCost / ReturnCost }` | `Cards([…])` |
+| `assignCombatDamage` | `AssignCombatDamage { attacker, amount, blockers, lethal, trample_to }` | `Damage([je Blocker…, Trampel])` |
+| `chooseTargetsFor` bei „DividedAsYouChoose“ | `DivideAmount { source, amount, targets, min_each }` (**Erweiterung**) | `Damage([…])` |
+| `payCostToPreventEffect` | `PayUnlessCost { cost }` (nur wenn bezahlbar) | `Yes` / `No` |
+| Phyrexianisches Mana in `applyManaToCost` | `PayLifeForPhyrexian { symbol }` | `Yes` / `No` |
+| `orderAndPlaySimultaneousSa`, `playTrigger` (eigene Trigger) | über `PlaySpellAbility.playSpellAbility` bzw. `playSpellAbilityNoStack` (wie Forges menschlicher Controller): Modi, Ziele, Kosten fragt der Spieler | – |
+| Exil als Kosten, Delve, Convoke, Sonderkosten, Erschöpfen/Rekrutieren, Blocker-Reihenfolge, Kopien | – | **vorerst Forge-KI** |
 | Gegner (nicht ferngesteuerte Sitzplätze) | – | Forge-KI |
 
 **Ablauf beim Spielen** (`RemotePlayerController.playChosenSpellAbility`): Die Brücke ruft Forges
@@ -81,8 +87,9 @@ eigenen Ablauf für menschliche Spieler auf, `forge.game.player.PlaySpellAbility
 (`announceRequirements`) → Ziele (`setupTargets` → `chooseTargetsFor`) → Kosten
 (`CostPayment` mit `getCostDecisionMaker`; Mana über `payManaCost` → `PlaySpellAbility.payManaCost`
 → `applyManaToCost` = `PayMana`; andere Kosten entscheidet vorerst die KI). Abbruch an jeder Stelle
-→ Forge nimmt das Wirken zurück, die Brücke meldet `rejected`. Zauber, deren Schaden frei verteilt
-wird, laufen noch komplett über die KI.
+→ Forge nimmt das Wirken zurück, die Brücke meldet `rejected`. Frei verteilten Schaden fragt
+`chooseTargetsFor` nach der Zielwahl als `DivideAmount` (Forges GUI macht das ebenfalls bei der
+Zielauswahl, `addDividedAllocation`).
 
 **Mana bezahlen** (`applyManaToCost`): schwebendes Mana im Pool wird zuerst eingesetzt
 (`ManaPool.payManaCostFromPool`). Danach `PayMana` mit allen jetzt aktivierbaren Manafähigkeiten
@@ -115,6 +122,7 @@ damit die UI unverändert mit NeoForge läuft:
 | `Decision::ChooseOption { player, prompt, options: [{text, color?}] }` → `Choice::Number(index)` | allgemeine Einfachauswahl (siehe Tabelle oben); `color` = `W U B R G` oder `C` (farblos) |
 | `Decision::ChooseOptions { player, prompt, options, min, max }` → `Choice::Modes(indizes)` | allgemeine Mehrfachauswahl |
 | `Decision::ChooseNumber { player, prompt, min, max }` → `Choice::Number(n)` | Zahl mit Untergrenze ≠ 0 bzw. außerhalb von X |
+| `Decision::DivideAmount { player, source, amount, targets, min_each }` → `Choice::Damage(mengen)` | Menge beim Wirken auf die gewählten Ziele verteilen (CR 601.2d) |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
 | Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) und Kartendaten (`cards`: Liste wie im `state`) der Karten, um die es geht – auch aus verdeckten Zonen, z. B. bei `ChooseCards` mit `Search` |
 
@@ -243,6 +251,8 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `ChooseTargets` | gültige Karten leuchten, wählbare Spieler-Medaillons pulsieren golden; Klick wählt (Signal `ForgeTable.choice_option_clicked` → Auswahlfenster am rechten Rand); gewählte Ziele golden markiert, Pfeile Quelle → Ziel (`TargetArrows`) |
 | `ChooseCards` / `MulliganBottom` / `Scry` | Kartenfächer-Overlay (`card_fan.rs`): Karten groß (Tischkarten bzw. temporäre Karten aus `cards`), Klick wählt bzw. wechselt die Reihe; „Fertig“ → `ForgeTable.submit_fan` → `Cards` / `Arrange` |
 | `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
+| `AssignCombatDamage` / `DivideAmount` | Auswahlfenster „Verteilen“: Zahlenfeld je Empfänger, vorbelegt, Summenanzeige, „OK“ nur bei richtiger Summe → `Damage` |
+| `PayUnlessCost` / `PayLifeForPhyrexian` | Ja/Nein-Fenster („Zahlen“ / „Nicht zahlen“, „2 Leben zahlen“ / „Mit Mana zahlen“) |
 | `PayMana` | Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
@@ -270,7 +280,11 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Kartenfächer getestet mit `testdecks/kartenwahl.dck`: `MulliganBottom` (7 Karten, 1 unter die
   Bibliothek), `Scry` (Magma Jet, eine Karte nach unten), `ChooseCards` mit `Search`
   (Wayfarer's Bauble, 20 Karten aus der Bibliothek).
-- Noch nicht ferngesteuert: andere Kosten als Mana, Kampfschaden verteilen, Ziele
+- Kosten, Verteilen, phyrexianisches Mana und Trigger-Ziele getestet mit `testdecks/kosten.dck`
+  gegen `testdecks/gegner_counter.dck`: Gut Shot (2 Leben), Forked Bolt (1+1), Cathartic Reunion
+  (2 Karten abwerfen als Kosten), Flametongue Kavu (Trigger-Ziel); Kampfschaden-Verteilung mit
+  künstlicher Anfrage (Vorbelegung 2/3/1 bei Trampeln, Summenprüfung).
+- Noch nicht ferngesteuert: Exil als Kosten, Delve, Convoke, Sonderkosten,
   ausgelöster Fähigkeiten; Ziele werden noch als Liste gewählt, nicht per Klick auf dem Tisch;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

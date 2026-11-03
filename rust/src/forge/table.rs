@@ -494,17 +494,15 @@ impl ForgeTable {
         });
         let combat_choice = self.pending.as_ref().and_then(|req| self.combat_choice(req));
         let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().and_then(|req| {
-            let name_of = |i: usize| match &req.decision {
-                Decision::ChooseTargets { candidates, .. } => match candidates.get(i) {
-                    Some(Target::Player(p)) => self.seat_name(*p as usize).to_string(),
-                    Some(Target::Card(c)) => self
-                        .cards
-                        .get(&(*c as i64))
-                        .map(|card| card.bind().card_name().to_string())
-                        .unwrap_or_else(|| format!("#{c}")),
-                    None => String::new(),
-                },
-                _ => String::new(),
+            // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
+            let name_of = |t: Target| match t {
+                Target::Player(p) => self.seat_name(p as usize).to_string(),
+                Target::Card(c) => self
+                    .cards
+                    .get(&i64::from(c))
+                    .map(|card| card.bind().card_name().to_string())
+                    .or_else(|| req.cards.iter().find(|d| get_int(d, "id") == i64::from(c)).map(|d| get_str(d, "name")))
+                    .unwrap_or_else(|| format!("#{c}")),
             };
             decision_view::hud_choice(req, &name_of)
         }));
@@ -1232,6 +1230,7 @@ fn decision_name(d: &Decision) -> &'static str {
         Decision::ChooseOption { .. } => "ChooseOption",
         Decision::ChooseOptions { .. } => "ChooseOptions",
         Decision::ChooseNumber { .. } => "ChooseNumber",
+        Decision::DivideAmount { .. } => "DivideAmount",
     }
 }
 

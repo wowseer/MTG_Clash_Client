@@ -33,6 +33,10 @@ pub enum ChoiceMode {
     Confirm,
     /// Zahl zwischen `min` und `max`.
     Number { min: i64, max: i64 },
+    /// Menge `total` auf die Optionen verteilen (je ein Zahlenfeld, Option i mindestens
+    /// `mins[i]`, vorbelegt mit `initial`); Antwort: Array der Mengen. „Fertig“ nur, wenn die
+    /// Summe stimmt.
+    Distribute { total: i64, mins: Vec<i64>, initial: Vec<i64> },
     /// Keine Optionen, nur ein Knopf mit `label` (die Auswahl passiert auf dem Tisch, z. B.
     /// Angreifer/Blocker); Antwort `true`.
     Done { label: String },
@@ -91,6 +95,9 @@ pub struct ChoicePanel {
     hud: Option<Gd<Object>>,
     done: Option<Gd<Button>>,
     spin: Option<Gd<SpinBox>>,
+    /// Verteilen: Zahlenfelder je Option und Summenanzeige.
+    spins: Vec<Gd<SpinBox>>,
+    sum_label: Option<Gd<godot::classes::Label>>,
     /// Feld, das beim Öffnen den Tastaturfokus bekommt (Suchfeld der Optionsliste).
     edit_focus: Option<Gd<LineEdit>>,
 }
@@ -125,6 +132,8 @@ impl ChoicePanel {
             hud: None,
             done: None,
             spin: None,
+            spins: Vec::new(),
+            sum_label: None,
             edit_focus: None,
         }
     }
@@ -258,6 +267,10 @@ impl ChoicePanel {
             }
             ChoiceMode::Number { .. } => self.spin.as_ref().map(|s| (s.get_value().round() as i64).to_variant()),
             ChoiceMode::Done { .. } => Some(true.to_variant()),
+            ChoiceMode::Distribute { total, .. } => {
+                let values: Vec<i64> = self.spins.iter().map(|s| s.get_value().round() as i64).collect();
+                (values.iter().sum::<i64>() == *total).then(|| values.into_iter().map(|v| v.to_variant()).collect::<VarArray>().to_variant())
+            }
             _ => None,
         }
     }
@@ -273,6 +286,8 @@ impl ChoicePanel {
         self.more = None;
         self.done = None;
         self.spin = None;
+        self.spins.clear();
+        self.sum_label = None;
         self.edit_focus = None;
     }
 
@@ -344,10 +359,38 @@ impl ChoicePanel {
                 self.spin = Some(spin);
             }
             ChoiceMode::Done { .. } => {}
+            ChoiceMode::Distribute { total, mins, initial } => {
+                let mut grid = GridContainer::new_alloc();
+                grid.set_columns(2);
+                grid.add_theme_constant_override("h_separation", 12);
+                grid.add_theme_constant_override("v_separation", 6);
+                for (i, option) in choice.options.iter().enumerate() {
+                    let mut l = super::hud::label(16, parchment);
+                    l.set_text(&option.text);
+                    l.set_h_size_flags(SizeFlags::EXPAND_FILL);
+                    grid.add_child(&l);
+                    let mut spin = SpinBox::new_alloc();
+                    spin.set_min(mins.get(i).copied().unwrap_or(0) as f64);
+                    spin.set_max(*total as f64);
+                    spin.set_step(1.0);
+                    spin.set_value(initial.get(i).copied().unwrap_or(0) as f64);
+                    spin.add_theme_font_size_override("font_size", 17);
+                    spin.connect("value_changed", &method("on_choice_values_changed"));
+                    grid.add_child(&spin);
+                    self.spins.push(spin);
+                }
+                self.body.add_child(&grid);
+                let sum = super::hud::label(15, parchment);
+                self.body.add_child(&sum);
+                self.sum_label = Some(sum);
+            }
         }
 
         // Untere Zeile: Fertig/OK und Abbrechen
-        let needs_done = matches!(choice.mode, ChoiceMode::Multi { .. } | ChoiceMode::Number { .. } | ChoiceMode::Done { .. });
+        let needs_done = matches!(
+            choice.mode,
+            ChoiceMode::Multi { .. } | ChoiceMode::Number { .. } | ChoiceMode::Done { .. } | ChoiceMode::Distribute { .. }
+        );
         if needs_done || choice.cancelable {
             let mut row = HBoxContainer::new_alloc();
             row.add_theme_constant_override("separation", 8);
@@ -372,6 +415,19 @@ impl ChoicePanel {
             self.body.add_child(&row);
         }
         self.refresh_multi();
+        self.refresh_distribute();
+    }
+
+    /// Verteilen: Summe anzeigen, „Fertig“ nur bei richtiger Summe.
+    pub fn refresh_distribute(&mut self) {
+        let Some(ChoiceMode::Distribute { total, .. }) = self.current.as_ref().map(|c| c.mode.clone()) else { return };
+        let sum: i64 = self.spins.iter().map(|s| s.get_value().round() as i64).sum();
+        if let Some(l) = self.sum_label.as_mut() {
+            l.set_text(&trf!("Verteilt: {sum} / {total}", "Assigned: {sum} / {total}"));
+        }
+        if let Some(done) = self.done.as_mut() {
+            done.set_disabled(sum != total);
+        }
     }
 
     /// Mehrfachauswahl: ausgewählte Knöpfe golden umranden, „Fertig (n)“ nur bei gültiger Anzahl.

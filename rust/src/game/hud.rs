@@ -214,6 +214,14 @@ impl TurnHud {
         }
     }
 
+    /// Ein Zahlenfeld beim Verteilen wurde geändert: Summe und „Fertig“ aktualisieren.
+    #[func]
+    fn on_choice_values_changed(&mut self, _value: f64) {
+        if let Some(c) = self.choice.as_mut() {
+            c.refresh_distribute();
+        }
+    }
+
     /// Suchfeld des Auswahlfensters geändert: Optionen filtern.
     #[func]
     fn on_choice_filter_changed(&mut self, text: GString) {
