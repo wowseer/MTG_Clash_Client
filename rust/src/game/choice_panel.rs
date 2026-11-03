@@ -51,6 +51,9 @@ pub struct HudChoice {
     pub mode: ChoiceMode,
     pub options: Vec<ChoiceOption>,
     pub cancelable: bool,
+    /// Fenster am rechten Bildrand statt in der Mitte, damit der Tisch anklickbar bleibt
+    /// (z. B. bei der Zielwahl).
+    pub side: bool,
 }
 
 /// Ab so vielen Optionen werden die Knöpfe zweispaltig angeordnet.
@@ -140,6 +143,13 @@ impl ChoicePanel {
         self.selected.clear();
         self.build(choice, hud);
         self.panel.set_visible(true);
+        // Mitte bzw. rechter Rand (Tisch bleibt anklickbar)
+        let (anchor, offset, grow_h) = if choice.side {
+            ((1.0, 0.5), (-14.0, 0.0), godot::classes::control::GrowDirection::BEGIN)
+        } else {
+            ((0.5, 0.5), (0.0, 0.0), godot::classes::control::GrowDirection::BOTH)
+        };
+        super::hud::place(&mut self.panel, anchor, offset, grow_h, godot::classes::control::GrowDirection::BOTH);
         // Größe neu berechnen (Inhalt hat sich geändert)
         let size = self.panel.get_combined_minimum_size();
         self.panel.set_size(size);
@@ -221,6 +231,11 @@ impl ChoicePanel {
                 trf!("… {rest} weitere – Suchbegriff eingeben", "… {rest} more – type to search")
             });
         }
+    }
+
+    /// Aktuell gewählte Optionen (Mehrfachauswahl; sonst leer).
+    pub fn selected(&self) -> &[usize] {
+        &self.selected
     }
 
     /// „Fertig“ / „OK“: Antwort aus Mehrfachauswahl oder Zahl.

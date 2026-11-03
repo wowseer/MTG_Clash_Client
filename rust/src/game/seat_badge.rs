@@ -3,12 +3,15 @@
 //! Goldgerahmte Raute mit Wappen (Ring, sechszackiger Stern, Anfangsbuchstabe) in der
 //! Farbe der Seite, darunter ein roter Edelstein mit dem Lebenspunktestand. Wer am Zug
 //! ist, bekommt einen pulsierenden Schein; Lebensänderungen blitzen kurz auf
-//! (rot = Schaden, grün = Heilung). Alles wird per `draw()` gezeichnet, ohne Bilddateien.
+//! (rot = Schaden, grün = Heilung). Ist der Spieler ein gültiges Ziel, pulsiert ein goldener
+//! Ring und das Medaillon ist anklickbar (Signal `clicked`). Alles wird per `draw()` gezeichnet,
+//! ohne Bilddateien.
 
 use std::f32::consts::{PI, TAU};
 
 use godot::classes::control::MouseFilter;
-use godot::classes::{Control, IControl};
+use godot::classes::{Control, IControl, InputEvent, InputEventMouseButton};
+use godot::global::MouseButton;
 use godot::global::HorizontalAlignment;
 use godot::prelude::*;
 
@@ -40,6 +43,13 @@ pub struct SeatBadge {
     /// Farbe des Wappens (Seitenfarbe, z. B. blau für den Spieler, rot für den Gegner).
     #[export]
     accent: Color,
+    /// Ist dieser Spieler gerade ein gültiges Ziel? Dann pulsiert ein goldener Ring und ein Klick
+    /// löst [signal clicked] aus (sonst lässt das Medaillon Mausklicks durch).
+    #[var(get = is_targetable, set = set_targetable)]
+    targetable: bool,
+    /// Ist dieser Spieler als Ziel gewählt? (heller, ruhiger Ring)
+    #[var(pub)]
+    target_selected: bool,
 
     time: f32,
     /// Restdauer des Aufblitzens nach einer Lebensänderung (Sekunden) und dessen Farbe.
@@ -56,6 +66,8 @@ impl IControl for SeatBadge {
             life: 0,
             active: false,
             accent: Color::from_rgb(0.25, 0.55, 0.95),
+            targetable: false,
+            target_selected: false,
             time: 0.0,
             flash: 0.0,
             flash_color: Color::WHITE,
@@ -69,6 +81,14 @@ impl IControl for SeatBadge {
         self.base_mut().set_mouse_filter(MouseFilter::IGNORE);
     }
 
+    fn gui_input(&mut self, event: Gd<InputEvent>) {
+        let Ok(mb) = event.try_cast::<InputEventMouseButton>() else { return };
+        if self.targetable && mb.is_pressed() && mb.get_button_index() == MouseButton::LEFT {
+            self.signals().clicked().emit();
+            self.base_mut().accept_event();
+        }
+    }
+
     fn process(&mut self, delta: f64) {
         self.time += delta as f32;
         self.flash = (self.flash - delta as f32).max(0.0);
@@ -79,6 +99,14 @@ impl IControl for SeatBadge {
         let size = self.base().get_size();
         let c = Vector2::new(size.x * 0.5, 6.0 + HALF);
         let accent = self.accent;
+
+        // Zielwahl: goldener Ring (pulsierend = wählbar, ruhig und hell = gewählt)
+        if self.targetable || self.target_selected {
+            let pulse = 0.5 + 0.5 * (self.time * 4.0).sin();
+            let (alpha, grow) = if self.target_selected { (0.95, 9.0) } else { (0.45 + 0.4 * pulse, 7.0 + 3.0 * pulse) };
+            let ring = Color::from_rgba(1.0, 0.82, 0.35, alpha);
+            self.outline(diamond(c, HALF + grow), ring, 4.0);
+        }
 
         // Schein, wenn am Zug
         if self.active {
@@ -129,6 +157,23 @@ impl IControl for SeatBadge {
 
 #[godot_api]
 impl SeatBadge {
+    /// Das Medaillon wurde angeklickt, während [member targetable] gesetzt war.
+    #[signal]
+    fn clicked();
+
+    /// Getter für [member targetable].
+    #[func]
+    pub fn is_targetable(&self) -> bool {
+        self.targetable
+    }
+
+    /// Setter für [member targetable]: nur ein wählbares Medaillon fängt Mausklicks ab.
+    #[func]
+    pub fn set_targetable(&mut self, value: bool) {
+        self.targetable = value;
+        self.base_mut().set_mouse_filter(if value { MouseFilter::STOP } else { MouseFilter::IGNORE });
+    }
+
     /// Setzt Name, Lebenspunkte und „am Zug“ auf einmal. Weicht `life` vom bisherigen Wert ab,
     /// blitzt der Edelstein kurz auf (rot bei Schaden, grün bei Heilung).
     #[func]

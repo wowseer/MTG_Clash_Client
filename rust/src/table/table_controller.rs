@@ -7,6 +7,8 @@
 //!   Kamera bleibt stehen. Erst beim Ablegen
 //!   gleitet sie auf Tischgröße. Per Raycast (ZONE_LAYER) das Drop-Ziel bestimmen und dort ablegen.
 //!   Ungültiger Drop -> Karte gleitet an ihren alten Platz zurück.
+//! - Klick: Drücken und ohne Bewegung (< 6 px) loslassen → Signal `card_clicked`; erst bei
+//!   Bewegung wird gezogen.
 //! - Rechtsklick: Nahaufnahme der Karte unter der Maus (erneut = zurück), Esc = Übersicht.
 //!
 //! Regeln kennt der Controller nicht: Er meldet jeden Drop per Signal `card_dropped`, der
@@ -22,6 +24,9 @@ use super::card3d::Card3D;
 use super::layers::{CARD_LAYER, ZONE_LAYER};
 use super::table_camera::TableCamera;
 use super::zone::Zone;
+
+/// Mausbewegung in Pixeln, ab der aus einem Klick ein Ziehen wird.
+const CLICK_SLOP: f32 = 6.0;
 
 struct DragState {
     card: Gd<Card3D>,
@@ -63,6 +68,9 @@ pub struct TableController {
     hovered: Option<Gd<Card3D>>,
     hover_zone: Option<Gd<Zone>>,
     drag: Option<DragState>,
+    /// Gedrückte Karte und Mausposition beim Drücken: wird zum Ziehen, sobald sich die Maus mehr
+    /// als [`CLICK_SLOP`] Pixel bewegt; sonst ist das Loslassen ein Klick.
+    press: Option<(Gd<Card3D>, Vector2)>,
 
     base: Base<Node3D>,
 }
@@ -78,6 +86,7 @@ impl INode3D for TableController {
             hovered: None,
             hover_zone: None,
             drag: None,
+            press: None,
             base,
         }
     }
@@ -103,6 +112,17 @@ impl INode3D for TableController {
         let Some((origin, dir)) = self.mouse_ray() else {
             return;
         };
+        // Gedrückt gehaltene Karte: ab CLICK_SLOP Pixel Bewegung wird gezogen
+        if let Some((card, at)) = self.press.clone() {
+            let moved = self.base().get_viewport().map_or(0.0, |v| (v.get_mouse_position() - at).length());
+            if moved > CLICK_SLOP {
+                self.press = None;
+                let zone = card.bind().get_zone().filter(|z| z.bind().cards_draggable());
+                if let Some(zone) = zone.filter(|_| card.is_instance_valid()) {
+                    self.start_drag(card, zone);
+                }
+            }
+        }
         if self.drag.is_some() {
             self.update_drag_target(origin, dir);
         } else {
@@ -134,6 +154,12 @@ impl TableController {
     /// Wird ausgelöst, wenn eine Karte per Drag-and-Drop in eine Zone gelegt wurde.
     #[signal]
     fn card_dropped(card: Gd<Card3D>, from_zone: Gd<Zone>, to_zone: Gd<Zone>);
+
+    /// Eine Karte wurde angeklickt (gedrückt und ohne nennenswerte Bewegung losgelassen) –
+    /// z. B. als Ziel wählen oder Fähigkeit aktivieren. Funktioniert in allen Zonen, auch bei
+    /// Karten, die man nicht ziehen kann.
+    #[signal]
+    fn card_clicked(card: Gd<Card3D>);
 
 
     /// Bewegt die oberste Karte von `from` nach `to` (z. B. Gegner zieht / spielt aus).
@@ -254,16 +280,14 @@ impl TableController {
 
     // ------------------------------------------------------------------ Drag & Drop
 
+    /// Drücken auf eine Karte: merken. Ob es ein Klick oder ein Ziehen wird, entscheidet die
+    /// Mausbewegung (siehe `physics_process`).
     fn on_left_pressed(&mut self) {
         let Some(card) = self.hovered.clone() else {
             return;
         };
-        let Some(zone) = card.bind().get_zone() else {
-            return;
-        };
-        if zone.bind().cards_draggable() {
-            self.start_drag(card, zone);
-        }
+        let at = self.base().get_viewport().map_or(Vector2::ZERO, |v| v.get_mouse_position());
+        self.press = Some((card, at));
     }
 
     fn start_drag(&mut self, mut card: Gd<Card3D>, mut zone: Gd<Zone>) {
@@ -331,6 +355,12 @@ impl TableController {
     }
 
     fn on_left_released(&mut self) {
+        if let Some((card, _)) = self.press.take() {
+            if card.is_instance_valid() {
+                self.signals().card_clicked().emit(&card);
+            }
+            return;
+        }
         let Some(drag) = self.drag.take() else {
             return;
         };

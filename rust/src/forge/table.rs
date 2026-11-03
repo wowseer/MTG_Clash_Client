@@ -16,13 +16,15 @@ use godot::prelude::*;
 
 use super::bridge::ForgeBridge;
 use crate::game::cards::{CardDef, CardKind};
+use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::decision_view;
 use crate::game::hud::HudView;
 use crate::rules::{Action, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::mana::{Cost, ManaType};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
-use crate::table::card3d::{Card3D, CardMarker};
+use crate::table::card3d::{Card3D, CardMarker, SELECT_GLOW};
+use crate::table::target_arrows::{ArrowSpec, TargetArrows};
 use crate::table::placeholder;
 use crate::table::table_controller::TableController;
 use crate::table::zone::Zone;
@@ -87,6 +89,15 @@ pub struct ForgeTable {
     pending: Option<Request>,
     /// Karte, um die es in der offenen Auswahl geht (golden markiert).
     marked: Option<Gd<Card3D>>,
+    /// Aktuelle Auswahl im Auswahlfenster (Indizes; vom HUD jedes Frame gemeldet).
+    selection: Vec<usize>,
+    /// Als Ziel gewählte (golden markierte) Karten – zum Zurücksetzen der Markierung.
+    selected_cards: Vec<Gd<Card3D>>,
+    /// Fähigkeiten-Menü nach Klick auf eine Karte mit mehreren Aktionen (nur UI, keine
+    /// Engine-Entscheidung): Aktionen und ihre Texte.
+    menu: Option<(Vec<Action>, Vec<String>)>,
+    /// Pfeil-Ebene über dem Tisch (Zielwahl).
+    arrows: Option<Gd<TargetArrows>>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -116,6 +127,10 @@ impl INode for ForgeTable {
             signatures: HashMap::new(),
             pending: None,
             marked: None,
+            selection: Vec::new(),
+            selected_cards: Vec::new(),
+            menu: None,
+            arrows: None,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -144,10 +159,16 @@ impl INode for ForgeTable {
         }
         if let Some(mut controller) = self.controller.clone() {
             controller.connect("card_dropped", &cb("on_card_dropped"));
+            controller.connect("card_clicked", &cb("on_card_clicked"));
+            // zurückgestellt: der Tisch baut in diesem Moment noch seine Kinder auf
+            let arrows = TargetArrows::new_alloc();
+            controller.call_deferred("add_child", &[arrows.to_variant()]);
+            self.arrows = Some(arrows);
         }
     }
 
     fn process(&mut self, delta: f64) {
+        self.update_arrows();
         self.since_refresh += delta;
         if self.dirty && self.match_running && self.since_refresh >= self.refresh_interval {
             self.dirty = false;
@@ -185,18 +206,53 @@ impl ForgeTable {
         }
     }
 
+    /// Eine Option wurde auf dem Tisch gewählt (Klick auf ein gültiges Ziel – Karte oder
+    /// Medaillon): `index` = Option im Auswahlfenster. Das HUD behandelt das wie einen Klick auf
+    /// diese Option (zurückgestellt verbunden).
+    #[signal]
+    fn choice_option_clicked(index: i64);
+
     /// Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index,
     /// mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten),
     /// Zahl = int, Abbrechen = null. Wird in die passende NeoForge-`Choice` übersetzt; unpassende
-    /// Eingaben werden ignoriert.
+    /// Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion
+    /// daraus (null = Menü schließen).
     #[func]
     pub fn submit_choice(&mut self, choice: Variant) {
+        if let Some((actions, _)) = self.menu.take() {
+            let action = choice.try_to::<i64>().ok().and_then(|i| actions.get(usize::try_from(i).ok()?).copied());
+            if let Some(a) = action {
+                self.answer(Choice::Action(a));
+            }
+            return;
+        }
         let Some(req) = self.pending.as_ref() else { return };
         match decision_view::to_choice(&req.decision, &choice) {
             Some(c) => self.answer(c),
             None => {
                 godot_warn!("ForgeTable: Eingabe {choice} passt nicht zu {:?}", req.decision);
             }
+        }
+    }
+
+    /// Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges
+    /// Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt.
+    #[func]
+    pub fn player_clicked(&mut self, seat: i64) {
+        let Ok(seat) = u8::try_from(seat) else { return };
+        if let Some(i) = self.candidate_index(Target::Player(seat)) {
+            self.signals().choice_option_clicked().emit(i as i64);
+        }
+    }
+
+    /// Aktuelle Auswahl im Auswahlfenster (vom HUD jedes Frame gemeldet): gewählte Ziele werden
+    /// auf dem Tisch golden markiert und bekommen einen Pfeil.
+    #[func]
+    pub fn set_choice_selection(&mut self, selection: PackedInt64Array) {
+        let sel: Vec<usize> = selection.as_slice().iter().filter_map(|i| usize::try_from(*i).ok()).collect();
+        if sel != self.selection {
+            self.selection = sel;
+            self.update_glow();
         }
     }
 
@@ -282,6 +338,33 @@ impl ForgeTable {
         godot_warn!("ForgeTable: Forge-Fehler {code}: {message}");
     }
 
+    /// Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der
+    /// Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über
+    /// das Fähigkeiten-Menü.
+    #[func]
+    fn on_card_clicked(&mut self, card: Gd<Card3D>) {
+        let Some(id) = self.forge_id(&card) else { return };
+        let Ok(card_id) = u32::try_from(id) else { return };
+        if let Some(i) = self.candidate_index(Target::Card(card_id)) {
+            self.signals().choice_option_clicked().emit(i as i64);
+            return;
+        }
+        let in_hand = self.zones(0).hand.is_some_and(|h| card.bind().get_zone().as_ref() == Some(&h));
+        let Some(req) = self.pending.as_ref().filter(|_| !in_hand) else { return };
+        let Decision::Priority { actions, .. } = &req.decision else { return };
+        let mine: Vec<(Action, String)> = actions
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.card() == Some(card_id))
+            .map(|(i, a)| (*a, req.label(i)))
+            .collect();
+        match mine.len() {
+            0 => {}
+            1 => self.answer(Choice::Action(mine[0].0)),
+            _ => self.menu = Some(mine.into_iter().unzip()),
+        }
+    }
+
     /// Karte wurde auf dem Tisch abgelegt: Hat sie eine Aktion in der offenen `Priority`-
     /// Entscheidung (aus der Hand: Land spielen / wirken; auf dem Spielfeld: Fähigkeit
     /// aktivieren), wird diese gewählt. Aus der Hand zurück auf die Hand = abbrechen. Alles andere
@@ -323,7 +406,16 @@ impl ForgeTable {
         let phase = st.map(|s| get_str(s, "phase")).unwrap_or_default();
         let my_priority = matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::Priority { .. }));
 
-        let choice = self.pending.as_ref().and_then(|req| {
+        let menu_choice = self.menu.as_ref().zip(self.pending.as_ref()).map(|((_, labels), req)| HudChoice {
+            key: -req.id,
+            title: tr!("Fähigkeit wählen", "Choose an ability").into(),
+            detail: String::new(),
+            mode: ChoiceMode::Single,
+            options: labels.iter().map(|l| ChoiceOption { text: l.clone(), color: None }).collect(),
+            cancelable: true,
+            side: false,
+        });
+        let choice = menu_choice.or_else(|| self.pending.as_ref().and_then(|req| {
             let name_of = |i: usize| match &req.decision {
                 Decision::ChooseTargets { candidates, .. } => match candidates.get(i) {
                     Some(Target::Player(p)) => self.seat_name(*p as usize).to_string(),
@@ -337,7 +429,20 @@ impl ForgeTable {
                 _ => String::new(),
             };
             decision_view::hud_choice(req, &name_of)
-        });
+        }));
+        let seat_state = |selected_only: bool| -> [bool; 2] {
+            let mut out = [false; 2];
+            if let Some(Decision::ChooseTargets { candidates, .. }) = self.pending.as_ref().map(|r| &r.decision) {
+                for (i, t) in candidates.iter().enumerate() {
+                    if let Target::Player(p) = t {
+                        if (*p as usize) < 2 && (!selected_only || self.selection.contains(&i)) {
+                            out[*p as usize] = true;
+                        }
+                    }
+                }
+            }
+            out
+        };
         let button_text = if my_priority {
             tr!("Passen  »", "Pass  »")
         } else if choice.is_some() {
@@ -362,6 +467,8 @@ impl ForgeTable {
             stack_busy: false,
             player_pool: PackedInt64Array::new(),
             choice,
+            targetable_seats: seat_state(false),
+            selected_seats: seat_state(true),
         }
     }
 
@@ -396,6 +503,8 @@ impl ForgeTable {
     /// Antwortet über die Engine-Schnittstelle auf die offene Entscheidung.
     fn answer(&mut self, choice: Choice) {
         let Some(req) = self.pending.take() else { return };
+        self.menu = None;
+        self.selection.clear();
         self.set_marked(None);
         self.update_glow();
         if let Some(mut b) = self.bridge.clone() {
@@ -428,15 +537,95 @@ impl ForgeTable {
         self.cards.iter().find(|(_, c)| *c == card).map(|(id, _)| *id)
     }
 
-    /// Leuchten: Karten, die der Spieler gerade spielen kann.
+    /// Leuchten: mit Priorität die Karten, die eine Aktion haben; bei der Zielwahl alle gültigen
+    /// Ziele (gewählte zusätzlich golden markiert).
     fn update_glow(&mut self) {
-        let playable: HashSet<i64> = match self.pending.as_ref().map(|r| &r.decision) {
-            Some(Decision::Priority { actions, .. }) => actions.iter().filter_map(|a| a.card()).map(i64::from).collect(),
-            _ => HashSet::new(),
+        let (glow, chosen): (HashSet<i64>, HashSet<i64>) = match self.pending.as_ref().map(|r| &r.decision) {
+            Some(Decision::Priority { actions, .. }) => {
+                (actions.iter().filter_map(|a| a.card()).map(i64::from).collect(), HashSet::new())
+            }
+            Some(Decision::ChooseTargets { candidates, .. }) => {
+                let card = |t: &Target| match t {
+                    Target::Card(c) => Some(i64::from(*c)),
+                    Target::Player(_) => None,
+                };
+                (
+                    candidates.iter().filter_map(card).collect(),
+                    self.selection.iter().filter_map(|i| candidates.get(*i)).filter_map(card).collect(),
+                )
+            }
+            _ => (HashSet::new(), HashSet::new()),
         };
         for (id, card) in self.cards.iter_mut() {
-            card.bind_mut().set_ready_glow(playable.contains(id));
+            card.bind_mut().set_ready_glow(glow.contains(id));
         }
+        for mut old in std::mem::take(&mut self.selected_cards) {
+            if old.is_instance_valid() && Some(&old) != self.marked.as_ref() {
+                old.bind_mut().set_marker(CardMarker::None);
+            }
+        }
+        for id in chosen {
+            if let Some(mut card) = self.cards.get(&id).cloned() {
+                card.bind_mut().set_marker(CardMarker::Selected);
+                self.selected_cards.push(card);
+            }
+        }
+    }
+
+    /// Index des Kandidaten `target` in der offenen Zielwahl.
+    fn candidate_index(&self, target: Target) -> Option<usize> {
+        match self.pending.as_ref().map(|r| &r.decision) {
+            Some(Decision::ChooseTargets { candidates, .. }) => candidates.iter().position(|t| *t == target),
+            _ => None,
+        }
+    }
+
+    /// Position eines Ziels auf dem Tisch: Karte bzw. Medaillon-Anker des Sitzplatzes.
+    fn target_position(&self, target: Target) -> Option<Vector3> {
+        match target {
+            Target::Card(c) => self.cards.get(&i64::from(c)).filter(|c| c.is_instance_valid()).map(|c| c.get_global_position()),
+            Target::Player(p) => {
+                let seat = if p == 0 { self.player_seat.as_ref() } else { self.opponent_seat.as_ref() }?;
+                let anchor = seat.get_node_or_null("HeroAnchor").and_then(|n| n.try_cast::<Node3D>().ok());
+                Some(anchor.map_or(seat.get_global_position(), |a| a.get_global_position()))
+            }
+        }
+    }
+
+    /// Pfeile der Zielwahl: Quelle → gewählte Ziele (gold), Quelle → gültiges Ziel unter dem
+    /// Mauszeiger (blasser, Vorschau).
+    fn update_arrows(&mut self) {
+        let Some(mut layer) = self.arrows.clone() else { return };
+        let mut specs = Vec::new();
+        if let Some(req) = self.pending.as_ref() {
+            if let Decision::ChooseTargets { candidates, .. } = &req.decision {
+                let from = req
+                    .source
+                    .and_then(|s| self.cards.get(&i64::from(s)))
+                    .filter(|c| c.is_instance_valid())
+                    .map(|c| c.get_global_position());
+                if let Some(from) = from {
+                    let mut targets: Vec<(Target, Color)> =
+                        self.selection.iter().filter_map(|i| candidates.get(*i)).map(|t| (*t, SELECT_GLOW)).collect();
+                    let hovered = self.controller.as_ref().and_then(|c| c.bind().get_hovered_card());
+                    let hovered_target = hovered
+                        .and_then(|h| self.forge_id(&h))
+                        .and_then(|id| u32::try_from(id).ok())
+                        .map(Target::Card)
+                        .filter(|t| candidates.contains(t) && !targets.iter().any(|(s, _)| s == t));
+                    if let Some(t) = hovered_target {
+                        targets.push((t, Color::from_rgba(SELECT_GLOW.r, SELECT_GLOW.g, SELECT_GLOW.b, 0.45)));
+                    }
+                    for (t, color) in targets {
+                        if let Some(to) = self.target_position(t) {
+                            let dir = (to - from).normalized_or_zero();
+                            specs.push(ArrowSpec { from: from + dir * 0.3, to, color });
+                        }
+                    }
+                }
+            }
+        }
+        layer.bind_mut().set_arrows(&specs);
     }
 
     /// Gleicht den Tisch mit dem Forge-Zustand ab: Karten anlegen, verschieben, tappen, entfernen.

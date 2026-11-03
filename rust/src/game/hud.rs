@@ -26,6 +26,7 @@ use godot::classes::{
 };
 use godot::builtin::Side;
 use godot::global::Key;
+use godot::classes::object::ConnectFlags;
 use godot::prelude::*;
 
 use super::card_cutout::CardCutout;
@@ -177,6 +178,14 @@ impl TurnHud {
         }
     }
 
+    /// Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den [ForgeTable] weitergeben.
+    #[func]
+    fn on_badge_clicked(&mut self, seat: i64) {
+        if let Some(ft) = self.forge_table.as_mut() {
+            ft.bind_mut().player_clicked(seat);
+        }
+    }
+
     /// Suchfeld des Auswahlfensters geändert: Optionen filtern.
     #[func]
     fn on_choice_filter_changed(&mut self, text: GString) {
@@ -259,6 +268,17 @@ impl TurnHud {
         root.add_child(&button);
 
         self.choice = Some(ChoicePanel::new(&mut root));
+        // Medaillon-Klicks (Spieler als Ziel) an den ForgeTable melden
+        for (seat, badge) in [(0i64, &me_badge), (1, &opp_badge)] {
+            let cb = Callable::from_object_method(&self.to_gd(), "on_badge_clicked").bind(&[seat.to_variant()]);
+            badge.clone().connect("clicked", &cb);
+        }
+        // Klick auf ein Ziel auf dem Tisch = Klick auf die Option im Auswahlfenster
+        // (zurückgestellt: der ForgeTable ist beim Senden noch gebunden)
+        if let Some(mut ft) = self.forge_table.clone() {
+            let cb = Callable::from_object_method(&self.to_gd(), "on_choice_option");
+            ft.connect_flags("choice_option_clicked", &cb, ConnectFlags::DEFERRED);
+        }
         self.base_mut().add_child(&root);
         self.root = Some(root.clone());
         self.timeline = Some(timeline);
@@ -374,7 +394,12 @@ impl TurnHud {
         }
         for (seat, badge) in [(1, self.opponent_badge.as_mut()), (0, self.player_badge.as_mut())] {
             if let Some(b) = badge {
-                b.bind_mut().set_state(view.names[seat].clone(), view.lives[seat], seat as i64 == active);
+                let mut b = b.bind_mut();
+                b.set_state(view.names[seat].clone(), view.lives[seat], seat as i64 == active);
+                if b.is_targetable() != view.targetable_seats[seat] {
+                    b.set_targetable(view.targetable_seats[seat]);
+                }
+                b.set_target_selected(view.selected_seats[seat]);
             }
         }
         // Linker Bildrand: Name (golden = am Zug) und Rundenzahl neben der Sanduhr
@@ -413,10 +438,18 @@ impl TurnHud {
             }
         }
 
-        // Auswahlfenster (Mulligan, Optionen, Ja/Nein, Zahlen, Text)
+        // Auswahlfenster (Mulligan, Optionen, Ja/Nein, Zahlen, Ziele …); die aktuelle Auswahl
+        // geht an den ForgeTable (Leuchten und Pfeile auf dem Tisch)
         let hud = self.to_gd().upcast::<Object>();
+        let mut selection = PackedInt64Array::new();
         if let Some(panel) = self.choice.as_mut() {
             panel.show(view.choice.as_ref(), &hud);
+            for i in panel.selected() {
+                selection.push(*i as i64);
+            }
+        }
+        if let Some(mut ft) = self.forge_table.clone() {
+            ft.bind_mut().set_choice_selection(selection);
         }
     }
 }
@@ -441,6 +474,10 @@ pub struct HudView {
     /// Manapool des Spielers (je [ManaType] eine Menge; leer = keine Anzeige).
     pub player_pool: PackedInt64Array,
     pub choice: Option<HudChoice>,
+    /// Ist Sitzplatz 0 / 1 gerade ein gültiges Ziel (Medaillon anklickbar)?
+    pub targetable_seats: [bool; 2],
+    /// Ist Sitzplatz 0 / 1 als Ziel gewählt?
+    pub selected_seats: [bool; 2],
 }
 
 pub(super) fn styled_button(font_size: i32) -> Gd<Button> {

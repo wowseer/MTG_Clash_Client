@@ -5,3 +5,6 @@ godot/.godot/
 /forge-bridge/forge-ai/
 /forge-bridge/forge-core/
 /forge-bridge/forge-game/
+
+# Temporäre Testskripte (headless)
+/godot/_probe*

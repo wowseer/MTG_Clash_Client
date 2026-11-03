@@ -79,7 +79,9 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(usize) -> String) -> Option<Hu
         (true, false) => req.ability.clone(),
         (false, false) => format!("{}: {}", req.source_name, req.ability),
     };
-    Some(HudChoice { key: req.id, title, detail, mode, options, cancelable: req.cancelable })
+    // Bei der Zielwahl an den Rand: Ziele werden auch direkt auf dem Tisch angeklickt
+    let side = matches!(req.decision, Decision::ChooseTargets { .. });
+    Some(HudChoice { key: req.id, title, detail, mode, options, cancelable: req.cancelable, side })
 }
 
 /// Eingabe aus dem Auswahlfenster (Index, Indizes, bool, Zahl; nil = Abbrechen) → [`Choice`]
