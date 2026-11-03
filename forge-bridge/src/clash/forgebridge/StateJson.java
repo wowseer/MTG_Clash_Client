@@ -3,6 +3,7 @@ package clash.forgebridge;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
+import forge.card.MagicColor;
 import forge.game.Game;
 import forge.game.GameEntity;
 import forge.game.card.Card;
@@ -37,6 +38,12 @@ final class StateJson {
             po.addProperty("life", p.getLife());
             po.addProperty("library", p.getCardsIn(ZoneType.Library).size());
             po.addProperty("hand_count", p.getCardsIn(ZoneType.Hand).size());
+            // Manapool: Menge je Farbe in der Reihenfolge W U B R G C
+            JsonArray pool = new JsonArray();
+            for (byte color : MagicColor.WUBRGC) {
+                pool.add(p.getManaPool().getAmountOfColor(color));
+            }
+            po.add("mana_pool", pool);
             if (i == viewer) {
                 po.add("hand", cards(p, ZoneType.Hand));
             }

@@ -19,6 +19,7 @@ use crate::game::cards::{CardDef, CardKind};
 use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::decision_view;
 use crate::game::hud::HudView;
+use crate::rules::decision::PayAction;
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::mana::{Cost, ManaType};
 use crate::game::phases::Phase;
@@ -93,9 +94,9 @@ pub struct ForgeTable {
     selection: Vec<usize>,
     /// Als Ziel gewählte (golden markierte) Karten – zum Zurücksetzen der Markierung.
     selected_cards: Vec<Gd<Card3D>>,
-    /// Fähigkeiten-Menü nach Klick auf eine Karte mit mehreren Aktionen (nur UI, keine
-    /// Engine-Entscheidung): Aktionen und ihre Texte.
-    menu: Option<(Vec<Action>, Vec<String>)>,
+    /// Menü nach Klick auf eine Karte mit mehreren Möglichkeiten (nur UI, keine
+    /// Engine-Entscheidung): fertige Antworten (`Action` bzw. `Pay`) und ihre Texte.
+    menu: Option<(Vec<Choice>, Vec<String>)>,
     /// Pfeil-Ebene über dem Tisch (Zielwahl, Kampf).
     arrows: Option<Gd<TargetArrows>>,
     /// Angriffsplan bei `DeclareAttackers`: (Angreifer, Ziel) in Klick-Reihenfolge.
@@ -229,16 +230,22 @@ impl ForgeTable {
     /// daraus (null = Menü schließen).
     #[func]
     pub fn submit_choice(&mut self, choice: Variant) {
-        if let Some((actions, _)) = self.menu.take() {
-            let action = choice.try_to::<i64>().ok().and_then(|i| actions.get(usize::try_from(i).ok()?).copied());
-            if let Some(a) = action {
-                self.answer(Choice::Action(a));
+        if let Some((choices, _)) = self.menu.take() {
+            let picked = choice.try_to::<i64>().ok().and_then(|i| choices.get(usize::try_from(i).ok()?).cloned());
+            if let Some(c) = picked {
+                self.answer(c);
             }
             return;
         }
         let Some(req) = self.pending.as_ref() else { return };
-        // Kampf: der Knopf bestätigt den Plan, der auf dem Tisch gebaut wurde
+        // Kampf: der Knopf bestätigt den Plan, der auf dem Tisch gebaut wurde.
+        // Mana: Knopf = automatisch bezahlen, Abbrechen = Wirken zurücknehmen
         match &req.decision {
+            Decision::PayMana { .. } => {
+                let pay = if choice.is_nil() { PayAction::Cancel } else { PayAction::AutoPay };
+                self.answer(Choice::Pay(pay));
+                return;
+            }
             Decision::DeclareAttackers { .. } if choice.booleanize() => {
                 let plan = self.attack_plan.clone();
                 self.answer(Choice::Attackers(plan));
@@ -384,17 +391,27 @@ impl ForgeTable {
             return;
         }
         let in_hand = self.zones(0).hand.is_some_and(|h| card.bind().get_zone().as_ref() == Some(&h));
-        let Some(req) = self.pending.as_ref().filter(|_| !in_hand) else { return };
-        let Decision::Priority { actions, .. } = &req.decision else { return };
-        let mine: Vec<(Action, String)> = actions
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| a.card() == Some(card_id))
-            .map(|(i, a)| (*a, req.label(i)))
-            .collect();
+        let Some(req) = self.pending.as_ref() else { return };
+        let mine: Vec<(Choice, String)> = match &req.decision {
+            // Mana bezahlen: Manafähigkeiten dieser Karte
+            Decision::PayMana { options, .. } => options
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| matches!(o, PayAction::ActivateMana(c, _) if *c == card_id))
+                .map(|(i, o)| (Choice::Pay(*o), req.label(i)))
+                .collect(),
+            // Priorität: Aktionen dieser Karte (nicht aus der Hand – die spielt man durch Ziehen)
+            Decision::Priority { actions, .. } if !in_hand => actions
+                .iter()
+                .enumerate()
+                .filter(|(_, a)| a.card() == Some(card_id))
+                .map(|(i, a)| (Choice::Action(*a), req.label(i)))
+                .collect(),
+            _ => return,
+        };
         match mine.len() {
             0 => {}
-            1 => self.answer(Choice::Action(mine[0].0)),
+            1 => self.answer(mine[0].0.clone()),
             _ => self.menu = Some(mine.into_iter().unzip()),
         }
     }
@@ -442,7 +459,11 @@ impl ForgeTable {
 
         let menu_choice = self.menu.as_ref().zip(self.pending.as_ref()).map(|((_, labels), req)| HudChoice {
             key: -req.id,
-            title: tr!("Fähigkeit wählen", "Choose an ability").into(),
+            title: if matches!(req.decision, Decision::PayMana { .. }) {
+                tr!("Manafähigkeit wählen", "Choose a mana ability").into()
+            } else {
+                tr!("Fähigkeit wählen", "Choose an ability").into()
+            },
             detail: String::new(),
             mode: ChoiceMode::Single,
             options: labels.iter().map(|l| ChoiceOption { text: l.clone(), color: None }).collect(),
@@ -515,7 +536,10 @@ impl ForgeTable {
             button_enabled: my_priority,
             button_text: button_text.into(),
             stack_busy: false,
-            player_pool: PackedInt64Array::new(),
+            player_pool: player(0)
+                .and_then(|p| get_array(&p, "mana_pool"))
+                .map(|a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).collect())
+                .unwrap_or_default(),
             choice,
             targetable_seats: seat_state(false),
             selected_seats: seat_state(true),
@@ -618,6 +642,16 @@ impl ForgeTable {
                 }
                 (glow, HashSet::new())
             }
+            Some(Decision::PayMana { options, .. }) => (
+                options
+                    .iter()
+                    .filter_map(|o| match o {
+                        PayAction::ActivateMana(c, _) => Some(i64::from(*c)),
+                        _ => None,
+                    })
+                    .collect(),
+                HashSet::new(),
+            ),
             Some(Decision::DeclareBlockers { candidates, attackers, .. }) => {
                 let assigned: HashSet<CardId> = self.block_plan.iter().map(|(b, _)| *b).collect();
                 let mut glow: HashSet<i64> =
@@ -743,6 +777,21 @@ impl ForgeTable {
                     ),
                     if n == 0 { tr!("Nicht angreifen", "No attack").to_string() } else { trf!("Angreifen ({n})", "Attack ({n})") },
                 )
+            }
+            Decision::PayMana { remaining, .. } => {
+                return Some(HudChoice {
+                    key: req.id,
+                    title: trf!("Mana bezahlen: {remaining}", "Pay mana: {remaining}"),
+                    detail: tr!(
+                        "Klick auf ein leuchtendes Land bzw. eine Manaquelle = Mana erzeugen und einsetzen.",
+                        "Click a glowing land or mana source to tap it for mana."
+                    )
+                    .into(),
+                    mode: ChoiceMode::Done { label: tr!("Automatisch bezahlen", "Auto pay").into() },
+                    options: Vec::new(),
+                    cancelable: true,
+                    side: true,
+                });
             }
             Decision::DeclareBlockers { .. } => {
                 let n = self.block_plan.len();

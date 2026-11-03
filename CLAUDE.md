@@ -81,8 +81,10 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 `RulesEngine`), Java-Übersetzer `forge-bridge/.../Decisions.java`, UI-Abbildung
 `rust/src/game/decision_view.rs`. Jedes weitere Bedienmuster direkt gegen die passende
 `Decision`-Variante bauen. Fertig: `ChooseTargets` per Klick/Pfeil, Aktivieren per Klick,
-`DeclareAttackers` / `DeclareBlockers` per Klick mit Kampfpfeilen. Nächster Schritt laut Fahrplan:
-`PayMana` (Länder antippen, `AutoPay`).
+`DeclareAttackers` / `DeclareBlockers` per Klick mit Kampfpfeilen, `PayMana` (Quellen anklicken,
+Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.playSpellAbility`
+(im Jar), der die überschriebenen Controller-Methoden fragt. Nächster Schritt laut Fahrplan:
+`ChooseCards` / `Scry` / `OrderTriggers` (Kartenfächer).
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
@@ -104,7 +106,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 1. `ChooseTargets` (`chooseTargetsFor` ✔ beim Wirken; offen: Ziele ausgelöster Fähigkeiten, `chooseSingleEntityForEffect`, `chooseEntitiesForEffect`)
 2. ~~`DeclareAttackers`~~ ✔ (offen: Erschöpfen/Rekrutieren)
 3. ~~`DeclareBlockers`~~ ✔ (offen: Reihenfolge der Blocker)
-4. `PayMana` mit `PayAction` (`payManaCost`, `chooseManaFromPool`): Länder antippen; `AutoPay`, `Cancel`
+4. ~~`PayMana`~~ ✔ (offen: Pool-Mana gezielt wählen, `chooseManaFromPool`, andere Kosten wie Opfern/Abwerfen)
 5. ~~`Priority` mit `Action::Activate` per Klick, Menü bei mehreren~~ ✔
 6. `ChooseCards` (mit `CardChoiceReason`), `Scry` (`Choice::Arrange`), `OrderTriggers`, `MulliganBottom`
 7. `AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`

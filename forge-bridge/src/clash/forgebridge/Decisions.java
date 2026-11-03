@@ -75,6 +75,17 @@ final class Decisions {
      */
     static JsonObject ask(Game game, int seat, JsonObject decision, String prompt, SpellAbility sa, Card card,
             boolean cancelable, List<String> labels) {
+        JsonElement a = askRaw(game, seat, decision, prompt, sa, card, cancelable, labels);
+        if (a == null || !a.isJsonObject()) {
+            return null;
+        }
+        JsonObject choice = a.getAsJsonObject();
+        return "Cancel".equals(type(choice)) ? null : choice;
+    }
+
+    /** Wie {@link #ask}, liefert aber die rohe Antwort (auch {@code Cancel}). */
+    static JsonElement askRaw(Game game, int seat, JsonObject decision, String prompt, SpellAbility sa, Card card,
+            boolean cancelable, List<String> labels) {
         Card src = source(sa, card);
         JsonObject env = new JsonObject();
         env.add("decision", decision);
@@ -95,12 +106,7 @@ final class Decisions {
             env.add("labels", arr);
         }
         env.add("state", StateJson.snapshot(game, seat));
-        JsonElement a = ForgeBridge.request(seat, env);
-        if (a == null || !a.isJsonObject()) {
-            return null;
-        }
-        JsonObject choice = a.getAsJsonObject();
-        return "Cancel".equals(type(choice)) ? null : choice;
+        return ForgeBridge.request(seat, env);
     }
 
     static String type(JsonObject o) {
@@ -377,6 +383,55 @@ final class Decisions {
             }
         }
         return -1;
+    }
+
+    /**
+     * {@code PayMana}: {@code refs} = (Karten-ID, Index der Manafähigkeit) je Quelle. Gibt den Index
+     * der gewählten Quelle als Text zurück, "AutoPay", "Cancel" oder null (unlesbar).
+     */
+    static String payMana(Game game, int seat, SpellAbility sa, String remaining, List<int[]> refs,
+            List<String> labels) {
+        JsonObject d = decision("PayMana", seat);
+        d.addProperty("remaining", remaining);
+        JsonArray opts = new JsonArray();
+        for (int[] r : refs) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "ActivateMana");
+            o.addProperty("card", r[0]);
+            o.addProperty("index", r[1]);
+            opts.add(o);
+        }
+        JsonObject auto = new JsonObject();
+        auto.addProperty("type", "AutoPay");
+        opts.add(auto);
+        JsonObject cancel = new JsonObject();
+        cancel.addProperty("type", "Cancel");
+        opts.add(cancel);
+        d.add("options", opts);
+        List<String> all = new ArrayList<>(labels);
+        all.add("Automatisch bezahlen");
+        all.add("Abbrechen");
+        JsonElement raw = askRaw(game, seat, d, "Mana bezahlen: " + remaining, sa, null, true, all);
+        if (raw == null || !raw.isJsonObject()) {
+            return null;
+        }
+        JsonObject c = raw.getAsJsonObject();
+        if ("Cancel".equals(type(c))) {
+            return "Cancel";
+        }
+        if (!"Pay".equals(type(c)) || !c.has("pay") || !c.get("pay").isJsonObject()) {
+            return null;
+        }
+        JsonObject pay = c.getAsJsonObject("pay");
+        switch (type(pay)) {
+            case "AutoPay":
+                return "AutoPay";
+            case "Cancel":
+                return "Cancel";
+            default:
+                int i = indexOfTarget(opts, pay);
+                return i >= 0 && i < refs.size() ? String.valueOf(i) : null;
+        }
     }
 
     // ------------------------------------------------------------------ Erweiterungen

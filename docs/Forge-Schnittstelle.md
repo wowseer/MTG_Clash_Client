@@ -65,14 +65,25 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost`, angesagte Werte ≠ X | `ChooseNumber` (**Erweiterung**) | `Number(n)` |
 | `declareAttackers` | `DeclareAttackers { candidates, defenders }` | `Attackers([[karte, ziel], …])`; leer = kein Angriff |
 | `declareBlockers` | `DeclareBlockers { candidates, attackers }` | `Blocks([[blocker, angreifer], …])`; leer = nicht blocken |
-| Manabezahlung, Schaden verteilen, Kartenauswahl, Ziele ausgelöster Fähigkeiten | (`PayMana`, `AssignCombatDamage`, `ChooseCards` …) | **vorerst Forge-KI** |
+| `applyManaToCost` (über `payManaCost`) | `PayMana { remaining, options: [ActivateMana(karte, i), AutoPay, Cancel] }` | `Pay(ActivateMana(…))` → Quelle tappen, Mana einsetzen, erneut fragen bis bezahlt; `Pay(AutoPay)`; `Pay(Cancel)` = Wirken zurücknehmen |
+| Schaden verteilen, Kartenauswahl, andere Kosten (Opfern, Abwerfen …), Ziele ausgelöster Fähigkeiten | (`AssignCombatDamage`, `ChooseCards` …) | **vorerst Forge-KI** |
 | Gegner (nicht ferngesteuerte Sitzplätze) | – | Forge-KI |
 
-**Ablauf beim Spielen** (`RemotePlayerController.prepareRemote`, nachgebaut nach Forges Ablauf für
-menschliche Spieler, `PlaySpellAbility` im Forge-Quellcode): Zusatzkosten/optionale Kosten →
-Modi (`CharmEffect.makeChoices`) → angesagter Typ → X-Wert (`announceRequirements`) →
-`SpellAbility.setupTargets()` (ruft je gezielter Teilfähigkeit `chooseTargetsFor`) → Bezahlen
-durch Forge (vorerst automatisch). Zauber, deren Schaden frei verteilt wird, bereitet noch die KI vor.
+**Ablauf beim Spielen** (`RemotePlayerController.playChosenSpellAbility`): Die Brücke ruft Forges
+eigenen Ablauf für menschliche Spieler auf, `forge.game.player.PlaySpellAbility.playSpellAbility`
+(im Jar enthalten). Er fragt den Controller der Reihe nach: Zusatzkosten/optionale Kosten
+(`chooseOptionalCosts`) → Modi (`chooseModeForAbility`) → angesagter Typ → X-Wert
+(`announceRequirements`) → Ziele (`setupTargets` → `chooseTargetsFor`) → Kosten
+(`CostPayment` mit `getCostDecisionMaker`; Mana über `payManaCost` → `PlaySpellAbility.payManaCost`
+→ `applyManaToCost` = `PayMana`; andere Kosten entscheidet vorerst die KI). Abbruch an jeder Stelle
+→ Forge nimmt das Wirken zurück, die Brücke meldet `rejected`. Zauber, deren Schaden frei verteilt
+wird, laufen noch komplett über die KI.
+
+**Mana bezahlen** (`applyManaToCost`): schwebendes Mana im Pool wird zuerst eingesetzt
+(`ManaPool.payManaCostFromPool`). Danach `PayMana` mit allen jetzt aktivierbaren Manafähigkeiten
+eigener bleibender Karten. `ActivateMana`: Kosten der Manafähigkeit zahlen (Tappen; entscheidet
+`AiCostDecision`), Fähigkeit auflösen, Mana mit `ManaPool.payManaFromAbility` einsetzen – wie
+Forges KI für eine einzelne Quelle. `AutoPay`: `ComputerUtilMana.payManaCost`.
 
 **Kampf** (`RemotePlayerController.declareAttackers` / `declareBlockers`): Kandidaten sind die
 Kreaturen, für die Forge `CombatUtil.canAttack` bzw. `canBlock` erlaubt; jede Antwort wird mit
@@ -175,6 +186,8 @@ Forge-KI. Eine Einfachauswahl mit nur einer Option und ohne Abbrechen wird gar n
 
 Karten: `id`, `name`, `type`, `tapped`, bei Kreaturen zusätzlich `power`, `toughness`.
 
+Spieler zusätzlich: `mana_pool` = Menge schwebenden Manas je Farbe in der Reihenfolge W U B R G C.
+
 `combat` (laufender Kampf, sonst leere Listen): `attackers` = Liste `{card, target}` (`target` als
 `Target`), `blocks` = Liste `[blocker, angreifer]`.
 
@@ -223,6 +236,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt; `library` = verdeckter Stapel in der Deck-Zone, neue Handkarten werden von dort gezogen |
 | `Priority` | Karten mit einer Aktion leuchten; Handkarte auf den Tisch ziehen → `PlayLand`/`Cast`; Klick auf eine Karte außerhalb der Hand → ihre `Activate`-Aktion (mehrere: Menü „Fähigkeit wählen“, nur UI); Hauptbutton / Leertaste → `Action::Pass` |
 | `ChooseTargets` | gültige Karten leuchten, wählbare Spieler-Medaillons pulsieren golden; Klick wählt (Signal `ForgeTable.choice_option_clicked` → Auswahlfenster am rechten Rand); gewählte Ziele golden markiert, Pfeile Quelle → Ziel (`TargetArrows`) |
+| `PayMana` | Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
@@ -244,7 +258,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Ziele per Klick (Karte, Medaillon, Mehrfachziele, Pfeile) und Aktivieren per Klick (inkl. Menü)
   getestet; Angriff und Block per Klick getestet (Angreifen mit 1–3 Kreaturen, „Nicht angreifen“,
   Blocken gegen 1–3 Angreifer, Kampfpfeile der KI aus `combat`).
-- Noch nicht ferngesteuert: Manabezahlung, Kampfschaden verteilen, Auswahl von Karten, Ziele
+- Mana bezahlen getestet: Land-Klicks bis bezahlt (z. B. {2}{R} → {2} → {1}), „Automatisch“,
+  Kicker/Modi/X/Ziele über Forges menschlichen Ablauf.
+- Noch nicht ferngesteuert: andere Kosten als Mana, Kampfschaden verteilen, Auswahl von Karten, Ziele
   ausgelöster Fähigkeiten; Ziele werden noch als Liste gewählt, nicht per Klick auf dem Tisch;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.
