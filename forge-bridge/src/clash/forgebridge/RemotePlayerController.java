@@ -25,7 +25,12 @@ import forge.game.Game;
 import forge.game.GameEntity;
 import forge.game.card.Card;
 import forge.game.card.CardState;
+import forge.game.card.CardCollection;
+import forge.game.card.CardCollectionView;
 import forge.game.card.CounterType;
+import forge.game.player.DelayedReveal;
+import forge.util.collect.FCollectionView;
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import forge.game.combat.Combat;
 import forge.game.combat.CombatUtil;
 import forge.game.cost.Cost;
@@ -52,7 +57,7 @@ import forge.game.zone.ZoneType;
  *
  * <p>Jede Frage geht als NeoForge-{@code Decision} an den Client ({@link Decisions},
  * Protokoll v3): Priorität, Mulligan, beim Wirken optionale Kosten, Modi, X und Ziele, dazu alle
- * allgemeinen Auswahl-Dialoge, Angreifer und Blocker. Manabezahlung und Kartenauswahl trifft vorerst
+ * allgemeinen Auswahl-Dialoge, Angreifer, Blocker, Kartenauswahl, Scry, Reihenfolgen. Andere Kosten als Mana trifft vorerst
  * die Forge-KI, von der diese Klasse erbt. Antwortet der Client ungültig, entscheidet ebenfalls
  * die KI. Weitere Entscheidungen lassen sich ferngesteuert machen, indem man die passende Methode
  * von {@code PlayerController} überschreibt und die passende Methode von {@link Decisions} aufruft.
@@ -430,6 +435,212 @@ public class RemotePlayerController extends PlayerControllerAi {
             error = "Ungültige Blocks: " + problem;
         }
         super.declareBlockers(defender, combat);
+    }
+
+    // ------------------------------------------------------------------ Karten wählen
+
+    private CardCollection pickCards(String reason, CardCollectionView options, int min, int max, String prompt,
+            SpellAbility sa, boolean cancelable) {
+        List<Card> list = new ArrayList<>(options);
+        List<Integer> chosen = Decisions.cards(getGame(), seat, reason, list, min, max, prompt, sa, cancelable);
+        if (chosen == null) {
+            return null;
+        }
+        CardCollection result = new CardCollection();
+        chosen.forEach(i -> result.add(list.get(i)));
+        return result;
+    }
+
+    @Override
+    public CardCollectionView chooseCardsForEffect(CardCollectionView sourceList, SpellAbility sa, String title,
+            int min, int max, boolean isOptional, Map<String, Object> params) {
+        CardCollection r = pickCards("Choose", sourceList, isOptional ? 0 : min, max, title, sa, false);
+        return r != null ? r : super.chooseCardsForEffect(sourceList, sa, title, min, max, isOptional, params);
+    }
+
+    @Override
+    public List<Card> chooseCardsForZoneChange(ZoneType destination, List<ZoneType> origin, SpellAbility sa,
+            CardCollection fetchList, int min, int max, DelayedReveal delayedReveal, String selectPrompt,
+            Player decider) {
+        String reason = origin != null && origin.contains(ZoneType.Library) ? "Search" : "Choose";
+        CardCollection r = pickCards(reason, fetchList, min, max, selectPrompt, sa, false);
+        return r != null ? r
+                : super.chooseCardsForZoneChange(destination, origin, sa, fetchList, min, max, delayedReveal,
+                        selectPrompt, decider);
+    }
+
+    @Override
+    public Card chooseSingleCardForZoneChange(ZoneType destination, List<ZoneType> origin, SpellAbility sa,
+            CardCollection fetchList, DelayedReveal delayedReveal, String selectPrompt, boolean isOptional,
+            Player decider) {
+        String reason = origin != null && origin.contains(ZoneType.Library) ? "Search" : "Choose";
+        CardCollection r = pickCards(reason, fetchList, isOptional ? 0 : 1, 1, selectPrompt, sa, false);
+        if (r == null) {
+            return super.chooseSingleCardForZoneChange(destination, origin, sa, fetchList, delayedReveal,
+                    selectPrompt, isOptional, decider);
+        }
+        return r.isEmpty() ? null : r.get(0);
+    }
+
+    @Override
+    public CardCollection chooseCardsToDiscardFrom(Player playerDiscard, SpellAbility sa,
+            CardCollection validCards, int min, int max, CardCollectionView visibleToChooser) {
+        CardCollection r = pickCards("Discard", validCards, min, max, "Karten abwerfen", sa, false);
+        return r != null ? r
+                : super.chooseCardsToDiscardFrom(playerDiscard, sa, validCards, min, max, visibleToChooser);
+    }
+
+    @Override
+    public CardCollectionView chooseCardsToDiscardToMaximumHandSize(int numDiscard) {
+        CardCollection r = pickCards("DiscardToHandSize", getPlayer().getCardsIn(ZoneType.Hand), numDiscard,
+                numDiscard, "Auf Handkartenlimit abwerfen", null, false);
+        return r != null ? r : super.chooseCardsToDiscardToMaximumHandSize(numDiscard);
+    }
+
+    @Override
+    public CardCollectionView choosePermanentsToSacrifice(SpellAbility sa, int min, int max,
+            CardCollectionView validTargets, String message) {
+        CardCollection r = pickCards("Sacrifice", validTargets, min, max, message, sa, false);
+        return r != null ? r : super.choosePermanentsToSacrifice(sa, min, max, validTargets, message);
+    }
+
+    @Override
+    public CardCollectionView choosePermanentsToDestroy(SpellAbility sa, int min, int max,
+            CardCollectionView validTargets, String message) {
+        CardCollection r = pickCards("Sacrifice", validTargets, min, max, message, sa, false);
+        return r != null ? r : super.choosePermanentsToDestroy(sa, min, max, validTargets, message);
+    }
+
+    @Override
+    public CardCollectionView chooseCardsToRevealFromHand(int min, int max, CardCollectionView valid) {
+        CardCollection r = pickCards("Choose", valid, min, max, "Karten aufdecken", null, false);
+        return r != null ? r : super.chooseCardsToRevealFromHand(min, max, valid);
+    }
+
+    /** Karten oder Spieler für einen Effekt: nur Karten → {@code ChooseCards}, sonst Erweiterung. */
+    @Override
+    public <T extends GameEntity> T chooseSingleEntityForEffect(FCollectionView<T> optionList,
+            DelayedReveal delayedReveal, SpellAbility sa, String title, boolean isOptional, Player relatedPlayer,
+            Map<String, Object> params) {
+        List<T> list = new ArrayList<>(optionList);
+        if (list.isEmpty()) {
+            return null;
+        }
+        if (list.stream().allMatch(e -> e instanceof Card)) {
+            CardCollection cards = new CardCollection();
+            list.forEach(e -> cards.add((Card) e));
+            CardCollection r = pickCards("Choose", cards, isOptional ? 0 : 1, 1, title, sa, false);
+            if (r != null) {
+                @SuppressWarnings("unchecked")
+                T t = r.isEmpty() ? null : (T) r.get(0);
+                return t;
+            }
+        } else {
+            List<Decisions.Opt> opts = new ArrayList<>();
+            list.forEach(e -> opts.add(new Decisions.Opt(targetLabel(e), null)));
+            Integer i = Decisions.option(getGame(), seat, title, sa, null, opts, isOptional);
+            if (i != null) {
+                return list.get(i);
+            }
+            if (isOptional) {
+                return null;
+            }
+        }
+        return super.chooseSingleEntityForEffect(optionList, delayedReveal, sa, title, isOptional, relatedPlayer,
+                params);
+    }
+
+    @Override
+    public <T extends GameEntity> List<T> chooseEntitiesForEffect(FCollectionView<T> optionList, int min, int max,
+            DelayedReveal delayedReveal, SpellAbility sa, String title, Player relatedPlayer,
+            Map<String, Object> params) {
+        List<T> list = new ArrayList<>(optionList);
+        List<Integer> chosen;
+        if (list.stream().allMatch(e -> e instanceof Card)) {
+            List<Card> cards = new ArrayList<>();
+            list.forEach(e -> cards.add((Card) e));
+            chosen = Decisions.cards(getGame(), seat, "Choose", cards, min, max, title, sa, false);
+        } else {
+            List<Decisions.Opt> opts = new ArrayList<>();
+            list.forEach(e -> opts.add(new Decisions.Opt(targetLabel(e), null)));
+            chosen = Decisions.options(getGame(), seat, title, sa, null, opts, min, max, false);
+        }
+        if (chosen == null) {
+            return super.chooseEntitiesForEffect(optionList, min, max, delayedReveal, sa, title, relatedPlayer,
+                    params);
+        }
+        List<T> result = new ArrayList<>();
+        chosen.forEach(i -> result.add(list.get(i)));
+        return result;
+    }
+
+    @Override
+    public ImmutablePair<CardCollection, CardCollection> arrangeForScry(CardCollection topN) {
+        return arrange(topN, false);
+    }
+
+    @Override
+    public ImmutablePair<CardCollection, CardCollection> arrangeForSurveil(CardCollection topN) {
+        return arrange(topN, true);
+    }
+
+    /** {@code Decision::Scry}: oben (von oben nach unten) und unten bzw. Friedhof. */
+    private ImmutablePair<CardCollection, CardCollection> arrange(CardCollection topN, boolean surveil) {
+        List<Card> list = new ArrayList<>(topN);
+        List<List<Integer>> r = Decisions.scry(getGame(), seat, list, surveil);
+        if (r == null) {
+            return surveil ? super.arrangeForSurveil(topN) : super.arrangeForScry(topN);
+        }
+        CardCollection top = new CardCollection();
+        CardCollection bottom = new CardCollection();
+        r.get(0).forEach(i -> top.add(list.get(i)));
+        r.get(1).forEach(i -> bottom.add(list.get(i)));
+        return ImmutablePair.of(top, bottom);
+    }
+
+    /** Reihenfolge von Karten beim Zonenwechsel ({@code OrderTriggers} mit Kartennamen). */
+    @Override
+    public CardCollectionView orderMoveToZoneList(CardCollectionView cards, ZoneType destinationZone,
+            SpellAbility source) {
+        List<Card> list = new ArrayList<>(cards);
+        List<String> names = new ArrayList<>();
+        list.forEach(c -> names.add(c.getName()));
+        List<Integer> order = Decisions.order(getGame(), seat, names,
+                "Reihenfolge wählen (" + destinationZone + ", erste zuerst)", list);
+        if (order == null) {
+            return super.orderMoveToZoneList(cards, destinationZone, source);
+        }
+        CardCollection result = new CardCollection();
+        order.forEach(i -> result.add(list.get(i)));
+        return result;
+    }
+
+    /** {@code Decision::OrderTriggers} (CR 603.3b): eigene gleichzeitige Trigger ordnen. */
+    @Override
+    public List<SpellAbility> orderSimultaneousSa(List<SpellAbility> activePlayerSAs) {
+        List<String> texts = new ArrayList<>();
+        activePlayerSAs.forEach(sa -> texts.add(sa.getHostCard().getName() + ": " + sa.toUnsuppressedString()));
+        List<Integer> order = Decisions.order(getGame(), seat, texts,
+                "Reihenfolge der Fähigkeiten auf dem Stack (erste kommt zuerst darauf)", null);
+        if (order == null) {
+            return super.orderSimultaneousSa(activePlayerSAs);
+        }
+        List<SpellAbility> result = new ArrayList<>();
+        order.forEach(i -> result.add(activePlayerSAs.get(i)));
+        return result;
+    }
+
+    /** {@code Decision::MulliganBottom} (London-Mulligan): Karten unter die Bibliothek. */
+    @Override
+    public CardCollectionView tuckCardsViaMulligan(CardCollectionView hand, int cardsToReturn) {
+        List<Card> list = new ArrayList<>(hand);
+        List<Integer> chosen = Decisions.mulliganBottom(getGame(), seat, list, cardsToReturn);
+        if (chosen == null) {
+            return super.tuckCardsViaMulligan(hand, cardsToReturn);
+        }
+        CardCollection result = new CardCollection();
+        chosen.forEach(i -> result.add(list.get(i)));
+        return result;
     }
 
     /** {@code Decision::Mulligan}: {@code Keep} = behalten, {@code Mulligan} = neu ziehen. */

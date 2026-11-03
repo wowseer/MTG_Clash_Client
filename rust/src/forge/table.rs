@@ -17,9 +17,10 @@ use godot::prelude::*;
 use super::bridge::ForgeBridge;
 use crate::game::cards::{CardDef, CardKind};
 use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
+use crate::game::card_fan::{FanMode, HudFan};
 use crate::game::decision_view;
 use crate::game::hud::HudView;
-use crate::rules::decision::PayAction;
+use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::mana::{Cost, ManaType};
 use crate::game::phases::Phase;
@@ -106,6 +107,10 @@ pub struct ForgeTable {
     /// Zuletzt gewählte Kreatur im Kampf: Angreifer, dessen Ziel ein Klick auf ein anderes
     /// Angriffsziel ändert, bzw. Blocker, der auf seinen Angreifer wartet.
     combat_armed: Option<CardId>,
+    /// Kartenbilder für den Kartenfächer der offenen Anfrage: Karten vom Tisch oder (für
+    /// verdeckte Zonen) temporäre Karten aus den mitgeschickten Kartendaten. Temporäre Karten
+    /// (zweiter Wert true) werden nach der Antwort freigegeben.
+    fan_cards: Vec<(CardId, Gd<Card3D>, bool)>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -142,6 +147,7 @@ impl INode for ForgeTable {
             attack_plan: Vec::new(),
             block_plan: Vec::new(),
             combat_armed: None,
+            fan_cards: Vec::new(),
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -279,6 +285,20 @@ impl ForgeTable {
         }
     }
 
+    /// Antwort aus dem Kartenfächer: `first` = gewählte Karten (`ChooseCards`, `MulliganBottom`)
+    /// bzw. Karten oben auf der Bibliothek (`Scry`, von oben nach unten), `second` = Karten unter die
+    /// Bibliothek bzw. in den Friedhof.
+    #[func]
+    pub fn submit_fan(&mut self, first: PackedInt64Array, second: PackedInt64Array) {
+        let ids = |a: &PackedInt64Array| a.as_slice().iter().filter_map(|i| u32::try_from(*i).ok()).collect::<Vec<_>>();
+        let choice = match self.pending.as_ref().map(|r| &r.decision) {
+            Some(Decision::ChooseCards { .. }) | Some(Decision::MulliganBottom { .. }) => Choice::Cards(ids(&first)),
+            Some(Decision::Scry { .. }) => Choice::Arrange { top: ids(&first), bottom: ids(&second) },
+            _ => return,
+        };
+        self.answer(choice);
+    }
+
     /// Aktuelle Auswahl im Auswahlfenster (vom HUD jedes Frame gemeldet): gewählte Ziele werden
     /// auf dem Tisch golden markiert und bekommen einen Pfeil.
     #[func]
@@ -348,6 +368,7 @@ impl ForgeTable {
         // Karte, um die es geht, golden markieren
         let source = req.source.and_then(|id| self.cards.get(&(id as i64)).cloned());
         self.set_marked(source);
+        self.prepare_fan(&req);
         self.attack_plan.clear();
         self.block_plan.clear();
         self.combat_armed = None;
@@ -469,6 +490,7 @@ impl ForgeTable {
             options: labels.iter().map(|l| ChoiceOption { text: l.clone(), color: None }).collect(),
             cancelable: true,
             side: false,
+            numbered: false,
         });
         let combat_choice = self.pending.as_ref().and_then(|req| self.combat_choice(req));
         let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().and_then(|req| {
@@ -541,6 +563,7 @@ impl ForgeTable {
                 .map(|a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).collect())
                 .unwrap_or_default(),
             choice,
+            fan: self.pending.as_ref().and_then(|req| self.hud_fan(req)),
             targetable_seats: seat_state(false),
             selected_seats: seat_state(true),
         }
@@ -579,6 +602,7 @@ impl ForgeTable {
         let Some(req) = self.pending.take() else { return };
         self.menu = None;
         self.selection.clear();
+        self.free_fan_cards();
         self.attack_plan.clear();
         self.block_plan.clear();
         self.combat_armed = None;
@@ -791,6 +815,7 @@ impl ForgeTable {
                     options: Vec::new(),
                     cancelable: true,
                     side: true,
+                    numbered: false,
                 });
             }
             Decision::DeclareBlockers { .. } => {
@@ -813,7 +838,81 @@ impl ForgeTable {
         } else {
             req.prompt.clone()
         };
-        Some(HudChoice { key: req.id, title, detail, mode: ChoiceMode::Done { label }, options: Vec::new(), cancelable: false, side: true })
+        Some(HudChoice { key: req.id, title, detail, mode: ChoiceMode::Done { label }, options: Vec::new(), cancelable: false, side: true, numbered: false })
+    }
+
+    /// Karten-IDs, die der Kartenfächer für `decision` zeigt (leer = kein Fächer).
+    fn fan_ids(decision: &Decision) -> Vec<CardId> {
+        match decision {
+            Decision::ChooseCards { options, .. } => options.clone(),
+            Decision::MulliganBottom { hand, .. } => hand.clone(),
+            Decision::Scry { cards, .. } => cards.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Stellt die Kartenbilder für den Kartenfächer bereit (Tischkarte oder temporäre Karte aus
+    /// den mitgeschickten Kartendaten).
+    fn prepare_fan(&mut self, req: &Request) {
+        self.free_fan_cards();
+        for id in Self::fan_ids(&req.decision) {
+            if let Some(card) = self.cards.get(&i64::from(id)).cloned() {
+                self.fan_cards.push((id, card, false));
+                continue;
+            }
+            let data = req.cards.iter().find(|c| get_int(c, "id") == i64::from(id));
+            let def = data.map(def_from_forge).unwrap_or_else(|| CardDef::base("?", CardKind::Creature, Cost::default()));
+            let mut card = Card3D::new_alloc();
+            {
+                let mut c = card.bind_mut();
+                c.set_face_texture(Some(placeholder::card_face(&def)));
+                c.apply_def(&def);
+            }
+            self.fan_cards.push((id, card, true));
+        }
+    }
+
+    fn free_fan_cards(&mut self) {
+        for (_, card, temporary) in self.fan_cards.drain(..) {
+            if temporary && card.is_instance_valid() {
+                card.free();
+            }
+        }
+    }
+
+    /// Inhalt des Kartenfächers für die offene Anfrage.
+    fn hud_fan(&self, req: &Request) -> Option<HudFan> {
+        if self.fan_cards.is_empty() {
+            return None;
+        }
+        let cards = self.fan_cards.iter().map(|(id, c, _)| (*id, c.clone())).collect();
+        let (title, mode) = match &req.decision {
+            Decision::ChooseCards { reason, min, max, .. } => {
+                let fallback = match reason {
+                    CardChoiceReason::Discard | CardChoiceReason::DiscardCost => tr!("Karten abwerfen", "Discard cards"),
+                    CardChoiceReason::DiscardToHandSize => tr!("Auf Handkartenlimit abwerfen", "Discard to hand size"),
+                    CardChoiceReason::Sacrifice | CardChoiceReason::SacrificeCost => tr!("Bleibende Karten opfern", "Sacrifice permanents"),
+                    CardChoiceReason::Search => tr!("Bibliothek durchsuchen", "Search your library"),
+                    _ => tr!("Karten wählen", "Choose cards"),
+                };
+                let title = if req.prompt.is_empty() { fallback.to_string() } else { req.prompt.clone() };
+                (title, FanMode::Pick { min: *min as usize, max: *max as usize })
+            }
+            Decision::MulliganBottom { count, .. } => (
+                trf!("{count} Karte(n) unter die Bibliothek legen", "Put {count} card(s) on the bottom of your library"),
+                FanMode::Pick { min: *count as usize, max: *count as usize },
+            ),
+            Decision::Scry { graveyard, .. } => (
+                if *graveyard {
+                    tr!("Überwachen: Klick legt eine Karte in die andere Reihe", "Surveil: click a card to move it to the other row").into()
+                } else {
+                    tr!("Hellsicht: Klick legt eine Karte in die andere Reihe", "Scry: click a card to move it to the other row").into()
+                },
+                FanMode::Arrange { graveyard: *graveyard },
+            ),
+            _ => return None,
+        };
+        Some(HudFan { key: req.id, title, detail: req.source_name.clone(), mode, cards, cancelable: req.cancelable })
     }
 
     /// Index des Kandidaten `target` in der offenen Zielwahl.

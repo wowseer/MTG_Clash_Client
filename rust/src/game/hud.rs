@@ -35,6 +35,7 @@ use super::mana_view::ManaPoolView;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::card_preview;
+use super::card_fan::{CardFan, HudFan};
 use super::choice_panel::ChoicePanel;
 pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
@@ -106,6 +107,8 @@ pub struct TurnHud {
     root: Option<Gd<Control>>,
     /// Auswahlfenster in der Bildschirmmitte (alle allgemeinen Forge-Entscheidungen).
     choice: Option<ChoicePanel>,
+    /// Kartenfächer (Karten wählen / anordnen) in der Bildmitte.
+    fan: Option<CardFan>,
 
     base: Base<CanvasLayer>,
 }
@@ -136,6 +139,7 @@ impl ICanvasLayer for TurnHud {
             drag_preview: None,
             root: None,
             choice: None,
+            fan: None,
             base,
         }
     }
@@ -176,6 +180,30 @@ impl TurnHud {
         if let Some(answer) = answer {
             self.submit(answer);
         }
+    }
+
+    /// Karte `index` im Kartenfächer angeklickt (wählen bzw. in die andere Reihe legen).
+    #[func]
+    fn on_fan_card(&mut self, index: i64) {
+        if let Some(f) = self.fan.as_mut() {
+            f.on_card(index.max(0) as usize);
+        }
+    }
+
+    /// „Fertig“ im Kartenfächer: Auswahl bzw. Anordnung an den [ForgeTable].
+    #[func]
+    fn on_fan_done(&mut self) {
+        let Some((first, second)) = self.fan.as_ref().and_then(|f| f.done()) else { return };
+        let ids = |v: Vec<u32>| v.into_iter().map(i64::from).collect::<PackedInt64Array>();
+        if let Some(ft) = self.forge_table.as_mut() {
+            ft.bind_mut().submit_fan(ids(first), ids(second));
+        }
+    }
+
+    /// „Abbrechen“ im Kartenfächer.
+    #[func]
+    fn on_fan_cancel(&mut self) {
+        self.submit(Variant::nil());
     }
 
     /// Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den [ForgeTable] weitergeben.
@@ -268,6 +296,7 @@ impl TurnHud {
         root.add_child(&button);
 
         self.choice = Some(ChoicePanel::new(&mut root));
+        self.fan = Some(CardFan::new(&mut root));
         // Medaillon-Klicks (Spieler als Ziel) an den ForgeTable melden
         for (seat, badge) in [(0i64, &me_badge), (1, &opp_badge)] {
             let cb = Callable::from_object_method(&self.to_gd(), "on_badge_clicked").bind(&[seat.to_variant()]);
@@ -451,6 +480,9 @@ impl TurnHud {
         if let Some(mut ft) = self.forge_table.clone() {
             ft.bind_mut().set_choice_selection(selection);
         }
+        if let Some(fan) = self.fan.as_mut() {
+            fan.show(view.fan.as_ref(), &hud);
+        }
     }
 }
 
@@ -478,6 +510,8 @@ pub struct HudView {
     pub targetable_seats: [bool; 2],
     /// Ist Sitzplatz 0 / 1 als Ziel gewählt?
     pub selected_seats: [bool; 2],
+    /// Kartenfächer (Karten wählen / anordnen), `None` = keiner.
+    pub fan: Option<HudFan>,
 }
 
 pub(super) fn styled_button(font_size: i32) -> Gd<Button> {

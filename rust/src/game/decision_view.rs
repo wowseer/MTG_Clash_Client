@@ -62,6 +62,11 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(usize) -> String) -> Option<Hu
         Decision::ChooseOptions { prompt, options, min, max, .. } => {
             (prompt.clone(), single_or_multi(*min, *max), ext_options(options))
         }
+        Decision::OrderTriggers { descriptions, .. } => (
+            tr!("Reihenfolge wählen: in der Reihenfolge anklicken (erste zuerst)", "Choose the order: click in order (first goes first)").into(),
+            ChoiceMode::Multi { min: descriptions.len(), max: descriptions.len() },
+            plain(descriptions.clone()),
+        ),
         Decision::ChooseNumber { prompt, min, max, .. } => {
             (prompt.clone(), ChoiceMode::Number { min: *min as i64, max: *max as i64 }, vec![])
         }
@@ -81,7 +86,8 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(usize) -> String) -> Option<Hu
     };
     // Bei der Zielwahl an den Rand: Ziele werden auch direkt auf dem Tisch angeklickt
     let side = matches!(req.decision, Decision::ChooseTargets { .. });
-    Some(HudChoice { key: req.id, title, detail, mode, options, cancelable: req.cancelable, side })
+    let numbered = matches!(req.decision, Decision::OrderTriggers { .. });
+    Some(HudChoice { key: req.id, title, detail, mode, options, cancelable: req.cancelable, side, numbered })
 }
 
 /// Eingabe aus dem Auswahlfenster (Index, Indizes, bool, Zahl; nil = Abbrechen) → [`Choice`]
@@ -118,6 +124,7 @@ pub fn to_choice(decision: &Decision, raw: &Variant) -> Option<Choice> {
             Choice::Number(index()? as u32)
         }
         Decision::ChooseOptions { .. } => Choice::Modes(indices()?),
+        Decision::OrderTriggers { .. } => Choice::Order(indices()?),
         Decision::Confirm { .. } | Decision::OptionalTrigger { .. } => {
             if yes()? {
                 Choice::Yes

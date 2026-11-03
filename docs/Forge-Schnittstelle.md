@@ -66,7 +66,12 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `declareAttackers` | `DeclareAttackers { candidates, defenders }` | `Attackers([[karte, ziel], …])`; leer = kein Angriff |
 | `declareBlockers` | `DeclareBlockers { candidates, attackers }` | `Blocks([[blocker, angreifer], …])`; leer = nicht blocken |
 | `applyManaToCost` (über `payManaCost`) | `PayMana { remaining, options: [ActivateMana(karte, i), AutoPay, Cancel] }` | `Pay(ActivateMana(…))` → Quelle tappen, Mana einsetzen, erneut fragen bis bezahlt; `Pay(AutoPay)`; `Pay(Cancel)` = Wirken zurücknehmen |
-| Schaden verteilen, Kartenauswahl, andere Kosten (Opfern, Abwerfen …), Ziele ausgelöster Fähigkeiten | (`AssignCombatDamage`, `ChooseCards` …) | **vorerst Forge-KI** |
+| `chooseCardsForEffect`, `chooseCardsForZoneChange`, `chooseSingleCardForZoneChange`, `chooseCardsToDiscardFrom`, `chooseCardsToDiscardToMaximumHandSize`, `choosePermanentsToSacrifice`, `choosePermanentsToDestroy`, `chooseCardsToRevealFromHand`, `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` (nur Karten) | `ChooseCards { reason, options, min, max }` (`reason`: `Choose`, `Search`, `Discard`, `DiscardToHandSize`, `Sacrifice`) | `Cards([…])` |
+| `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` mit Spielern | `ChooseOption` / `ChooseOptions` (**Erweiterung**) | `Number` / `Modes` |
+| `arrangeForScry`, `arrangeForSurveil` | `Scry { cards, graveyard }` | `Arrange { top, bottom }` |
+| `orderSimultaneousSa` (eigene Trigger), `orderMoveToZoneList` | `OrderTriggers { descriptions }` | `Order([…])` (erstes zuerst) |
+| `tuckCardsViaMulligan` | `MulliganBottom { hand, count }` | `Cards([…])` |
+| Schaden verteilen, andere Kosten (Opfern, Abwerfen als Kosten …), Ziele ausgelöster Fähigkeiten | (`AssignCombatDamage` …) | **vorerst Forge-KI** |
 | Gegner (nicht ferngesteuerte Sitzplätze) | – | Forge-KI |
 
 **Ablauf beim Spielen** (`RemotePlayerController.playChosenSpellAbility`): Die Brücke ruft Forges
@@ -111,7 +116,7 @@ damit die UI unverändert mit NeoForge läuft:
 | `Decision::ChooseOptions { player, prompt, options, min, max }` → `Choice::Modes(indizes)` | allgemeine Mehrfachauswahl |
 | `Decision::ChooseNumber { player, prompt, min, max }` → `Choice::Number(n)` | Zahl mit Untergrenze ≠ 0 bzw. außerhalb von X |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
-| Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) |
+| Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) und Kartendaten (`cards`: Liste wie im `state`) der Karten, um die es geht – auch aus verdeckten Zonen, z. B. bei `ChooseCards` mit `Search` |
 
 ## Protokoll (Version 3)
 
@@ -236,6 +241,8 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt; `library` = verdeckter Stapel in der Deck-Zone, neue Handkarten werden von dort gezogen |
 | `Priority` | Karten mit einer Aktion leuchten; Handkarte auf den Tisch ziehen → `PlayLand`/`Cast`; Klick auf eine Karte außerhalb der Hand → ihre `Activate`-Aktion (mehrere: Menü „Fähigkeit wählen“, nur UI); Hauptbutton / Leertaste → `Action::Pass` |
 | `ChooseTargets` | gültige Karten leuchten, wählbare Spieler-Medaillons pulsieren golden; Klick wählt (Signal `ForgeTable.choice_option_clicked` → Auswahlfenster am rechten Rand); gewählte Ziele golden markiert, Pfeile Quelle → Ziel (`TargetArrows`) |
+| `ChooseCards` / `MulliganBottom` / `Scry` | Kartenfächer-Overlay (`card_fan.rs`): Karten groß (Tischkarten bzw. temporäre Karten aus `cards`), Klick wählt bzw. wechselt die Reihe; „Fertig“ → `ForgeTable.submit_fan` → `Cards` / `Arrange` |
+| `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
 | `PayMana` | Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
@@ -260,7 +267,10 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Blocken gegen 1–3 Angreifer, Kampfpfeile der KI aus `combat`).
 - Mana bezahlen getestet: Land-Klicks bis bezahlt (z. B. {2}{R} → {2} → {1}), „Automatisch“,
   Kicker/Modi/X/Ziele über Forges menschlichen Ablauf.
-- Noch nicht ferngesteuert: andere Kosten als Mana, Kampfschaden verteilen, Auswahl von Karten, Ziele
+- Kartenfächer getestet mit `testdecks/kartenwahl.dck`: `MulliganBottom` (7 Karten, 1 unter die
+  Bibliothek), `Scry` (Magma Jet, eine Karte nach unten), `ChooseCards` mit `Search`
+  (Wayfarer's Bauble, 20 Karten aus der Bibliothek).
+- Noch nicht ferngesteuert: andere Kosten als Mana, Kampfschaden verteilen, Ziele
   ausgelöster Fähigkeiten; Ziele werden noch als Liste gewählt, nicht per Klick auf dem Tisch;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

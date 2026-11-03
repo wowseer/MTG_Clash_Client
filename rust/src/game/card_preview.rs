@@ -64,10 +64,16 @@ fn fill_face(card: &mut Gd<Control>, source: &Gd<Card3D>, scale: f32) {
 /// Große Vorschau einer Karte (goldener Rahmen, klickdurchlässig), z. B. im oberen Bildbereich,
 /// während die Karte aus der Hand gezogen wird. Höhe der Karte = [`CARD_H`] Pixel.
 pub fn build_preview(source: &Gd<Card3D>) -> Gd<PanelContainer> {
-    let scale = CARD_H / 358.0;
+    build_preview_sized(source, CARD_H, Color::from_rgb(1.0, 0.82, 0.35))
+}
+
+/// Wie [`build_preview`], aber mit Kartenhöhe `height` (Pixel) und Rahmenfarbe `border`
+/// (z. B. für den Kartenfächer).
+pub fn build_preview_sized(source: &Gd<Card3D>, height: f32, border: Color) -> Gd<PanelContainer> {
+    let scale = height / 358.0;
     let mut frame = PanelContainer::new_alloc();
     frame.set_mouse_filter(MouseFilter::IGNORE);
-    frame.add_theme_stylebox_override("panel", &frame_style(Color::from_rgb(1.0, 0.82, 0.35), 3));
+    frame.add_theme_stylebox_override("panel", &frame_style(border, 3));
     let mut card = Control::new_alloc();
     card.set_custom_minimum_size(Vector2::new(256.0, 358.0) * scale);
     card.set_mouse_filter(MouseFilter::IGNORE);

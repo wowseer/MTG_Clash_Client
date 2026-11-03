@@ -29,6 +29,9 @@ pub struct Request {
     pub ability: String,
     pub cancelable: bool,
     pub labels: Vec<String>,
+    /// Kartendaten (`{id, name, type, cost, power, toughness, …}`) der Karten, um die es geht –
+    /// auch aus verdeckten Zonen (Bibliothek), damit die UI sie darstellen kann.
+    pub cards: Vec<VarDictionary>,
 }
 
 impl Request {
@@ -53,6 +56,10 @@ impl Request {
             labels: get("labels")
                 .and_then(|v| v.try_to::<VarArray>().ok())
                 .map(|a| a.iter_shared().map(|v| v.to_string()).collect())
+                .unwrap_or_default(),
+            cards: get("cards")
+                .and_then(|v| v.try_to::<VarArray>().ok())
+                .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
                 .unwrap_or_default(),
         })
     }

@@ -83,14 +83,16 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 `Decision`-Variante bauen. Fertig: `ChooseTargets` per Klick/Pfeil, Aktivieren per Klick,
 `DeclareAttackers` / `DeclareBlockers` per Klick mit Kampfpfeilen, `PayMana` (Quellen anklicken,
 Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.playSpellAbility`
-(im Jar), der die überschriebenen Controller-Methoden fragt. Nächster Schritt laut Fahrplan:
-`ChooseCards` / `Scry` / `OrderTriggers` (Kartenfächer).
+(im Jar), der die überschriebenen Controller-Methoden fragt. Kartenfächer (`card_fan.rs`) für
+`ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Nächster Schritt laut
+Fahrplan: `AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`, Kosten-Auswahlen.
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
 - [x] Mulligan (`mulliganKeepHand`): Auswahlfenster im HUD
-- [x] Beim Spielen wie Forges menschlicher Ablauf: optionale Kosten, Modi, Typ, X, Ziele (`prepareRemote`, `chooseTargetsFor`; Ziele vorerst als Liste)
-- [x] Allgemeine Auswahl (`request` kind `choice`, `RemoteChoice.java`, `choice_panel.rs`): Modi, Optionen, Ja/Nein, Zahlen, Farben, Kartennamen, optionale Kosten, Startspieler (Muster M9–M12)
+- [x] Wirken über Forges menschlichen Ablauf (`PlaySpellAbility.playSpellAbility`): optionale Kosten, Modi, Typ, X, Ziele per Klick (`ChooseTargets`), Mana bezahlen (`PayMana`)
+- [x] Allgemeine Auswahl (`Decisions.java`, `decision_view.rs`, `choice_panel.rs`): Modi, Optionen, Ja/Nein, Zahlen, Farben, Kartennamen, optionale Kosten, Startspieler (Muster M9–M12)
+- [x] Kampf: Angreifer und Blocker per Klick; Kartenfächer für Kartenwahl, Mulligan, Hellsicht; Reihenfolge von Triggern
 
 Angezeigt:
 - [x] Hand, Spielfeld, Länder-Reihe, Friedhof, verdeckte Gegnerhand, getappt
@@ -108,12 +110,11 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 3. ~~`DeclareBlockers`~~ ✔ (offen: Reihenfolge der Blocker)
 4. ~~`PayMana`~~ ✔ (offen: Pool-Mana gezielt wählen, `chooseManaFromPool`, andere Kosten wie Opfern/Abwerfen)
 5. ~~`Priority` mit `Action::Activate` per Klick, Menü bei mehreren~~ ✔
-6. `ChooseCards` (mit `CardChoiceReason`), `Scry` (`Choice::Arrange`), `OrderTriggers`, `MulliganBottom`
+6. ~~`ChooseCards`, `Scry`, `OrderTriggers`, `MulliganBottom`~~ ✔ (offen: Kosten-Auswahlen wie Opfern/Abwerfen als Kosten, Delve, Convoke)
 7. `AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`
 
 **Zustand, der noch fehlt:**
 - Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile
-- Manapool (die Anzeige `ManaPoolView` gibt es schon, Forge liefert den Pool noch nicht)
 - Exil, Marken (Counter), angelegte Karten (Auren, Ausrüstung), Spielsteine
 - Regeltext von Forge auf dem Kartenbild; das Kartenmodell (`CardDef`/`Card3D`) auf Forges Kartendaten verschlanken (Helden/Willenskraft-Felder stammen aus dem alten Regelwerk)
 - Spielprotokoll aus `forge_event`
@@ -145,7 +146,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 | Spiel starten | Godot öffnen, F5 (Hauptszene `godot/table.tscn`) |
 | API-Referenz | `python3 tools/gen_api_doc.py` → muss „ohne Beschreibung: 0“ melden |
 
-**Testdecks:** `forge-bridge/testdecks/` (`spieler.dck` / `gegner.dck` = gemischte Standard-Decks; `auswahl.dck` löst viele Auswahl-Dialoge aus; `rot.dck` / `gruen.dck` nur Länder + eine Kreatur).
+**Testdecks:** `forge-bridge/testdecks/` (`spieler.dck` / `gegner.dck` = gemischte Standard-Decks; `auswahl.dck` löst viele Auswahl-Dialoge aus; `kartenwahl.dck` Hellsicht, Abwerfen, Bibliothek durchsuchen; `rot.dck` / `gruen.dck` nur Länder + eine Kreatur).
 
 **Partie ohne Fenster testen:** ein temporäres SceneTree-Skript (z. B. `godot/_probe.gd`, danach
 wieder löschen), das `res://table.tscn` lädt, sich an `ForgeBridge.decision_requested` hängt und im

@@ -75,7 +75,7 @@ final class Decisions {
      */
     static JsonObject ask(Game game, int seat, JsonObject decision, String prompt, SpellAbility sa, Card card,
             boolean cancelable, List<String> labels) {
-        JsonElement a = askRaw(game, seat, decision, prompt, sa, card, cancelable, labels);
+        JsonElement a = askRaw(game, seat, decision, prompt, sa, card, cancelable, labels, null);
         if (a == null || !a.isJsonObject()) {
             return null;
         }
@@ -83,9 +83,13 @@ final class Decisions {
         return "Cancel".equals(type(choice)) ? null : choice;
     }
 
-    /** Wie {@link #ask}, liefert aber die rohe Antwort (auch {@code Cancel}). */
+    /**
+     * Wie {@link #ask}, liefert aber die rohe Antwort (auch {@code Cancel}). {@code cardInfo} = Karten,
+     * deren Daten mitgeschickt werden (Hülle {@code cards}), damit der Client sie auch aus
+     * verdeckten Zonen (Bibliothek) darstellen kann.
+     */
     static JsonElement askRaw(Game game, int seat, JsonObject decision, String prompt, SpellAbility sa, Card card,
-            boolean cancelable, List<String> labels) {
+            boolean cancelable, List<String> labels, List<Card> cardInfo) {
         Card src = source(sa, card);
         JsonObject env = new JsonObject();
         env.add("decision", decision);
@@ -104,6 +108,11 @@ final class Decisions {
             JsonArray arr = new JsonArray();
             labels.forEach(l -> arr.add(withName(l, src)));
             env.add("labels", arr);
+        }
+        if (cardInfo != null) {
+            JsonArray cards = new JsonArray();
+            cardInfo.forEach(c -> cards.add(StateJson.card(c)));
+            env.add("cards", cards);
         }
         env.add("state", StateJson.snapshot(game, seat));
         return ForgeBridge.request(seat, env);
@@ -411,7 +420,7 @@ final class Decisions {
         List<String> all = new ArrayList<>(labels);
         all.add("Automatisch bezahlen");
         all.add("Abbrechen");
-        JsonElement raw = askRaw(game, seat, d, "Mana bezahlen: " + remaining, sa, null, true, all);
+        JsonElement raw = askRaw(game, seat, d, "Mana bezahlen: " + remaining, sa, null, true, all, null);
         if (raw == null || !raw.isJsonObject()) {
             return null;
         }
@@ -432,6 +441,117 @@ final class Decisions {
                 int i = indexOfTarget(opts, pay);
                 return i >= 0 && i < refs.size() ? String.valueOf(i) : null;
         }
+    }
+
+    /**
+     * {@code ChooseCards}: {@code min}–{@code max} Karten aus {@code options} (Grund {@code reason},
+     * z. B. "Discard", "Sacrifice", "Search"). Gibt die Indizes zurück oder null (abgebrochen bzw.
+     * unlesbar). Bei genau {@code min == max == options.size()} ohne Abbrechen wird nicht gefragt.
+     */
+    static List<Integer> cards(Game game, int seat, String reason, List<Card> options, int min, int max, String prompt,
+            SpellAbility sa, boolean cancelable) {
+        max = Math.min(max, options.size());
+        min = Math.max(0, Math.min(min, max));
+        if (!cancelable && min == options.size()) {
+            List<Integer> all = new ArrayList<>();
+            for (int i = 0; i < options.size(); i++) {
+                all.add(i);
+            }
+            return all; // keine Wahl
+        }
+        JsonObject d = decision("ChooseCards", seat);
+        d.addProperty("reason", reason);
+        JsonArray ids = new JsonArray();
+        options.forEach(c -> ids.add(c.getId()));
+        d.add("options", ids);
+        d.addProperty("min", min);
+        d.addProperty("max", max);
+        JsonElement raw = askRaw(game, seat, d, prompt, sa, null, cancelable, null, options);
+        if (raw == null || !raw.isJsonObject()) {
+            return null;
+        }
+        JsonObject c = raw.getAsJsonObject();
+        if (!"Cards".equals(type(c)) || !c.has("cards")) {
+            return null;
+        }
+        List<Integer> chosen = new ArrayList<>();
+        for (JsonElement e : c.getAsJsonArray("cards")) {
+            int i = indexOfId(options, e.getAsInt());
+            if (i < 0) {
+                return null;
+            }
+            chosen.add(i);
+        }
+        return valid(chosen, options.size(), min, max, false) ? chosen : null;
+    }
+
+    /** {@code MulliganBottom}: genau {@code count} Karten aus der Hand unter die Bibliothek. */
+    static List<Integer> mulliganBottom(Game game, int seat, List<Card> hand, int count) {
+        JsonObject d = decision("MulliganBottom", seat);
+        JsonArray ids = new JsonArray();
+        hand.forEach(c -> ids.add(c.getId()));
+        d.add("hand", ids);
+        d.addProperty("count", count);
+        JsonElement raw = askRaw(game, seat, d, "Karten unter die Bibliothek legen", null, null, false, null, hand);
+        if (raw == null || !raw.isJsonObject() || !"Cards".equals(type(raw.getAsJsonObject()))) {
+            return null;
+        }
+        List<Integer> chosen = new ArrayList<>();
+        for (JsonElement e : raw.getAsJsonObject().getAsJsonArray("cards")) {
+            int i = indexOfId(hand, e.getAsInt());
+            if (i < 0) {
+                return null;
+            }
+            chosen.add(i);
+        }
+        return valid(chosen, hand.size(), count, count, false) ? chosen : null;
+    }
+
+    /**
+     * {@code Scry} (bzw. Surveil mit {@code graveyard = true}): gibt {oben, unten} als Index-Listen
+     * zurück (je von oben nach unten), oder null.
+     */
+    static List<List<Integer>> scry(Game game, int seat, List<Card> cards, boolean graveyard) {
+        JsonObject d = decision("Scry", seat);
+        JsonArray ids = new JsonArray();
+        cards.forEach(c -> ids.add(c.getId()));
+        d.add("cards", ids);
+        d.addProperty("graveyard", graveyard);
+        String prompt = graveyard ? "Überwachen: oben lassen oder in den Friedhof" : "Hellsicht: oben oder unter die Bibliothek";
+        JsonElement raw = askRaw(game, seat, d, prompt, null, null, false, null, cards);
+        if (raw == null || !raw.isJsonObject() || !"Arrange".equals(type(raw.getAsJsonObject()))) {
+            return null;
+        }
+        JsonObject c = raw.getAsJsonObject();
+        List<Integer> top = new ArrayList<>();
+        List<Integer> bottom = new ArrayList<>();
+        for (JsonElement e : c.getAsJsonArray("top")) {
+            top.add(indexOfId(cards, e.getAsInt()));
+        }
+        for (JsonElement e : c.getAsJsonArray("bottom")) {
+            bottom.add(indexOfId(cards, e.getAsInt()));
+        }
+        List<Integer> all = new ArrayList<>(top);
+        all.addAll(bottom);
+        return valid(all, cards.size(), cards.size(), cards.size(), false) ? List.of(top, bottom) : null;
+    }
+
+    /** {@code OrderTriggers}: Permutation der Indizes (erstes Element zuerst), oder null. */
+    static List<Integer> order(Game game, int seat, List<String> descriptions, String prompt, List<Card> cardInfo) {
+        if (descriptions.size() < 2) {
+            List<Integer> one = new ArrayList<>();
+            for (int i = 0; i < descriptions.size(); i++) {
+                one.add(i);
+            }
+            return one;
+        }
+        JsonObject d = decision("OrderTriggers", seat);
+        JsonArray arr = new JsonArray();
+        descriptions.forEach(arr::add);
+        d.add("descriptions", arr);
+        JsonElement raw = askRaw(game, seat, d, prompt, null, null, false, null, cardInfo);
+        List<Integer> order = raw != null && raw.isJsonObject() ? intList(raw.getAsJsonObject(), "Order", "order") : null;
+        return valid(order, descriptions.size(), descriptions.size(), descriptions.size(), false) ? order : null;
     }
 
     // ------------------------------------------------------------------ Erweiterungen

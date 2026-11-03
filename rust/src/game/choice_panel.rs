@@ -59,6 +59,8 @@ pub struct HudChoice {
     /// Fenster am rechten Bildrand statt in der Mitte, damit der Tisch anklickbar bleibt
     /// (z. B. bei der Zielwahl).
     pub side: bool,
+    /// Mehrfachauswahl als Reihenfolge: gewählte Optionen zeigen ihre Position („1.“, „2.“ …).
+    pub numbered: bool,
 }
 
 /// Ab so vielen Optionen werden die Knöpfe zweispaltig angeordnet.
@@ -375,8 +377,17 @@ impl ChoicePanel {
     /// Mehrfachauswahl: ausgewählte Knöpfe golden umranden, „Fertig (n)“ nur bei gültiger Anzahl.
     fn refresh_multi(&mut self) {
         let Some(ChoiceMode::Multi { min, max }) = self.current.as_ref().map(|c| c.mode.clone()) else { return };
+        let numbered = self.current.as_ref().is_some_and(|c| c.numbered);
+        let texts: Vec<String> = self.current.as_ref().map(|c| c.options.iter().map(|o| o.text.clone()).collect()).unwrap_or_default();
         for (i, b) in self.option_buttons.iter_mut() {
             let on = self.selected.contains(i);
+            if numbered {
+                let text = texts.get(*i).cloned().unwrap_or_default();
+                match self.selected.iter().position(|s| s == i) {
+                    Some(p) => b.set_text(&format!("{}. {text}", p + 1)),
+                    None => b.set_text(&text),
+                }
+            }
             b.add_theme_color_override("font_color", if on { SELECTED } else { Color::from_rgb(0.93, 0.87, 0.74) });
             b.set_modulate(if on { Color::WHITE } else { Color::from_rgba(1.0, 1.0, 1.0, 0.8) });
         }
