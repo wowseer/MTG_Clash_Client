@@ -175,7 +175,7 @@ impl ForgeBridge {
     /// konnte (dann zusätzlich [signal bridge_error]). Fertig ist er erst mit
     /// [signal bridge_ready] (Forge braucht einige Sekunden zum Laden).
     #[func]
-    fn start_bridge(&mut self) -> bool {
+    pub fn start_bridge(&mut self) -> bool {
         if self.child.is_some() {
             return false;
         }
@@ -271,7 +271,7 @@ impl ForgeBridge {
 
     /// Läuft der Java-Prozess?
     #[func]
-    fn is_running(&self) -> bool {
+    pub fn is_running(&self) -> bool {
         self.child.is_some()
     }
 
@@ -310,7 +310,7 @@ impl ForgeBridge {
     /// `remote_seats`: Sitzplätze, die MTG Clash steuert (Rest = Forge-KI).
     /// `names`: Spielernamen (darf kürzer sein). `seed` < 0 = zufällig.
     #[func]
-    fn start_match(
+    pub fn start_match(
         &mut self,
         decks: PackedStringArray,
         remote_seats: PackedInt32Array,
@@ -346,7 +346,7 @@ impl ForgeBridge {
     /// Beantwortet eine Anfrage aus [signal decision_requested]. `choice`: bei "priority"
     /// der Index der Option oder -1 (passen), bei "mulligan" true (behalten) / false.
     #[func]
-    fn answer(&mut self, request_id: i64, choice: Variant) -> bool {
+    pub fn answer(&mut self, request_id: i64, choice: Variant) -> bool {
         let mut d = VarDictionary::new();
         d.set("cmd", "answer");
         d.set("id", request_id);
@@ -357,7 +357,7 @@ impl ForgeBridge {
     /// Fragt den aktuellen Spielzustand ab → [signal state_received]. `viewer` = Sitzplatz,
     /// dessen Handkarten mitgeschickt werden (-1 = keiner).
     #[func]
-    fn request_state(&mut self, viewer: i64) -> bool {
+    pub fn request_state(&mut self, viewer: i64) -> bool {
         let mut d = VarDictionary::new();
         d.set("cmd", "state");
         d.set("viewer", viewer);

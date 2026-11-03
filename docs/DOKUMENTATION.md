@@ -125,7 +125,8 @@ die `HeroAnchor`-Marker mitziehen.
 |---|---|
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Zielpfeile (`target_arrows.rs`) |
 | `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD, Spieler-Medaillon (`seat_badge.rs`), Sanduhr-Symbol (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Stack-Anzeige (`stack_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
-| `rust/src/forge/` | `ForgeBridge`: Verbindung zur Forge-Regel-Engine (Java-Prozess), siehe Abschnitt 9 |
+| `rust/src/forge/` | `ForgeBridge` (Verbindung zur Forge-Regel-Engine, Java-Prozess) und `ForgeTable` (Forge-Partie auf dem 3D-Tisch), siehe Abschnitt 9 |
+| `godot/forge_table.tscn` | 3D-Tisch mit Forge-Regeln statt `TurnManager`, siehe Abschnitt 9 |
 | `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks |
 | `rust/src/debug.rs` | Debug-Tool (nur Test-Build) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
@@ -372,8 +373,43 @@ Optional kann die Regel-Engine von **Forge** angebunden werden. Forge läuft als
 Java-Prozess (`forge-bridge/`, GPL-3.0), der Godot-Knoten `ForgeBridge` (`rust/src/forge/bridge.rs`)
 startet ihn und tauscht JSON-Zeilen über stdin/stdout aus. Prioritäts- und Mulligan-Entscheidungen
 ferngesteuerter Spieler kommen als Signal `decision_requested` und werden mit `answer()`
-beantwortet; alle Forge-Spielereignisse kommen als `forge_event`. Der Knoten ist **nicht** in
-`table.tscn` eingebaut, das eigene Regelwerk (`TurnManager`) läuft unverändert weiter.
+beantwortet; alle Forge-Spielereignisse kommen als `forge_event`. `table.tscn` mit dem eigenen
+Regelwerk (`TurnManager`) bleibt unverändert.
 
 Einrichtung, Protokoll, GDScript-Beispiel und Grenzen: [Forge-Schnittstelle.md](Forge-Schnittstelle.md).
+
+### Forge-Partie auf dem 3D-Tisch: `forge_table.tscn`
+
+Eigene Szene (in Godot öffnen und mit F6 starten), die denselben 3D-Tisch nutzt wie `table.tscn`
+– Arena, Kamera, Zonen, `Card3D`-Karten, Drag-and-Drop und `TurnHud` –, aber ohne `TurnManager`,
+`StackManager` und Demo-Karten. Stattdessen:
+
+```
+Table (TableController)   wie table.tscn, ohne turn_manager und Demo-Decks
+├── … Arena, Kamera, Player/Opponent (PlayerSeat + Zonen) wie in table.tscn
+├── TurnHud               forge_table = ../ForgeTable (statt turn_manager)
+├── ForgeBridge           Java-Prozess mit Forge
+└── ForgeTable            gleicht den Tisch mit Forge ab, setzt Spielzüge um
+```
+
+**`ForgeTable` (`rust/src/forge/table.rs`)**
+
+- Startet Brücke und Partie automatisch (`autostart`): `player_deck` gegen `opponent_deck`
+  (Standard: Testdecks aus `forge-bridge/testdecks/`). Forge-Sitzplatz 0 = Spieler unten
+  (du), Sitzplatz 1 = Gegner oben (Forge-KI).
+- Baut bei jedem neuen Forge-Zustand den Tisch ab: Für jede Forge-Karte eine `Card3D` (Bild aus
+  Name, Typ, Kosten, Stärke/Widerstand); Hand → Hand, Länder → Ressourcen-Reihe, übrige
+  bleibende Karten → Spielfeld, Friedhof → Ablagestapel, Gegnerhand verdeckt; getappt wird
+  übernommen. Karten gleiten wie gewohnt animiert an ihren Platz. Während Forge Ereignisse
+  sendet, wird der Zustand gebündelt alle `refresh_interval` Sekunden neu abgefragt.
+- **Spielen:** Hast du Priorität, leuchten alle Handkarten, die du jetzt spielen und bezahlen
+  kannst. Karte auf den Tisch ziehen = spielen (Mana zahlt Forge automatisch). Ungültige Züge
+  springen zurück. **Passen:** Hauptbutton „Passen“ oder Leertaste. **Mulligan:** Auswahlfenster
+  „Starthand behalten?“ (Behalten / Mulligan).
+- Ziele, Angreifer und Blocker wählt vorerst die Forge-KI für dich; aktivierte Fähigkeiten
+  bleibender Karten und der Stack werden noch nicht angezeigt bzw. angeboten.
+
+**HUD:** `TurnHud` hat dafür die Eigenschaft `forge_table`. Ist kein `turn_manager` gesetzt, liest
+es Phase (Forge-Phasen auf den Zeitstrahl abgebildet), Leben, Namen, Runde, Sieger und den Button
+von `ForgeTable`; intern über die gemeinsame Anzeige-Struktur `HudView` (`hud.rs`).
 

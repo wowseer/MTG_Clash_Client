@@ -10,6 +10,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 
 - [DebugPanel](#debugpanel) – erbt von `CanvasLayer` *(nur Test-Build)*
 - [ForgeBridge](#forgebridge) – erbt von `Node`
+- [ForgeTable](#forgetable) – erbt von `Node`
 - [CardCutout](#cardcutout) – erbt von `Control`
 - [HourglassIcon](#hourglassicon) – erbt von `Control`
 - [TurnHud](#turnhud) – erbt von `CanvasLayer`
@@ -107,6 +108,44 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `bridge_error(code: String, message: String)` | Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed"). |
 | `bridge_stopped(exit_code: int)` | Der Java-Prozess ist beendet (`exit_code` -1 = unbekannt / von uns beendet). |
 
+## ForgeTable
+
+*Erbt von `Node` · Quelle: `rust/src/forge/table.rs`*
+
+Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, Kamera, Drag-and-Drop und HUD sind dieselben wie im normalen Spiel, nur die Regeln kommen von Forge (über `ForgeBridge`). Forge-Sitzplatz 0 ist der Spieler (unten, von dir gesteuert), Sitzplatz 1 der Gegner (oben, Forge-KI). Länder liegen in der Ressourcen-Reihe, alle anderen bleibenden Karten auf dem Spielfeld, der Friedhof im Ablagestapel; die Gegnerhand wird verdeckt angezeigt. Bedienung: Hat der Spieler Priorität, leuchten alle Handkarten, die er jetzt spielen kann. Eine solche Karte aus der Hand auf den Tisch ziehen = spielen (Mana zahlt Forge automatisch). Hauptbutton / Leertaste = passen. Mulligan im Auswahlfenster. Ziele, Angreifer und Blocker wählt vorerst die Forge-KI für dich.
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `bridge` | `ForgeBridge` | Verbindung zu Forge. |
+| `controller` | `TableController` | Tischsteuerung (Drag-and-Drop, Kamera). Ohne `TurnManager` sind dort alle Karten frei beweglich; dieser Knoten prüft die Züge über Forge. |
+| `player_seat` | `PlayerSeat` | Sitzplatz des Spielers (unten) = Forge-Sitzplatz 0. |
+| `opponent_seat` | `PlayerSeat` | Sitzplatz des Gegners (oben) = Forge-Sitzplatz 1. |
+| `player_deck` | `String` | Deck des Spielers: Forge-`.dck`-Datei (`res://` erlaubt) oder Forge-Deckname. |
+| `opponent_deck` | `String` | Deck des Gegners: Forge-`.dck`-Datei (`res://` erlaubt) oder Forge-Deckname. |
+| `seed` | `int` | Zufallsstartwert der Partie (< 0 = zufällig). |
+| `autostart` | `bool` | Brücke und Partie automatisch beim Start der Szene starten. |
+| `refresh_interval` | `float` | Mindestabstand (Sekunden) zwischen zwei Zustandsabfragen, während Forge Ereignisse sendet. |
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
+| `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene Prioritätsanfrage mit -1. |
+| `hud_choose(index: int)` | `void` | Auswahl im HUD-Fenster: beim Mulligan 0 = behalten, 1 = Mulligan. |
+| `get_card(forge_id: int)` | `Card3D` | Karte auf dem Tisch zur Forge-Karten-ID (null, wenn nicht sichtbar). |
+| `get_state()` | `Dictionary` | Zuletzt von Forge empfangener Spielzustand (Aufbau siehe `docs/Forge-Schnittstelle.md`). |
+| `get_pending_kind()` | `String` | Hat der Spieler gerade eine offene Entscheidung? Liefert deren Art ("priority", "mulligan") oder einen leeren Text. |
+| `on_bridge_ready(protocol: int)` | `void` | Brücke bereit → Partie starten (bei `autostart`). |
+| `on_state(state: Dictionary)` | `void` | Neuer Spielzustand von Forge (Spielstart oder Abfrage): Tisch abgleichen. |
+| `on_forge_event(event: Dictionary)` | `void` | Forge-Ereignis: Zustand bald neu abfragen (gebündelt, siehe `refresh_interval`). |
+| `on_decision_requested(request: Dictionary)` | `void` | Entscheidung des Spielers nötig: Zustand übernehmen, spielbare Karten leuchten lassen. |
+| `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
+| `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
+| `on_card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | `void` | Karte wurde auf dem Tisch abgelegt: aus der Hand gespielt → passende Option an Forge; alles andere wird auf den Forge-Stand zurückgesetzt. |
+
 ## CardCutout
 
 *Erbt von `Control` · Quelle: `rust/src/game/card_cutout.rs`*
@@ -143,13 +182,14 @@ Sanduhr-Symbol (HUD), z. B. neben der Rundenzahl am linken Bildrand. Größe = `
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager`.
+Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten. Liest den Zustand jedes Frame vom `TurnManager` – oder, ist keiner gesetzt, von einem `ForgeTable` (Spiel mit der Forge-Regel-Engine; das Auswahlfenster dient dann für den Mulligan).
 
 ### Eigenschaften
 
 | Name | Typ | Beschreibung |
 |---|---|---|
 | `turn_manager` | `TurnManager` | Der `TurnManager`, dessen Zustand angezeigt wird. |
+| `forge_table` | `ForgeTable` | Alternative Datenquelle: Forge-Spiel (`ForgeTable`). Wird nur benutzt, wenn `turn_manager` leer ist. |
 | `player_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand). Leer = Medaillon unten links. Gezoomte oder gezogene Karten liegen sichtbar über dem Medaillon (Aussparung per `CardCutout`). |
 | `opponent_hero_anchor` | `Node3D` | 3D-Punkt, an dem das Gegner-Medaillon sitzt (Oberkante mittig, z. B. direkt unter dessen Hand). Leer = Medaillon oben links. |
 | `player_mana_anchor` | `Node3D` | 3D-Punkt, an dem die Mana-Symbole des Spielers sitzen (Oberkante mittig, z. B. direkt unter der Ressourcen-Reihe). Leer = rechts neben dem Spieler-Medaillon. |
@@ -161,7 +201,7 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | `on_hero_ability_0()` | `void` | Knopf der ersten Heldenfähigkeit im Auswahlfenster. |
 | `on_hero_ability_1()` | `void` | Knopf der zweiten Heldenfähigkeit im Auswahlfenster. |
 | `on_hero_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster für Heldenfähigkeiten. |
-| `on_next_pressed()` | `void` | Button „Nächste Phase“ / „Passen“ bzw. Leertaste: ruft `TurnManager.next_phase()` auf. |
+| `on_next_pressed()` | `void` | Button „Nächste Phase“ / „Passen“ bzw. Leertaste: ruft `TurnManager.next_phase()` auf (im Forge-Spiel: `ForgeTable.pass_priority()`). |
 
 ## ManaCost
 

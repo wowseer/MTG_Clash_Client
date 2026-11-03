@@ -198,7 +198,7 @@ public final class ForgeBridge {
             over.addProperty("reason", String.valueOf(outcome.getWinCondition()));
         }
         send(over);
-        currentGame = null;
+        // currentGame bleibt gesetzt, damit "state" auch nach Spielende den Endstand liefert.
         // Offene Anfragen beenden, damit kein Thread hängen bleibt.
         PENDING.values().forEach(f -> f.complete(JsonNull.INSTANCE));
         PENDING.clear();

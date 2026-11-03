@@ -130,11 +130,22 @@ func _on_request(r: Dictionary):
 
 Alle Signale und Methoden stehen in der [API-Referenz](API-Referenz.md) unter `ForgeBridge`.
 
+## Forge auf dem 3D-Tisch
+
+`godot/forge_table.tscn` spielt eine Forge-Partie auf dem normalen 3D-Tisch (Karten, Zonen,
+Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) übersetzt dabei:
+
+| Forge | 3D-Tisch |
+|---|---|
+| `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt |
+| `request` priority | spielbare Handkarten leuchten; Handkarte auf den Tisch ziehen → `answer(index)`; Hauptbutton / Leertaste → `answer(-1)` |
+| `request` mulligan | HUD-Auswahlfenster „Behalten“ / „Mulligan“ |
+| `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
+
 ## Stand und nächste Schritte
 
-- Getestet: Godot-Node → Brücke → Forge 2.0.15, Partie ferngesteuert gegen Forge-KI bis zum
-  Spielende (~1500 Ereignisse, ~9 s).
-- Die Brücke ist noch **nicht** mit `TurnManager` / dem 3D-Tisch verbunden: Das eigene Regelwerk
-  in Rust läuft weiter wie bisher. Nächster Schritt wäre ein Adapter, der aus `state`/`event`
-  die Zonen und `Card3D`-Karten aufbaut und Drag-and-Drop in `answer`s übersetzt.
-- Weitere ferngesteuerte Entscheidungen (Angreifer, Blocker, Ziele) fehlen noch, siehe oben.
+- Getestet (headless): Godot-Node → Brücke → Forge 2.0.15, Partie in `forge_table.tscn` bis
+  zum Spielende; Karten wandern korrekt zwischen Hand, Ressourcen, Spielfeld und Friedhof.
+- `table.tscn` mit dem eigenen Regelwerk (`TurnManager`) ist unverändert.
+- Noch nicht ferngesteuert: Angreifer, Blocker, Ziele, aktivierte Fähigkeiten bleibender Karten;
+  Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.

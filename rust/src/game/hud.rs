@@ -36,6 +36,7 @@ use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::stack_view::{self, StackView};
 use super::turn_manager::TurnManager;
+use crate::forge::table::ForgeTable;
 use crate::table::table_controller::TableController;
 
 const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
@@ -56,13 +57,18 @@ const PREVIEW_Z: i32 = 50;
 /// sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr
 /// ([HourglassIcon]; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
 /// blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten.
-/// Liest den Zustand jedes Frame vom [TurnManager].
+/// Liest den Zustand jedes Frame vom [TurnManager] – oder, ist keiner gesetzt, von einem
+/// [ForgeTable] (Spiel mit der Forge-Regel-Engine; das Auswahlfenster dient dann für den Mulligan).
 #[derive(GodotClass)]
 #[class(base=CanvasLayer)]
 pub struct TurnHud {
     /// Der [TurnManager], dessen Zustand angezeigt wird.
     #[export]
     turn_manager: Option<Gd<TurnManager>>,
+    /// Alternative Datenquelle: Forge-Spiel ([ForgeTable]). Wird nur benutzt, wenn
+    /// [member turn_manager] leer ist.
+    #[export]
+    forge_table: Option<Gd<ForgeTable>>,
     /// 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand).
     /// Leer = Medaillon unten links. Gezoomte oder gezogene Karten liegen sichtbar über dem
     /// Medaillon (Aussparung per [CardCutout]).
@@ -117,6 +123,7 @@ impl ICanvasLayer for TurnHud {
     fn init(base: Base<CanvasLayer>) -> Self {
         Self {
             turn_manager: None,
+            forge_table: None,
             timeline: None,
             opponent_name: None,
             player_name: None,
@@ -181,14 +188,19 @@ impl TurnHud {
     fn on_hero_cancel(&mut self) {
         if let Some(tm) = self.turn_manager.as_mut() {
             tm.bind_mut().cancel_hero_choice();
+        } else if let Some(ft) = self.forge_table.as_mut() {
+            ft.bind_mut().hud_choose(-1);
         }
     }
 
-    /// Button „Nächste Phase“ / „Passen“ bzw. Leertaste: ruft [method TurnManager.next_phase] auf.
+    /// Button „Nächste Phase“ / „Passen“ bzw. Leertaste: ruft [method TurnManager.next_phase] auf
+    /// (im Forge-Spiel: [method ForgeTable.pass_priority]).
     #[func]
     fn on_next_pressed(&mut self) {
         if let Some(tm) = self.turn_manager.as_mut() {
             tm.bind_mut().next_phase();
+        } else if let Some(ft) = self.forge_table.as_mut() {
+            ft.bind_mut().pass_priority();
         }
     }
 }
@@ -197,6 +209,8 @@ impl TurnHud {
     fn activate_hero(&mut self, index: i64) {
         if let Some(tm) = self.turn_manager.as_mut() {
             tm.bind_mut().activate_hero_ability(index);
+        } else if let Some(ft) = self.forge_table.as_mut() {
+            ft.bind_mut().hud_choose(index);
         }
     }
 
@@ -391,34 +405,36 @@ impl TurnHud {
                 mask.bind_mut().set_greyed(!items.is_empty());
             }
         }
-        let Some(tm) = self.turn_manager.clone() else {
+        let view = if let Some(tm) = self.turn_manager.clone() {
+            HudView::from_turn_manager(&tm.bind())
+        } else if let Some(ft) = self.forge_table.clone() {
+            ft.bind().hud_view()
+        } else {
             return;
         };
-        let tm = tm.bind();
-        let current = tm.get_phase_index();
-        let active = tm.get_active_seat();
+        let active = view.active_seat;
 
         if let Some(t) = self.timeline.as_mut() {
-            t.bind_mut().set_state(tm.get_phase_titles(), current);
+            t.bind_mut().set_state(view.phase_titles.clone(), view.phase_index);
         }
 
         if let Some(m) = self.player_mana.as_mut() {
-            m.bind_mut().set_amounts(tm.get_pool_amounts(0));
+            m.bind_mut().set_amounts(view.player_pool.clone());
         }
         for (seat, badge) in [(1, self.opponent_badge.as_mut()), (0, self.player_badge.as_mut())] {
             if let Some(b) = badge {
-                b.bind_mut().set_state(tm.get_seat_name(seat), tm.get_life(seat), seat == active);
+                b.bind_mut().set_state(view.names[seat].clone(), view.lives[seat], seat as i64 == active);
             }
         }
         // Linker Bildrand: Name (golden = am Zug) und Rundenzahl neben der Sanduhr
-        let turn = tm.get_turn().to_string();
+        let turn = view.turn.to_string();
         for (seat, name, turn_label) in [
-            (1, self.opponent_name.as_mut(), self.opponent_turn.as_mut()),
+            (1usize, self.opponent_name.as_mut(), self.opponent_turn.as_mut()),
             (0, self.player_name.as_mut(), self.player_turn.as_mut()),
         ] {
             if let Some(l) = name {
-                l.set_text(&tm.get_seat_name(seat));
-                l.add_theme_color_override("font_color", if seat == active { GOLD } else { PARCHMENT });
+                l.set_text(&view.names[seat]);
+                l.add_theme_color_override("font_color", if seat as i64 == active { GOLD } else { PARCHMENT });
             }
             if let Some(l) = turn_label {
                 l.set_text(&turn);
@@ -427,7 +443,7 @@ impl TurnHud {
 
         // Keine Hinweistexte während des Spiels (Phase steht im Zeitstrahl, der Stack in der
         // StackView) – nur das Spielende wird in der Bildmitte angezeigt.
-        let winner = tm.get_winner_name();
+        let winner = view.winner.clone();
         if let Some(l) = self.game_over_label.as_mut() {
             let text = if winner.is_empty() {
                 String::new()
@@ -437,34 +453,100 @@ impl TurnHud {
             l.set_text(&text);
         }
         if let Some(b) = self.button.as_mut() {
-            b.set_disabled(!tm.is_waiting_for_input());
-            b.set_text(&tm.get_button_text());
-            let color = if tm.get_stack_items().is_empty() { BUTTON_BLUE } else { BUTTON_ORANGE };
+            b.set_disabled(!view.button_enabled);
+            b.set_text(&view.button_text);
+            let color = if view.stack_busy { BUTTON_ORANGE } else { BUTTON_BLUE };
             if self.button_color != Some(color) {
                 paint_main_button(b, color);
                 self.button_color = Some(color);
             }
         }
 
-        // Heldenfähigkeiten
-        let hero = tm.get_hero_choice_name();
+        // Auswahlfenster (Heldenfähigkeiten bzw. Mulligan)
         if let Some(p) = self.hero_panel.as_mut() {
-            p.set_visible(!hero.is_empty());
+            p.set_visible(view.choice.is_some());
         }
-        if !hero.is_empty() {
+        if let Some(choice) = &view.choice {
             if let Some(t) = self.hero_title.as_mut() {
-                t.set_text(&trf!("{hero} – Fähigkeit wählen (1× pro Runde)", "{hero} – choose an ability (once per turn)"));
+                t.set_text(&choice.title);
             }
             if let Some(b) = self.hero_buttons.get_mut(2) {
+                b.set_visible(choice.cancelable);
                 b.set_text(tr!("Abbrechen", "Cancel"));
             }
-            let choices = tm.get_hero_choices();
             for (i, b) in self.hero_buttons.iter_mut().take(2).enumerate() {
-                let text = choices.as_slice().get(i).map(|t| t.to_string()).unwrap_or_default();
-                b.set_visible(!text.is_empty());
-                b.set_text(&text);
-                b.set_disabled(!tm.is_hero_choice_available(i as i64));
+                let entry = choice.options.get(i);
+                b.set_visible(entry.is_some());
+                if let Some((text, enabled)) = entry {
+                    b.set_text(text);
+                    b.set_disabled(!enabled);
+                }
             }
+        }
+    }
+}
+
+/// Auswahlfenster in der Bildmitte: Titel, bis zu zwei Optionen (Text, wählbar) und ob
+/// „Abbrechen“ angeboten wird.
+pub struct HudChoice {
+    pub title: String,
+    pub options: Vec<(String, bool)>,
+    pub cancelable: bool,
+}
+
+/// Alles, was das HUD anzeigt – unabhängig davon, ob die Regeln vom [TurnManager] oder von
+/// Forge kommen. Sitzplatz 0 = Spieler (unten), 1 = Gegner (oben).
+pub struct HudView {
+    pub phase_titles: PackedStringArray,
+    /// Index in `phase_titles` (−1 = keine Phase markiert).
+    pub phase_index: i64,
+    /// Sitzplatz am Zug (−1 = keiner).
+    pub active_seat: i64,
+    pub names: [GString; 2],
+    pub lives: [i64; 2],
+    pub turn: i64,
+    /// Name des Siegers; leer = Partie läuft.
+    pub winner: String,
+    pub button_enabled: bool,
+    pub button_text: GString,
+    /// Stack belegt → Button orange.
+    pub stack_busy: bool,
+    /// Manapool des Spielers (je [ManaType] eine Menge; leer = keine Anzeige).
+    pub player_pool: PackedInt64Array,
+    pub choice: Option<HudChoice>,
+}
+
+impl HudView {
+    fn from_turn_manager(tm: &TurnManager) -> Self {
+        let hero = tm.get_hero_choice_name().to_string();
+        let choice = (!hero.is_empty()).then(|| {
+            let choices = tm.get_hero_choices();
+            HudChoice {
+                title: trf!("{hero} – Fähigkeit wählen (1× pro Runde)", "{hero} – choose an ability (once per turn)"),
+                options: choices
+                    .as_slice()
+                    .iter()
+                    .take(2)
+                    .enumerate()
+                    .filter(|(_, t)| !t.is_empty())
+                    .map(|(i, t)| (t.to_string(), tm.is_hero_choice_available(i as i64)))
+                    .collect(),
+                cancelable: true,
+            }
+        });
+        Self {
+            phase_titles: tm.get_phase_titles(),
+            phase_index: tm.get_phase_index(),
+            active_seat: tm.get_active_seat(),
+            names: [tm.get_seat_name(0), tm.get_seat_name(1)],
+            lives: [tm.get_life(0), tm.get_life(1)],
+            turn: tm.get_turn(),
+            winner: tm.get_winner_name().to_string(),
+            button_enabled: tm.is_waiting_for_input(),
+            button_text: tm.get_button_text(),
+            stack_busy: !tm.get_stack_items().is_empty(),
+            player_pool: tm.get_pool_amounts(0),
+            choice,
         }
     }
 }

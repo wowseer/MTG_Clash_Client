@@ -62,6 +62,7 @@ final class StateJson {
         o.addProperty("name", c.getName());
         o.addProperty("type", String.valueOf(c.getType()));
         o.addProperty("tapped", c.isTapped());
+        o.addProperty("cost", c.getManaCost() == null ? "" : c.getManaCost().getShortString());
         if (c.isCreature()) {
             o.addProperty("power", c.getNetPower());
             o.addProperty("toughness", c.getNetToughness());
