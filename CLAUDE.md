@@ -48,6 +48,7 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
 - [x] Mulligan (`mulliganKeepHand`): Auswahlfenster im HUD
+- [x] Beim Spielen wie Forges menschlicher Ablauf: optionale Kosten, Modi, Typ, X, Ziele (`prepareRemote`, `chooseTargetsFor`; Ziele vorerst als Liste)
 - [x] Allgemeine Auswahl (`request` kind `choice`, `RemoteChoice.java`, `choice_panel.rs`): Modi, Optionen, Ja/Nein, Zahlen, Farben, Kartennamen, optionale Kosten, Startspieler (Muster M9–M12)
 
 Angezeigt:
@@ -78,6 +79,17 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 
 **Später:** Deckauswahl, mehr als 2 Spieler, Formate.
 
+## Forge-Quellcode
+
+- Laufzeit ist das Jar von **Forge 2.0.15** (`forge-bridge/forge/`). Signaturen immer gegen dieses
+  Jar prüfen (`javap -cp <jar> <Klasse>`); der Compiler in `build.sh` meldet Abweichungen.
+- Quellcode zum Nachlesen der Logik: `~/Entwicklung/Java/forge` (eigener Fork, enthält
+  `forge-game`, `forge-ai`, `forge-gui`; der Ablauf für menschliche Spieler steht dort in
+  `forge-game/.../player/PlaySpellAbility.java`). Kopien von `forge-ai/` und `forge-core/` liegen
+  im Projektordner, sind per `.gitignore` ausgeschlossen und werden nie committet (GPL).
+- Der Fork kann vom Jar abweichen: Logik aus dem Quellcode übernehmen, aber nur Methoden
+  verwenden, die es in 2.0.15 gibt.
+
 ## Bauen, starten, testen
 
 | Was | Befehl |
@@ -90,7 +102,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 | Spiel starten | Godot öffnen, F5 (Hauptszene `godot/table.tscn`) |
 | API-Referenz | `python3 tools/gen_api_doc.py` → muss „ohne Beschreibung: 0“ melden |
 
-**Testdecks:** `forge-bridge/testdecks/` (`rot.dck`, `gruen.dck`; `auswahl.dck` löst viele Auswahl-Dialoge aus).
+**Testdecks:** `forge-bridge/testdecks/` (`spieler.dck` / `gegner.dck` = gemischte Standard-Decks; `auswahl.dck` löst viele Auswahl-Dialoge aus; `rot.dck` / `gruen.dck` nur Länder + eine Kreatur).
 
 **Partie ohne Fenster testen:** ein temporäres SceneTree-Skript (z. B. `godot/_probe.gd`, danach
 wieder löschen), das `res://table.tscn` lädt, sich an `ForgeBridge.decision_requested` hängt und im

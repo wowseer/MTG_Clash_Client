@@ -147,9 +147,15 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 **Getappte** Karten werden leicht schräg gestellt (15°, `zone::TAP_ANGLE_DEGREES`), ausgegraut und
 zeigen mittig ein graues Tapp-Symbol (`textures::tap_icon()`).
 
-Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Ziele,
-Manabezahlung (auch X-Werte), Angreifer, Blocker, Auswahl von Karten, aktivierte Fähigkeiten
-bleibender Karten. Stack und Manapool
+**Zauber und Fähigkeiten mit Zielen:** Nach dem Ausspielen fragt das Auswahlfenster nacheinander
+alles, was der Zauber braucht: optionale Kosten (z. B. Kicker), Modus, X-Wert und das **Ziel**
+(Liste aller gültigen Spieler und Karten, „Abbrechen“ nimmt den Zug zurück). Aktivierte
+Fähigkeiten bleibender Karten (z. B. Ausrüsten) sind ebenfalls spielbar: Die Karte leuchtet, wenn
+die Fähigkeit möglich ist; zum Aktivieren die Karte aus ihrer Zone ziehen und loslassen.
+
+Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Manabezahlung,
+Angreifer, Blocker, Auswahl von Karten, Ziele ausgelöster Fähigkeiten. Ziele werden noch aus einer
+Liste gewählt, nicht per Klick auf dem Tisch. Stack und Manapool
 werden noch nicht angezeigt.
 
 ---
@@ -177,7 +183,7 @@ vor `~/Games/Forge` verwendet.
 **`ForgeTable` (`rust/src/forge/table.rs`)**
 
 - Startet Brücke und Partie automatisch (`autostart`): `player_deck` gegen `opponent_deck`
-  (Standard: Testdecks aus `forge-bridge/testdecks/`). Forge-Sitzplatz 0 = Spieler unten
+  (Standard: gemischte Testdecks `forge-bridge/testdecks/spieler.dck` – Rot mit Spontanzaubern, Hexereien, X-Zauber, modalen Zaubern, Kicker, Ausrüstung – gegen `gegner.dck` – Grün mit Auren, Kampf, Rampe). Forge-Sitzplatz 0 = Spieler unten
   (du), Sitzplatz 1 = Gegner oben (Forge-KI).
 - Baut bei jedem neuen Forge-Zustand den Tisch ab: Für jede Forge-Karte eine `Card3D` (Bild aus
   Name, Typ, Kosten, Stärke/Widerstand); Hand → Hand, Länder → Länder-Reihe, übrige

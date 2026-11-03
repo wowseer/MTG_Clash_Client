@@ -49,14 +49,22 @@ Manueller Test ohne Godot: `forge-bridge/run.sh` starten und JSON-Zeilen eintipp
 | Priorität: Karte/Fähigkeit spielen oder passen | **MTG Clash** (`request` kind `priority`) |
 | Mulligan | **MTG Clash** (`request` kind `mulligan`) |
 | Allgemeine Auswahl: Modi, Optionen (Kreaturtyp, Marken-Typ, Schutz, Schlüsselwort, Ersatzeffekt, Kartenseite …), Ja/Nein (optionale Trigger, „Darfst du …“, Kopf/Zahl), Zahlen, Farben, Kartennamen, optionale Kosten, Startspieler, Abstimmungen, Würfel | **MTG Clash** (`request` kind `choice`) |
-| Ziele, Manabezahlung (inkl. X-Wert), Angreifer, Blocker, Auswahl von Karten | vorerst Forge-KI |
+| Beim Spielen: Zusatz- und optionale Kosten (Kicker …), Modi, angesagter Typ, X-Wert, **Ziele** (`chooseTargetsFor`) | **MTG Clash** (`request` kind `choice`; Ziele als Liste, Optionen mit `card_id` / `player`) |
+| Manabezahlung, Angreifer, Blocker, Schaden frei verteilen, Auswahl von Karten, Ziele ausgelöster Fähigkeiten | vorerst Forge-KI |
 | Gegner (nicht ferngesteuerte Sitzplätze) | Forge-KI |
 
 Erweitern: in `RemotePlayerController.java` weitere Methoden von Forges `PlayerController`
 überschreiben (z. B. `declareAttackers`, `declareBlockers`, `chooseTargetsFor`) und darin
 `ForgeBridge.request("<kind>", seat, payload)` aufrufen.
 
-Angeboten werden nur Optionen, die jetzt spielbar und bezahlbar sind; Manafähigkeiten werden
+**Ablauf beim Spielen** (`RemotePlayerController.prepareRemote`, nachgebaut nach Forges Ablauf für
+menschliche Spieler, `PlaySpellAbility` im Forge-Quellcode): Zusatzkosten/optionale Kosten →
+Modi (`CharmEffect.makeChoices`) → angesagter Typ → X-Wert (`announceRequirements`) →
+`SpellAbility.setupTargets()` (ruft je gezielter Teilfähigkeit `chooseTargetsFor`) → Bezahlen
+durch Forge (vorerst automatisch). Zauber, deren Schaden frei verteilt wird, bereitet noch die KI vor.
+
+Angeboten werden nur Optionen, die jetzt spielbar und bezahlbar sind und für die es mögliche
+Ziele gibt; Manafähigkeiten werden
 nicht angeboten (Mana wird beim Ausführen automatisch bezahlt). Ist die gewählte Option nicht
 ausführbar (nicht spielbar, nicht bezahlbar, kein gültiges Ziel), kommt `rejected` und eine neue
 Anfrage. Ob die Forge-KI den Zug für sinnvoll hält, spielt keine Rolle (bis Protokoll 1 hat ihre
@@ -101,7 +109,7 @@ Der Spiel-Thread wartet bei jeder `request`, bis die passende `answer` kommt.
 | `title` | Frage (von Forge oder der Brücke; `CARDNAME` ist bereits ersetzt) |
 | `source` | `{id, name}` der Karte, um die es geht (optional) |
 | `ability` | Text der Fähigkeit (optional) |
-| `options` | Liste `{text, color?}` für `single`/`multi`/`confirm`; `color` = `W U B R G C` bei Farbwahl |
+| `options` | Liste `{text, color?, card_id?, player?}` für `single`/`multi`/`confirm`; `color` = `W U B R G C` bei Farbwahl; `card_id` / `player` = Karte bzw. Sitzplatz, für die die Option steht (bei Zielen) |
 | `min`, `max` | Anzahl bei `multi`, Grenzen bei `number` |
 | `error` | bei `text`: Hinweis nach ungültiger Eingabe (die Frage kommt dann erneut, höchstens 5-mal) |
 | `cancelable` | Abbrechen erlaubt |
@@ -186,7 +194,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Allgemeine Auswahl (`choice`) getestet mit `forge-bridge/testdecks/auswahl.dck` (Startspieler,
   Kreaturtyp, Kartenname, Modus, Farbe) und mit künstlichen Anfragen (Mehrfachauswahl, Ja/Nein,
   Zahl, Abbrechen).
-- Noch nicht ferngesteuert: Angreifer, Blocker, Ziele, Manabezahlung (auch der X-Wert: den legt
-  die KI beim Bezahlen fest), Auswahl von Karten, aktivierte Fähigkeiten bleibender Karten;
+- Ziele, X-Wert, Kicker, Modi und Ausrüsten getestet mit `testdecks/spieler.dck` gegen
+  `testdecks/gegner.dck` (Standard-Decks von `ForgeTable`).
+- Noch nicht ferngesteuert: Angreifer, Blocker, Manabezahlung, Auswahl von Karten, Ziele
+  ausgelöster Fähigkeiten; Ziele werden noch als Liste gewählt, nicht per Klick auf dem Tisch;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

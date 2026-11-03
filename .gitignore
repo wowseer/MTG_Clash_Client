@@ -1,2 +1,6 @@
 rust/target/
 godot/.godot/
+
+# Forge-Quellcode (GPL) nur als Nachschlagewerk, nicht im Repo
+/forge-ai/
+/forge-core/

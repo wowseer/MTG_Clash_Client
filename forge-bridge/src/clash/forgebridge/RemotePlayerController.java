@@ -11,9 +11,11 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import com.google.common.collect.ListMultimap;
+import org.apache.commons.lang3.Range;
 
 import forge.LobbyPlayer;
 import forge.StaticData;
+import forge.card.CardType;
 import forge.card.ColorSet;
 import forge.card.ICardFace;
 import forge.card.MagicColor;
@@ -21,7 +23,11 @@ import forge.ai.AiPlayDecision;
 import forge.ai.ComputerUtilMana;
 import forge.ai.PlayerControllerAi;
 import forge.game.Game;
+import forge.game.GameActionUtil;
 import forge.game.GameEntity;
+import forge.game.ability.AbilityUtils;
+import forge.game.ability.ApiType;
+import forge.game.ability.effects.CharmEffect;
 import forge.game.card.Card;
 import forge.game.card.CardState;
 import forge.game.card.CounterType;
@@ -61,8 +67,9 @@ public class RemotePlayerController extends PlayerControllerAi {
     }
 
     /**
-     * Alle Fähigkeiten, die der Spieler jetzt spielen darf und bezahlen kann
-     * (ohne Manafähigkeiten – Mana wird beim Ausführen automatisch bezahlt).
+     * Alle Fähigkeiten, die der Spieler jetzt spielen darf und bezahlen kann und für die es
+     * genug mögliche Ziele gibt (ohne Manafähigkeiten – Mana wird beim Ausführen automatisch
+     * bezahlt).
      */
     private List<SpellAbility> playableOptions() {
         Player me = getPlayer();
@@ -74,6 +81,9 @@ public class RemotePlayerController extends PlayerControllerAi {
                         continue;
                     }
                     sa.setActivatingPlayer(me);
+                    if (!sa.isLandAbility() && !hasPossibleTargets(sa)) {
+                        continue; // braucht ein Ziel, aber es gibt keins
+                    }
                     if (sa.isLandAbility() || ComputerUtilMana.canPayManaCost(sa, me, 0, false)) {
                         options.add(sa);
                     }
@@ -111,11 +121,20 @@ public class RemotePlayerController extends PlayerControllerAi {
                 return null; // passen
             }
             SpellAbility sa = options.get(choice);
-            // canPlaySa setzt bei gezielten Zaubern auch die Ziele (vorerst wählt die KI sie).
-            // Ihre Meinung, ob der Zug sinnvoll ist, zählt nicht: abgelehnt wird nur, was
-            // wirklich nicht geht (nicht spielbar, nicht bezahlbar, kein gültiges Ziel).
-            AiPlayDecision decision = getAi().canPlaySa(sa);
-            if (isPlayable(sa, decision)) {
+            String reason;
+            if (sa.isDividedAsYouChoose()) {
+                // Schaden frei verteilen kommt später (Muster M8): Ziele und Verteilung von der KI.
+                // Ihre Meinung, ob der Zug sinnvoll ist, zählt nicht: abgelehnt wird nur, was
+                // wirklich nicht geht (nicht spielbar, nicht bezahlbar, kein gültiges Ziel).
+                AiPlayDecision decision = getAi().canPlaySa(sa);
+                reason = isPlayable(sa, decision) ? null : String.valueOf(decision);
+            } else {
+                // Wie bei Forges menschlichem Spieler: optionale Kosten, Modi, X-Wert, Ziele –
+                // alles wählt der Spieler selbst.
+                sa = prepareRemote(sa);
+                reason = sa != null ? null : "Abgebrochen oder kein gültiges Ziel";
+            }
+            if (reason == null) {
                 List<SpellAbility> result = new ArrayList<>();
                 result.add(sa);
                 return result;
@@ -123,9 +142,184 @@ public class RemotePlayerController extends PlayerControllerAi {
             JsonObject rejected = ForgeBridge.message("rejected");
             rejected.addProperty("player", seat);
             rejected.addProperty("option", choice);
-            rejected.addProperty("reason", String.valueOf(decision));
+            rejected.addProperty("reason", reason);
             ForgeBridge.send(rejected);
         }
+    }
+
+    /**
+     * Bereitet das Spielen vor wie Forges Ablauf für menschliche Spieler
+     * ({@code PlaySpellAbility.playSpellAbility} / {@code playAbility} im Forge-Quellcode):
+     * Zusatzkosten und optionale Kosten, Modi, angesagter Typ, X-Wert, Ziele. Jede Frage geht an
+     * den Spieler. Gibt die (ggf. um Zusatzkosten erweiterte) Fähigkeit zurück oder null bei
+     * Abbruch / ohne gültiges Ziel. Bezahlt wird danach von Forge (vorerst automatisch).
+     */
+    private SpellAbility prepareRemote(SpellAbility original) {
+        // Zusatzkosten (alternative) und optionale Kosten (Kicker, Verstärkung …)
+        List<SpellAbility> variants = GameActionUtil.getAdditionalCostSpell(original);
+        SpellAbility sa = variants.size() > 1 ? getAbilityToPlay(original.getHostCard(), variants) : original;
+        if (sa == null) {
+            return null;
+        }
+        List<OptionalCostValue> optional = GameActionUtil.getOptionalCostValues(sa);
+        if (!optional.isEmpty()) {
+            optional = chooseOptionalCosts(sa, optional);
+        }
+        sa = GameActionUtil.addOptionalCosts(sa, optional);
+        sa.setActivatingPlayer(getPlayer());
+
+        boolean needX = true;
+        if (sa.getApi() == ApiType.Charm) {
+            if (sa.isAnnouncing("X")) {
+                needX = sa.getPayCosts().hasXInAnyCostPart();
+                if (!announceValuesLikeX(sa, needX)) {
+                    return null;
+                }
+                needX = false;
+            }
+            if (!CharmEffect.makeChoices(sa)) {
+                return null;
+            }
+        }
+        if (!announceType(sa) || (needX && !announceValuesLikeX(sa, true))) {
+            return null;
+        }
+        // Ziele: setupTargets ruft für jede gezielte Teilfähigkeit chooseTargetsFor auf
+        return sa.setupTargets() ? sa : null;
+    }
+
+    /** Angesagte Werte (Announce-Parameter, X-Kosten) wie im Forge-Quellcode. false = abgebrochen. */
+    private boolean announceValuesLikeX(SpellAbility sa, boolean needX) {
+        if (sa.isCopied() || sa.isWrapper()) {
+            return true;
+        }
+        Card card = sa.getHostCard();
+        String announce = sa.getParam("Announce");
+        if (announce != null && needX) {
+            for (String aVar : announce.split(",")) {
+                String varName = aVar.trim();
+                Range<Integer> range = AbilityUtils.getAnnouncementBounds(sa, varName);
+                Integer value = announceRequirements(sa, range.getMinimum(), range.getMaximum(), varName);
+                if (value == null) {
+                    return false;
+                }
+                if ("X".equalsIgnoreCase(varName)) {
+                    needX = false;
+                    sa.setXManaCostPaid(value);
+                } else {
+                    sa.setSVar(varName, value.toString());
+                    card.setSVar(varName, value.toString());
+                }
+            }
+        }
+        if (needX) {
+            Cost cost = sa.getPayCosts();
+            if (cost != null && cost.hasXInAnyCostPart()) {
+                String sVar = sa.hasParam("XAlternative") ? sa.getParam("XAlternative") : sa.getSVar("X");
+                if ("Count$xPaid".equals(sVar) || sVar.isEmpty()) {
+                    Range<Integer> range = AbilityUtils.getAnnouncementBounds(sa, "X");
+                    Integer value = announceRequirements(sa, range.getMinimum(), range.getMaximum(), "X");
+                    if (value == null) {
+                        return false;
+                    }
+                    sa.setXManaCostPaid(value);
+                }
+            } else {
+                sa.setXManaCostPaid(null);
+            }
+        }
+        return true;
+    }
+
+    /** Angesagter Typ (AnnounceType: Kreaturtyp, Zahl) wie im Forge-Quellcode. false = abgebrochen. */
+    private boolean announceType(SpellAbility sa) {
+        if (sa.isCopied()) {
+            return true;
+        }
+        String announce = sa.getParam("AnnounceType");
+        if (announce == null) {
+            return true;
+        }
+        for (String aVar : announce.split(",")) {
+            String varName = aVar.trim();
+            if ("CreatureType".equals(varName)) {
+                String choice = chooseSomeType("Creature", sa, CardType.getAllCreatureTypes(), false);
+                if (choice == null) {
+                    return false;
+                }
+                sa.getHostCard().setChosenType(choice);
+            }
+            if ("ChooseNumber".equals(varName)) {
+                int min = Integer.parseInt(sa.getParam("Min"));
+                int max = Integer.parseInt(sa.getParam("Max"));
+                sa.getHostCard().setChosenNumber(chooseNumber(sa, "Zahl wählen", min, max));
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Ziele für genau eine (Teil-)Fähigkeit: Liste der gültigen Ziele im Auswahlfenster (Optionen
+     * tragen card_id / player). Wird von Forges {@code SpellAbility.setupTargets()} aufgerufen.
+     * false = abgebrochen oder ungültig.
+     */
+    @Override
+    public boolean chooseTargetsFor(SpellAbility cur) {
+        cur.resetTargets();
+        List<GameEntity> candidates = new ArrayList<>(cur.getTargetRestrictions().getAllCandidates(cur));
+        int min = cur.getMinTargets();
+        int max = Math.min(cur.getMaxTargets(), candidates.size());
+        if (candidates.isEmpty()) {
+            return min == 0;
+        }
+        List<RemoteChoice.Option> opts = new ArrayList<>();
+        for (GameEntity e : candidates) {
+            opts.add(targetOption(e));
+        }
+        String prompt = cur.getTargetRestrictions().getVTSelection();
+        String title = "Ziel wählen" + (prompt == null || prompt.isBlank() ? "" : ": " + prompt);
+        List<Integer> chosen;
+        if (max <= 1) {
+            Integer i = RemoteChoice.single(g(), seat, title, cur, cur.getHostCard(), opts, true);
+            chosen = i == null ? null : List.of(i);
+        } else {
+            chosen = RemoteChoice.multi(g(), seat, title, cur, cur.getHostCard(), opts, min, max, true);
+        }
+        if (chosen == null) {
+            return false;
+        }
+        for (int i : chosen) {
+            GameEntity e = candidates.get(i);
+            if (!cur.canTarget(e)) {
+                return false;
+            }
+            cur.getTargets().add(e);
+        }
+        return cur.isTargetNumberValid();
+    }
+
+    /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */
+    private RemoteChoice.Option targetOption(GameEntity e) {
+        if (e instanceof Card c) {
+            String owner = c.getController() == getPlayer() ? "deine" : c.getController().getName();
+            return new RemoteChoice.Option(c.getName() + " (" + owner + ")", null, c.getId(), null);
+        }
+        if (e instanceof Player p) {
+            String name = p == getPlayer() ? p.getName() + " (du)" : p.getName();
+            return new RemoteChoice.Option(name, null, null, g().getPlayers().indexOf(p));
+        }
+        return RemoteChoice.Option.of(e);
+    }
+
+    /** Gibt es für jede gezielte (Teil-)Fähigkeit mit Mindestzahl an Zielen mögliche Ziele? */
+    private static boolean hasPossibleTargets(SpellAbility sa) {
+        for (SpellAbility cur = sa; cur != null; cur = cur.getSubAbility()) {
+            if (cur.usesTargeting() && cur.getMinTargets() > 0
+                    && !cur.getTargetRestrictions().hasCandidates(cur)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean isPlayable(SpellAbility sa, AiPlayDecision decision) {

@@ -31,8 +31,16 @@ import forge.game.spellability.SpellAbility;
 final class RemoteChoice {
     private RemoteChoice() {}
 
-    /** Eine Option: Anzeigetext und optional eine Farbe (W, U, B, R, G, C) für farbige Knöpfe. */
-    record Option(String text, String color) {
+    /**
+     * Eine Option: Anzeigetext, optional eine Farbe (W, U, B, R, G, C) für farbige Knöpfe und
+     * optional das Spielobjekt, für das sie steht (Karten-ID bzw. Sitzplatz; z. B. bei Zielen),
+     * damit der Client es auf dem Tisch hervorheben kann.
+     */
+    record Option(String text, String color, Integer cardId, Integer player) {
+        Option(String text, String color) {
+            this(text, color, null, null);
+        }
+
         static Option of(Object o) {
             return new Option(String.valueOf(o), null);
         }
@@ -85,6 +93,12 @@ final class RemoteChoice {
             j.addProperty("text", withName(o.text(), source));
             if (o.color() != null) {
                 j.addProperty("color", o.color());
+            }
+            if (o.cardId() != null) {
+                j.addProperty("card_id", o.cardId());
+            }
+            if (o.player() != null) {
+                j.addProperty("player", o.player());
             }
             arr.add(j);
         }
