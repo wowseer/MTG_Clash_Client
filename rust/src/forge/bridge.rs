@@ -44,7 +44,7 @@ pub struct ForgeBridge {
     #[export]
     java_path: GString,
     /// Forge-Installationsordner (enthält `res/`). Leer = Umgebungsvariable `FORGE_DIR`,
-    /// sonst `~/Games/Forge`.
+    /// sonst die Projektkopie `forge-bridge/forge/` (falls vorhanden), sonst `~/Games/Forge`.
     #[export(global_dir)]
     forge_dir: GString,
     /// Forge-Jar mit allen Abhängigkeiten. Leer = erste Datei
@@ -372,6 +372,10 @@ impl ForgeBridge {
         }
         if let Ok(d) = std::env::var("FORGE_DIR") {
             return PathBuf::from(d);
+        }
+        let local = PathBuf::from(globalize(&GString::from("res://../forge-bridge/forge")));
+        if local.join("res").is_dir() {
+            return local;
         }
         let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
         Path::new(&home).join("Games").join("Forge")

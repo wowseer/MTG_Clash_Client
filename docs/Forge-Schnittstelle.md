@@ -22,11 +22,22 @@ mit dem Spiel ausgeliefert, sondern aus der lokalen Forge-Installation gelesen.
 
 1. Forge installieren (Desktop-Version), z. B. nach `~/Games/Forge`. Benötigt wird
    `forge-gui-desktop-*-jar-with-dependencies.jar` und der Ordner `res/`.
+   **Projektkopie:** Liegen Jar und `res/` in `forge-bridge/forge/`, wird diese Kopie bevorzugt
+   (von `build.sh`, `run.sh` und `ForgeBridge`). Der Ordner ist per `.gitignore` ausgeschlossen
+   (GPL-Code und Wizards-Kartendaten, ca. 160 MB). Anlegen aus einer Installation:
+   ```sh
+   mkdir -p forge-bridge/forge
+   rsync -a ~/Games/Forge/forge-gui-desktop-*-jar-with-dependencies.jar ~/Games/Forge/LICENSE.txt forge-bridge/forge/
+   rsync -a --exclude adventure --exclude music --exclude 'languages/*' ~/Games/Forge/res forge-bridge/forge/
+   cp ~/Games/Forge/res/languages/{en-US,de-DE}.properties ~/Games/Forge/res/languages/cardnames-de-DE.txt forge-bridge/forge/res/languages/
+   ```
+   Weggelassen werden Adventure-Modus, Musik und fremde Sprachdateien – für Partien über die
+   Brücke nicht nötig.
 2. Java 17 oder neuer (`java`, `javac`, `jar` im PATH).
 3. Brücke bauen: `forge-bridge/build.sh` → `forge-bridge/build/forge-bridge.jar` (ca. 1–2 s).
    Anderer Forge-Pfad: `FORGE_JAR=/pfad/zum/forge.jar forge-bridge/build.sh`.
 4. In Godot einen Knoten `ForgeBridge` anlegen und ggf. `forge_dir` / `forge_jar` setzen
-   (leer = `FORGE_DIR` bzw. `~/Games/Forge`, Jar wird automatisch gesucht).
+   (leer = `FORGE_DIR`, sonst `forge-bridge/forge/`, sonst `~/Games/Forge`; Jar wird automatisch gesucht).
 
 Manueller Test ohne Godot: `forge-bridge/run.sh` starten und JSON-Zeilen eintippen, z. B.
 `{"cmd":"ping"}`.
@@ -146,6 +157,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 
 - Getestet (headless): Godot-Node → Brücke → Forge 2.0.15, Partie in `forge_table.tscn` bis
   zum Spielende; Karten wandern korrekt zwischen Hand, Ressourcen, Spielfeld und Friedhof.
+- Getestet mit der Projektkopie `forge-bridge/forge/` (KI gegen KI bis zum Spielende).
 - `table.tscn` mit dem eigenen Regelwerk (`TurnManager`) ist unverändert.
 - Noch nicht ferngesteuert: Angreifer, Blocker, Ziele, aktivierte Fähigkeiten bleibender Karten;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.

@@ -72,7 +72,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | Name | Typ | Beschreibung |
 |---|---|---|
 | `java_path` | `String` | Java-Programm (Name im PATH oder absoluter Pfad). Java 17 oder neuer. |
-| `forge_dir` | `String` | Forge-Installationsordner (enthält `res/`). Leer = Umgebungsvariable `FORGE_DIR`, sonst `~/Games/Forge`. |
+| `forge_dir` | `String` | Forge-Installationsordner (enthält `res/`). Leer = Umgebungsvariable `FORGE_DIR`, sonst die Projektkopie `forge-bridge/forge/` (falls vorhanden), sonst `~/Games/Forge`. |
 | `forge_jar` | `String` | Forge-Jar mit allen Abhängigkeiten. Leer = erste Datei `forge-gui-desktop-*-jar-with-dependencies.jar` in `forge_dir`. |
 | `bridge_jar` | `String` | Gebaute Brücke (`forge-bridge/build.sh`). `res://`-Pfade werden umgerechnet. |
 | `java_max_memory_mb` | `int` | Maximaler Java-Heap in MB (`-Xmx`). |

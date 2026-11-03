@@ -377,6 +377,8 @@ beantwortet; alle Forge-Spielereignisse kommen als `forge_event`. `table.tscn` m
 Regelwerk (`TurnManager`) bleibt unverändert.
 
 Einrichtung, Protokoll, GDScript-Beispiel und Grenzen: [Forge-Schnittstelle.md](Forge-Schnittstelle.md).
+Forge-Dateien: Liegt eine Kopie (Jar + `res/`) in `forge-bridge/forge/` (nicht im Git), wird sie
+vor `~/Games/Forge` verwendet.
 
 ### Forge-Partie auf dem 3D-Tisch: `forge_table.tscn`
 
