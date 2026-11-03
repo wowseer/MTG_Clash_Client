@@ -15,23 +15,16 @@ fog_enabled = true
 fog_light_color = Color(0.08, 0.1, 0.14, 1)
 fog_density = 0.012
 
-[node name="Table" type="TableController" unique_id=346997079 node_paths=PackedStringArray("camera", "turn_manager", "hand_zone", "deck_zone", "opponent_hand_zone", "opponent_deck_zone", "opponent_battlefield_zone")]
+[node name="Table" type="TableController" node_paths=PackedStringArray("camera")]
 camera = NodePath("Camera")
-turn_manager = NodePath("TurnManager")
-hand_zone = NodePath("Player/Hand")
-deck_zone = NodePath("Player/Deck")
-opponent_hand_zone = NodePath("Opponent/Hand")
-opponent_deck_zone = NodePath("Opponent/Deck")
-opponent_battlefield_zone = NodePath("Opponent/Battlefield")
-demo_opponent_battlefield_size = 0
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1977328221]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("env")
 
-[node name="Arena" type="Arena" parent="." unique_id=2143555114]
+[node name="Arena" type="Arena" parent="."]
 board_size = Vector2(19, 9.6)
 
-[node name="Lantern" type="SpotLight3D" parent="." unique_id=507094639]
+[node name="Lantern" type="SpotLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 14, 0)
 light_color = Color(1, 0.93, 0.82, 1)
 light_energy = 3.2
@@ -40,7 +33,7 @@ spot_range = 30.0
 spot_angle = 46.0
 spot_angle_attenuation = 0.7
 
-[node name="Camera" type="TableCamera" parent="." unique_id=984837999]
+[node name="Camera" type="TableCamera" parent="."]
 overview_position = Vector3(0, 23.2, 6.4)
 overview_target = Vector3(0, 0, 0.2)
 focus_distance = 2.4
@@ -48,7 +41,7 @@ follow_distance = 6.6
 fov = 30.0
 far = 200.0
 
-[node name="Player" type="PlayerSeat" parent="." unique_id=439672300 node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
+[node name="Player" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
 hand = NodePath("Hand")
 deck = NodePath("Deck")
 battlefield = NodePath("Battlefield")
@@ -56,13 +49,13 @@ discard = NodePath("Discard")
 resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
-[node name="Battlefield" type="Zone" parent="Player" unique_id=66267130]
+[node name="Battlefield" type="Zone" parent="Player"]
 size = Vector3(16.4, 0.1, 3)
 free_placement = true
 auto_arrange = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.7)
 
-[node name="Deck" type="Zone" parent="Player" unique_id=1898977070]
+[node name="Deck" type="Zone" parent="Player"]
 kind = 1
 size = Vector3(0.95, 0.3, 1.2)
 accepts_drops = false
@@ -72,34 +65,34 @@ face_up = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.6, 0, 3.4)
 visible = false
 
-[node name="Discard" type="Zone" parent="Player" unique_id=882134221]
+[node name="Discard" type="Zone" parent="Player"]
 kind = 1
 size = Vector3(0.95, 0.3, 1.2)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.6, 0, 1.6)
 
-[node name="Resources" type="Zone" parent="Player" unique_id=463578829]
+[node name="Resources" type="Zone" parent="Player"]
 kind = 3
 size = Vector3(3.4, 0.3, 1.6)
 cards_draggable = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.6, 0, 3.55)
 
-[node name="ManaPool" type="ManaPool" parent="Player" unique_id=411184659]
+[node name="ManaPool" type="ManaPool" parent="Player"]
 
-[node name="Hand" type="Zone" parent="Player" unique_id=546330428]
+[node name="Hand" type="Zone" parent="Player"]
 kind = 0
 size = Vector3(5, 0.3, 1.4)
 hand_card_angle_degrees = 4.6
 hand_max_spread_degrees = 32.0
 transform = Transform3D(2.8, 0, 0, 0, 2.705, -0.725, 0, 0.725, 2.705, 0, 0.6, 5.95)
 
-[node name="HeroAnchor" type="Marker3D" parent="Player" unique_id=901721143]
+[node name="HeroAnchor" type="Marker3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 4.78)
 
 [node name="ManaAnchor" type="Marker3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.6, 0, 4.45)
 
-[node name="Opponent" type="PlayerSeat" parent="." unique_id=1201133542 node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
-display_name = "Gegner"
+[node name="Opponent" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
+display_name = "Forge-KI"
 is_ai = true
 hand = NodePath("Hand")
 deck = NodePath("Deck")
@@ -108,7 +101,7 @@ discard = NodePath("Discard")
 resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
-[node name="Battlefield" type="Zone" parent="Opponent" unique_id=1902286004]
+[node name="Battlefield" type="Zone" parent="Opponent"]
 size = Vector3(16.4, 0.1, 3)
 accepts_drops = false
 cards_draggable = false
@@ -117,7 +110,7 @@ grid_spacing = Vector2(1, 1.05)
 auto_arrange = true
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -1.7)
 
-[node name="Deck" type="Zone" parent="Opponent" unique_id=131863721]
+[node name="Deck" type="Zone" parent="Opponent"]
 kind = 1
 size = Vector3(0.95, 0.3, 1.2)
 accepts_drops = false
@@ -125,26 +118,26 @@ cards_draggable = false
 face_up = false
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -8.6, 0, -3.4)
 
-[node name="Discard" type="Zone" parent="Opponent" unique_id=1580544609]
+[node name="Discard" type="Zone" parent="Opponent"]
 kind = 1
 size = Vector3(0.95, 0.3, 1.2)
 accepts_drops = false
 cards_draggable = false
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -8.6, 0, -1.6)
 
-[node name="Resources" type="Zone" parent="Opponent" unique_id=213499238]
+[node name="Resources" type="Zone" parent="Opponent"]
 kind = 3
 size = Vector3(3.4, 0.3, 1.6)
 accepts_drops = false
 cards_draggable = false
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6.6, 0, -3.55)
 
-[node name="ManaPool" type="ManaPool" parent="Opponent" unique_id=1860643415]
+[node name="ManaPool" type="ManaPool" parent="Opponent"]
 
-[node name="HeroAnchor" type="Marker3D" parent="Opponent" unique_id=1587684847]
+[node name="HeroAnchor" type="Marker3D" parent="Opponent"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -5.75)
 
-[node name="Hand" type="Zone" parent="Opponent" unique_id=65253943]
+[node name="Hand" type="Zone" parent="Opponent"]
 kind = 0
 size = Vector3(4, 0.3, 1.2)
 accepts_drops = false
@@ -152,22 +145,16 @@ cards_draggable = false
 face_up = false
 transform = Transform3D(-1.4, 0, 0, 0, 1.352, 0.362, 0, 0.362, -1.352, 0, 1, -6.4)
 
-[node name="StackManager" type="StackManager" parent="." unique_id=1174844397]
-
-[node name="StackZone" type="Zone" parent="." unique_id=474808470]
-kind = 4
-size = Vector3(1.2, 0.02, 0.9)
-accepts_drops = false
-cards_draggable = false
-
-[node name="TurnManager" type="TurnManager" parent="." unique_id=664733690 node_paths=PackedStringArray("player_seat", "opponent_seat", "stack_manager", "stack_zone")]
-player_seat = NodePath("../Player")
-opponent_seat = NodePath("../Opponent")
-stack_manager = NodePath("../StackManager")
-stack_zone = NodePath("../StackZone")
-
-[node name="TurnHud" type="TurnHud" parent="." unique_id=269019185 node_paths=PackedStringArray("turn_manager", "player_hero_anchor", "opponent_hero_anchor", "player_mana_anchor")]
-turn_manager = NodePath("../TurnManager")
+[node name="TurnHud" type="TurnHud" parent="." node_paths=PackedStringArray("forge_table", "player_hero_anchor", "opponent_hero_anchor", "player_mana_anchor")]
+forge_table = NodePath("../ForgeTable")
 player_hero_anchor = NodePath("../Player/HeroAnchor")
 opponent_hero_anchor = NodePath("../Opponent/HeroAnchor")
 player_mana_anchor = NodePath("../Player/ManaAnchor")
+
+[node name="ForgeBridge" type="ForgeBridge" parent="."]
+
+[node name="ForgeTable" type="ForgeTable" parent="." node_paths=PackedStringArray("bridge", "controller", "player_seat", "opponent_seat")]
+bridge = NodePath("../ForgeBridge")
+controller = NodePath("..")
+player_seat = NodePath("../Player")
+opponent_seat = NodePath("../Opponent")

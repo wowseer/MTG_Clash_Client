@@ -11,12 +11,11 @@
 //!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
 //! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
 //!   belegtem Stack orange
-//! - Bildschirmmitte: Auswahlfenster für Heldenfähigkeiten
-//! - obere Bildschirmhälfte: große Stack-Anzeige ([`StackView`]), solange der Stack belegt ist
+//! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
 //! - ganz oben, mittig: große Vorschau der Karte, die gerade gezogen wird; das Gegner-Medaillon
 //!   liegt dann durchsichtig darüber
 //!
-//! Das HUD liest den Zustand jedes Frame vom TurnManager (keine Signal-Kopplung nötig).
+//! Das HUD liest den Zustand jedes Frame vom [`ForgeTable`] (keine Signal-Kopplung nötig).
 //! Alle Flächen lassen Mausklicks durch, nur der Button fängt sie ab.
 
 use godot::classes::control::{GrowDirection, MouseFilter};
@@ -34,8 +33,7 @@ use super::hourglass::HourglassIcon;
 use super::mana_view::ManaPoolView;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
-use super::stack_view::{self, StackView};
-use super::turn_manager::TurnManager;
+use super::card_preview;
 use crate::forge::table::ForgeTable;
 use crate::table::table_controller::TableController;
 
@@ -56,17 +54,12 @@ const PREVIEW_Z: i32 = 50;
 /// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
 /// sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr
 /// ([HourglassIcon]; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
-/// blau, bei belegtem Stack orange) und das Auswahlfenster für Heldenfähigkeiten.
-/// Liest den Zustand jedes Frame vom [TurnManager] – oder, ist keiner gesetzt, von einem
-/// [ForgeTable] (Spiel mit der Forge-Regel-Engine; das Auswahlfenster dient dann für den Mulligan).
+/// blau, bei belegtem Stack orange) und ein Auswahlfenster (z. B. Mulligan).
+/// Liest den Zustand jedes Frame vom [ForgeTable] (Spiel mit der Forge-Regel-Engine).
 #[derive(GodotClass)]
 #[class(base=CanvasLayer)]
 pub struct TurnHud {
-    /// Der [TurnManager], dessen Zustand angezeigt wird.
-    #[export]
-    turn_manager: Option<Gd<TurnManager>>,
-    /// Alternative Datenquelle: Forge-Spiel ([ForgeTable]). Wird nur benutzt, wenn
-    /// [member turn_manager] leer ist.
+    /// Das Forge-Spiel ([ForgeTable]), dessen Zustand angezeigt wird.
     #[export]
     forge_table: Option<Gd<ForgeTable>>,
     /// 3D-Punkt, an dem das Spieler-Medaillon sitzt (Unterkante mittig, z. B. direkt über der Hand).
@@ -96,8 +89,7 @@ pub struct TurnHud {
     player_row: Option<Gd<Control>>,
     /// Manapool des Spielers als runde Symbole, rechts neben seinem Medaillon.
     player_mana: Option<Gd<ManaPoolView>>,
-    /// Masken über den Medaillon-Zeilen (Gegner, Spieler): sparen die gehoverte/gezogene Karte
-    /// aus; die Gegner-Maske graut aus, solange der Stack belegt ist.
+    /// Masken über den Medaillon-Zeilen (Gegner, Spieler): sparen die gehoverte/gezogene Karte aus.
     opponent_mask: Option<Gd<CardCutout>>,
     player_mask: Option<Gd<CardCutout>>,
     /// Farbe, mit der der Hauptbutton zuletzt gestaltet wurde (nur bei Wechsel neu setzen).
@@ -105,15 +97,13 @@ pub struct TurnHud {
     /// Meldung „Spielende – X gewinnt!“ in der Bildmitte (sonst leer).
     game_over_label: Option<Gd<Label>>,
     button: Option<Gd<Button>>,
-    /// Große Stack-Anzeige in der oberen Bildschirmhälfte.
-    stack_view: Option<StackView>,
     /// Große Vorschau der gerade gezogenen Karte im oberen Bildbereich (Karte + Anzeige).
     drag_preview: Option<(InstanceId, Gd<godot::classes::PanelContainer>)>,
     /// Elternknoten für die Vorschau (Vollbild-Root des HUD).
     root: Option<Gd<Control>>,
-    hero_panel: Option<Gd<PanelContainer>>,
-    hero_title: Option<Gd<Label>>,
-    hero_buttons: Vec<Gd<Button>>,
+    choice_panel: Option<Gd<PanelContainer>>,
+    choice_title: Option<Gd<Label>>,
+    choice_buttons: Vec<Gd<Button>>,
 
     base: Base<CanvasLayer>,
 }
@@ -122,7 +112,6 @@ pub struct TurnHud {
 impl ICanvasLayer for TurnHud {
     fn init(base: Base<CanvasLayer>) -> Self {
         Self {
-            turn_manager: None,
             forge_table: None,
             timeline: None,
             opponent_name: None,
@@ -142,12 +131,11 @@ impl ICanvasLayer for TurnHud {
             button_color: None,
             game_over_label: None,
             button: None,
-            stack_view: None,
             drag_preview: None,
             root: None,
-            hero_panel: None,
-            hero_title: None,
-            hero_buttons: Vec::new(),
+            choice_panel: None,
+            choice_title: None,
+            choice_buttons: Vec::new(),
             base,
         }
     }
@@ -171,64 +159,55 @@ impl ICanvasLayer for TurnHud {
 
 #[godot_api]
 impl TurnHud {
-    /// Knopf der ersten Heldenfähigkeit im Auswahlfenster.
+    /// Erste Option im Auswahlfenster (Mulligan: „Behalten“).
     #[func]
-    fn on_hero_ability_0(&mut self) {
-        self.activate_hero(0);
+    fn on_choice_0(&mut self) {
+        self.choose(0);
     }
 
-    /// Knopf der zweiten Heldenfähigkeit im Auswahlfenster.
+    /// Zweite Option im Auswahlfenster (Mulligan: „Mulligan“).
     #[func]
-    fn on_hero_ability_1(&mut self) {
-        self.activate_hero(1);
+    fn on_choice_1(&mut self) {
+        self.choose(1);
     }
 
-    /// Knopf „Abbrechen“ im Auswahlfenster für Heldenfähigkeiten.
+    /// Knopf „Abbrechen“ im Auswahlfenster.
     #[func]
-    fn on_hero_cancel(&mut self) {
-        if let Some(tm) = self.turn_manager.as_mut() {
-            tm.bind_mut().cancel_hero_choice();
-        } else if let Some(ft) = self.forge_table.as_mut() {
-            ft.bind_mut().hud_choose(-1);
-        }
+    fn on_choice_cancel(&mut self) {
+        self.choose(-1);
     }
 
-    /// Button „Nächste Phase“ / „Passen“ bzw. Leertaste: ruft [method TurnManager.next_phase] auf
-    /// (im Forge-Spiel: [method ForgeTable.pass_priority]).
+    /// Button „Passen“ bzw. Leertaste: ruft [method ForgeTable.pass_priority] auf.
     #[func]
     fn on_next_pressed(&mut self) {
-        if let Some(tm) = self.turn_manager.as_mut() {
-            tm.bind_mut().next_phase();
-        } else if let Some(ft) = self.forge_table.as_mut() {
+        if let Some(ft) = self.forge_table.as_mut() {
             ft.bind_mut().pass_priority();
         }
     }
 }
 
 impl TurnHud {
-    fn activate_hero(&mut self, index: i64) {
-        if let Some(tm) = self.turn_manager.as_mut() {
-            tm.bind_mut().activate_hero_ability(index);
-        } else if let Some(ft) = self.forge_table.as_mut() {
+    fn choose(&mut self, index: i64) {
+        if let Some(ft) = self.forge_table.as_mut() {
             ft.bind_mut().hud_choose(index);
         }
     }
 
-    /// Auswahlfenster für Heldenfähigkeiten (Bildschirmmitte).
-    fn build_hero_panel(&mut self, root: &mut Gd<Control>) {
+    /// Auswahlfenster (Bildschirmmitte).
+    fn build_choice_panel(&mut self, root: &mut Gd<Control>) {
         let mut col = VBoxContainer::new_alloc();
         col.add_theme_constant_override("separation", 6);
         col.set_custom_minimum_size(Vector2::new(420.0, 0.0));
         let title = label(17, GOLD);
         col.add_child(&title);
-        for (i, method) in ["on_hero_ability_0", "on_hero_ability_1", "on_hero_cancel"].into_iter().enumerate() {
+        for (i, method) in ["on_choice_0", "on_choice_1", "on_choice_cancel"].into_iter().enumerate() {
             let mut b = styled_button(if i == 2 { 15 } else { 16 });
             if i == 2 {
                 b.set_text(tr!("Abbrechen", "Cancel"));
             }
             b.connect("pressed", &Callable::from_object_method(&self.to_gd(), method));
             col.add_child(&b);
-            self.hero_buttons.push(b);
+            self.choice_buttons.push(b);
         }
         let mut p = panel();
         p.add_child(&col);
@@ -236,8 +215,8 @@ impl TurnHud {
         // Bildschirmmitte (unten Mitte sitzen Hand und Spieler-Medaillon)
         place(&mut p, (0.5, 0.5), (0.0, 0.0), GrowDirection::BOTH, GrowDirection::BOTH);
         root.add_child(&p);
-        self.hero_panel = Some(p);
-        self.hero_title = Some(title);
+        self.choice_panel = Some(p);
+        self.choice_title = Some(title);
     }
 
     fn build(&mut self) {
@@ -290,9 +269,7 @@ impl TurnHud {
         place(&mut button, (1.0, 1.0), (-14.0, -14.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
         root.add_child(&button);
 
-        self.build_hero_panel(&mut root);
-        // Stack-Anzeige zuletzt: liegt über den übrigen Panels
-        self.stack_view = Some(StackView::new(&mut root));
+        self.build_choice_panel(&mut root);
         self.base_mut().add_child(&root);
         self.root = Some(root.clone());
         self.timeline = Some(timeline);
@@ -381,7 +358,7 @@ impl TurnHud {
             mask.set_z_index(if dragged.is_some() { PREVIEW_Z + 1 } else { 0 });
         }
         let (Some(card), Some(mut root)) = (dragged, self.root.clone()) else { return };
-        let mut preview = stack_view::build_preview(&card);
+        let mut preview = card_preview::build_preview(&card);
         // Über den übrigen HUD-Elementen (nur das Gegner-Medaillon liegt darüber)
         preview.set_z_index(PREVIEW_Z);
         root.add_child(&preview);
@@ -394,24 +371,9 @@ impl TurnHud {
 
     fn refresh(&mut self) {
         self.place_seat_rows();
-        // Stack-Karten beginnen unter dem Lebens-Edelstein des Gegners (Leben bleibt lesbar)
-        let below_opponent = self.opponent_badge.as_ref().map_or(0.0, |b| b.get_global_rect().end().y);
         self.update_drag_preview();
-        if let (Some(tm), Some(view)) = (self.turn_manager.clone(), self.stack_view.as_mut()) {
-            let items: Vec<_> = tm.bind().get_stack_items().iter_shared().collect();
-            view.update(&items, below_opponent);
-            // Gegner-Medaillon ausgrauen, solange die Stack-Anzeige darüber liegt
-            if let Some(mask) = self.opponent_mask.as_mut() {
-                mask.bind_mut().set_greyed(!items.is_empty());
-            }
-        }
-        let view = if let Some(tm) = self.turn_manager.clone() {
-            HudView::from_turn_manager(&tm.bind())
-        } else if let Some(ft) = self.forge_table.clone() {
-            ft.bind().hud_view()
-        } else {
-            return;
-        };
+        let Some(ft) = self.forge_table.clone() else { return };
+        let view = ft.bind().hud_view();
         let active = view.active_seat;
 
         if let Some(t) = self.timeline.as_mut() {
@@ -441,8 +403,8 @@ impl TurnHud {
             }
         }
 
-        // Keine Hinweistexte während des Spiels (Phase steht im Zeitstrahl, der Stack in der
-        // StackView) – nur das Spielende wird in der Bildmitte angezeigt.
+        // Keine Hinweistexte während des Spiels (Phase steht im Zeitstrahl) – nur das Spielende
+        // wird in der Bildmitte angezeigt.
         let winner = view.winner.clone();
         if let Some(l) = self.game_over_label.as_mut() {
             let text = if winner.is_empty() {
@@ -462,19 +424,19 @@ impl TurnHud {
             }
         }
 
-        // Auswahlfenster (Heldenfähigkeiten bzw. Mulligan)
-        if let Some(p) = self.hero_panel.as_mut() {
+        // Auswahlfenster (z. B. Mulligan)
+        if let Some(p) = self.choice_panel.as_mut() {
             p.set_visible(view.choice.is_some());
         }
         if let Some(choice) = &view.choice {
-            if let Some(t) = self.hero_title.as_mut() {
+            if let Some(t) = self.choice_title.as_mut() {
                 t.set_text(&choice.title);
             }
-            if let Some(b) = self.hero_buttons.get_mut(2) {
+            if let Some(b) = self.choice_buttons.get_mut(2) {
                 b.set_visible(choice.cancelable);
                 b.set_text(tr!("Abbrechen", "Cancel"));
             }
-            for (i, b) in self.hero_buttons.iter_mut().take(2).enumerate() {
+            for (i, b) in self.choice_buttons.iter_mut().take(2).enumerate() {
                 let entry = choice.options.get(i);
                 b.set_visible(entry.is_some());
                 if let Some((text, enabled)) = entry {
@@ -494,8 +456,8 @@ pub struct HudChoice {
     pub cancelable: bool,
 }
 
-/// Alles, was das HUD anzeigt – unabhängig davon, ob die Regeln vom [TurnManager] oder von
-/// Forge kommen. Sitzplatz 0 = Spieler (unten), 1 = Gegner (oben).
+/// Alles, was das HUD anzeigt (geliefert vom [ForgeTable]). Sitzplatz 0 = Spieler (unten),
+/// 1 = Gegner (oben).
 pub struct HudView {
     pub phase_titles: PackedStringArray,
     /// Index in `phase_titles` (−1 = keine Phase markiert).
@@ -514,41 +476,6 @@ pub struct HudView {
     /// Manapool des Spielers (je [ManaType] eine Menge; leer = keine Anzeige).
     pub player_pool: PackedInt64Array,
     pub choice: Option<HudChoice>,
-}
-
-impl HudView {
-    fn from_turn_manager(tm: &TurnManager) -> Self {
-        let hero = tm.get_hero_choice_name().to_string();
-        let choice = (!hero.is_empty()).then(|| {
-            let choices = tm.get_hero_choices();
-            HudChoice {
-                title: trf!("{hero} – Fähigkeit wählen (1× pro Runde)", "{hero} – choose an ability (once per turn)"),
-                options: choices
-                    .as_slice()
-                    .iter()
-                    .take(2)
-                    .enumerate()
-                    .filter(|(_, t)| !t.is_empty())
-                    .map(|(i, t)| (t.to_string(), tm.is_hero_choice_available(i as i64)))
-                    .collect(),
-                cancelable: true,
-            }
-        });
-        Self {
-            phase_titles: tm.get_phase_titles(),
-            phase_index: tm.get_phase_index(),
-            active_seat: tm.get_active_seat(),
-            names: [tm.get_seat_name(0), tm.get_seat_name(1)],
-            lives: [tm.get_life(0), tm.get_life(1)],
-            turn: tm.get_turn(),
-            winner: tm.get_winner_name().to_string(),
-            button_enabled: tm.is_waiting_for_input(),
-            button_text: tm.get_button_text(),
-            stack_busy: !tm.get_stack_items().is_empty(),
-            player_pool: tm.get_pool_amounts(0),
-            choice,
-        }
-    }
 }
 
 fn styled_button(font_size: i32) -> Gd<Button> {

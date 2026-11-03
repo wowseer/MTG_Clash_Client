@@ -37,8 +37,8 @@ use godot::classes::Label3D;
 use godot::global::HorizontalAlignment;
 
 use crate::game::ability::CardAbility;
-use crate::game::cards::{ActivatedAbility, AuraDef, CardDef, CardKind, EquipStats, HeroAbility, SpellEffect, StaticEffect};
-use crate::game::mana::{Cost, ManaCost, ManaType};
+use crate::game::cards::{ActivatedAbility, AuraDef, CardDef, CardKind, EquipStats, HeroAbility, SpellEffect};
+use crate::game::mana::{ManaCost, ManaType};
 use super::placeholder;
 use super::layers::CARD_LAYER;
 use super::zone::Zone;
@@ -176,10 +176,9 @@ pub struct Card3D {
 
     /// Sofortzauber / Hexerei: Effekt beim Auflösen.
     pub(crate) effect: SpellEffect,
-    /// Held: Fähigkeiten, aktuelle Willenskraft, diese Runde schon aktiviert?
+    /// Held: Fähigkeiten und aktuelle Willenskraft.
     pub(crate) hero_abilities: Vec<HeroAbility>,
     pub(crate) willpower: i32,
-    pub(crate) hero_used: bool,
     /// Ausrüstung: Werte und Kreatur, an der sie angelegt ist.
     pub(crate) equip: Option<EquipStats>,
     pub(crate) equipped_to: Option<Gd<Card3D>>,
@@ -189,8 +188,6 @@ pub struct Card3D {
     /// Kreatur: Summe der globalen Boni (Artefakte/Verzauberungen), laufend neu berechnet.
     global_attack: i32,
     global_defense: i32,
-    /// Artefakt / Verzauberung: dauerhafter Effekt.
-    pub(crate) static_effect: Option<StaticEffect>,
     /// Artefakt: Tapp-Fähigkeit.
     pub(crate) activated: Option<ActivatedAbility>,
     /// Aura: Zielklasse/Wirkung und verzauberte Karte.
@@ -252,14 +249,12 @@ impl IArea3D for Card3D {
             effect: SpellEffect::None,
             hero_abilities: Vec::new(),
             willpower: 0,
-            hero_used: false,
             equip: None,
             equipped_to: None,
             equip_attack: 0,
             equip_defense: 0,
             global_attack: 0,
             global_defense: 0,
-            static_effect: None,
             activated: None,
             aura: None,
             enchanted: None,
@@ -575,7 +570,6 @@ impl Card3D {
         self.hero_abilities = def.hero_abilities.clone();
         self.willpower = def.willpower;
         self.equip = def.equip;
-        self.static_effect = def.static_effect;
         self.activated = def.activated;
         self.aura = def.aura;
         self.refresh_labels();
@@ -585,65 +579,8 @@ impl Card3D {
         self.card_kind
     }
 
-    pub fn is_creature(&self) -> bool {
-        self.card_kind == CardKind::Creature
-    }
-
-    /// Ausrüstungsbonus auf diese Kreatur anwenden (negativ = entfernen).
-    pub fn add_equip_bonus(&mut self, attack: i32, defense: i32) {
-        self.equip_attack += attack;
-        self.equip_defense += defense;
-        self.refresh_labels();
-    }
-
-    /// Bleibende Boni/Verbindungen zurücksetzen (Karte verlässt das Spielfeld).
-    pub fn reset_on_leave(&mut self) {
-        self.equip_attack = 0;
-        self.equip_defense = 0;
-        self.global_attack = 0;
-        self.global_defense = 0;
-        self.equipped_to = None;
-        self.enchanted = None;
-        self.hero_used = false;
-        self.refresh_labels();
-    }
-
-    /// Globale Boni setzen (nur bei Änderung neu beschriften).
-    pub fn set_global_bonus(&mut self, attack: i32, defense: i32) {
-        if (self.global_attack, self.global_defense) != (attack, defense) {
-            self.global_attack = attack;
-            self.global_defense = defense;
-            self.refresh_labels();
-        }
-    }
-
-    /// Willenskraft eines Helden ändern; gibt den neuen Wert zurück.
-    pub fn change_willpower(&mut self, delta: i32) -> i32 {
-        self.willpower += delta;
-        self.refresh_labels();
-        self.willpower
-    }
-
-    /// Kartenname als Rust-String (für Protokolltexte).
-    pub fn display_name(&self) -> String {
-        crate::i18n::name(&self.card_name.to_string())
-    }
-
-    /// Manakosten als Rust-Wert (ohne Resource = kostenlos).
-    pub fn cost(&self) -> Cost {
-        self.mana_cost.as_ref().map(|c| c.bind().cost()).unwrap_or_default()
-    }
-
-    pub fn is_resource(&self) -> bool {
-        self.card_kind == CardKind::Resource
-    }
-
     pub fn produced_mana(&self) -> ManaType {
         self.produces
-    }
-
-    pub fn ability_kind(&self) -> CardAbility {
-        self.ability
     }
 
     /// Tapp-Zustand setzen; die Drehung übernimmt die Zone beim nächsten `layout()`.
@@ -654,13 +591,6 @@ impl Card3D {
         if !tapped {
             self.attacked = false;
         }
-        self.apply_tapped_look();
-    }
-
-    /// Markiert die Kreatur als „hat angegriffen“: schräg und ausgegraut, aber ohne Tapp-Symbol –
-    /// bis sie wieder enttappt wird.
-    pub fn set_attacked(&mut self, attacked: bool) {
-        self.attacked = attacked;
         self.apply_tapped_look();
     }
 
@@ -689,23 +619,6 @@ impl Card3D {
         if let Some(icon) = self.tap_icon.as_mut() {
             icon.set_visible(self.tapped && !self.attacked);
         }
-    }
-
-    pub fn add_damage(&mut self, amount: i32) {
-        self.damage += amount;
-        self.refresh_labels();
-    }
-
-    pub fn add_attack_bonus(&mut self, amount: i32) {
-        self.attack_bonus += amount;
-        self.refresh_labels();
-    }
-
-    /// Schaden und Markierungen der Runde entfernen (End-Phase).
-    pub fn clear_turn_effects(&mut self) {
-        self.damage = 0;
-        self.set_marker(CardMarker::None);
-        self.refresh_labels();
     }
 
     pub fn set_marker(&mut self, marker: CardMarker) {
@@ -755,9 +668,6 @@ impl Card3D {
             }
             CardKind::Artifact | CardKind::Enchantment => {
                 let mut parts: Vec<String> = Vec::new();
-                if let Some(e) = self.static_effect {
-                    parts.push(e.description());
-                }
                 if let Some(a) = self.activated {
                     parts.push(a.description());
                 }

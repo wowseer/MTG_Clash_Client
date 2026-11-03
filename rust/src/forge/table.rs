@@ -44,8 +44,8 @@ pub struct ForgeTable {
     /// Verbindung zu Forge.
     #[export]
     bridge: Option<Gd<ForgeBridge>>,
-    /// Tischsteuerung (Drag-and-Drop, Kamera). Ohne [TurnManager] sind dort alle Karten frei
-    /// beweglich; dieser Knoten prüft die Züge über Forge.
+    /// Tischsteuerung (Drag-and-Drop, Kamera). Sie kennt keine Regeln; dieser Knoten prüft
+    /// die Züge über Forge.
     #[export]
     controller: Option<Gd<TableController>>,
     /// Sitzplatz des Spielers (unten) = Forge-Sitzplatz 0.

@@ -247,54 +247,6 @@ impl Zone {
         idx as i64
     }
 
-    /// Fügt eine Karte hinzu; bei freier Platzierung ohne bekannte Position wird
-    /// automatisch ein freier Platz gesucht (z. B. für Karten, die vom Stack kommen).
-    pub fn add_card_free(&mut self, card: Gd<Card3D>, delay: f64) {
-        let id = card.instance_id();
-        if self.free_placement && !self.free_positions.contains_key(&id) {
-            let spot = self.find_free_spot();
-            self.free_positions.insert(id, spot);
-        }
-        self.add_card(card, -1, delay);
-    }
-
-    /// Erster Rasterplatz (von der Tischmitte aus), an dem noch keine Karte liegt.
-    fn find_free_spot(&self) -> Vector2 {
-        let step = Vector2::new(CARD_WIDTH + 0.2, CARD_HEIGHT + 0.15);
-        let half = Vector2::new((self.size.x - CARD_WIDTH) * 0.5, (self.size.z - CARD_HEIGHT) * 0.5);
-        let cols = ((half.x * 2.0) / step.x).floor() as i32 + 1;
-        let rows = ((half.y * 2.0) / step.y).floor() as i32 + 1;
-        let taken: Vec<Vector2> = self
-            .cards
-            .iter()
-            .filter(|c| !self.attachments.contains_key(&c.instance_id()))
-            .filter_map(|c| self.free_positions.get(&c.instance_id()).copied())
-            .collect();
-        for r in 0..rows {
-            // Spalten von der Mitte nach außen: 0, +1, -1, +2, -2 …
-            for k in 0..cols {
-                let offset = if k % 2 == 0 { k / 2 } else { -(k + 1) / 2 };
-                let p = Vector2::new(offset as f32 * step.x, -half.y + r as f32 * step.y);
-                if p.x.abs() > half.x {
-                    continue;
-                }
-                if taken.iter().all(|t| t.distance_to(p) > 0.6) {
-                    return p;
-                }
-            }
-        }
-        Vector2::ZERO
-    }
-
-    /// Legt `card` (Ausrüstung) an `host` an: Sie liegt danach versetzt unter dem
-    /// Träger und folgt ihm. Beide müssen in dieser Zone liegen.
-    pub fn attach(&mut self, card: Gd<Card3D>, host: Gd<Card3D>) {
-        if self.cards.contains(&card) && self.cards.contains(&host) && card != host {
-            self.attachments.insert(card.instance_id(), host);
-            self.layout();
-        }
-    }
-
     /// Ordnet alle Karten neu an (Tween zu ihren Slots).
     #[func]
     pub fn layout(&mut self) {
@@ -379,10 +331,6 @@ impl Zone {
 }
 
 impl Zone {
-    /// Alle Karten (unterste/erste zuerst).
-    pub fn cards(&self) -> Vec<Gd<Card3D>> {
-        self.cards.clone()
-    }
 
     /// Ruhezustand: dezente Markierung, die Hand bleibt unsichtbar.
     fn idle_color(&self) -> Color {

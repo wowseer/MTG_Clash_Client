@@ -1,18 +1,14 @@
-//! Spielregeln: Sitzplätze, Rundenablauf (State Machine), Kampf, KI und HUD.
+//! Spiel-Darstellung: Sitzplätze, Kartendaten, Mana, Phasen und HUD. Die Regeln kommen von Forge.
 
 pub mod ability;
 pub mod card_cutout;
+pub mod card_preview;
 pub mod cards;
-pub mod game_state;
 pub mod hourglass;
 pub mod hud;
 pub mod mana;
 pub mod mana_view;
 pub mod phase_timeline;
 pub mod phases;
-pub mod timing;
 pub mod seat;
 pub mod seat_badge;
-pub mod stack;
-pub mod stack_view;
-pub mod turn_manager;

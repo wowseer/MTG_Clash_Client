@@ -1,14 +1,15 @@
 # MTG Clash – Dokumentation
 
-Ein Kartenspiel in einer 3D-Arena. Die Spiellogik ist in **Rust** (godot-rust / gdext 0.5.5)
-geschrieben und wird als GDExtension in **Godot 4.7** geladen. Das Spiel ist zweisprachig
-(**Deutsch / Englisch**, siehe Abschnitt 6).
+Ein Kartenspiel in einer 3D-Arena. Die Darstellung ist in **Rust** (godot-rust / gdext 0.5.5)
+geschrieben und wird als GDExtension in **Godot 4.7** geladen. Die **Spielregeln kommen
+vollständig von Forge** (Java-Regel-Engine, siehe Abschnitt 5); ein eigenes Regelwerk gibt es
+nicht mehr. Das Spiel ist zweisprachig (**Deutsch / Englisch**, siehe Abschnitt 6).
 
 Diese Datei gibt den Überblick. Jede einzelne Klasse, Eigenschaft, Funktion und jedes Signal
 ist beschrieben
 
 - **direkt in Godot:** Editor → *Hilfe → Hilfe durchsuchen* (F1) → Klassenname eingeben,
-  z. B. `TurnManager`, `Card3D`, `Zone`;
+  z. B. `ForgeTable`, `Card3D`, `Zone`;
 - **als Datei:** [API-Referenz.md](API-Referenz.md).
 
 Beides wird aus denselben Rust-Doku-Kommentaren (`///`) erzeugt (gdext-Feature `register-docs`).
@@ -19,13 +20,11 @@ Beides wird aus denselben Rust-Doku-Kommentaren (`///`) erzeugt (gdext-Feature `
 
 | Schritt | Befehl |
 |---|---|
-| Test-Build (mit Debug-Tool) | `cd rust && cargo build` |
-| Release-Build (ohne Debug-Tool) | `cd rust && cargo build --release` |
+| Rust bauen | `cd rust && cargo build` (Release: `cargo build --release`) |
 | Unit-Tests | `cd rust && cargo test` |
-| Spiel starten | Godot-Projekt `godot/` öffnen, F5 (Hauptszene `forge_table.tscn`, Forge-Regeln; braucht Java 17+ und Forge, siehe Abschnitt 9) |
-| Spiel mit eigenem Regelwerk | `table.tscn` öffnen, F6 |
+| Forge-Brücke bauen | `forge-bridge/build.sh` (siehe Abschnitt 5) |
+| Spiel starten | Godot-Projekt `godot/` öffnen, F5 (Hauptszene `table.tscn`; braucht Java 17+ und Forge) |
 | API-Referenz neu erzeugen | `python3 tools/gen_api_doc.py` |
-| Forge-Brücke bauen (optional) | `forge-bridge/build.sh` (siehe Abschnitt 9) |
 
 Nach jedem Rust-Build das Spiel neu starten, damit die neue Bibliothek geladen wird.
 `godot/rust.gdextension` zeigt im Debug auf `rust/target/debug/`, im Export auf `rust/target/release/`.
@@ -35,40 +34,36 @@ Nach jedem Rust-Build das Spiel neu starten, damit die neue Bibliothek geladen w
 ## 2. Aufbau der Szene `table.tscn`
 
 ```
-Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Demo-Decks
+Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Kamera-Fokus
 ├── WorldEnvironment, Lantern    Licht und Atmosphäre
 ├── Arena (Arena)                prozedurale Arena mit Spielbrett (Kulisse)
 ├── Camera (TableCamera)         Übersicht / Nahaufnahme
-├── Player (PlayerSeat)          Spieler unten
+├── Player (PlayerSeat)          Spieler unten (Forge-Sitzplatz 0)
 │   ├── Battlefield (Zone)       Spielfeld (automatische Anordnung, `auto_arrange`)
 │   ├── Deck, Discard (Zone)     Deck, Friedhof
-│   ├── Resources (Zone)         Ressourcen-Reihe
-│   ├── ManaPool (ManaPool)      Manavorrat
+│   ├── Resources (Zone)         Länder-Reihe
+│   ├── ManaPool (ManaPool)      Manavorrat (Anzeige)
 │   ├── HeroAnchor (Marker3D)    Position des Medaillons (direkt über der Hand)
-│   ├── ManaAnchor (Marker3D)    Position der Mana-Symbole (unter der Ressourcen-Reihe)
+│   ├── ManaAnchor (Marker3D)    Position der Mana-Symbole (unter der Länder-Reihe)
 │   └── Hand (Zone)              Handkarten (Fächer, nah an der Kamera am unteren Bildrand)
-├── Opponent (PlayerSeat)        Gegner oben (KI), gleicher Aufbau, um 180° gedreht;
-│                                Hand am oberen Bildrand, Medaillon direkt darunter
-├── StackManager (StackManager)  Stack + Prioritätsschleife
-├── StackZone (Zone)             sichtbarer Stack in der Tischmitte
-├── TurnManager (TurnManager)    Rundenablauf und alle Spielregeln
-└── TurnHud (TurnHud)            Bildschirm-Anzeige
+├── Opponent (PlayerSeat)        Gegner oben (Forge-KI, Sitzplatz 1), gleicher Aufbau, um 180°
+│                                gedreht; Hand am oberen Bildrand, Medaillon direkt darunter
+├── TurnHud (TurnHud)            Bildschirm-Anzeige, liest vom ForgeTable
+├── ForgeBridge (ForgeBridge)    Java-Prozess mit Forge
+└── ForgeTable (ForgeTable)      gleicht den Tisch mit Forge ab, setzt Spielzüge um
 ```
 
-In Test-Builds hängt der `TableController` zusätzlich ein `DebugPanel` an (nicht in der Szenendatei).
+Der `TableController` kennt keine Regeln: Er meldet jeden Drop per Signal `card_dropped`; der
+`ForgeTable` spielt die Karte über Forge oder legt sie an ihren Platz zurück.
 
 **Anordnung auf dem Spielfeld** (`Zone.auto_arrange`, beide Spielfelder): Karten werden automatisch
 nach Art platziert, jeweils aus Sicht ihrer Seite („oben“ = zur Tischmitte; beim Gegner gespiegelt):
 
 | Bereich | Karten |
 |---|---|
-| unten links | Ressourcen (eigene Ressourcen-Reihe, Spalten nach Manafarbe) |
-| oben links | Helden |
+| unten links | Länder (eigene Länder-Reihe, Spalten nach Manafarbe) |
 | oben Mitte | Kreaturen – eine Reihe, bei vielen Kreaturen weitere Reihen darunter (bei Platzmangel überlappend) |
-| rechts | alles andere (Artefakte, Ausrüstung, Verzauberungen …) – rechtsbündiges Raster, eine Spalte je 3 Karten, höchstens 4 Spalten |
-
-Angelegte Ausrüstung und Auren hängen weiterhin versetzt unter ihrem Träger. Wo eine Karte
-losgelassen wird, spielt keine Rolle mehr – irgendwo auf dem Tisch genügt.
+| rechts | alles andere (Artefakte, Verzauberungen …) – rechtsbündiges Raster, eine Spalte je 3 Karten, höchstens 4 Spalten |
 
 ### Kulisse und Bildschirm-Anzeige
 
@@ -85,7 +80,7 @@ alles wird prozedural in Rust erzeugt.
 | Rand | flacher Steinrand (nur 0,06 über dem Brett) mit Goldeinlage; in den Ecken eingelassene Leuchtkristalle in Goldfassung – das Brett wirkt wie eine flache Spielmatte |
 | Umgebung | gestufter Sockel, Schieferboden, zwei Feuerschalen, Säulenruinen, runde Arenamauer mit Bannern in Spieler- (`player_color`) und Gegnerfarbe (`opponent_color`) |
 
-Das Brett ist breit angelegt (`board_size` = 19 × 9,6 in der Szene), damit es fast die ganze Bildbreite füllt; die Spielfelder sind 16,4 breit, Deck/Friedhof liegen rechts außen (x = ±8,6), die Ressourcen-Reihen links außen (x = ∓6,6). Der Lichtkegel (`Lantern.spot_angle` 46°) deckt das ganze Brett ab.
+Das Brett ist breit angelegt (`board_size` = 19 × 9,6 in der Szene), damit es fast die ganze Bildbreite füllt; die Spielfelder sind 16,4 breit, Deck/Friedhof liegen rechts außen (x = ±8,6), die Länder-Reihen links außen (x = ∓6,6). Der Lichtkegel (`Lantern.spot_angle` 46°) deckt das ganze Brett ab.
 Einstellbar im Inspector: `board_size`, `texture_resolution` (Pixel pro Einheit der Brett-Textur),
 `rune_glow`, `player_color`, `opponent_color`. Die alte Kulisse `Tavern` existiert weiter: in
 `table.tscn` den Knoten `Arena` durch einen `Tavern`-Knoten ersetzen (dann `Lantern.light_energy`
@@ -95,43 +90,42 @@ wieder auf ca. 10 stellen, die Arena braucht wegen des hellen Steins nur ca. 3).
 auch im Godot-Editor gebaut, wenn `table.tscn` geöffnet ist. Die erzeugten Knoten haben keinen
 Owner, erscheinen nicht im Szenenbaum und werden nicht in die `.tscn` gespeichert. Ändert man im
 Inspector eine Eigenschaft der `Arena`, baut sie sich sofort neu auf (`Arena.rebuild()`). Karten,
-Medaillons und HUD entstehen weiterhin erst beim Spielstart (F5). Nach einem neuen Rust-Build
+Medaillons und HUD entstehen erst beim Spielstart (F5). Nach einem neuen Rust-Build
 ggf. die Szene neu laden (*Szene → Gespeicherte Szene neu laden*) oder den Editor neu starten.
 
 **Kamera und Aufteilung** (wie in digitalen Kartenspielen): Die Übersichtskamera schaut steil
 von oben (ca. 75°) aus großer Entfernung mit kleinem Blickwinkel (`fov` 30°,
 `Camera.overview_position` (0, 23.2, 6.4)) – dadurch fast keine Perspektive, das Spielfeld wirkt
-flach wie in Arena. Nahaufnahme- und Mitführ-Abstand (`focus_distance` 2,4, `follow_distance` 6,6; beim Ziehen einer Karte wird die Kamera nicht mehr mitgeführt)
-sind an den kleinen Blickwinkel angepasst. Die eigene Hand liegt vergrößert (Skalierung 2,8) knapp
-über dem Brett vor dessen Vorderkante am unteren Bildrand (die untere Kartenhälfte ist
-abgeschnitten, Hover zoomt die ganze Karte), die Gegnerhand am oberen Rand. Beide Spielfelder sind 3,0 Einheiten tief (Mittellinie bis
-z = ±3,2), damit vor ihnen Platz für die Medaillons bleibt. Wer Kamera oder Hand verschiebt, muss
-die `HeroAnchor`-Marker mitziehen.
+flach. Nahaufnahme-Abstand `focus_distance` 2,4. Die eigene Hand liegt vergrößert (Skalierung 2,8)
+knapp über dem Brett vor dessen Vorderkante am unteren Bildrand (die untere Kartenhälfte ist
+abgeschnitten, Hover zoomt die ganze Karte), die Gegnerhand am oberen Rand. Beide Spielfelder sind
+3,0 Einheiten tief (Mittellinie bis z = ±3,2), damit vor ihnen Platz für die Medaillons bleibt. Wer
+Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 
-**HUD (`TurnHud`)**
+**HUD (`TurnHud`)** – liest jedes Frame die Anzeige-Struktur `HudView` vom `ForgeTable`
+(Eigenschaft `forge_table`):
 
 | Bereich | Inhalt |
 |---|---|
-| Bildmitte oben / unten | `SeatBadge`-Medaillon von Gegner (rot, direkt unter dessen Hand) / Spieler (blau, direkt über der eigenen Hand) – wie in MTGA. Die Position kommt von den `HeroAnchor`-Markern (`TurnHud.player_hero_anchor` / `opponent_hero_anchor`); ohne Marker sitzen die Medaillons links oben / unten. Gezoomte (gehoverte) oder gezogene Karten liegen sichtbar **über** beiden Medaillons: Jede Medaillon-Zeile hängt unter einer Hülle (`CardCutout`, `card_cutout.rs`), deren Canvas-Shader – von Medaillon und Text per `use_parent_material` geerbt – alle Pixel im auf den Bildschirm projizierten Kartenviereck (`Card3D.screen_quad()`) verwirft; das Medaillon rückt so in den Hintergrund. Solange eine Karte gehovert oder gezogen wird, werden beide Medaillon-Zeilen außerdem weich durchsichtig (30 % Deckkraft). Nötig, weil das HUD sonst immer über der 3D-Szene gezeichnet wird. Solange der Stack belegt ist, wird das Gegner-Medaillon ausgegraut (`CardCutout.greyed`). Raute mit Wappen und Anfangsbuchstabe, roter Edelstein mit Lebenspunkten; pulsierender Schein = am Zug; Edelstein blitzt bei Schaden rot, bei Heilung grün. Kein Text daneben |
-| unten rechts, über dem Button | `PhaseTimeline`: Zeitstrahl der Phasen mit drei Stationen – (1) ein Kreis für Enttappen, Auffrischung, Ziehen und Hauptphase 1, der mit jedem dieser Schritte größer wird (Hauptphase 1 = groß); (2) ein Punkt „Kampf“, dessen drei Schritte (Angreifer, Blocker, Schaden) eingeklappt sind und erst beim Kampf aufklappen (danach wieder zu); (3) ein Kreis für Hauptphase 2 und Ende – groß in Hauptphase 2, im Endschritt schrumpft er auf einen kleinen Kreis (bei neuer Runde wieder groß). Die Stationen liegen eng beieinander, mittig über dem Button; beginnt der Kampf, klappt er auf (die Reihe wächst nach beiden Seiten) und schafft Platz für seine drei Schritte, danach rückt alles wieder zusammen. In den Kreisen steht ein gezeichnetes Symbol: Enttappen = Kreispfeil gegen den Uhrzeigersinn, Auffrischung = Sonne, Ziehen = Karte mit Plus, Hauptphase 1/2 = aufgefächerte Karten, Ende = Mondsichel, Kampf = gekreuzte Schwerter; aufgeklappte Kampfschritte: Angreifer = Schwert, Blocker = Schild, Schaden = Flamme. Die aktuelle Station leuchtet (bei neuer Runde springt die Markierung zurück), erledigte Strecke und Stationen golden, kommende hohl. Darüber der Name der aktuellen Phase (keine Rundenanzeige darunter; die Runde steht am linken Bildrand) |
-| Bildmitte | nur bei Spielende: „Spielende – X gewinnt!“. Während des Spiels keine Hinweistexte (Phase steht im Zeitstrahl, Stack in der Stack-Anzeige); `TurnManager.get_hint()` liefert den Hinweis weiterhin für eigene Skripte |
-| unter der eigenen Ressourcen-Reihe (unten links) | Manapool als runde Symbole (`ManaPoolView`, `mana_view.rs`): je Manaart mit Mana im Pool ein Kreis in deren Farbe – Grün = Nadelbaum, Blau = Wassertropfen, Schwarz = Totenkopf, Weiß = Sonne, Rot = Flamme, Farblos = Raute; ab 2 Mana steht die Anzahl in einer Plakette. Kommt Mana hinzu (Ressource getappt), springt der Kreis kurz auf; ausgegebenes oder verfallenes Mana verschwindet. Bei Debug „unendlich Mana“ leer. Position vom Marker `Player/ManaAnchor` (`TurnHud.player_mana_anchor`); ohne Marker rechts neben dem Medaillon |
+| Bildmitte oben / unten | `SeatBadge`-Medaillon von Gegner (rot, direkt unter dessen Hand) / Spieler (blau, direkt über der eigenen Hand). Die Position kommt von den `HeroAnchor`-Markern (`TurnHud.player_hero_anchor` / `opponent_hero_anchor`); ohne Marker sitzen die Medaillons links oben / unten. Gezoomte (gehoverte) oder gezogene Karten liegen sichtbar **über** beiden Medaillons: Jede Medaillon-Zeile hängt unter einer Hülle (`CardCutout`, `card_cutout.rs`), deren Canvas-Shader alle Pixel im auf den Bildschirm projizierten Kartenviereck (`Card3D.screen_quad()`) verwirft. Solange eine Karte gehovert oder gezogen wird, werden beide Medaillon-Zeilen außerdem weich durchsichtig (30 % Deckkraft). Raute mit Wappen und Anfangsbuchstabe, roter Edelstein mit Lebenspunkten; pulsierender Schein = am Zug; Edelstein blitzt bei Schaden rot, bei Heilung grün |
+| unten rechts, über dem Button | `PhaseTimeline`: Zeitstrahl der Phasen mit drei Stationen – (1) ein Kreis für Enttappen, Auffrischung, Ziehen und Hauptphase 1, der mit jedem dieser Schritte größer wird; (2) ein Punkt „Kampf“, dessen drei Schritte (Angreifer, Blocker, Schaden) erst beim Kampf aufklappen; (3) ein Kreis für Hauptphase 2 und Ende. Symbole: Enttappen = Kreispfeil, Auffrischung = Sonne, Ziehen = Karte mit Plus, Hauptphasen = aufgefächerte Karten, Ende = Mondsichel, Kampf = gekreuzte Schwerter (Angreifer = Schwert, Blocker = Schild, Schaden = Flamme). Die aktuelle Station leuchtet. Forges `PhaseType` wird darauf abgebildet (`forge/table.rs`, `phase_index`) |
+| Bildmitte | nur bei Spielende: „Spielende – X gewinnt!“ |
+| unter der eigenen Länder-Reihe | Manapool als runde Symbole (`ManaPoolView`, `mana_view.rs`). Forge meldet den Pool noch nicht, daher derzeit leer |
 | linker Bildrand, oben / unten | Gegner (oben links) bzw. Spieler (unten links): Rundenzahl mit Sanduhr-Symbol (`HourglassIcon`, `hourglass.rs`), darunter der Spielername; der Name der Seite am Zug ist golden |
-| Bildschirmmitte | Auswahlfenster für Heldenfähigkeiten (nach Klick auf den eigenen Helden) |
-| unten rechts | großer Button „Nächste Phase“ / „Weiter (passen)“: blau, solange der Stack leer ist, orange, wenn Priorität abgegeben wird |
+| Bildschirmmitte | Auswahlfenster (`HudChoice`), derzeit für den Mulligan: „Starthand behalten?“ – Behalten / Mulligan |
+| ganz oben, mittig | große Vorschau der Karte, die gerade aus der Hand gezogen wird (`card_preview.rs`); das Gegner-Medaillon liegt dann durchsichtig darüber |
+| unten rechts | großer Button „Passen“ (auch Leertaste), nur aktiv, wenn Forge auf deine Priorität wartet |
 
 ### Dateien
 
 | Ordner / Datei | Inhalt |
 |---|---|
-| `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Zielpfeile (`target_arrows.rs`) |
-| `rust/src/game/` | Regeln: `TurnManager`, Phasen, `GameState`, Timing, Mana, Stack, Karten, HUD, Spieler-Medaillon (`seat_badge.rs`), Sanduhr-Symbol (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Stack-Anzeige (`stack_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
-| `rust/src/forge/` | `ForgeBridge` (Verbindung zur Forge-Regel-Engine, Java-Prozess) und `ForgeTable` (Forge-Partie auf dem 3D-Tisch), siehe Abschnitt 9 |
-| `godot/forge_table.tscn` | 3D-Tisch mit Forge-Regeln statt `TurnManager`, siehe Abschnitt 9 |
-| `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks |
-| `rust/src/debug.rs` | Debug-Tool (nur Test-Build) |
+| `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Kartenbilder (`placeholder.rs`) |
+| `rust/src/game/` | Anzeige-Bausteine: `PlayerSeat`, Kartendaten (`cards.rs`, `ability.rs`), Mana-Typen und -Pool (`mana.rs`), Phasen-Liste (`phases.rs`), HUD (`hud.rs`), Spieler-Medaillon (`seat_badge.rs`), Sanduhr (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Phasen-Zeitstrahl (`phase_timeline.rs`), Kartenvorschau (`card_preview.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
+| `rust/src/forge/` | `ForgeBridge` (Verbindung zur Forge-Regel-Engine, Java-Prozess) und `ForgeTable` (Forge-Partie auf dem 3D-Tisch) |
+| `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks; `forge/` = lokale Forge-Kopie (nicht im Git) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
-| `docs/` | diese Dokumentation und die API-Referenz |
+| `docs/` | diese Dokumentation, die Forge-Schnittstelle und die API-Referenz |
 | `tools/gen_api_doc.py` | erzeugt `docs/API-Referenz.md` |
 
 ---
@@ -140,187 +134,62 @@ die `HeroAnchor`-Marker mitziehen.
 
 | Aktion | Wirkung |
 |---|---|
-| Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons, Debug-Fenster oder die Stack-Anzeige hindurch |
-| Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (Spielfeld, Friedhof, Gegnerseite, freie Fläche – nur nicht über der Hand) | ausspielen (Regeln prüfen Phase, Stack und Mana; `TurnManager.resolve_hand_drop`). Ressourcen kommen in die Ressourcen-Reihe, alles andere aufs eigene Spielfeld. Über der Hand losgelassen = abbrechen. Solange du ziehst, wird die Karte zusätzlich **groß ganz oben in der Bildmitte** angezeigt; das Gegner-Medaillon liegt dann durchsichtig (30 %) darüber. Beim Loslassen verschwindet die Vorschau. Beim Ziehen folgt die Karte der Maus flach auf dem Bildschirm (Ebene parallel zum Bildschirm durch den Greifpunkt): Größe und Neigung bleiben wie auf der Hand, die Karte wird aber gerade gehalten (ohne Fächer-Drehung), kein Kippen oder Schwingen, die Kamera bleibt stehen. Erst beim Ausspielen gleitet sie auf Tischgröße. Danach gibst du die Priorität **automatisch** ab: Antwortet der Gegner nicht, löst sich die Karte ohne weiteren Klick auf und gleitet auf ihren automatischen Platz (siehe „Anordnung auf dem Spielfeld“). Antwortet er, hast du wieder Priorität („Weiter“ bzw. Sofortzauber) |
-| Aura ziehen | über einer gültigen Zielkarte loslassen (Ziel wird gelb markiert) |
-| Klick auf eigene Ressource | tappen → +1 Mana in den Pool. Erneuter Klick auf die getappte Ressource nimmt den Tapp zurück (Ressource enttappt, Mana wieder aus dem Pool) – solange genau dieses Mana noch unbenutzt im Pool liegt. Nach dem Ausgeben oder Leeren des Pools nicht mehr möglich; automatisch beim Bezahlen getappte Ressourcen lassen sich nicht zurücknehmen |
-| Klick auf eigenen Helden | Fenster mit seinen Fähigkeiten |
-| Pfeil von der Ausrüstung auf eine eigene Kreatur ziehen (oder: Klick auf Ausrüstung, goldener Pfeil folgt der Maus, dann Klick auf Kreatur) | Ausrüstung anlegen (kostet Mana) |
-| Klick auf Artefakt mit Fähigkeit | Fähigkeit aktivieren (tappt das Artefakt) |
-| Angreifer-Phase: Klick auf Kreaturen | als Angreifer markieren: kräftiger roter Lichtsaum um die Karte und ein roter Pfeil nach vorn (Richtung Gegner). Kreaturen, die angreifen können, haben vorher einen dezenten roten Rand |
-| Blocker-Phase: Pfeil von eigener Kreatur auf einen Angreifer ziehen (oder: Kreatur anklicken – goldene Aura, Pfeil folgt der Maus – dann Angreifer anklicken) | Blocker zuweisen: blaue Aura und blauer Pfeil vom Blocker zum Angreifer. Loslassen ins Leere bricht ab; erneuter Klick auf einen Blocker löst die Zuweisung |
+| Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons hindurch |
+| Spielbare Handkarten | leuchten, sobald Forge auf deine Priorität wartet und du sie jetzt spielen und bezahlen kannst |
+| Leuchtende Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (nicht über der Hand) | spielen: Forge bekommt die passende Option, zahlt das Mana automatisch und legt die Karte hin (Länder in die Länder-Reihe, bleibende Karten aufs Spielfeld, Zauber auf den Friedhof). Solange du ziehst, wird die Karte zusätzlich **groß ganz oben in der Bildmitte** angezeigt. Ungültige Züge springen an ihren Platz zurück |
+| Button „Passen“ bzw. Leertaste | Priorität abgeben |
+| Auswahlfenster | Mulligan: „Behalten“ oder „Mulligan“ |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
-| Button „Nächste Phase“ / „Weiter (passen)“ bzw. Leertaste | Phase beenden bzw. bei belegtem Stack Priorität abgeben |
-| Maus über eine Karte der großen Stack-Anzeige | holt sie nach vorn (auch tiefer liegende Elemente lesbar) |
 
-**Zielpfeile und Auren (`TargetArrows`, `target_arrows.rs`; Aura-Shader in `card3d.rs`):**
-Karten bekommen einen schmalen, weichen Lichtsaum am Kartenrand, der ruhig „atmet“:
-dezent rot = kann angreifen (eigene Angreifer-Phase), dezent blau = möglicher Blocker
-(eigene Blocker-Phase), dezent gold = kann eine Fähigkeit aktivieren (Held, Artefakt mit
-Tapp-Fähigkeit, Ausrüstung – sobald Timing und Mana passen; `GameState::can_activate`),
-kräftig rot = Angreifer, kräftig blau = Blocker,
-gold = ausgewählt bzw. wählt ein Ziel (`TurnManager.refresh_ready_glow()`,
-`Card3D.set_ready_glow()`). **Getappte** Karten werden leicht schräg gestellt (15°,
-`zone::TAP_ANGLE_DEGREES`), ausgegraut (Vorderseite und Beschriftung abgedunkelt) und zeigen mittig
-ein graues Tapp-Symbol (Kreispfeil auf dunkler Scheibe, `textures::tap_icon()`); für Skripte
-`Card3D.set_tapped_state()`. **Kreaturen, die angegriffen haben**, sind ebenfalls schräg und
-ausgegraut, aber **ohne** Tapp-Symbol – bis sie wieder enttappt werden. Pfeile sind gebogene, leuchtende Bänder
-über dem Tisch mit Chevrons, die zur Spitze laufen: Angreifer zeigen nach vorn, Blocker auf ihren
-Angreifer. Bei jeder Zielwahl („wähle …“: Blocker zuweisen, Ausrüstung anlegen) zieht man einen
-goldenen Pfeil von der Karte zum Ziel; nur über einem **gültigen** Ziel rastet die Spitze auf dessen Mitte ein (`TurnManager.is_valid_aim_target`), sonst folgt sie der Maus. Ressourcen sind nie Quelle oder Ziel eines Pfeils.
-Während der Zielwahl werden Karten nicht gezoomt. Neue Zielwahl-Karten melden sich über
-`TurnManager.can_aim_from()` / `aim_at()` an. Für Skripte: `Card3D.set_marker_kind(int)`
-(0 = keine, 1 = Angreifer, 2 = Blocker, 3 = ausgewählt) und `TargetArrows.set_arrow_pairs()`.
+**Getappte** Karten werden leicht schräg gestellt (15°, `zone::TAP_ANGLE_DEGREES`), ausgegraut und
+zeigen mittig ein graues Tapp-Symbol (`textures::tap_icon()`).
+
+Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Ziele,
+Manabezahlung, Angreifer, Blocker, aktivierte Fähigkeiten bleibender Karten. Stack und Manapool
+werden noch nicht angezeigt.
 
 ---
 
-## 4. Spielregeln
+## 4. Regeln
 
-### 4.1 Rundenablauf (`TurnManager`, `phases.rs`)
-
-```
-Enttappen → Auffrischung → Ziehen → Hauptphase 1 → Angreifer bestimmen ─┬→ Blocker zuweisen → Schadensberechnung ─┬→ Hauptphase 2 → Ende ─┐
-    ↑                                                                    └──────────── (keine Angreifer) ──────────┘                       │
-    └──────────────────────────────────── nächster Spieler ─────────────────────────────────────────────────────────────────────────────┘
-```
-
-| Phase | Was passiert | Weiter |
-|---|---|---|
-| Enttappen | alle eigenen Karten enttappen (außer gesperrten), „1 Ressource pro Runde“ zurücksetzen | automatisch |
-| Auffrischung | Fähigkeiten „zu Beginn der Runde“ (Heiler, Feuer) | automatisch |
-| Ziehen | 1 Karte (der Startspieler zieht in Runde 1 nicht) | automatisch |
-| Hauptphase 1 / 2 | Karten ausspielen, Helden, Ausrüstung, Artefakte | Button |
-| Angreifer bestimmen | Angreifer wählen; danach sind sie getappt: leicht schräg und ausgegraut (ohne Tapp-Symbol) | Button |
-| Blocker zuweisen | Verteidiger weist Blocker zu | Button (wenn Mensch verteidigt) |
-| Schadensberechnung | Kampfschaden; ungeblockt trifft den Spieler | automatisch |
-| Ende | temporäre Effekte, Schaden und Markierungen entfernen, Spielerwechsel | automatisch |
-
-Mana im Pool bleibt über alle Phasen eines Zuges erhalten und wird **am Ende des Zuges auf null gesetzt** –
-außer ein Spieler hat eine Karte mit „Mana bleibt erhalten“ im Spiel (siehe 4.3).
-Solange etwas auf dem Stack liegt, pausiert die Phase.
-Beide Spieler starten mit 20 Leben; bei 0 Leben ist die Partie verloren.
-
-### 4.2 Kartentypen und Timing (`cards.rs`, `timing.rs`)
-
-| Typ | Wann spielbar | Wohin |
-|---|---|---|
-| Ressource | eigene Hauptphase, max. 1 pro Runde, kostenlos | Ressourcen-Reihe |
-| Sofortzauber | **jederzeit**, auch im gegnerischen Zug | Stack → Wirkung → Friedhof |
-| Hexerei | eigene Hauptphase, Stack leer | Stack → Wirkung → Friedhof |
-| Kreatur | eigene Hauptphase, Stack leer | Stack → Spielfeld |
-| Held | eigene Hauptphase, Stack leer | Stack → Spielfeld |
-| Ausrüstung (Artefakt) | eigene Hauptphase, Stack leer | Stack → Spielfeld; danach für Mana anlegen |
-| Artefakt | eigene Hauptphase, Stack leer; nur generische Kosten | Stack → Spielfeld |
-| Verzauberung | eigene Hauptphase, Stack leer | Stack → Spielfeld |
-| Aura | eigene Hauptphase, Stack leer, **braucht ein gültiges Ziel** | Stack → hängt an ihrem Ziel |
-
-Prüfung im Code: `TurnManager.can_play_card(karte, sitz)` / `get_play_error(karte, sitz)`.
-
-**Helden:** einmal pro Runde eine Fähigkeit (ändert die Willenskraft); bei 0 Willenskraft zerstört.
-**Ausrüstung:** Pfeil von der Ausrüstung auf eine eigene Kreatur ziehen (oder Klick, Klick) → Bonus auf die Kreatur. Stirbt die Kreatur, bleibt die Ausrüstung liegen.
-**Auren:** haben eine Zielklasse (Kreatur, Ressource, Artefakt, Verzauberung, Held oder jede bleibende Karte)
-und eine Wirkung (Werte ±, Zusatzmana, enttappt nicht, Willenskraft).
-
-### 4.3 Mana (`mana.rs`)
-
-Farben: Weiß, Blau, Schwarz, Rot, Grün, Farblos (als Zahl 0–5).
-Kostenschreibweise: Zahl = generisch, Buchstaben `W B S R G F` je Farbe – z. B. `2RG`.
-Farbige Anteile müssen mit genau dieser Farbe bezahlt werden, generische mit beliebigem Mana.
-Beim Ausspielen wird zuerst aus dem Pool bezahlt; fehlt etwas, tappt das Spiel passende Ressourcen automatisch.
-
-**Zugende:** Am Ende jedes Zuges werden die Manapools **beider** Spieler auf null gesetzt.
-Ausnahme: Ein Spieler hat eine bleibende Karte mit dem Dauereffekt **„Mana bleibt erhalten“**
-(`StaticEffect::KeepMana`) im Spiel – dann behält er sein unverbrauchtes Mana (Protokoll:
-„Spieler behält 3 Mana (Sparstrumpf)“). Beispielkarte: Artefakt **Sparstrumpf** (Kosten 2,
-im Debug-Katalog); im Debug-Reiter „Erstellen“ als Artefakt-Fähigkeit „Passiv: Mana bleibt am Zugende erhalten“.
-
-### 4.4 Stack und Priorität (`stack.rs`)
-
-**Anzeige:** Solange etwas auf dem Stack liegt, zeigt das HUD den Stack **groß in der oberen
-Bildschirmhälfte** (`StackView`). Das passiert bei jeder gespielten Karte außer Ressourcen (die
-nicht über den Stack gehen) und in jeder Prioritätsrunde. Jedes Element ist eine große Karte mit
-allen Texten; antwortet ein Spieler, wird seine Karte **versetzt darübergelegt**, die
-darunterliegenden bleiben am Rand sichtbar. Das oberste Element (wird als Nächstes aufgelöst) hat
-einen **goldenen Rahmen**. Ein Band zeigt *Spieler/Gegner · Zauber/Fähigkeit*; bei Fähigkeiten
-steht im Textfeld der konkrete Effekt. Nach dem Auflösen verschwindet die Karte aus der Anzeige.
-Eine zusätzliche Textanzeige der Stack-Anzahl gibt es nicht.
-Die Anzeige liegt **über dem Gegner-Medaillon**: Dahinter wird die obere Bildhälfte leicht grau
-abgedunkelt (weicher Übergang nach unten, klickdurchlässig), Medaillon und Tisch scheinen durch;
-das Gegner-Medaillon selbst wird dabei ausgegraut.
-Die Karten beginnen direkt unter dem Lebens-Edelstein des Gegners, sodass sein Leben lesbar bleibt.
-
-**Hovern im Stack-Bereich:** Die großen Stack-Karten fangen die Maus ab – Karten auf dem Tisch
-**unter** der Anzeige werden dort weder gehovert noch angeklickt. In der kleinen Stack-Zone in der
-Tischmitte liegen neuere Karten oben und vorn. **Fährt die Maus über eine Karte der großen
-Stack-Anzeige – auch über den sichtbaren Rand einer tiefer liegenden –, kommt sie nach vorn**
-und ist vollständig lesbar; beim Verlassen rutscht sie zurück an ihren Platz.
-Allgemein gilt: Liegt die Maus über einer Bildschirmfläche, die Mausereignisse annimmt (Stack-Karten,
-Buttons, Debug-Fenster), wird auf dem Tisch dahinter nichts gehovert.
-
-- Wer etwas auf den Stack legt, behält die Priorität.
-- Aufgelöst wird das **oberste** Item erst, wenn **beide nacheinander passen** (LIFO).
-- **Der Stack läuft, bis beide Spieler „Weiter“ gedrückt haben.** Der Mensch passt nur per Button
-  „Weiter (passen)“ bzw. Leertaste – es gibt kein automatisches Passen (einschaltbar über
-  `TurnManager.auto_pass_human`, dann passt er automatisch, wenn er keinen spielbaren Sofortzauber
-  hat). Die KI passt oder antwortet nach `priority_delay` Sekunden selbst.
-- Die KI antwortet höchstens einmal pro Item mit einem sinnvollen Sofortzauber.
-- **Hausverbot** (Counterspell, BB) neutralisiert den obersten gegnerischen Zauber.
-- Ein Item verpufft, wenn sein Ziel vor dem Auflösen verschwindet.
-
-### 4.5 Zustandsbasierte Aktionen (`GameState.check_state_based_actions`)
-
-Werden jeden Frame geprüft:
-1. globale Boni aus Artefakten und Verzauberungen neu berechnen,
-2. Kreaturen mit Verteidigung ≤ 0 und Helden ohne Willenskraft zerstören,
-3. Auren, deren Karte das Spiel verlassen hat, auf den Friedhof ihres Besitzers legen.
+Alle Regeln (Zugablauf, Timing, Mana, Stack, Kampf, zustandsbasierte Aktionen) kommen von **Forge**.
+Das Spiel selbst prüft nichts: Es zeigt Forges Spielzustand an und schickt deine Entscheidungen
+(Priorität, Mulligan) an Forge. Die frühere eigene Regel-Engine (`TurnManager`, `GameState`,
+`StackManager`, Timing, Demo-Decks, Debug-Tool) wurde entfernt.
 
 ---
 
-## 5. Debug-Tool (nur Test-Build)
+## 5. Forge-Regel-Engine (Java)
 
-Button **DEBUG** am linken Bildschirmrand. Existiert nur in `cargo build`, nicht in `cargo build --release`.
+Forge läuft als eigener Java-Prozess (`forge-bridge/`, GPL-3.0). Der Godot-Knoten `ForgeBridge`
+(`rust/src/forge/bridge.rs`) startet ihn und tauscht JSON-Zeilen über stdin/stdout aus.
+Prioritäts- und Mulligan-Entscheidungen des Spielers kommen als Signal `decision_requested` und
+werden mit `answer()` beantwortet; alle Forge-Spielereignisse kommen als `forge_event`.
 
-**Verschieben:** Die rote Titelleiste „::: Debug – zum Verschieben ziehen“ mit gedrückter linker
-Maustaste ziehen. Die große Kartenvorschau wandert rechts daneben mit; die Titelleiste bleibt
-immer im Bild. Die Position bleibt beim Sprachwechsel erhalten (nicht über einen Neustart hinweg).
+Einrichtung, Protokoll, GDScript-Beispiel und Grenzen: [Forge-Schnittstelle.md](Forge-Schnittstelle.md).
+Forge-Dateien: Liegt eine Kopie (Jar + `res/`) in `forge-bridge/forge/` (nicht im Git), wird sie
+vor `~/Games/Forge` verwendet.
 
-Oben im Fenster: **Sprache / Language** (Deutsch / English) – stellt das ganze Spiel um.
+**`ForgeTable` (`rust/src/forge/table.rs`)**
 
-| Reiter | Funktion |
-|---|---|
-| Mana | „+“ für Blau, Schwarz, Grün, Rot, Gelb (= weißes Mana), Grau (= farblos) legt Mana **direkt in den Manapool** (Menge = „Anzahl pro Klick“, 1–99); es verfällt am Zugende wie jedes Mana. Dazu „Manapool leeren“ und „Alle Ressourcen enttappen“. **Unendlich Mana:** Aus / Spieler / Gegner / Beide (siehe unten) |
-| Karten | alle Karten mit Suche; Doppelklick / „Auf die Hand“; große Vorschau mit Regeltext. **Empfänger:** Spieler (deine Hand) oder Gegner (seine Hand) |
-| Erstellen | eigene Karte aus Name, Typ, Fähigkeit, Kosten, Angriff, Verteidigung; „Erstellen + auf die Hand“ beachtet den Empfänger |
-
-Erstellte Karten gelten nur bis zum Neustart.
-
-**Karten an den Gegner:** Ist als Empfänger „Gegner“ gewählt (die Auswahl in den Reitern *Karten*
-und *Erstellen* ist gekoppelt), gleitet die Karte vom Gegner-Deck **verdeckt** auf seine Hand und
-**gehört ihm** (`owner_seat = 1`, Friedhof des Gegners). Die KI spielt sie in ihrem Zug regelkonform
-aus – zusammen mit „Unendlich Mana: Gegner“ lassen sich so gezielt Gegnerzüge testen.
-
-### Unendlich-Mana-Modus
-
-Auswahl im Reiter „Mana“: **Aus**, **Spieler**, **Gegner** oder **Beide**.
-
-- Wer unendlich Mana hat, kann **jede Karte und jede Fähigkeit bezahlen** (auch Anlegekosten von
-  Ausrüstung und Tapp-Fähigkeiten) – ohne Ressourcen zu tappen und ohne den Manapool zu verbrauchen.
-- Alle anderen Regeln gelten weiter: eigener Zug, Phase, leerer Stack, 1 Ressource pro Runde, gültige Ziele.
-- Das HUD zeigt bei „Mana“ dann *unendlich (Debug)*.
-- Mit „Gegner“ oder „Beide“ spielt die KI alle Karten aus, die sie regelkonform spielen darf.
-- Technisch: Eigenschaft `infinite_mana` am `PlayerSeat`; geprüft in `GameState.can_afford` / `auto_pay`.
-  Nur das Debug-Tool schaltet sie ein – im Release-Build ist der Modus nicht erreichbar.
+- Startet Brücke und Partie automatisch (`autostart`): `player_deck` gegen `opponent_deck`
+  (Standard: Testdecks aus `forge-bridge/testdecks/`). Forge-Sitzplatz 0 = Spieler unten
+  (du), Sitzplatz 1 = Gegner oben (Forge-KI).
+- Baut bei jedem neuen Forge-Zustand den Tisch ab: Für jede Forge-Karte eine `Card3D` (Bild aus
+  Name, Typ, Kosten, Stärke/Widerstand); Hand → Hand, Länder → Länder-Reihe, übrige
+  bleibende Karten → Spielfeld, Friedhof → Ablagestapel, Gegnerhand verdeckt; getappt wird
+  übernommen. Karten gleiten animiert an ihren Platz. Während Forge Ereignisse
+  sendet, wird der Zustand gebündelt alle `refresh_interval` Sekunden neu abgefragt.
+- Liefert dem HUD Phase, Leben, Namen, Runde, Sieger, Button und Auswahlfenster (`hud_view()`).
 
 ---
 
 ## 6. Sprache (Deutsch / Englisch)
 
-- **Umschalten:** im Debug-Tool (*Sprache / Language*) oder per Code
-  `$Table.set_language("en")` / `$Table.set_language("de")`; abfragen mit `$Table.get_language()`.
-  Standard ist Deutsch.
-- **Sofort umgestellt:** HUD, Phasen, Hinweise, Fehlermeldungen, Kartenbeschriftungen,
-  Kartenvorschau und das Debug-Fenster.
-- **Protokoll:** neue Einträge erscheinen in der neuen Sprache; ältere bleiben, wie sie geschrieben wurden.
+- **Umschalten** per Code: `$Table.set_language("en")` / `$Table.set_language("de")`; abfragen mit
+  `$Table.get_language()`. Standard ist Deutsch.
+- **Sofort umgestellt:** HUD, Phasen und Kartenbeschriftungen.
+- **Kartennamen** kommen von Forge (Englisch).
 - **Dokumentation** (Godot-Hilfe, diese Datei) bleibt Deutsch.
 
 ### Neue Texte hinzufügen (`rust/src/i18n.rs`)
@@ -329,90 +198,20 @@ Auswahl im Reiter „Mana“: **Aus**, **Spieler**, **Gegner** oder **Beide**.
 |---|---|
 | fester Text | `tr!("Abbrechen", "Cancel")` |
 | Text mit Werten | `trf!("{n} Karten", "{n} cards")` oder `trf!("{} zieht", "{} draws", name)` |
-| Kartenname / Eigenname | deutscher Name im Code, englischer Eintrag in `i18n::name()` |
-
-Kartennamen sind intern immer deutsch (sie dienen als Schlüssel) und werden erst bei der
-Anzeige übersetzt. Selbst erstellte Karten aus dem Debug-Tool behalten ihren Namen.
 
 ---
 
-## 7. Eigene Skripte (GDScript) – Beispiele
+## 7. Eigene Skripte (GDScript) – Beispiel
 
 ```gdscript
-@onready var tm: TurnManager = $Table/TurnManager
+@onready var forge: ForgeBridge = $Table/ForgeBridge
+@onready var ft: ForgeTable = $Table/ForgeTable
 
 func _ready() -> void:
-    tm.phase_changed.connect(func(index, title): print("Neue Phase: ", title))
-    tm.game_over.connect(func(winner): print(winner, " gewinnt"))
+    forge.forge_event.connect(func(e): print(e.event, ": ", e.text))
+    forge.game_over.connect(func(r): print(r.winner, " gewinnt"))
 
-func karte_pruefen(karte: Card3D) -> void:
-    if not tm.can_play_card(karte, 0):
-        print(tm.get_play_error(karte, 0))   # z. B. "Nicht genug Mana."
+func status() -> void:
+    print(ft.get_pending_kind())          # "priority", "mulligan" oder ""
+    print(ft.get_state().get("phase"))    # z. B. "MAIN1"
 ```
-
-```gdscript
-# Eigener Zauber über den Stack
-var item := StackItem.create(quelle, null, func(it): print("aufgelöst"), 0, "Mein Zauber")
-$Table/StackManager.push(item)
-```
-
----
-
-## 8. Bekannte Vereinfachungen
-
-- Bei leerem Stack muss nicht beidseitig gepasst werden; die Phasen steuern Button und Automatik.
-- Zauber wählen ihr Ziel automatisch (z. B. „stärkste gegnerische Kreatur“); nur Auren werden gezielt gelegt.
-- Kreaturen können keine Helden angreifen.
-- Neu ausgespielte Kreaturen dürfen sofort angreifen.
-- Die Demo-Decks (je 30 Karten, Spieler Rot/Grün, Gegner Blau/Schwarz) sind Platzhalter.
-
----
-
-## 9. Forge-Regel-Engine (Java)
-
-Optional kann die Regel-Engine von **Forge** angebunden werden. Forge läuft als eigener
-Java-Prozess (`forge-bridge/`, GPL-3.0), der Godot-Knoten `ForgeBridge` (`rust/src/forge/bridge.rs`)
-startet ihn und tauscht JSON-Zeilen über stdin/stdout aus. Prioritäts- und Mulligan-Entscheidungen
-ferngesteuerter Spieler kommen als Signal `decision_requested` und werden mit `answer()`
-beantwortet; alle Forge-Spielereignisse kommen als `forge_event`. `table.tscn` mit dem eigenen
-Regelwerk (`TurnManager`) bleibt unverändert.
-
-Einrichtung, Protokoll, GDScript-Beispiel und Grenzen: [Forge-Schnittstelle.md](Forge-Schnittstelle.md).
-Forge-Dateien: Liegt eine Kopie (Jar + `res/`) in `forge-bridge/forge/` (nicht im Git), wird sie
-vor `~/Games/Forge` verwendet.
-
-### Forge-Partie auf dem 3D-Tisch: `forge_table.tscn`
-
-Hauptszene des Projekts (F5), die denselben 3D-Tisch nutzt wie `table.tscn`
-– Arena, Kamera, Zonen, `Card3D`-Karten, Drag-and-Drop und `TurnHud` –, aber ohne `TurnManager`,
-`StackManager` und Demo-Karten. Stattdessen:
-
-```
-Table (TableController)   wie table.tscn, ohne turn_manager und Demo-Decks
-├── … Arena, Kamera, Player/Opponent (PlayerSeat + Zonen) wie in table.tscn
-├── TurnHud               forge_table = ../ForgeTable (statt turn_manager)
-├── ForgeBridge           Java-Prozess mit Forge
-└── ForgeTable            gleicht den Tisch mit Forge ab, setzt Spielzüge um
-```
-
-**`ForgeTable` (`rust/src/forge/table.rs`)**
-
-- Startet Brücke und Partie automatisch (`autostart`): `player_deck` gegen `opponent_deck`
-  (Standard: Testdecks aus `forge-bridge/testdecks/`). Forge-Sitzplatz 0 = Spieler unten
-  (du), Sitzplatz 1 = Gegner oben (Forge-KI).
-- Baut bei jedem neuen Forge-Zustand den Tisch ab: Für jede Forge-Karte eine `Card3D` (Bild aus
-  Name, Typ, Kosten, Stärke/Widerstand); Hand → Hand, Länder → Ressourcen-Reihe, übrige
-  bleibende Karten → Spielfeld, Friedhof → Ablagestapel, Gegnerhand verdeckt; getappt wird
-  übernommen. Karten gleiten wie gewohnt animiert an ihren Platz. Während Forge Ereignisse
-  sendet, wird der Zustand gebündelt alle `refresh_interval` Sekunden neu abgefragt.
-- **Spielen:** Hast du Priorität, leuchten alle Handkarten, die du jetzt spielen und bezahlen
-  kannst. Karte auf den Tisch ziehen = spielen (Mana zahlt Forge automatisch). Ungültige Züge
-  springen zurück. **Passen:** Hauptbutton „Passen“ oder Leertaste. **Mulligan:** Auswahlfenster
-  „Starthand behalten?“ (Behalten / Mulligan).
-- Ziele, Angreifer und Blocker wählt vorerst die Forge-KI für dich; aktivierte Fähigkeiten
-  bleibender Karten und der Stack werden noch nicht angezeigt bzw. angeboten.
-
-**HUD:** `TurnHud` hat dafür die Eigenschaft `forge_table`. Ist kein `turn_manager` gesetzt, liest
-es Phase (Forge-Phasen auf den Zeitstrahl abgebildet), Leben, Namen, Runde, Sieger und den Button
-von `ForgeTable`; intern über die gemeinsame Anzeige-Struktur `HudView` (`hud.rs`).
-

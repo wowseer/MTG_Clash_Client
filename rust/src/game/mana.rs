@@ -447,9 +447,6 @@ impl ManaPool {
 }
 
 impl ManaPool {
-    pub fn mana(&self) -> Mana {
-        self.mana
-    }
 
     /// Bezahlt Kosten aus Rust; gibt das verwendete Mana zurück.
     pub fn pay(&mut self, cost: &Cost) -> Option<Mana> {

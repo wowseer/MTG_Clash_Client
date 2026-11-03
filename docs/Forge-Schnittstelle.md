@@ -143,7 +143,7 @@ Alle Signale und Methoden stehen in der [API-Referenz](API-Referenz.md) unter `F
 
 ## Forge auf dem 3D-Tisch
 
-`godot/forge_table.tscn` spielt eine Forge-Partie auf dem normalen 3D-Tisch (Karten, Zonen,
+`godot/table.tscn` (Hauptszene) spielt eine Forge-Partie auf dem 3D-Tisch (Karten, Zonen,
 Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) übersetzt dabei:
 
 | Forge | 3D-Tisch |
@@ -155,9 +155,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 
 ## Stand und nächste Schritte
 
-- Getestet (headless): Godot-Node → Brücke → Forge 2.0.15, Partie in `forge_table.tscn` bis
+- Getestet (headless): Godot-Node → Brücke → Forge 2.0.15, Partie in `table.tscn` bis
   zum Spielende; Karten wandern korrekt zwischen Hand, Ressourcen, Spielfeld und Friedhof.
 - Getestet mit der Projektkopie `forge-bridge/forge/` (KI gegen KI bis zum Spielende).
-- `table.tscn` mit dem eigenen Regelwerk (`TurnManager`) ist unverändert.
+- Ein eigenes Regelwerk gibt es nicht mehr: Forge ist die einzige Regel-Engine.
 - Noch nicht ferngesteuert: Angreifer, Blocker, Ziele, aktivierte Fähigkeiten bleibender Karten;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.
