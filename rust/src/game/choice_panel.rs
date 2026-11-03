@@ -7,6 +7,8 @@
 //! - **Ja/Nein**: zwei Knöpfe mit eigenen Beschriftungen (Antwort: true / false).
 //! - **Zahl**: Zahlenfeld mit Minimum/Maximum und „OK“ (Antwort: Zahl).
 //!
+//! - **Nur Knopf**: Auswahl findet auf dem Tisch statt (Angreifer, Blocker); der Knopf bestätigt.
+//!
 //! Optional „Abbrechen“ (Antwort: null). Bei vielen Optionen werden die Knöpfe zweispaltig und
 //! scrollbar angeordnet, ab [`FILTER_FROM`] Optionen gibt es ein Suchfeld. Es werden höchstens
 //! [`MAX_SHOWN`] Knöpfe gebaut (lange Listen wie alle Kartennamen: nur die Suchtreffer); Farb-Optionen bekommen die Farbe der Manaart.
@@ -31,6 +33,9 @@ pub enum ChoiceMode {
     Confirm,
     /// Zahl zwischen `min` und `max`.
     Number { min: i64, max: i64 },
+    /// Keine Optionen, nur ein Knopf mit `label` (die Auswahl passiert auf dem Tisch, z. B.
+    /// Angreifer/Blocker); Antwort `true`.
+    Done { label: String },
 }
 
 /// Eine wählbare Option: Text und optional eine Farbe für den Knopf.
@@ -250,6 +255,7 @@ impl ChoicePanel {
                 })
             }
             ChoiceMode::Number { .. } => self.spin.as_ref().map(|s| (s.get_value().round() as i64).to_variant()),
+            ChoiceMode::Done { .. } => Some(true.to_variant()),
             _ => None,
         }
     }
@@ -335,17 +341,21 @@ impl ChoicePanel {
                 self.body.add_child(&hint);
                 self.spin = Some(spin);
             }
+            ChoiceMode::Done { .. } => {}
         }
 
         // Untere Zeile: Fertig/OK und Abbrechen
-        let needs_done = matches!(choice.mode, ChoiceMode::Multi { .. } | ChoiceMode::Number { .. });
+        let needs_done = matches!(choice.mode, ChoiceMode::Multi { .. } | ChoiceMode::Number { .. } | ChoiceMode::Done { .. });
         if needs_done || choice.cancelable {
             let mut row = HBoxContainer::new_alloc();
             row.add_theme_constant_override("separation", 8);
             row.set_alignment(godot::classes::box_container::AlignmentMode::END);
             if needs_done {
                 let mut done = super::hud::styled_button(16);
-                done.set_text(tr!("OK", "OK"));
+                match &choice.mode {
+                    ChoiceMode::Done { label } => done.set_text(label),
+                    _ => done.set_text(tr!("OK", "OK")),
+                }
                 done.set_custom_minimum_size(Vector2::new(140.0, 38.0));
                 done.connect("pressed", &method("on_choice_done"));
                 row.add_child(&done);

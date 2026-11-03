@@ -32,6 +32,8 @@ import forge.game.ability.effects.CharmEffect;
 import forge.game.card.Card;
 import forge.game.card.CardState;
 import forge.game.card.CounterType;
+import forge.game.combat.Combat;
+import forge.game.combat.CombatUtil;
 import forge.game.cost.Cost;
 import forge.game.keyword.KeywordInterface;
 import forge.game.player.Player;
@@ -49,7 +51,7 @@ import forge.game.zone.ZoneType;
  *
  * <p>Jede Frage geht als NeoForge-{@code Decision} an den Client ({@link Decisions},
  * Protokoll v3): Priorität, Mulligan, beim Wirken optionale Kosten, Modi, X und Ziele, dazu alle
- * allgemeinen Auswahl-Dialoge. Manabezahlung, Angreifer, Blocker und Kartenauswahl trifft vorerst
+ * allgemeinen Auswahl-Dialoge, Angreifer und Blocker. Manabezahlung und Kartenauswahl trifft vorerst
  * die Forge-KI, von der diese Klasse erbt. Antwortet der Client ungültig, entscheidet ebenfalls
  * die KI. Weitere Entscheidungen lassen sich ferngesteuert machen, indem man die passende Methode
  * von {@code PlayerController} überschreibt und die passende Methode von {@link Decisions} aufruft.
@@ -360,6 +362,104 @@ public class RemotePlayerController extends PlayerControllerAi {
             return false;
         }
         return !sa.usesTargeting() || sa.isTargetNumberValid();
+    }
+
+    /** Höchstens so viele ungültige Kampf-Erklärungen, danach entscheidet die KI. */
+    private static final int MAX_COMBAT_TRIES = 4;
+
+    /**
+     * {@code Decision::DeclareAttackers} (CR 508.1): Kandidaten = Kreaturen, die angreifen können,
+     * Ziele = angreifbare Spieler, Planeswalker, Schlachten. Ungültige Erklärungen (z. B. eine
+     * Kreatur muss angreifen) werden mit Hinweis erneut gefragt.
+     */
+    @Override
+    public void declareAttackers(Player attacker, Combat combat) {
+        List<GameEntity> defenders = new ArrayList<>(combat.getDefenders());
+        List<Card> candidates = new ArrayList<>();
+        for (Card c : attacker.getCreaturesInPlay()) {
+            if (CombatUtil.canAttack(c) && defenders.stream().anyMatch(d -> CombatUtil.canAttack(c, d))) {
+                candidates.add(c);
+            }
+        }
+        if (candidates.isEmpty()) {
+            return;
+        }
+        List<String> labels = new ArrayList<>();
+        candidates.forEach(c -> labels.add(c.getName()));
+        String error = null;
+        for (int attempt = 0; attempt < MAX_COMBAT_TRIES; attempt++) {
+            List<int[]> chosen = Decisions.attackers(getGame(), seat, candidates, defenders, labels, error);
+            if (chosen == null) {
+                break;
+            }
+            List<Card> added = new ArrayList<>();
+            boolean ok = true;
+            for (int[] pair : chosen) {
+                Card c = candidates.get(pair[0]);
+                GameEntity d = defenders.get(pair[1]);
+                if (!CombatUtil.canAttack(c, d) || added.contains(c)) {
+                    ok = false;
+                    break;
+                }
+                combat.addAttacker(c, d);
+                added.add(c);
+            }
+            if (ok && CombatUtil.validateAttackers(combat)) {
+                return;
+            }
+            added.forEach(combat::removeFromCombat);
+            error = "Ungültiger Angriff – bitte erneut wählen (z. B. muss eine Kreatur angreifen)";
+        }
+        super.declareAttackers(attacker, combat);
+    }
+
+    /**
+     * {@code Decision::DeclareBlockers} (CR 509.1): Kandidaten = eigene Kreaturen, die blocken
+     * können, Angreifer = alle angreifenden Kreaturen. Ungültige Blocks (Forges
+     * {@code CombatUtil.validateBlocks}) werden mit Hinweis erneut gefragt.
+     */
+    @Override
+    public void declareBlockers(Player defender, Combat combat) {
+        List<Card> attackers = new ArrayList<>(combat.getAttackers());
+        List<Card> candidates = new ArrayList<>();
+        for (Card c : defender.getCreaturesInPlay()) {
+            if (CombatUtil.canBlock(c, combat)) {
+                candidates.add(c);
+            }
+        }
+        if (candidates.isEmpty() || attackers.isEmpty()) {
+            return;
+        }
+        List<String> labels = new ArrayList<>();
+        candidates.forEach(c -> labels.add(c.getName()));
+        String error = null;
+        for (int attempt = 0; attempt < MAX_COMBAT_TRIES; attempt++) {
+            List<int[]> chosen = Decisions.blocks(getGame(), seat, candidates, attackers, labels, error);
+            if (chosen == null) {
+                break;
+            }
+            List<int[]> added = new ArrayList<>();
+            boolean ok = true;
+            for (int[] pair : chosen) {
+                Card b = candidates.get(pair[0]);
+                Card a = attackers.get(pair[1]);
+                if (!CombatUtil.canBlock(a, b, combat)) {
+                    ok = false;
+                    break;
+                }
+                combat.addBlocker(a, b);
+                added.add(pair);
+            }
+            String problem = ok ? CombatUtil.validateBlocks(combat, defender) : "Diese Kreatur kann diesen Angreifer nicht blocken";
+            if (problem == null) {
+                return;
+            }
+            for (int[] pair : added) {
+                combat.removeBlockAssignment(attackers.get(pair[1]), candidates.get(pair[0]));
+            }
+            error = "Ungültige Blocks: " + problem;
+        }
+        super.declareBlockers(defender, combat);
     }
 
     /** {@code Decision::Mulligan}: {@code Keep} = behalten, {@code Mulligan} = neu ziehen. */

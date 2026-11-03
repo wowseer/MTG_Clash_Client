@@ -309,6 +309,76 @@ final class Decisions {
         return c.getAsJsonObject("action");
     }
 
+    /**
+     * {@code DeclareAttackers}: gibt die Liste (Angreifer, Ziel-Index in {@code defenders}) zurück;
+     * leere Liste = kein Angriff, null = unlesbar. {@code error} wird als Fragetext angezeigt
+     * (nach einer ungültigen Erklärung).
+     */
+    static List<int[]> attackers(Game game, int seat, List<Card> candidates, List<GameEntity> defenders,
+            List<String> labels, String error) {
+        JsonObject d = decision("DeclareAttackers", seat);
+        JsonArray cands = new JsonArray();
+        candidates.forEach(c -> cands.add(c.getId()));
+        d.add("candidates", cands);
+        JsonArray defs = new JsonArray();
+        defenders.forEach(e -> defs.add(targetJson(game, e)));
+        d.add("defenders", defs);
+        JsonObject c = ask(game, seat, d, error == null ? "Angreifer wählen" : error, null, null, false, labels);
+        if (!"Attackers".equals(type(c)) || !c.has("attackers")) {
+            return null;
+        }
+        List<int[]> result = new ArrayList<>();
+        for (JsonElement e : c.getAsJsonArray("attackers")) {
+            JsonArray pair = e.getAsJsonArray();
+            int card = indexOfId(candidates, pair.get(0).getAsInt());
+            int def = indexOfTarget(defs, pair.get(1));
+            if (card < 0 || def < 0) {
+                return null;
+            }
+            result.add(new int[] {card, def});
+        }
+        return result;
+    }
+
+    /**
+     * {@code DeclareBlockers}: gibt die Liste (Blocker-Index, Angreifer-Index) zurück; leere Liste =
+     * nicht blocken, null = unlesbar.
+     */
+    static List<int[]> blocks(Game game, int seat, List<Card> candidates, List<Card> attackers, List<String> labels,
+            String error) {
+        JsonObject d = decision("DeclareBlockers", seat);
+        JsonArray cands = new JsonArray();
+        candidates.forEach(c -> cands.add(c.getId()));
+        d.add("candidates", cands);
+        JsonArray atts = new JsonArray();
+        attackers.forEach(c -> atts.add(c.getId()));
+        d.add("attackers", atts);
+        JsonObject c = ask(game, seat, d, error == null ? "Blocker wählen" : error, null, null, false, labels);
+        if (!"Blocks".equals(type(c)) || !c.has("blocks")) {
+            return null;
+        }
+        List<int[]> result = new ArrayList<>();
+        for (JsonElement e : c.getAsJsonArray("blocks")) {
+            JsonArray pair = e.getAsJsonArray();
+            int blocker = indexOfId(candidates, pair.get(0).getAsInt());
+            int attacker = indexOfId(attackers, pair.get(1).getAsInt());
+            if (blocker < 0 || attacker < 0) {
+                return null;
+            }
+            result.add(new int[] {blocker, attacker});
+        }
+        return result;
+    }
+
+    private static int indexOfId(List<Card> cards, int id) {
+        for (int i = 0; i < cards.size(); i++) {
+            if (cards.get(i).getId() == id) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     // ------------------------------------------------------------------ Erweiterungen
 
     /** Erweiterung {@code ChooseOption}: Index der Option. Eine Option ohne Abbrechen: nicht fragen. */

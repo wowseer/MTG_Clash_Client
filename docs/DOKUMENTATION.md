@@ -143,6 +143,9 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | Leuchtende Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (nicht über der Hand) | spielen: Forge bekommt die passende Option, zahlt das Mana automatisch und legt die Karte hin (Länder in die Länder-Reihe, bleibende Karten aufs Spielfeld, Zauber auf den Friedhof). Solange du ziehst, wird die Karte zusätzlich **groß ganz oben in der Bildmitte** angezeigt. Ungültige Züge springen an ihren Platz zurück |
 | Button „Passen“ bzw. Leertaste | Priorität abgeben |
 | Auswahlfenster (Bildschirmmitte) | erscheint bei jeder allgemeinen Entscheidung von Forge (Mulligan, Startspieler, Modi, Kreaturtyp, Farbe, Kartenname, Ja/Nein, Zahl …). Die Karte, um die es geht, ist golden markiert. **Eine Option:** Knopf anklicken. **Mehrere:** Knöpfe an-/abwählen (golden = gewählt), dann „Fertig (n/…)“ – aktiv erst bei gültiger Anzahl. **Zahl:** Zahlenfeld, „OK“. Ab 13 Optionen gibt es ein **Suchfeld** (Treffer, die mit dem Suchtext beginnen, zuerst); angezeigt werden höchstens 40 Knöpfe – bei „Kartennamen nennen“ (alle über 34.000 Namen) also einfach den Namen eintippen und anklicken. „Abbrechen“ nur, wo Forge das erlaubt. Farb-Optionen sind in der Manafarbe eingefärbt |
+| **Angreifen** (Angriffsschritt) | Kreaturen, die angreifen können, leuchten. Klick = angreifen (roter Pfeil zum Gegner, rote Markierung), erneuter Klick = nicht angreifen. Gibt es mehrere Angriffsziele (z. B. Planeswalker), danach Klick auf das gewünschte Ziel (Karte bzw. golden pulsierendes Medaillon) = der zuletzt gewählte Angreifer greift es an. Bestätigen mit „Angreifen (n)“ bzw. „Nicht angreifen“ im Fenster am rechten Rand. Ungültige Angriffe (z. B. eine Kreatur muss angreifen) werden mit Hinweis erneut gefragt |
+| **Blocken** (Blockschritt) | Eigene Kreaturen, die blocken können, leuchten. Klick auf eine davon (goldene Markierung), dann Klick auf einen Angreifer = blocken (blauer Pfeil, blaue Markierung; ein blasser Pfeil zeigt vorher auf den Angreifer unter der Maus). Klick auf einen Blocker = Block aufheben. Mehrere Blocker auf denselben Angreifer sind möglich. Bestätigen mit „Blocken (n)“ bzw. „Nicht blocken“; ungültige Blocks werden mit Forges Begründung erneut gefragt |
+| Kampf der KI | Angriffe der KI erscheinen als rote Pfeile (Angreifer → Ziel), Blocks als blaue Pfeile, solange der Kampf läuft |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
 
 **Getappte** Karten werden leicht schräg gestellt (15°, `zone::TAP_ANGLE_DEGREES`), ausgegraut und
@@ -156,7 +159,7 @@ die Fähigkeit möglich ist; zum Aktivieren die Karte ein Stück ziehen und losl
 zum Aktivieren folgt mit dem Zielen auf dem Tisch).
 
 Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Manabezahlung,
-Angreifer, Blocker, Auswahl von Karten, Ziele ausgelöster Fähigkeiten. Ziele werden noch aus einer
+Kampfschaden verteilen, Auswahl von Karten, Ziele ausgelöster Fähigkeiten. Ziele werden noch aus einer
 Liste gewählt, nicht per Klick auf dem Tisch. Stack und Manapool
 werden noch nicht angezeigt.
 

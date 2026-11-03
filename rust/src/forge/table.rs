@@ -19,7 +19,7 @@ use crate::game::cards::{CardDef, CardKind};
 use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::decision_view;
 use crate::game::hud::HudView;
-use crate::rules::{Action, Choice, Decision, Request, RulesEngine, Target};
+use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::mana::{Cost, ManaType};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
@@ -96,8 +96,15 @@ pub struct ForgeTable {
     /// Fähigkeiten-Menü nach Klick auf eine Karte mit mehreren Aktionen (nur UI, keine
     /// Engine-Entscheidung): Aktionen und ihre Texte.
     menu: Option<(Vec<Action>, Vec<String>)>,
-    /// Pfeil-Ebene über dem Tisch (Zielwahl).
+    /// Pfeil-Ebene über dem Tisch (Zielwahl, Kampf).
     arrows: Option<Gd<TargetArrows>>,
+    /// Angriffsplan bei `DeclareAttackers`: (Angreifer, Ziel) in Klick-Reihenfolge.
+    attack_plan: Vec<(CardId, Target)>,
+    /// Blockplan bei `DeclareBlockers`: (Blocker, Angreifer).
+    block_plan: Vec<(CardId, CardId)>,
+    /// Zuletzt gewählte Kreatur im Kampf: Angreifer, dessen Ziel ein Klick auf ein anderes
+    /// Angriffsziel ändert, bzw. Blocker, der auf seinen Angreifer wartet.
+    combat_armed: Option<CardId>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -131,6 +138,9 @@ impl INode for ForgeTable {
             selected_cards: Vec::new(),
             menu: None,
             arrows: None,
+            attack_plan: Vec::new(),
+            block_plan: Vec::new(),
+            combat_armed: None,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -227,6 +237,20 @@ impl ForgeTable {
             return;
         }
         let Some(req) = self.pending.as_ref() else { return };
+        // Kampf: der Knopf bestätigt den Plan, der auf dem Tisch gebaut wurde
+        match &req.decision {
+            Decision::DeclareAttackers { .. } if choice.booleanize() => {
+                let plan = self.attack_plan.clone();
+                self.answer(Choice::Attackers(plan));
+                return;
+            }
+            Decision::DeclareBlockers { .. } if choice.booleanize() => {
+                let plan = self.block_plan.clone();
+                self.answer(Choice::Blocks(plan));
+                return;
+            }
+            _ => {}
+        }
         match decision_view::to_choice(&req.decision, &choice) {
             Some(c) => self.answer(c),
             None => {
@@ -240,6 +264,9 @@ impl ForgeTable {
     #[func]
     pub fn player_clicked(&mut self, seat: i64) {
         let Ok(seat) = u8::try_from(seat) else { return };
+        if self.retarget_attacker(Target::Player(seat)) {
+            return;
+        }
         if let Some(i) = self.candidate_index(Target::Player(seat)) {
             self.signals().choice_option_clicked().emit(i as i64);
         }
@@ -314,6 +341,9 @@ impl ForgeTable {
         // Karte, um die es geht, golden markieren
         let source = req.source.and_then(|id| self.cards.get(&(id as i64)).cloned());
         self.set_marked(source);
+        self.attack_plan.clear();
+        self.block_plan.clear();
+        self.combat_armed = None;
         self.pending = Some(req);
         self.update_glow();
     }
@@ -345,6 +375,10 @@ impl ForgeTable {
     fn on_card_clicked(&mut self, card: Gd<Card3D>) {
         let Some(id) = self.forge_id(&card) else { return };
         let Ok(card_id) = u32::try_from(id) else { return };
+        if self.combat_click(card_id) {
+            self.update_glow();
+            return;
+        }
         if let Some(i) = self.candidate_index(Target::Card(card_id)) {
             self.signals().choice_option_clicked().emit(i as i64);
             return;
@@ -415,7 +449,8 @@ impl ForgeTable {
             cancelable: true,
             side: false,
         });
-        let choice = menu_choice.or_else(|| self.pending.as_ref().and_then(|req| {
+        let combat_choice = self.pending.as_ref().and_then(|req| self.combat_choice(req));
+        let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().and_then(|req| {
             let name_of = |i: usize| match &req.decision {
                 Decision::ChooseTargets { candidates, .. } => match candidates.get(i) {
                     Some(Target::Player(p)) => self.seat_name(*p as usize).to_string(),
@@ -432,14 +467,29 @@ impl ForgeTable {
         }));
         let seat_state = |selected_only: bool| -> [bool; 2] {
             let mut out = [false; 2];
-            if let Some(Decision::ChooseTargets { candidates, .. }) = self.pending.as_ref().map(|r| &r.decision) {
-                for (i, t) in candidates.iter().enumerate() {
-                    if let Target::Player(p) = t {
-                        if (*p as usize) < 2 && (!selected_only || self.selection.contains(&i)) {
-                            out[*p as usize] = true;
+            match self.pending.as_ref().map(|r| &r.decision) {
+                Some(Decision::ChooseTargets { candidates, .. }) => {
+                    for (i, t) in candidates.iter().enumerate() {
+                        if let Target::Player(p) = t {
+                            if (*p as usize) < 2 && (!selected_only || self.selection.contains(&i)) {
+                                out[*p as usize] = true;
+                            }
                         }
                     }
                 }
+                // Angriff: Spieler als Ziel des zuletzt gewählten Angreifers wählbar (nur wenn es
+                // mehrere Angriffsziele gibt) bzw. gewählt
+                Some(Decision::DeclareAttackers { defenders, .. }) if defenders.len() > 1 => {
+                    for t in defenders {
+                        if let Target::Player(p) = t {
+                            let chosen = self.attack_plan.iter().any(|(_, d)| d == t);
+                            if (*p as usize) < 2 && (if selected_only { chosen } else { self.combat_armed.is_some() }) {
+                                out[*p as usize] = true;
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
             out
         };
@@ -505,6 +555,9 @@ impl ForgeTable {
         let Some(req) = self.pending.take() else { return };
         self.menu = None;
         self.selection.clear();
+        self.attack_plan.clear();
+        self.block_plan.clear();
+        self.combat_armed = None;
         self.set_marked(None);
         self.update_glow();
         if let Some(mut b) = self.bridge.clone() {
@@ -554,6 +607,26 @@ impl ForgeTable {
                     self.selection.iter().filter_map(|i| candidates.get(*i)).filter_map(card).collect(),
                 )
             }
+            Some(Decision::DeclareAttackers { candidates, defenders, .. }) => {
+                let mut glow: HashSet<i64> = candidates.iter().map(|c| i64::from(*c)).collect();
+                // Mit gewähltem Angreifer: Planeswalker/Schlachten als Ziel wählbar
+                if self.combat_armed.is_some() && defenders.len() > 1 {
+                    glow.extend(defenders.iter().filter_map(|t| match t {
+                        Target::Card(c) => Some(i64::from(*c)),
+                        Target::Player(_) => None,
+                    }));
+                }
+                (glow, HashSet::new())
+            }
+            Some(Decision::DeclareBlockers { candidates, attackers, .. }) => {
+                let assigned: HashSet<CardId> = self.block_plan.iter().map(|(b, _)| *b).collect();
+                let mut glow: HashSet<i64> =
+                    candidates.iter().filter(|c| !assigned.contains(c)).map(|c| i64::from(*c)).collect();
+                if self.combat_armed.is_some() {
+                    glow.extend(attackers.iter().map(|c| i64::from(*c)));
+                }
+                (glow, HashSet::new())
+            }
             _ => (HashSet::new(), HashSet::new()),
         };
         for (id, card) in self.cards.iter_mut() {
@@ -564,12 +637,134 @@ impl ForgeTable {
                 old.bind_mut().set_marker(CardMarker::None);
             }
         }
-        for id in chosen {
+        // Markierungen: gewählte Ziele (gold), Angreifer (rot), Blocker (blau), gewählte Kreatur (gold)
+        let mut marks: Vec<(i64, CardMarker)> = chosen.into_iter().map(|id| (id, CardMarker::Selected)).collect();
+        marks.extend(self.attack_plan.iter().map(|(c, _)| (i64::from(*c), CardMarker::Attacking)));
+        marks.extend(self.block_plan.iter().map(|(b, _)| (i64::from(*b), CardMarker::Blocking)));
+        if let (Some(armed), Some(Decision::DeclareBlockers { .. })) = (self.combat_armed, self.pending.as_ref().map(|r| &r.decision)) {
+            marks.push((i64::from(armed), CardMarker::Selected));
+        }
+        for (id, marker) in marks {
             if let Some(mut card) = self.cards.get(&id).cloned() {
-                card.bind_mut().set_marker(CardMarker::Selected);
+                card.bind_mut().set_marker(marker);
                 self.selected_cards.push(card);
             }
         }
+    }
+
+    /// Klick auf eine Karte während `DeclareAttackers` / `DeclareBlockers`. Gibt true zurück, wenn
+    /// der Klick dort verarbeitet wurde.
+    ///
+    /// Angriff: Klick auf einen Kandidaten = angreifen (Ziel: erster Gegner) bzw. nicht mehr
+    /// angreifen; Klick auf einen Planeswalker/eine Schlacht = neues Ziel des zuletzt gewählten
+    /// Angreifers. Block: Klick auf eigene Kreatur = als Blocker wählen (bzw. ihre Blocks
+    /// aufheben), danach Klick auf einen Angreifer = blocken.
+    fn combat_click(&mut self, card: CardId) -> bool {
+        let Some(decision) = self.pending.as_ref().map(|r| r.decision.clone()) else { return false };
+        match decision {
+            Decision::DeclareAttackers { candidates, defenders, .. } => {
+                if candidates.contains(&card) {
+                    if let Some(pos) = self.attack_plan.iter().position(|(c, _)| *c == card) {
+                        self.attack_plan.remove(pos);
+                        self.combat_armed = None;
+                    } else {
+                        let default = defenders
+                            .iter()
+                            .copied()
+                            .find(|t| matches!(t, Target::Player(_)))
+                            .or_else(|| defenders.first().copied());
+                        if let Some(def) = default {
+                            self.attack_plan.push((card, def));
+                            self.combat_armed = Some(card);
+                        }
+                    }
+                    return true;
+                }
+                self.retarget_attacker(Target::Card(card))
+            }
+            Decision::DeclareBlockers { candidates, attackers, .. } => {
+                if candidates.contains(&card) {
+                    if self.block_plan.iter().any(|(b, _)| *b == card) {
+                        self.block_plan.retain(|(b, _)| *b != card);
+                        self.combat_armed = None;
+                    } else if self.combat_armed == Some(card) {
+                        self.combat_armed = None;
+                    } else {
+                        self.combat_armed = Some(card);
+                    }
+                    return true;
+                }
+                if attackers.contains(&card) {
+                    if let Some(blocker) = self.combat_armed.take() {
+                        self.block_plan.push((blocker, card));
+                    }
+                    return true;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Angriff: macht `target` (wenn es ein Angriffsziel ist) zum Ziel des zuletzt gewählten
+    /// Angreifers. Gibt true zurück, wenn das passiert ist.
+    fn retarget_attacker(&mut self, target: Target) -> bool {
+        let Some(Decision::DeclareAttackers { defenders, .. }) = self.pending.as_ref().map(|r| &r.decision) else {
+            return false;
+        };
+        if !defenders.contains(&target) {
+            return false;
+        }
+        let Some(armed) = self.combat_armed else { return false };
+        if let Some(entry) = self.attack_plan.iter_mut().find(|(c, _)| *c == armed) {
+            entry.1 = target;
+            return true;
+        }
+        false
+    }
+
+    /// Auswahlfenster für den Kampf: Erklärung und Bestätigungsknopf (die Auswahl passiert auf
+    /// dem Tisch).
+    fn combat_choice(&self, req: &Request) -> Option<HudChoice> {
+        let (title, detail, label) = match &req.decision {
+            Decision::DeclareAttackers { defenders, .. } => {
+                let n = self.attack_plan.len();
+                let retarget = if defenders.len() > 1 {
+                    tr!(" Danach Klick auf ein anderes Ziel (Spieler, Planeswalker) = dieser Angreifer greift es an.", " Then click another target (player, planeswalker) to attack it instead.")
+                } else {
+                    ""
+                };
+                (
+                    tr!("Angreifer wählen", "Declare attackers").to_string(),
+                    format!(
+                        "{}{}",
+                        tr!("Klick auf eine leuchtende Kreatur = angreifen, erneut = nicht angreifen.", "Click a glowing creature to attack, again to cancel."),
+                        retarget
+                    ),
+                    if n == 0 { tr!("Nicht angreifen", "No attack").to_string() } else { trf!("Angreifen ({n})", "Attack ({n})") },
+                )
+            }
+            Decision::DeclareBlockers { .. } => {
+                let n = self.block_plan.len();
+                (
+                    tr!("Blocker wählen", "Declare blockers").to_string(),
+                    tr!(
+                        "Klick auf eigene Kreatur, dann auf einen Angreifer = blocken. Klick auf einen Blocker = Block aufheben.",
+                        "Click your creature, then an attacker to block. Click a blocker to undo."
+                    )
+                    .to_string(),
+                    if n == 0 { tr!("Nicht blocken", "No blocks").to_string() } else { trf!("Blocken ({n})", "Block ({n})") },
+                )
+            }
+            _ => return None,
+        };
+        // Fragetext der Engine (z. B. Hinweis nach ungültiger Erklärung) hat Vorrang
+        let title = if req.prompt.is_empty() || req.prompt.starts_with("Angreifer wählen") || req.prompt.starts_with("Blocker wählen") {
+            title
+        } else {
+            req.prompt.clone()
+        };
+        Some(HudChoice { key: req.id, title, detail, mode: ChoiceMode::Done { label }, options: Vec::new(), cancelable: false, side: true })
     }
 
     /// Index des Kandidaten `target` in der offenen Zielwahl.
@@ -592,11 +787,69 @@ impl ForgeTable {
         }
     }
 
+    /// Kampfpfeile: während der eigenen Erklärung der Plan (Angreifer rot → Ziel, Blocker blau →
+    /// Angreifer, gewählter Blocker gold → Angreifer unter der Maus), sonst der laufende Kampf aus
+    /// dem Engine-Zustand (`combat`).
+    fn combat_arrows(&self) -> Vec<ArrowSpec> {
+        const RED: Color = Color::from_rgb(1.0, 0.32, 0.25);
+        const BLUE: Color = Color::from_rgb(0.35, 0.62, 1.0);
+        let pos = |c: CardId| self.target_position(Target::Card(c));
+        let mut arrows = Vec::new();
+        let mut push = |from: Option<Vector3>, to: Option<Vector3>, color: Color| {
+            if let (Some(from), Some(to)) = (from, to) {
+                let dir = (to - from).normalized_or_zero();
+                arrows.push(ArrowSpec { from: from + dir * 0.3, to, color });
+            }
+        };
+        match self.pending.as_ref().map(|r| &r.decision) {
+            Some(Decision::DeclareAttackers { .. }) => {
+                for (c, t) in &self.attack_plan {
+                    push(pos(*c), self.target_position(*t), RED);
+                }
+            }
+            Some(Decision::DeclareBlockers { attackers, .. }) => {
+                for (b, a) in &self.block_plan {
+                    push(pos(*b), pos(*a), BLUE);
+                }
+                if let Some(armed) = self.combat_armed {
+                    let hovered = self
+                        .controller
+                        .as_ref()
+                        .and_then(|c| c.bind().get_hovered_card())
+                        .and_then(|h| self.forge_id(&h))
+                        .and_then(|id| u32::try_from(id).ok())
+                        .filter(|id| attackers.contains(id));
+                    if let Some(a) = hovered {
+                        push(pos(armed), pos(a), Color::from_rgba(SELECT_GLOW.r, SELECT_GLOW.g, SELECT_GLOW.b, 0.5));
+                    }
+                }
+            }
+            _ => {
+                // Laufender Kampf aus dem Zustand
+                let combat = self.state.as_ref().and_then(|s| s.get("combat")).and_then(|v| v.try_to::<VarDictionary>().ok());
+                if let Some(combat) = combat {
+                    for a in get_array(&combat, "attackers").unwrap_or_default().iter_shared() {
+                        let Ok(a) = a.try_to::<VarDictionary>() else { continue };
+                        let attacker = u32::try_from(get_int(&a, "card")).ok();
+                        let target = a.get("target").and_then(|t| Target::from_var(&t));
+                        push(attacker.and_then(pos), target.and_then(|t| self.target_position(t)), RED);
+                    }
+                    for pair in get_array(&combat, "blocks").unwrap_or_default().iter_shared() {
+                        let Ok(pair) = pair.try_to::<VarArray>() else { continue };
+                        let id = |i: usize| pair.get(i).and_then(|v| v.try_to::<i64>().ok()).and_then(|v| u32::try_from(v).ok());
+                        push(id(0).and_then(pos), id(1).and_then(pos), BLUE);
+                    }
+                }
+            }
+        }
+        arrows
+    }
+
     /// Pfeile der Zielwahl: Quelle → gewählte Ziele (gold), Quelle → gültiges Ziel unter dem
     /// Mauszeiger (blasser, Vorschau).
     fn update_arrows(&mut self) {
         let Some(mut layer) = self.arrows.clone() else { return };
-        let mut specs = Vec::new();
+        let mut specs = self.combat_arrows();
         if let Some(req) = self.pending.as_ref() {
             if let Decision::ChooseTargets { candidates, .. } = &req.decision {
                 let from = req

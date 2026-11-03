@@ -4,7 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import forge.game.Game;
+import forge.game.GameEntity;
 import forge.game.card.Card;
+import forge.game.combat.Combat;
 import forge.game.phase.PhaseHandler;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
@@ -45,7 +47,40 @@ final class StateJson {
             i++;
         }
         s.add("players", players);
+        s.add("combat", combat(game));
         return s;
+    }
+
+    /**
+     * Laufender Kampf: {@code attackers} = Liste {@code {card, target}} (target = {@code {"card": id}}
+     * für Planeswalker/Schlachten oder {@code {"player": sitz}}), {@code blocks} = Liste
+     * {@code [blocker, angreifer]}. Ohne Kampf leere Listen.
+     */
+    static JsonObject combat(Game game) {
+        JsonObject o = new JsonObject();
+        JsonArray attackers = new JsonArray();
+        JsonArray blocks = new JsonArray();
+        Combat combat = game.getPhaseHandler().getCombat();
+        if (combat != null) {
+            for (Card a : combat.getAttackers()) {
+                JsonObject ao = new JsonObject();
+                ao.addProperty("card", a.getId());
+                GameEntity def = combat.getDefenderByAttacker(a);
+                if (def != null) {
+                    ao.add("target", Decisions.targetJson(game, def));
+                }
+                attackers.add(ao);
+                for (Card b : combat.getBlockers(a)) {
+                    JsonArray pair = new JsonArray();
+                    pair.add(b.getId());
+                    pair.add(a.getId());
+                    blocks.add(pair);
+                }
+            }
+        }
+        o.add("attackers", attackers);
+        o.add("blocks", blocks);
+        return o;
     }
 
     static JsonArray cards(Player p, ZoneType zone) {
