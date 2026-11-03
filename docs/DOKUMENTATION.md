@@ -22,7 +22,8 @@ Beides wird aus denselben Rust-Doku-Kommentaren (`///`) erzeugt (gdext-Feature `
 | Test-Build (mit Debug-Tool) | `cd rust && cargo build` |
 | Release-Build (ohne Debug-Tool) | `cd rust && cargo build --release` |
 | Unit-Tests | `cd rust && cargo test` |
-| Spiel starten | Godot-Projekt `godot/` öffnen, F5 (Hauptszene `table.tscn`) |
+| Spiel starten | Godot-Projekt `godot/` öffnen, F5 (Hauptszene `forge_table.tscn`, Forge-Regeln; braucht Java 17+ und Forge, siehe Abschnitt 9) |
+| Spiel mit eigenem Regelwerk | `table.tscn` öffnen, F6 |
 | API-Referenz neu erzeugen | `python3 tools/gen_api_doc.py` |
 | Forge-Brücke bauen (optional) | `forge-bridge/build.sh` (siehe Abschnitt 9) |
 
@@ -382,7 +383,7 @@ vor `~/Games/Forge` verwendet.
 
 ### Forge-Partie auf dem 3D-Tisch: `forge_table.tscn`
 
-Eigene Szene (in Godot öffnen und mit F6 starten), die denselben 3D-Tisch nutzt wie `table.tscn`
+Hauptszene des Projekts (F5), die denselben 3D-Tisch nutzt wie `table.tscn`
 – Arena, Kamera, Zonen, `Card3D`-Karten, Drag-and-Drop und `TurnHud` –, aber ohne `TurnManager`,
 `StackManager` und Demo-Karten. Stattdessen:
 
