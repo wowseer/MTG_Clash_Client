@@ -2,14 +2,44 @@
 
 ## Ziel
 
-**Das komplette Backend von Forge in die 3D-UI bringen.** Forge (Java-Regel-Engine) ist die
-einzige Regel-Engine des Spiels. Jede Entscheidung, die Forge einem Spieler abverlangt, soll der
-Spieler in der 3D-Ansicht selbst treffen, und jeder Teil des Forge-Spielzustands soll auf dem
-Tisch oder im HUD sichtbar sein. Am Ende entscheidet die Forge-KI nichts mehr für den
-menschlichen Spieler. Sie steuert nur noch den Gegner.
+**Eine 3D-Oberfläche, die das komplette Backend von Forge bedient – und am Ende in NeoForge lebt.**
 
-Ein eigenes Regelwerk wird **nicht** wieder eingeführt: Das Spiel prüft keine Regeln selbst,
-es zeigt Forges Zustand an und schickt Forge die Antworten des Spielers.
+- **NeoForge** ist die Neuentwicklung von Forges Regel-Engine in Rust
+  (`~/Entwicklung/Java/forge/rust/`, Crates `forge-types` → `forge-script` → `forge-engine`,
+  veröffentlicht als `github.com/wowseer/forge-rules-rs`). Sie soll später als GDExtension in Godot
+  laufen; **diese 3D-UI wird dann in NeoForge übernommen.**
+- Bis dahin läuft die UI gegen die Java-Engine von Forge (über `forge-bridge/`). Die Java-Brücke ist
+  nur eine **Übergangs-Engine**: Sie übersetzt Forge in NeoForges Entscheidungsmodell.
+- Jede Entscheidung, die die Engine einem Spieler abverlangt, trifft der Spieler in der 3D-Ansicht
+  selbst; jeder Teil des Spielzustands ist auf dem Tisch oder im HUD sichtbar. Die KI steuert nur
+  Gegner, nie den menschlichen Spieler.
+- Ein eigenes Regelwerk wird **nicht** wieder eingeführt: Die UI prüft keine Regeln, sie zeigt den
+  Zustand der Engine an und schickt ihr die Antworten des Spielers.
+
+## Kompatibilität zu NeoForge (verbindlich)
+
+- **Entscheidungsmodell = NeoForge.** Maßgeblich ist `forge-engine/src/decision.rs` in NeoForge:
+  `Decision` (was die Engine fragt), `Choice` (Antwort), `Action` (Prioritäts-Aktion), `Target`,
+  `PayAction`, `CardChoiceReason`; Ablauf `Engine::advance() → Status::NeedsDecision(Decision) |
+  GameOver`, Fortsetzung mit `Engine::submit(Choice)` (`forge-engine/src/engine.rs`).
+- Das Protokoll zur Java-Brücke bildet diese Typen **1:1** ab (Variantenname als `decision` /
+  `choice`, Felder mit denselben Namen). Die Java-Brücke übersetzt Forges `PlayerController`-Aufrufe
+  in NeoForge-`Decision`s und die `Choice`s zurück.
+- Die Rust-UI spricht nur mit einer **Engine-Schnittstelle** (`advance`/`submit`/Zustand), nie
+  direkt mit Java-Details. Heute: Umsetzung über den Java-Prozess; später: NeoForge direkt.
+  UI-Code darf keine Annahmen über Java/Forge enthalten.
+- Fragt Forge etwas, das NeoForge (noch) nicht kennt (z. B. Reihenfolge von Ersatzeffekten,
+  Startspieler, Abstimmung, Marken-Typ), gibt es eine allgemeine Erweiterung (Liste von Optionen →
+  `Choice::Number(index)`). Jede Erweiterung in `docs/Forge-Schnittstelle.md` unter
+  „Erweiterungen gegenüber NeoForge“ auflisten, damit sie in NeoForge nachgezogen werden kann.
+- IDs: `CardId` = Forge-Karten-ID, `PlayerId` = Sitzplatz-Index, bis NeoForge-IDs vorliegen.
+- **Multiplayer mitdenken** (NeoForge-Regel): nie „den Gegner“ als einzelnen Spieler hartkodieren.
+  Die 3D-Szene hat heute zwei Sitzplätze; neuer Code muss mit `PlayerId`s und Listen arbeiten.
+- **Umfang wie NeoForge:** Formate Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander,
+  Booster Draft, Cube. **Keine UI bauen für** Archenemy, Planechase (Planar-Würfel), Vanguard,
+  Conspiracy, Un-Sets (Contraptions, Attractions, Sticker), Alchemy/Digital-only, Ante. Im Scope
+  sind u. a. Dungeons/Initiative, Monarch, Tag/Nacht, „The Ring“, Embleme, Energie/Gift/Erfahrung,
+  Sagas/Klassen/Räume, Schlachten, Commander-Zone.
 
 ## Weitere Anweisungen (vor der Arbeit lesen)
 
@@ -45,6 +75,11 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 
 ## Stand
 
+**Nächster Schritt (vor allem anderen): Protokoll v3 auf NeoForges `Decision`/`Choice` umstellen**
+und in Rust die Engine-Schnittstelle einziehen; bestehende Funktionen (Priorität, Mulligan,
+Auswahlfenster, Ziele) darauf umziehen. Danach jedes weitere Bedienmuster direkt gegen die
+passende `Decision`-Variante bauen.
+
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
 - [x] Mulligan (`mulliganKeepHand`): Auswahlfenster im HUD
@@ -61,14 +96,14 @@ Angezeigt:
 Jeder Punkt ist ein eigener Schritt: Brücke (Java), Protokoll, Rust/UI, Doku, Test, Commit.
 Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabdeckung.md`.
 
-**Entscheidungen des Spielers** (in `RemotePlayerController` überschreiben, als `request` an Godot):
-1. Angreifer erklären (`declareAttackers`): Klick auf Kreaturen, Ziel Spieler/Planeswalker
-2. Blocker erklären (`declareBlockers`): Blocker einem Angreifer zuweisen. Die Zielpfeile werden dafür neu gebaut; die alten wurden mit dem eigenen Regelwerk gelöscht
-3. Ziele wählen (`chooseTargetsFor`, `chooseSingleEntityForEffect`, `chooseEntitiesForEffect`): gültige Ziele leuchten, Klick oder Pfeil
-4. Manabezahlung (`payManaCost`, `chooseManaFromPool`): Länder antippen; mit Automatik-Button
-5. Aktivierte Fähigkeiten bleibender Karten: Klick auf die Karte, bei mehreren Fähigkeiten ein Auswahlmenü
-6. Auswahl aus Karten (`chooseCardsForEffect`, Abwerfen, Opfern, Scry/Surveil, Reihenfolge)
-8. Kampfschaden verteilen (`assignCombatDamage`), optionale und zusätzliche Kosten
+**Entscheidungen des Spielers** (NeoForge-`Decision` → Forge-Methode in `RemotePlayerController`):
+1. `ChooseTargets` (`chooseTargetsFor`, `chooseSingleEntityForEffect`, `chooseEntitiesForEffect`): gültige Ziele leuchten, Klick auf Karte/Medaillon oder Pfeil (heute nur Liste)
+2. `DeclareAttackers` (`declareAttackers`): Klick auf Kreaturen, Ziel Spieler/Planeswalker
+3. `DeclareBlockers` (`declareBlockers`): Blocker einem Angreifer zuweisen. Die Zielpfeile werden dafür neu gebaut; die alten wurden mit dem eigenen Regelwerk gelöscht
+4. `PayMana` mit `PayAction` (`payManaCost`, `chooseManaFromPool`): Länder antippen; `AutoPay`, `Cancel`
+5. `Priority` mit `Action::Activate`: aktivierte Fähigkeiten per Klick, bei mehreren ein Auswahlmenü
+6. `ChooseCards` (mit `CardChoiceReason`), `Scry` (`Choice::Arrange`), `OrderTriggers`, `MulliganBottom`
+7. `AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`
 
 **Zustand, der noch fehlt:**
 - Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile
@@ -77,18 +112,20 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 - Regeltext von Forge auf dem Kartenbild; das Kartenmodell (`CardDef`/`Card3D`) auf Forges Kartendaten verschlanken (Helden/Willenskraft-Felder stammen aus dem alten Regelwerk)
 - Spielprotokoll aus `forge_event`
 
-**Später:** Deckauswahl, mehr als 2 Spieler, Formate.
+**Später:** Deckauswahl, mehr als 2 Spieler (Commander), Formate, Umzug der UI nach NeoForge.
 
-## Forge-Quellcode
+## Quellcode von Forge und NeoForge
 
 - Laufzeit ist das Jar von **Forge 2.0.15** (`forge-bridge/forge/`). Signaturen immer gegen dieses
   Jar prüfen (`javap -cp <jar> <Klasse>`); der Compiler in `build.sh` meldet Abweichungen.
-- Quellcode zum Nachlesen der Logik: `~/Entwicklung/Java/forge` (eigener Fork, enthält
-  `forge-game`, `forge-ai`, `forge-gui`; der Ablauf für menschliche Spieler steht dort in
-  `forge-game/.../player/PlaySpellAbility.java`). Kopien von `forge-ai/` und `forge-core/` liegen
-  im Projektordner, sind per `.gitignore` ausgeschlossen und werden nie committet (GPL).
-- Der Fork kann vom Jar abweichen: Logik aus dem Quellcode übernehmen, aber nur Methoden
-  verwenden, die es in 2.0.15 gibt.
+- Java-Quellcode zum Nachlesen: `forge-bridge/forge-game/`, `forge-bridge/forge-ai/`,
+  `forge-bridge/forge-core/` (aus dem Fork `~/Entwicklung/Java/forge`, Branch `rust-godot`).
+  Der Ablauf für menschliche Spieler steht in `forge-game/.../player/PlaySpellAbility.java`.
+  Nur lesen, nie ändern. Der Fork kann vom Jar abweichen: Logik aus dem Quellcode übernehmen,
+  aber nur Methoden verwenden, die es in 2.0.15 gibt.
+- NeoForge (Rust) zum Nachlesen: `~/Entwicklung/Java/forge/rust/` – `forge-engine/src/decision.rs`
+  (Entscheidungsmodell), `engine.rs` (`advance`/`submit`), `docs/01-architektur.md`. Nur lesen;
+  dort gelten eigene Regeln (eigene `CLAUDE.md`, Commits/Pushes dort nicht aus diesem Projekt heraus).
 
 ## Bauen, starten, testen
 
@@ -127,4 +164,6 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
 - Texte im Spiel zweisprachig: `tr!("Deutsch", "English")` / `trf!` aus `rust/src/i18n.rs`.
 - Godot-Logik in Rust (gdext), kein GDScript im Spiel (nur temporäre Testskripte).
 - Lizenz: `forge-bridge/` ist GPL-3.0 und läuft als getrennter Prozess; keinen Forge-Code in
-  `rust/` übernehmen. `forge-bridge/forge/` nie committen.
+  `rust/` übernehmen. `forge-bridge/forge/` (Jar + Kartendaten) nie committen.
+- Begriffe in Code und Doku wie in NeoForge und den Comprehensive Rules (CR-Nummern in Kommentaren,
+  wo eine Regel umgesetzt bzw. angezeigt wird).
