@@ -125,7 +125,9 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | `rust/src/forge/` | `ForgeBridge` (Verbindung zur Forge-Regel-Engine, Java-Prozess) und `ForgeTable` (Forge-Partie auf dem 3D-Tisch) |
 | `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks; `forge/` = lokale Forge-Kopie (nicht im Git) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
-| `docs/` | diese Dokumentation, die Forge-Schnittstelle und die API-Referenz |
+| `docs/` | diese Dokumentation, die Forge-Schnittstelle, die Kartenabdeckung (was für alle Karten fehlt) und die API-Referenz |
+| `docs/claude/` | Arbeitsanweisungen für Claude: Animationsdesign, Spielfelder |
+| `CLAUDE.md` | Projektziel, Fahrplan und Arbeitsregeln für Claude |
 | `tools/gen_api_doc.py` | erzeugt `docs/API-Referenz.md` |
 
 ---

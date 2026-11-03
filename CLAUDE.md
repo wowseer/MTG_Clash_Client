@@ -11,6 +11,14 @@ menschlichen Spieler. Sie steuert nur noch den Gegner.
 Ein eigenes Regelwerk wird **nicht** wieder eingeführt: Das Spiel prüft keine Regeln selbst,
 es zeigt Forges Zustand an und schickt Forge die Antworten des Spielers.
 
+## Weitere Anweisungen (vor der Arbeit lesen)
+
+| Bevor du … | lies |
+|---|---|
+| eine Forge-Entscheidung oder Zustandsanzeige einbaust | `docs/Kartenabdeckung.md` (alle 113 Forge-Entscheidungen → 13 Bedienmuster, nötiger Zustand, Reihenfolge) |
+| eine Animation baust oder änderst | `docs/claude/ANIMATION.md` (Grundsätze, Timing-Tabelle, Vorlage) |
+| ein Spielfeld / eine Kulisse baust oder überarbeitest | `docs/claude/SPIELFELD.md` (Detailgrad, Textur-Pipeline, Vorlage) |
+
 ## Architektur
 
 ```
@@ -49,6 +57,7 @@ Angezeigt:
 ## Fahrplan
 
 Jeder Punkt ist ein eigener Schritt: Brücke (Java), Protokoll, Rust/UI, Doku, Test, Commit.
+Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabdeckung.md`.
 
 **Entscheidungen des Spielers** (in `RemotePlayerController` überschreiben, als `request` an Godot):
 1. Angreifer erklären (`declareAttackers`): Klick auf Kreaturen, Ziel Spieler/Planeswalker

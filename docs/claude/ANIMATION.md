@@ -1,0 +1,100 @@
+# Anweisungen für Claude: Animationsdesign
+
+Lies diese Datei, bevor du eine Animation baust oder änderst (Kartenbewegung, Effekte, HUD,
+Kamera). Ziel: Jede Bewegung im Spiel fühlt sich gleich hochwertig an, ist lesbar und hält das
+Spiel nie auf.
+
+## Grundsätze
+
+1. **Animation erklärt Spielzustand.** Jede Animation zeigt, *woher* etwas kommt und *wohin* es
+   geht (Deck → Hand, Hand → Stack → Spielfeld, Spielfeld → Friedhof). Keine Karte erscheint oder
+   verschwindet einfach, außer sie entsteht oder vergeht wirklich (Spielstein).
+2. **Forge ist die Wahrheit, die Animation läuft hinterher.** Der Zustand wird sofort
+   übernommen; Animationen stellen ihn nur dar. Eine Animation darf nie eine Antwort an Forge
+   verzögern oder blockieren. Kommt ein neuer Zustand, während noch animiert wird: die laufende
+   Bewegung von ihrer aktuellen Position aus zum neuen Ziel umlenken, nicht neu starten.
+3. **Eingabe hat Vorrang.** Der Spieler kann während jeder Animation klicken. Was er anklickt,
+   reagiert sofort (Hover, Greifen); laufende Zierde wird abgebrochen.
+4. **Eine Sprache für alles.** Gleiche Bedeutung = gleiche Bewegung, gleiche Dauer, gleiche
+   Kurve. Werte stehen zentral als Konstanten (siehe „Timing-Tabelle“), nie als Zahlen verstreut.
+5. **Weich, mit Gewicht.** Karten sind leichte, aber physische Objekte: Sie heben ab, fliegen in
+   einem flachen Bogen, landen mit einem kleinen Nachfedern. Kein lineares Gleiten, kein Teleport,
+   kein Schweben ohne Grund.
+6. **Lesbarkeit vor Show.** Wichtige Ereignisse (Schaden, Tod, Gegenzauber, Spielende) bekommen
+   Nachdruck. Routine (Enttappen, Ziehen im eigenen Zug) bleibt kurz und ruhig. Gleichzeitige
+   Bewegungen leicht staffeln (40–80 ms), damit das Auge folgen kann.
+7. **Eigene Gestaltung.** Ähnliche Qualität wie moderne digitale Kartenspiele, aber eigene
+   Bewegungen, Effekte und Klänge. Nichts aus anderen Spielen nachbauen.
+
+## Timing-Tabelle (Startwerte, zentral als Konstanten pflegen)
+
+| Ereignis | Dauer | Kurve | Bemerkung |
+|---|---|---|---|
+| Hover-Zoom an / aus | 0,12 s / 0,10 s | Expo-Out | sofort spürbar |
+| Karte folgt beim Ziehen | exponentiell, Faktor ~20/s | – | schon vorhanden (`drag_follow_speed`) |
+| Ziehen Deck → Hand | 0,45 s | Cubic-Out, Bogen 0,6 hoch | beim Abheben kurz umdrehen (Rückseite → Vorderseite) in der zweiten Hälfte |
+| Austeilen der Starthand | je 0,35 s, gestaffelt 0,08 s | Cubic-Out | |
+| Hand → Stack (Zauber gespielt) | 0,35 s | Back-Out (leichtes Überschwingen) | Karte wird größer, kurzer Lichtring |
+| Stack → Spielfeld (bleibende Karte) | 0,40 s | Cubic-In-Out | Landung: 4 % Stauchung + Staubring, 0,15 s |
+| Stack → Friedhof (Spontanzauber) | 0,45 s | Cubic-In | Karte zerfällt / löst sich auf, dann Friedhof |
+| Tappen / Enttappen | 0,18 s | Quad-Out | Drehung um 90° bzw. projekteigene Neigung |
+| Angriff erklären | 0,25 s | Back-Out | Karte rückt 0,3 nach vorn, Pfeil wächst aus der Karte |
+| Kampfschaden | 0,30 s Stoß + 0,2 s zurück | Expo-Out / Quad-In | Zahl springt aus dem Ziel, Treffer-Blitz |
+| Kreatur stirbt | 0,50 s | Quad-In | entsättigen, zerfallen, dann zum Friedhof |
+| Spielstein entsteht / vergeht | 0,30 s | Back-Out / Quad-In | aus Licht aufbauen / in Partikel zerfallen |
+| Doppelseitige Karte umdrehen | 0,35 s | Cubic-In-Out | 180°-Drehung um die Längsachse, Mitte kurz anheben |
+| Lebenspunkte ändern | 0,6 s | – | Edelstein blitzt (schon vorhanden), Zahl zählt hoch/runter |
+| Phasenwechsel | 0,25 s | Cubic-Out | Zeitstrahl (vorhanden) |
+| Auswahlfenster / Kartenfächer öffnen | 0,20 s | Cubic-Out | Hintergrund abdunkeln 0,15 s |
+| Kamera Fokus / Übersicht | exponentiell, `smoothing` | – | vorhanden (`TableCamera`) |
+
+Faustregel: Routine ≤ 0,3 s, wichtige Ereignisse 0,3–0,6 s, nie über 0,8 s ohne Grund.
+Gegnerzüge dürfen etwas langsamer sein als eigene, damit man sie verfolgen kann.
+
+## Technik im Projekt
+
+- **Bewegung von Karten:** `Card3D::move_to(target, delay)` (Tween auf `global_transform`).
+  Erweiterungen (Bogen, Drehung, Nachfedern) dort zentral einbauen, nicht pro Aufrufer. Für Bögen
+  `tween_method` mit eigener Interpolation statt `tween_property` verwenden.
+- **Neu-Ausrichtung in Zonen:** `Zone::layout_with_delay` legt Ziele fest; die Zone entscheidet
+  das Ziel, `Card3D` entscheidet, *wie* es dorthin geht.
+- **Hover/Neigung:** im `process` exponentiell geglättet (`tilt_speed`), nicht per Tween.
+- **Unterbrechen:** laufenden Tween immer `kill()`en und vom aktuellen Transform aus neu
+  starten (siehe `Card3D::move_to`). Nie zwei Tweens auf dieselbe Eigenschaft.
+- **Effekte** (Licht, Funken, Zerfall): `GPUParticles3D` oder Shader auf der Karte (Parameter
+  über `ShaderMaterial` animieren). Partikel nach Ablauf freigeben (`one_shot` + `finished`).
+- **HUD:** `create_tween()` auf dem Control; Positionen über `position`/`modulate`/`scale`.
+  HUD-Animationen laufen unabhängig von der 3D-Szene.
+- **Bildrate:** Alles zeitbasiert (`delta`, Tween-Dauer), nie pro Frame feste Schritte.
+- **Reihenfolge von Ereignissen:** Forge schickt `forge_event`s (z. B. `GameEventCardChangeZone`,
+  `GameEventCardDamaged`, `GameEventSpellResolved`). Für Effekte, die über die reine
+  Zonen-Bewegung hinausgehen, diese Ereignisse in eine **Animations-Warteschlange** im
+  `ForgeTable` legen und nacheinander abspielen; der Zustandsabgleich bleibt davon unabhängig.
+
+## Vorlage für eine neue Animation
+
+Bevor du eine Animation baust, fülle diese Vorlage aus (im Commit-Text oder in
+`docs/DOKUMENTATION.md`):
+
+```
+Animation: <Name, z. B. „Kreatur stirbt“>
+Auslöser:   <Forge-Ereignis oder Zustandsänderung, z. B. GameEventCardDestroyed / Karte verlässt Spielfeld → Friedhof>
+Bedeutung:  <was der Spieler daraus verstehen soll>
+Ablauf:     1. <Schritt, Dauer, Kurve>
+            2. …
+Gesamtdauer: <s>   Blockiert Eingabe: nein
+Unterbrechung: <was passiert bei neuem Zustand / Klick währenddessen>
+Gestaffelt mit: <andere gleichzeitige Animationen, Versatz>
+Umsetzung:  <Card3D::…, Zone::…, Shader/Partikel, HUD>
+Konstanten: <Name = Wert in der zentralen Tabelle>
+Test:       <wie geprüft: headless Ablauf + Sichtprüfung durch den User>
+```
+
+## Prüfen
+
+- Logik (richtiger Start/Ziel, keine hängenden Karten, kein doppelter Tween) ohne Fenster mit
+  einem Testskript prüfen.
+- Sichtprüfung macht der User. Fenster-Renders (`--write-movie`) öffnen sich auf seinem Desktop
+  und bekommen seine echten Mausklicks: nur nach Absprache, nie `warp_mouse`.
+- Nach jeder Animation: Dauer und Kurve in die Timing-Tabelle oben eintragen, Doku pflegen,
+  committen.
