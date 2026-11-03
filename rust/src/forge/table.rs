@@ -16,8 +16,9 @@ use godot::prelude::*;
 
 use super::bridge::ForgeBridge;
 use crate::game::cards::{CardDef, CardKind};
-use crate::game::choice_panel::{self, ChoiceMode, ChoiceOption, HudChoice};
+use crate::game::decision_view;
 use crate::game::hud::HudView;
+use crate::rules::{Action, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::mana::{Cost, ManaType};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
@@ -82,8 +83,8 @@ pub struct ForgeTable {
     deck_cards: [Vec<Gd<Card3D>>; 2],
     /// Zuletzt angewandter Kartenstand je ID (zum Erkennen geänderter Werte).
     signatures: HashMap<i64, String>,
-    /// Offene Entscheidung (priority / mulligan / choice) des Spielers.
-    pending: Option<VarDictionary>,
+    /// Offene Entscheidung des Spielers (NeoForge-`Decision` mit Anzeigehilfen).
+    pending: Option<Request>,
     /// Karte, um die es in der offenen Auswahl geht (golden markiert).
     marked: Option<Gd<Card3D>>,
     /// Zuletzt empfangener Spielzustand.
@@ -151,8 +152,8 @@ impl INode for ForgeTable {
         if self.dirty && self.match_running && self.since_refresh >= self.refresh_interval {
             self.dirty = false;
             self.since_refresh = 0.0;
-            if let Some(b) = self.bridge.as_mut() {
-                b.bind_mut().request_state(LOCAL_SEAT);
+            if let Some(mut b) = self.bridge.clone() {
+                b.request_state(LOCAL_SEAT as u8);
             }
         }
     }
@@ -175,21 +176,27 @@ impl ForgeTable {
         ok
     }
 
-    /// Passt (Hauptbutton / Leertaste): beantwortet eine offene Prioritätsanfrage mit -1.
+    /// Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit
+    /// `Action::Pass`.
     #[func]
     pub fn pass_priority(&mut self) {
-        if self.pending_kind().as_deref() == Some("priority") {
-            self.answer((-1i64).to_variant());
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::Priority { .. })) {
+            self.answer(Choice::Action(Action::Pass));
         }
     }
 
-    /// Antwort aus dem Auswahlfenster des HUD auf die offene Entscheidung (Mulligan oder
-    /// `choice`). Form je Modus: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und
-    /// Mulligan = bool (true = erste Option / behalten), Zahl = int, Text = String, Abbrechen = null.
+    /// Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index,
+    /// mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten),
+    /// Zahl = int, Abbrechen = null. Wird in die passende NeoForge-`Choice` übersetzt; unpassende
+    /// Eingaben werden ignoriert.
     #[func]
     pub fn submit_choice(&mut self, choice: Variant) {
-        if matches!(self.pending_kind().as_deref(), Some("mulligan") | Some("choice")) {
-            self.answer(choice);
+        let Some(req) = self.pending.as_ref() else { return };
+        match decision_view::to_choice(&req.decision, &choice) {
+            Some(c) => self.answer(c),
+            None => {
+                godot_warn!("ForgeTable: Eingabe {choice} passt nicht zu {:?}", req.decision);
+            }
         }
     }
 
@@ -205,8 +212,8 @@ impl ForgeTable {
         self.state.clone().unwrap_or_default()
     }
 
-    /// Hat der Spieler gerade eine offene Entscheidung? Liefert deren Art ("priority",
-    /// "mulligan", "choice") oder einen leeren Text.
+    /// Hat der Spieler gerade eine offene Entscheidung? Liefert den Namen der NeoForge-`Decision`
+    /// (z. B. "Priority", "Mulligan", "ChooseTargets", "ChooseOption") oder einen leeren Text.
     #[func]
     pub fn get_pending_kind(&self) -> GString {
         GString::from(self.pending_kind().unwrap_or_default().as_str())
@@ -232,20 +239,26 @@ impl ForgeTable {
         self.dirty = true;
     }
 
-    /// Entscheidung des Spielers nötig: Zustand übernehmen, spielbare Karten leuchten lassen.
+    /// Entscheidung des Spielers nötig (Protokoll v3): Zustand übernehmen, Quellkarte markieren,
+    /// spielbare Karten leuchten lassen. Unbekannte Entscheidungen werden mit `Cancel`
+    /// beantwortet (die Engine entscheidet dann selbst).
     #[func]
     fn on_decision_requested(&mut self, request: VarDictionary) {
         if let Some(state) = request.get("state").and_then(|v| v.try_to::<VarDictionary>().ok()) {
             self.apply_state(state);
         }
+        let Some(req) = Request::from_var(&request) else {
+            godot_warn!("ForgeTable: unbekannte Entscheidung {}", request.get("decision").unwrap_or_default());
+            let id = get_int(&request, "id");
+            if let Some(mut b) = self.bridge.clone() {
+                b.submit(id, &Choice::Cancel);
+            }
+            return;
+        };
         // Karte, um die es geht, golden markieren
-        let source = request
-            .get("source")
-            .and_then(|v| v.try_to::<VarDictionary>().ok())
-            .map(|s| get_int(&s, "id"))
-            .and_then(|id| self.cards.get(&id).cloned());
+        let source = req.source.and_then(|id| self.cards.get(&(id as i64)).cloned());
         self.set_marked(source);
-        self.pending = Some(request);
+        self.pending = Some(req);
         self.update_glow();
     }
 
@@ -269,17 +282,18 @@ impl ForgeTable {
         godot_warn!("ForgeTable: Forge-Fehler {code}: {message}");
     }
 
-    /// Karte wurde auf dem Tisch abgelegt: aus der Hand gespielt → passende Option an Forge;
-    /// alles andere wird auf den Forge-Stand zurückgesetzt.
+    /// Karte wurde auf dem Tisch abgelegt: Hat sie eine Aktion in der offenen `Priority`-
+    /// Entscheidung (aus der Hand: Land spielen / wirken; auf dem Spielfeld: Fähigkeit
+    /// aktivieren), wird diese gewählt. Aus der Hand zurück auf die Hand = abbrechen. Alles andere
+    /// wird auf den Engine-Stand zurückgesetzt.
     #[func]
     fn on_card_dropped(&mut self, card: Gd<Card3D>, from_zone: Gd<Zone>, to_zone: Gd<Zone>) {
         let hand = self.zones(0).hand;
-        let from_hand = hand.as_ref() == Some(&from_zone);
-        let to_hand = hand.as_ref() == Some(&to_zone);
+        let back_to_hand = hand.as_ref() == Some(&from_zone) && hand.as_ref() == Some(&to_zone);
         let id = self.forge_id(&card);
-        if from_hand && !to_hand {
-            if let Some(index) = id.and_then(|id| self.option_for_card(id)) {
-                self.answer(index.to_variant());
+        if !back_to_hand {
+            if let Some(action) = id.and_then(|id| self.action_for_card(id)) {
+                self.answer(Choice::Action(action));
                 return;
             }
         }
@@ -307,24 +321,23 @@ impl ForgeTable {
         let player = |seat: usize| players.get(seat).and_then(|v| v.try_to::<VarDictionary>().ok());
         let life = |seat: usize| player(seat).map_or(0, |p| get_int(&p, "life"));
         let phase = st.map(|s| get_str(s, "phase")).unwrap_or_default();
-        let kind = self.pending_kind();
-        let my_priority = kind.as_deref() == Some("priority");
+        let my_priority = matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::Priority { .. }));
 
-        let choice = match (kind.as_deref(), self.pending.as_ref()) {
-            (Some("mulligan"), Some(req)) => Some(HudChoice {
-                key: get_int(req, "id"),
-                title: tr!("Starthand behalten?", "Keep your opening hand?").to_string(),
-                detail: String::new(),
-                mode: ChoiceMode::Confirm,
-                options: vec![
-                    ChoiceOption { text: tr!("Behalten", "Keep").to_string(), color: None },
-                    ChoiceOption { text: tr!("Mulligan", "Mulligan").to_string(), color: None },
-                ],
-                cancelable: false,
-            }),
-            (Some("choice"), Some(req)) => choice_panel::from_forge_request(req),
-            _ => None,
-        };
+        let choice = self.pending.as_ref().and_then(|req| {
+            let name_of = |i: usize| match &req.decision {
+                Decision::ChooseTargets { candidates, .. } => match candidates.get(i) {
+                    Some(Target::Player(p)) => self.seat_name(*p as usize).to_string(),
+                    Some(Target::Card(c)) => self
+                        .cards
+                        .get(&(*c as i64))
+                        .map(|card| card.bind().card_name().to_string())
+                        .unwrap_or_else(|| format!("#{c}")),
+                    None => String::new(),
+                },
+                _ => String::new(),
+            };
+            decision_view::hud_choice(req, &name_of)
+        });
         let button_text = if my_priority {
             tr!("Passen  »", "Pass  »")
         } else if choice.is_some() {
@@ -377,36 +390,27 @@ impl ForgeTable {
     }
 
     fn pending_kind(&self) -> Option<String> {
-        self.pending.as_ref().map(|p| get_str(p, "kind"))
+        self.pending.as_ref().map(|r| decision_name(&r.decision).to_string())
     }
 
-    fn answer(&mut self, choice: Variant) {
+    /// Antwortet über die Engine-Schnittstelle auf die offene Entscheidung.
+    fn answer(&mut self, choice: Choice) {
         let Some(req) = self.pending.take() else { return };
-        let id = get_int(&req, "id");
         self.set_marked(None);
         self.update_glow();
-        if let Some(b) = self.bridge.as_mut() {
-            b.bind_mut().answer(id, choice);
+        if let Some(mut b) = self.bridge.clone() {
+            b.submit(req.id, &choice);
         }
     }
 
-    /// Option der offenen Prioritätsanfrage, die die Karte `card_id` spielt (Land/Zauber zuerst).
-    fn option_for_card(&self, card_id: i64) -> Option<i64> {
-        let req = self.pending.as_ref().filter(|_| self.pending_kind().as_deref() == Some("priority"))?;
-        let options = get_array(req, "options")?;
-        let mut best = None;
-        for o in options.iter_shared() {
-            let Ok(o) = o.try_to::<VarDictionary>() else { continue };
-            if get_int(&o, "card_id") != card_id {
-                continue;
-            }
-            let index = get_int(&o, "index");
-            if get_bool(&o, "land") || get_bool(&o, "spell") {
-                return Some(index);
-            }
-            best.get_or_insert(index);
-        }
-        best
+    /// Aktion der offenen `Priority`-Entscheidung für die Karte `card_id`: Land spielen bzw.
+    /// wirken zuerst, sonst die erste Aktion der Karte (z. B. Fähigkeit aktivieren).
+    fn action_for_card(&self, card_id: i64) -> Option<Action> {
+        let Some(Decision::Priority { actions, .. }) = self.pending.as_ref().map(|r| &r.decision) else {
+            return None;
+        };
+        let mine = || actions.iter().copied().filter(|a| a.card().map(i64::from) == Some(card_id));
+        mine().find(|a| matches!(a, Action::PlayLand(_) | Action::Cast(_))).or_else(|| mine().next())
     }
 
     /// Markiert `card` golden (Quelle der offenen Auswahl); hebt die alte Markierung auf.
@@ -426,15 +430,8 @@ impl ForgeTable {
 
     /// Leuchten: Karten, die der Spieler gerade spielen kann.
     fn update_glow(&mut self) {
-        let playable: HashSet<i64> = match (&self.pending, self.pending_kind().as_deref()) {
-            (Some(req), Some("priority")) => get_array(req, "options")
-                .map(|opts| {
-                    opts.iter_shared()
-                        .filter_map(|o| o.try_to::<VarDictionary>().ok())
-                        .map(|o| get_int(&o, "card_id"))
-                        .collect()
-                })
-                .unwrap_or_default(),
+        let playable: HashSet<i64> = match self.pending.as_ref().map(|r| &r.decision) {
+            Some(Decision::Priority { actions, .. }) => actions.iter().filter_map(|a| a.card()).map(i64::from).collect(),
             _ => HashSet::new(),
         };
         for (id, card) in self.cards.iter_mut() {
@@ -617,6 +614,35 @@ fn discard_card(mut card: Gd<Card3D>) {
         zone.bind_mut().remove_card(card.clone());
     }
     card.queue_free();
+}
+
+/// Name der NeoForge-Entscheidung (für [method ForgeTable.get_pending_kind]).
+fn decision_name(d: &Decision) -> &'static str {
+    match d {
+        Decision::ChooseModes { .. } => "ChooseModes",
+        Decision::Mulligan { .. } => "Mulligan",
+        Decision::MulliganBottom { .. } => "MulliganBottom",
+        Decision::Priority { .. } => "Priority",
+        Decision::ChooseTargets { .. } => "ChooseTargets",
+        Decision::ChooseX { .. } => "ChooseX",
+        Decision::PayMana { .. } => "PayMana",
+        Decision::PayLifeForPhyrexian { .. } => "PayLifeForPhyrexian",
+        Decision::ChooseColor { .. } => "ChooseColor",
+        Decision::NameCard { .. } => "NameCard",
+        Decision::ChooseType { .. } => "ChooseType",
+        Decision::DeclareAttackers { .. } => "DeclareAttackers",
+        Decision::DeclareBlockers { .. } => "DeclareBlockers",
+        Decision::AssignCombatDamage { .. } => "AssignCombatDamage",
+        Decision::ChooseCards { .. } => "ChooseCards",
+        Decision::OrderTriggers { .. } => "OrderTriggers",
+        Decision::Scry { .. } => "Scry",
+        Decision::PayUnlessCost { .. } => "PayUnlessCost",
+        Decision::OptionalTrigger { .. } => "OptionalTrigger",
+        Decision::Confirm { .. } => "Confirm",
+        Decision::ChooseOption { .. } => "ChooseOption",
+        Decision::ChooseOptions { .. } => "ChooseOptions",
+        Decision::ChooseNumber { .. } => "ChooseNumber",
+    }
 }
 
 /// Forge-Phase (`PhaseType`-Name) → Index in [`Phase::ORDER`].

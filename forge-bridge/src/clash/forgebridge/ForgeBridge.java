@@ -49,7 +49,7 @@ import forge.util.MyRandom;
  */
 public final class ForgeBridge {
     /** Version des Protokolls; wird in "ready" gemeldet. */
-    public static final int PROTOCOL_VERSION = 2;
+    public static final int PROTOCOL_VERSION = 3;
 
     private static PrintStream out;
     private static final Object OUT_LOCK = new Object();
@@ -243,18 +243,20 @@ public final class ForgeBridge {
     }
 
     /**
-     * Stellt dem Client eine Entscheidungsfrage und blockiert den Spiel-Thread bis zur Antwort
-     * ({"cmd":"answer","id":…,"choice":…}). Liefert die "choice" (oder JsonNull).
+     * Stellt dem Client eine Entscheidung (Protokoll v3) und blockiert den Spiel-Thread bis zur
+     * Antwort ({"cmd":"answer","id":…,"choice":{…}}). {@code envelope} enthält
+     * {@code decision} (NeoForge-{@code Decision}) und die Anzeigehilfen (siehe {@link Decisions});
+     * {@code type}, {@code id} und {@code player} werden hier ergänzt. Liefert die {@code choice}
+     * (oder JsonNull).
      */
-    static JsonElement request(String kind, int player, JsonObject payload) {
+    static JsonElement request(int player, JsonObject envelope) {
         int id = NEXT_ID.getAndIncrement();
         CompletableFuture<JsonElement> f = new CompletableFuture<>();
         PENDING.put(id, f);
         JsonObject req = message("request");
         req.addProperty("id", id);
-        req.addProperty("kind", kind);
         req.addProperty("player", player);
-        for (Map.Entry<String, JsonElement> e : payload.entrySet()) {
+        for (Map.Entry<String, JsonElement> e : envelope.entrySet()) {
             req.add(e.getKey(), e.getValue());
         }
         send(req);

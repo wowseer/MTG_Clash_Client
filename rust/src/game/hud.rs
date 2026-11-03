@@ -177,12 +177,6 @@ impl TurnHud {
         }
     }
 
-    /// Eingabetaste im Textfeld des Auswahlfensters (wie „OK“).
-    #[func]
-    fn on_choice_text_submitted(&mut self, _text: GString) {
-        self.on_choice_done();
-    }
-
     /// Suchfeld des Auswahlfensters geändert: Optionen filtern.
     #[func]
     fn on_choice_filter_changed(&mut self, text: GString) {

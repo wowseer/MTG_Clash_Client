@@ -575,6 +575,11 @@ impl Card3D {
         self.refresh_labels();
     }
 
+    /// Name der Karte (wie auf dem Kartenbild, ohne Übersetzung).
+    pub fn card_name(&self) -> GString {
+        self.card_name.clone()
+    }
+
     pub fn kind(&self) -> CardKind {
         self.card_kind
     }

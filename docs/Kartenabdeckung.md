@@ -1,5 +1,12 @@
 # Kartenabdeckung – was der Client für alle Karten können muss
 
+> **Protokoll v3:** Die UI spricht NeoForges Entscheidungsmodell (`Decision`/`Choice`). Die Muster
+> unten entsprechen diesen Varianten: M1 `Priority`, M2 `ChooseTargets`, M3 `ChooseCards`,
+> M4 `Scry`/`OrderTriggers`, M5 `PayMana`, M6 `DeclareAttackers`, M7 `DeclareBlockers`,
+> M8 `AssignCombatDamage`, M9 `ChooseModes`/`ChooseType`/`ChooseOption`, M10 `Confirm`/
+> `OptionalTrigger`/`Mulligan`, M11 `ChooseX`/`ChooseNumber`, M12 `ChooseColor`/`NameCard`.
+> Planechase, Contraptions, Ante u. Ä. sind laut NeoForge-Umfang ausgeschlossen (keine UI dafür).
+
 Forge kennt die Regeln jeder Karte. Damit **jede** Karte spielbar ist, muss der Client zwei Dinge
 können:
 

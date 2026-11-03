@@ -17,6 +17,8 @@ use std::time::Duration;
 use godot::classes::{INode, Json, Node, ProjectSettings};
 use godot::prelude::*;
 
+use crate::rules::{Choice, PlayerId, RulesEngine};
+
 /// Höchstens so viele Nachrichten werden pro Frame verarbeitet (Forge sendet in Spitzen
 /// Hunderte Ereignisse auf einmal).
 const MAX_MESSAGES_PER_FRAME: usize = 400;
@@ -139,10 +141,10 @@ impl ForgeBridge {
     #[signal]
     fn forge_event(event: VarDictionary);
 
-    /// Ein ferngesteuerter Spieler muss entscheiden: `{id, kind, player, …}`.
-    /// kind "priority": `options` (Liste `{index, card, card_id, land, spell, text}`) und
-    /// `state` – Antwort mit [method answer] (Index oder -1 = passen).
-    /// kind "mulligan": `state`, `cards_to_return` – Antwort true = behalten.
+    /// Ein ferngesteuerter Spieler muss entscheiden (Protokoll v3): `{id, player, decision, prompt,
+    /// source, ability, cancelable, labels, state}`; `decision` ist eine NeoForge-`Decision`
+    /// (z. B. `{"type": "Priority", "actions": […]}`). Antwort mit [method answer] und einer
+    /// NeoForge-`Choice`. Aufbau siehe `docs/Forge-Schnittstelle.md`.
     #[signal]
     fn decision_requested(request: VarDictionary);
 
@@ -343,8 +345,9 @@ impl ForgeBridge {
         self.send_command(d)
     }
 
-    /// Beantwortet eine Anfrage aus [signal decision_requested]. `choice`: bei "priority"
-    /// der Index der Option oder -1 (passen), bei "mulligan" true (behalten) / false.
+    /// Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im
+    /// NeoForge-Format (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`;
+    /// Aufbau siehe `docs/Forge-Schnittstelle.md`.
     #[func]
     pub fn answer(&mut self, request_id: i64, choice: Variant) -> bool {
         let mut d = VarDictionary::new();
@@ -486,5 +489,16 @@ fn normalize_numbers(v: Variant) -> Variant {
             out.to_variant()
         }
         _ => v,
+    }
+}
+
+/// Die Java-Brücke als Regel-Engine der UI (Protokoll v3).
+impl RulesEngine for Gd<ForgeBridge> {
+    fn submit(&mut self, request_id: i64, choice: &Choice) -> bool {
+        self.bind_mut().answer(request_id, choice.to_var())
+    }
+
+    fn request_state(&mut self, viewer: PlayerId) -> bool {
+        self.bind_mut().request_state(viewer as i64)
     }
 }

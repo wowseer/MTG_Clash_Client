@@ -5,6 +5,7 @@ mod hello;
 mod i18n;
 mod forge;
 mod game;
+mod rules;
 mod table;
 
 struct MtgClashExtension;

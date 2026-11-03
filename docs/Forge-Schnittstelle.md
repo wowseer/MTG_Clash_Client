@@ -42,20 +42,29 @@ mit dem Spiel ausgeliefert, sondern aus der lokalen Forge-Installation gelesen.
 Manueller Test ohne Godot: `forge-bridge/run.sh` starten und JSON-Zeilen eintippen, z. B.
 `{"cmd":"ping"}`.
 
-## Was Forge entscheidet und was MTG Clash
+## Was die Engine entscheidet und was der Spieler
 
-| Entscheidung | wer |
-|---|---|
-| Priorität: Karte/Fähigkeit spielen oder passen | **MTG Clash** (`request` kind `priority`) |
-| Mulligan | **MTG Clash** (`request` kind `mulligan`) |
-| Allgemeine Auswahl: Modi, Optionen (Kreaturtyp, Marken-Typ, Schutz, Schlüsselwort, Ersatzeffekt, Kartenseite …), Ja/Nein (optionale Trigger, „Darfst du …“, Kopf/Zahl), Zahlen, Farben, Kartennamen, optionale Kosten, Startspieler, Abstimmungen, Würfel | **MTG Clash** (`request` kind `choice`) |
-| Beim Spielen: Zusatz- und optionale Kosten (Kicker …), Modi, angesagter Typ, X-Wert, **Ziele** (`chooseTargetsFor`) | **MTG Clash** (`request` kind `choice`; Ziele als Liste, Optionen mit `card_id` / `player`) |
-| Manabezahlung, Angreifer, Blocker, Schaden frei verteilen, Auswahl von Karten, Ziele ausgelöster Fähigkeiten | vorerst Forge-KI |
-| Gegner (nicht ferngesteuerte Sitzplätze) | Forge-KI |
+Seit Protokoll 3 spricht die Brücke **NeoForges Entscheidungsmodell** (`Decision` / `Choice`,
+siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt Forges
+`PlayerController`-Aufrufe in `Decision`s (`Decisions.java`, `RemotePlayerController.java`).
 
-Erweitern: in `RemotePlayerController.java` weitere Methoden von Forges `PlayerController`
-überschreiben (z. B. `declareAttackers`, `declareBlockers`, `chooseTargetsFor`) und darin
-`ForgeBridge.request("<kind>", seat, payload)` aufrufen.
+| Forge-Methode(n) | NeoForge-`Decision` | Antwort (`Choice`) |
+|---|---|---|
+| `chooseSpellAbilityToPlay` | `Priority { actions }` | `Action(…)`; `Pass` |
+| `mulliganKeepHand` | `Mulligan { mulligans_taken }` | `Keep` / `Mulligan` |
+| `chooseModeForAbility` | `ChooseModes { modes, min, max, can_repeat }` | `Modes([…])` |
+| `chooseTargetsFor` (über `setupTargets`) | `ChooseTargets { source, description, candidates, min, max }` | `Targets([…])` / `Cancel` |
+| `announceRequirements` (X ab 0) | `ChooseX { max }` | `Number(n)` / `Cancel` |
+| `chooseColor`, `chooseColors` mit genau einer Farbe | `ChooseColor { options }` | `Color("R")` |
+| `chooseCardName` | `NameCard { options }` (alle erlaubten Namen) | `Number(index)` |
+| `chooseSomeType` | `ChooseType { options }` | `Number(index)` |
+| `confirmAction`, `confirmReplacementEffect`, `confirmStaticApplication` | `Confirm { prompt }` | `Yes` / `No` |
+| `confirmTrigger` | `OptionalTrigger { description }` | `Yes` / `No` |
+| Startspieler, Abstimmung, Marken-Typ, Schutz, Schlüsselwort, Ersatzeffekt, statische Fähigkeit, Kartenseite/-zustand, Sektor, Würfel, Zahl aus Liste, Ja/Nein mit eigenen Beschriftungen (Kopf/Zahl, Tappen/Enttappen …), Farbe inkl. farblos | `ChooseOption` (**Erweiterung**) | `Number(index)` |
+| `chooseOptionalCosts`, `chooseColors` (mehrere), `chooseDiceToReroll` | `ChooseOptions` (**Erweiterung**) | `Modes([…])` |
+| `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost`, angesagte Werte ≠ X | `ChooseNumber` (**Erweiterung**) | `Number(n)` |
+| Manabezahlung, Angreifer, Blocker, Schaden verteilen, Kartenauswahl, Ziele ausgelöster Fähigkeiten | (`PayMana`, `DeclareAttackers`, `DeclareBlockers`, `AssignCombatDamage`, `ChooseCards` …) | **vorerst Forge-KI** |
+| Gegner (nicht ferngesteuerte Sitzplätze) | – | Forge-KI |
 
 **Ablauf beim Spielen** (`RemotePlayerController.prepareRemote`, nachgebaut nach Forges Ablauf für
 menschliche Spieler, `PlaySpellAbility` im Forge-Quellcode): Zusatzkosten/optionale Kosten →
@@ -63,14 +72,28 @@ Modi (`CharmEffect.makeChoices`) → angesagter Typ → X-Wert (`announceRequire
 `SpellAbility.setupTargets()` (ruft je gezielter Teilfähigkeit `chooseTargetsFor`) → Bezahlen
 durch Forge (vorerst automatisch). Zauber, deren Schaden frei verteilt wird, bereitet noch die KI vor.
 
-Angeboten werden nur Optionen, die jetzt spielbar und bezahlbar sind und für die es mögliche
-Ziele gibt; Manafähigkeiten werden
-nicht angeboten (Mana wird beim Ausführen automatisch bezahlt). Ist die gewählte Option nicht
-ausführbar (nicht spielbar, nicht bezahlbar, kein gültiges Ziel), kommt `rejected` und eine neue
-Anfrage. Ob die Forge-KI den Zug für sinnvoll hält, spielt keine Rolle (bis Protokoll 1 hat ihre
-Einschätzung manche legalen Züge verhindert).
+**Priority-Aktionen**: Land → `PlayLand(card)` (weitere Land-Seiten derselben Karte `PlayLandAlt`),
+Zauber → `Cast(card)` (weitere Zauber-Varianten derselben Karte `CastAlt(card, n)`), aktivierte
+Fähigkeit → `Activate(card, n)` (n = laufender Index der angebotenen Fähigkeiten der Karte).
+Angeboten wird nur, was jetzt spielbar und bezahlbar ist und mögliche Ziele hat; Manafähigkeiten
+nicht (Mana wird beim Ausführen automatisch bezahlt). Ist die gewählte Aktion nicht ausführbar
+(abgebrochen, kein gültiges Ziel), kommt `rejected` und eine neue `Priority`-Anfrage. Ob die
+Forge-KI den Zug für sinnvoll hält, spielt keine Rolle.
 
-## Protokoll (Version 2)
+### Erweiterungen gegenüber NeoForge
+
+Diese Teile gibt es in NeoForges `decision.rs` (noch) nicht; sie sollten dort nachgezogen werden,
+damit die UI unverändert mit NeoForge läuft:
+
+| Erweiterung | Zweck |
+|---|---|
+| `Decision::ChooseOption { player, prompt, options: [{text, color?}] }` → `Choice::Number(index)` | allgemeine Einfachauswahl (siehe Tabelle oben); `color` = `W U B R G` oder `C` (farblos) |
+| `Decision::ChooseOptions { player, prompt, options, min, max }` → `Choice::Modes(indizes)` | allgemeine Mehrfachauswahl |
+| `Decision::ChooseNumber { player, prompt, min, max }` → `Choice::Number(n)` | Zahl mit Untergrenze ≠ 0 bzw. außerhalb von X |
+| `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
+| Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) |
+
+## Protokoll (Version 3)
 
 JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 
@@ -92,8 +115,8 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `pong` | `nonce` |
 | `match_started` | `state` |
 | `event` | `event` (Forge-Klassenname, z. B. `GameEventCardChangeZone`, `GameEventTurnPhase`), `text`, `turn`, `phase` |
-| `request` | `id`, `kind`, `player` (Sitzplatz), dazu je nach `kind`: **priority**: `options`, `state` → `choice` = Index oder -1 (passen) · **mulligan**: `cards_to_return`, `state` → `choice` = true (behalten) / false · **choice**: siehe unten |
-| `rejected` | `player`, `option`, `reason` – gewählte Option nicht ausführbar |
+| `request` | `id`, `player`, `decision` (NeoForge-`Decision`), `prompt`, `source` `{id, name}`, `ability`, `cancelable`, `labels`, `state` – siehe unten |
+| `rejected` | `player`, `option` (Index in `actions` ohne `Pass`), `action`, `reason` – gewählte Aktion nicht ausführbar |
 | `state` | `state` |
 | `game_over` | `winner` (Name oder null), `draw`, `reason` |
 | `chat` | `from`, `text` |
@@ -101,25 +124,31 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 
 Der Spiel-Thread wartet bei jeder `request`, bis die passende `answer` kommt.
 
-**`request` kind `choice`** (allgemeine Auswahl, `RemoteChoice.java`)
+**`request`** (Protokoll v3)
 
-| Feld | Bedeutung |
-|---|---|
-| `mode` | `single` (eine Option) · `multi` (mehrere) · `confirm` (Ja/Nein) · `number` (Zahl) · `text` (freie Eingabe, z. B. Kartenname) |
-| `title` | Frage (von Forge oder der Brücke; `CARDNAME` ist bereits ersetzt) |
-| `source` | `{id, name}` der Karte, um die es geht (optional) |
-| `ability` | Text der Fähigkeit (optional) |
-| `options` | Liste `{text, color?, card_id?, player?}` für `single`/`multi`/`confirm`; `color` = `W U B R G C` bei Farbwahl; `card_id` / `player` = Karte bzw. Sitzplatz, für die die Option steht (bei Zielen) |
-| `min`, `max` | Anzahl bei `multi`, Grenzen bei `number` |
-| `error` | bei `text`: Hinweis nach ungültiger Eingabe (die Frage kommt dann erneut, höchstens 5-mal) |
-| `cancelable` | Abbrechen erlaubt |
-| `state` | Spielzustand |
+```json
+{"type": "request", "id": 7, "player": 0,
+ "decision": {"type": "ChooseTargets", "player": 0, "source": 34, "description": "Ziel wählen: Select any target",
+              "candidates": [{"player": 0}, {"player": 1}, {"card": 83}], "min": 1, "max": 1},
+ "prompt": "Ziel wählen: Select any target", "source": {"id": 34, "name": "Lightning Bolt"},
+ "ability": "Lightning Bolt deals 3 damage to any target.", "cancelable": true,
+ "labels": ["Spieler (du)", "Forge-KI", "Llanowar Elves (Forge-KI)"], "state": {…}}
+```
 
-Antwort `choice`: `single` → Index · `multi` → Liste von Indizes · `confirm` → true (erste Option)
-/ false · `number` → Zahl · `text` → Text · Abbrechen → null. Ungültige Antworten (falscher Typ,
-Index außerhalb, falsche Anzahl) gelten als Abbruch; ist Abbrechen nicht erlaubt, entscheidet dann
-die Forge-KI. Gibt es bei `single` nur eine Option und ist Abbrechen nicht erlaubt, wird gar
-nicht gefragt; `multi` mit genau einer Wahl wird als `single` gefragt.
+JSON-Form der NeoForge-Typen: Variante als `"type"`, Felder in `snake_case`; `Target` =
+`{"card": id}` / `{"player": sitz}`; `Action` = `{"type": "Cast", "card": 34}` bzw. mit `"index"`
+(`CastAlt`, `PlayLandAlt`, `Activate`, `CastWithAltCost`); `Color` = `"W" "U" "B" "R" "G"`;
+`ChooseModes.modes` = Liste von `[index, text]`. `labels` = Anzeigetext je Eintrag der Hauptliste
+(`actions` bei Priority, `candidates` bei ChooseTargets, `modes` bei ChooseModes).
+
+**Antwort** `{"cmd": "answer", "id": 7, "choice": {…}}` mit einer NeoForge-`Choice`:
+`{"type": "Keep"}`, `{"type": "Mulligan"}`, `{"type": "Action", "action": {…}}`,
+`{"type": "Targets", "targets": [{"card": 83}]}`, `{"type": "Number", "value": 2}`,
+`{"type": "Yes"}` / `{"type": "No"}`, `{"type": "Color", "color": "R"}`,
+`{"type": "Modes", "modes": [0, 2]}`, `{"type": "Cancel"}` (Erweiterung); außerdem (noch ohne
+Gegenstück in der Brücke) `Pay`, `Attackers`, `Blocks`, `Damage`, `Cards`, `Order`, `Arrange`.
+Unpassende oder ungültige Antworten gelten als Abbruch; wo das nicht erlaubt ist, entscheidet die
+Forge-KI. Eine Einfachauswahl mit nur einer Option und ohne Abbrechen wird gar nicht gefragt.
 
 **`state`**
 
@@ -136,9 +165,6 @@ nicht gefragt; `multi` mit genau einer Wahl wird als `single` gefragt.
 ```
 
 Karten: `id`, `name`, `type`, `tapped`, bei Kreaturen zusätzlich `power`, `toughness`.
-
-**Option (`priority`)**: `index`, `card`, `card_id`, `land` (Land spielen), `spell` (Zauber, sonst
-aktivierte Fähigkeit), `text`.
 
 Phasen (`phase`): Forges `PhaseType`-Namen, z. B. `UNTAP`, `UPKEEP`, `DRAW`, `MAIN1`,
 `COMBAT_BEGIN`, `COMBAT_DECLARE_ATTACKERS`, `COMBAT_DECLARE_BLOCKERS`, `COMBAT_DAMAGE`,
@@ -163,11 +189,14 @@ func _ready():
     forge.start_bridge()
 
 func _on_request(r: Dictionary):
-    if r.kind == "mulligan":
-        forge.answer(r.id, true)
-    elif r.kind == "priority":
-        # hier die Auswahl in der UI anbieten; -1 = passen
-        forge.answer(r.id, r.options[0].index if r.options.size() > 0 else -1)
+    match r.decision.type:
+        "Mulligan":
+            forge.answer(r.id, {"type": "Keep"})
+        "Priority":
+            # hier die Auswahl in der UI anbieten; erste Aktion ist immer {"type": "Pass"}
+            forge.answer(r.id, {"type": "Action", "action": r.decision.actions[0]})
+        _:
+            forge.answer(r.id, {"type": "Cancel"})   # Engine entscheidet selbst
 ```
 
 Alle Signale und Methoden stehen in der [API-Referenz](API-Referenz.md) unter `ForgeBridge`.
@@ -180,9 +209,8 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | Forge | 3D-Tisch |
 |---|---|
 | `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt; `library` = verdeckter Stapel in der Deck-Zone, neue Handkarten werden von dort gezogen |
-| `request` priority | spielbare Handkarten leuchten; Handkarte auf den Tisch ziehen → `answer(index)`; Hauptbutton / Leertaste → `answer(-1)` |
-| `request` mulligan | HUD-Auswahlfenster „Behalten“ / „Mulligan“ |
-| `request` choice | HUD-Auswahlfenster je `mode` (Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Textfeld, Suchfeld ab 13 Optionen); Quellkarte golden markiert |
+| `Priority` | Karten mit einer Aktion leuchten; Karte ziehen und loslassen → `Action` dieser Karte (aus der Hand `PlayLand`/`Cast`, auf dem Spielfeld `Activate`); Hauptbutton / Leertaste → `Action::Pass` |
+| alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
 ## Stand und nächste Schritte
@@ -196,6 +224,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Zahl, Abbrechen).
 - Ziele, X-Wert, Kicker, Modi und Ausrüsten getestet mit `testdecks/spieler.dck` gegen
   `testdecks/gegner.dck` (Standard-Decks von `ForgeTable`).
+- Protokoll v3 (NeoForge-Modell) getestet: Startspieler (`ChooseOption`), `Mulligan`, `NameCard`
+  (34.457 Namen, Suche), Kicker (`ChooseOptions`), Farbe, `ChooseTargets` für Ausrüsten, `Priority`
+  mit `Cast` und `Activate`.
 - Noch nicht ferngesteuert: Angreifer, Blocker, Manabezahlung, Auswahl von Karten, Ziele
   ausgelöster Fähigkeiten; Ziele werden noch als Liste gewählt, nicht per Klick auf dem Tisch;
   Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.

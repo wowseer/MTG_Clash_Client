@@ -3,11 +3,12 @@ package clash.forgebridge;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.function.Predicate;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import com.google.common.collect.ListMultimap;
@@ -46,13 +47,12 @@ import forge.game.zone.ZoneType;
 /**
  * Spielersteuerung, deren Hauptentscheidungen MTG Clash trifft.
  *
- * <p>Ferngesteuert sind: Priorität (welche Karte/Fähigkeit spielen oder passen), Mulligan und
- * alle allgemeinen Auswahl-Dialoge (Optionen, Modi, Ja/Nein, Zahlen, Farben, Kartennamen; siehe
- * {@link RemoteChoice}). Ziele, Manabezahlung, Angreifer, Blocker und Kartenauswahl trifft
- * vorerst die Forge-KI, von der diese Klasse erbt. Antwortet der Client ungültig, entscheidet
- * ebenfalls die KI. Weitere
- * Entscheidungen lassen sich ferngesteuert machen, indem man die passende Methode von
- * {@code PlayerController} überschreibt und {@link ForgeBridge#request} aufruft.
+ * <p>Jede Frage geht als NeoForge-{@code Decision} an den Client ({@link Decisions},
+ * Protokoll v3): Priorität, Mulligan, beim Wirken optionale Kosten, Modi, X und Ziele, dazu alle
+ * allgemeinen Auswahl-Dialoge. Manabezahlung, Angreifer, Blocker und Kartenauswahl trifft vorerst
+ * die Forge-KI, von der diese Klasse erbt. Antwortet der Client ungültig, entscheidet ebenfalls
+ * die KI. Weitere Entscheidungen lassen sich ferngesteuert machen, indem man die passende Methode
+ * von {@code PlayerController} überschreibt und die passende Methode von {@link Decisions} aufruft.
  */
 public class RemotePlayerController extends PlayerControllerAi {
     private static final ZoneType[] PLAY_ZONES = {
@@ -94,11 +94,11 @@ public class RemotePlayerController extends PlayerControllerAi {
     }
 
     /**
-     * Priorität: fragt den Client mit "request"/kind "priority". Antwort "choice" = Index in
-     * "options" oder -1 / null = passen. Gibt es nichts zu spielen, wird automatisch gepasst.
-     * Ist der gewählte Zug nicht ausführbar (nicht spielbar, nicht bezahlbar, kein gültiges Ziel),
-     * kommt "rejected" und es wird erneut gefragt. Ob die KI den Zug für sinnvoll hält, spielt
-     * keine Rolle.
+     * Priorität: {@code Decision::Priority} mit allen spielbaren Aktionen ({@code PlayLand},
+     * {@code Cast}, {@code CastAlt}, {@code Activate} …) und {@code Pass}. Gibt es nichts zu
+     * spielen, wird automatisch gepasst. Ist die gewählte Aktion nicht ausführbar (abgebrochen,
+     * kein gültiges Ziel), kommt "rejected" und es wird erneut gefragt. Ob die KI den Zug für
+     * sinnvoll hält, spielt keine Rolle.
      */
     @Override
     public List<SpellAbility> chooseSpellAbilityToPlay() {
@@ -107,19 +107,23 @@ public class RemotePlayerController extends PlayerControllerAi {
             if (options.isEmpty()) {
                 return null;
             }
-            JsonObject payload = new JsonObject();
-            JsonArray arr = new JsonArray();
-            for (int i = 0; i < options.size(); i++) {
-                arr.add(StateJson.ability(i, options.get(i)));
+            JsonArray actions = new JsonArray();
+            List<String> labels = new ArrayList<>();
+            JsonObject pass = new JsonObject();
+            pass.addProperty("type", "Pass");
+            actions.add(pass);
+            labels.add("Passen");
+            Map<String, Integer> counters = new HashMap<>();
+            for (SpellAbility sa : options) {
+                actions.add(actionJson(sa, counters));
+                labels.add(sa.toUnsuppressedString());
             }
-            payload.add("options", arr);
-            payload.add("state", StateJson.snapshot(getGame(), seat));
-
-            JsonElement answer = ForgeBridge.request("priority", seat, payload);
-            int choice = answer != null && answer.isJsonPrimitive() ? answer.getAsInt() : -1;
-            if (choice < 0 || choice >= options.size()) {
-                return null; // passen
+            JsonObject action = Decisions.priority(getGame(), seat, actions, labels);
+            int choice = action == null ? 0 : indexOf(actions, action);
+            if (choice <= 0) {
+                return null; // passen (oder unlesbare Antwort)
             }
+            choice -= 1;
             SpellAbility sa = options.get(choice);
             String reason;
             if (sa.isDividedAsYouChoose()) {
@@ -142,9 +146,41 @@ public class RemotePlayerController extends PlayerControllerAi {
             JsonObject rejected = ForgeBridge.message("rejected");
             rejected.addProperty("player", seat);
             rejected.addProperty("option", choice);
+            rejected.add("action", action);
             rejected.addProperty("reason", reason);
             ForgeBridge.send(rejected);
         }
+    }
+
+    /**
+     * NeoForge-{@code Action} zu einer spielbaren Fähigkeit: Land → {@code PlayLand} (weitere
+     * Land-Seiten derselben Karte {@code PlayLandAlt}), Zauber → {@code Cast} (weitere Zauber-
+     * Varianten derselben Karte {@code CastAlt}), sonst {@code Activate} mit laufendem Index je Karte.
+     */
+    private static JsonObject actionJson(SpellAbility sa, Map<String, Integer> counters) {
+        int card = sa.getHostCard().getId();
+        String kind = sa.isLandAbility() ? "land" : sa.isSpell() ? "spell" : "ability";
+        int n = counters.merge(kind + card, 1, Integer::sum) - 1;
+        JsonObject a = new JsonObject();
+        switch (kind) {
+            case "land" -> a.addProperty("type", n == 0 ? "PlayLand" : "PlayLandAlt");
+            case "spell" -> a.addProperty("type", n == 0 ? "Cast" : "CastAlt");
+            default -> a.addProperty("type", "Activate");
+        }
+        a.addProperty("card", card);
+        if (n > 0 || kind.equals("ability")) {
+            a.addProperty("index", n);
+        }
+        return a;
+    }
+
+    private static int indexOf(JsonArray arr, JsonObject o) {
+        for (int i = 0; i < arr.size(); i++) {
+            if (arr.get(i).equals(o)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -272,19 +308,13 @@ public class RemotePlayerController extends PlayerControllerAi {
         if (candidates.isEmpty()) {
             return min == 0;
         }
-        List<RemoteChoice.Option> opts = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
         for (GameEntity e : candidates) {
-            opts.add(targetOption(e));
+            labels.add(targetLabel(e));
         }
         String prompt = cur.getTargetRestrictions().getVTSelection();
-        String title = "Ziel wählen" + (prompt == null || prompt.isBlank() ? "" : ": " + prompt);
-        List<Integer> chosen;
-        if (max <= 1) {
-            Integer i = RemoteChoice.single(g(), seat, title, cur, cur.getHostCard(), opts, true);
-            chosen = i == null ? null : List.of(i);
-        } else {
-            chosen = RemoteChoice.multi(g(), seat, title, cur, cur.getHostCard(), opts, min, max, true);
-        }
+        String description = "Ziel wählen" + (prompt == null || prompt.isBlank() ? "" : ": " + prompt);
+        List<Integer> chosen = Decisions.targets(g(), seat, cur, description, candidates, labels, min, max);
         if (chosen == null) {
             return false;
         }
@@ -299,16 +329,15 @@ public class RemotePlayerController extends PlayerControllerAi {
     }
 
     /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */
-    private RemoteChoice.Option targetOption(GameEntity e) {
+    private String targetLabel(GameEntity e) {
         if (e instanceof Card c) {
             String owner = c.getController() == getPlayer() ? "deine" : c.getController().getName();
-            return new RemoteChoice.Option(c.getName() + " (" + owner + ")", null, c.getId(), null);
+            return c.getName() + " (" + owner + ")";
         }
         if (e instanceof Player p) {
-            String name = p == getPlayer() ? p.getName() + " (du)" : p.getName();
-            return new RemoteChoice.Option(name, null, null, g().getPlayers().indexOf(p));
+            return p == getPlayer() ? p.getName() + " (du)" : p.getName();
         }
-        return RemoteChoice.Option.of(e);
+        return String.valueOf(e);
     }
 
     /** Gibt es für jede gezielte (Teil-)Fähigkeit mit Mindestzahl an Zielen mögliche Ziele? */
@@ -333,14 +362,11 @@ public class RemotePlayerController extends PlayerControllerAi {
         return !sa.usesTargeting() || sa.isTargetNumberValid();
     }
 
-    /** Mulligan: "request"/kind "mulligan"; Antwort true = behalten, false = Mulligan. */
+    /** {@code Decision::Mulligan}: {@code Keep} = behalten, {@code Mulligan} = neu ziehen. */
     @Override
     public boolean mulliganKeepHand(Player firstPlayer, int cardsToReturn) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("cards_to_return", cardsToReturn);
-        payload.add("state", StateJson.snapshot(getGame(), seat));
-        JsonElement answer = ForgeBridge.request("mulligan", seat, payload);
-        return answer == null || !answer.isJsonPrimitive() || answer.getAsBoolean();
+        Boolean keep = Decisions.mulligan(getGame(), seat, cardsToReturn);
+        return keep == null || keep;
     }
 
     // ------------------------------------------------------------------ Auswahl-Dialoge
@@ -358,17 +384,15 @@ public class RemotePlayerController extends PlayerControllerAi {
         return index == null ? null : items.get(index);
     }
 
-    /** Modi eines modalen Zaubers ("Wähle eins –"). */
+    /** {@code Decision::ChooseModes} (CR 700.2). */
     @Override
     public List<AbilitySub> chooseModeForAbility(SpellAbility sa, List<AbilitySub> possible, int min, int num,
             boolean allowRepeat) {
-        List<RemoteChoice.Option> opts = new ArrayList<>();
+        List<String> texts = new ArrayList<>();
         for (AbilitySub sub : possible) {
-            opts.add(new RemoteChoice.Option(describe(sub), null));
+            texts.add(describe(sub));
         }
-        String title = min == num ? (num == 1 ? "Wähle einen Modus" : "Wähle " + num + " Modi")
-                : "Wähle " + min + " bis " + num + " Modi";
-        List<Integer> chosen = RemoteChoice.multi(g(), seat, title, sa, null, opts, min, num, min == 0);
+        List<Integer> chosen = Decisions.modes(g(), seat, sa, texts, min, num, allowRepeat, min == 0);
         if (chosen == null) {
             return super.chooseModeForAbility(sa, possible, min, num, allowRepeat);
         }
@@ -382,8 +406,8 @@ public class RemotePlayerController extends PlayerControllerAi {
     /** Optionale Zusatzkosten (Kicker, Verstärkung …). */
     @Override
     public List<OptionalCostValue> chooseOptionalCosts(SpellAbility sa, List<OptionalCostValue> optionalCost) {
-        List<Integer> chosen = RemoteChoice.multi(g(), seat, "Optionale Kosten zahlen?", sa, null,
-                RemoteChoice.options(optionalCost), 0, optionalCost.size(), false);
+        List<Integer> chosen = Decisions.options(g(), seat, "Optionale Kosten zahlen?", sa, null,
+                Decisions.opts(optionalCost), 0, optionalCost.size(), false);
         if (chosen == null) {
             return super.chooseOptionalCosts(sa, optionalCost);
         }
@@ -398,115 +422,115 @@ public class RemotePlayerController extends PlayerControllerAi {
     public String chooseSomeType(String kindOfType, SpellAbility sa, Collection<String> validTypes,
             boolean isOptional) {
         List<String> types = new ArrayList<>(validTypes);
-        String r = pick(types, RemoteChoice.single(g(), seat, "Wähle: " + kindOfType, sa, null,
-                RemoteChoice.options(types), isOptional));
+        String r = pick(types, Decisions.nameOrType(g(), seat, "ChooseType", "Wähle: " + kindOfType, sa, null,
+                types, isOptional));
         return r != null ? r : isOptional ? null : super.chooseSomeType(kindOfType, sa, validTypes, isOptional);
     }
 
     @Override
     public String chooseSector(Card assignee, String ai, List<String> sectors) {
-        String r = pick(sectors, RemoteChoice.single(g(), seat, "Wähle einen Sektor", null, assignee,
-                RemoteChoice.options(sectors), false));
+        String r = pick(sectors, Decisions.option(g(), seat, "Wähle einen Sektor", null, assignee,
+                Decisions.opts(sectors), false));
         return r != null ? r : super.chooseSector(assignee, ai, sectors);
     }
 
     @Override
     public String chooseKeywordForPump(List<String> options, SpellAbility sa, String prompt, Card tgtCard) {
-        String r = pick(options, RemoteChoice.single(g(), seat, prompt, sa, tgtCard,
-                RemoteChoice.options(options), false));
+        String r = pick(options, Decisions.option(g(), seat, prompt, sa, tgtCard,
+                Decisions.opts(options), false));
         return r != null ? r : super.chooseKeywordForPump(options, sa, prompt, tgtCard);
     }
 
     @Override
     public ReplacementEffect chooseSingleReplacementEffect(List<ReplacementEffect> possible) {
-        ReplacementEffect r = pick(possible, RemoteChoice.single(g(), seat, "Welcher Ersatzeffekt gilt zuerst?",
-                null, null, RemoteChoice.options(possible), false));
+        ReplacementEffect r = pick(possible, Decisions.option(g(), seat, "Welcher Ersatzeffekt gilt zuerst?",
+                null, null, Decisions.opts(possible), false));
         return r != null ? r : super.chooseSingleReplacementEffect(possible);
     }
 
     @Override
     public StaticAbility chooseSingleStaticAbility(List<StaticAbility> possible) {
-        StaticAbility r = pick(possible, RemoteChoice.single(g(), seat, "Welche statische Fähigkeit gilt zuerst?",
-                null, null, RemoteChoice.options(possible), false));
+        StaticAbility r = pick(possible, Decisions.option(g(), seat, "Welche statische Fähigkeit gilt zuerst?",
+                null, null, Decisions.opts(possible), false));
         return r != null ? r : super.chooseSingleStaticAbility(possible);
     }
 
     @Override
     public String chooseProtectionType(SpellAbility sa, List<String> choices) {
-        String r = pick(choices, RemoteChoice.single(g(), seat, "Schutz wovor?", sa, null,
-                RemoteChoice.options(choices), false));
+        String r = pick(choices, Decisions.option(g(), seat, "Schutz wovor?", sa, null,
+                Decisions.opts(choices), false));
         return r != null ? r : super.chooseProtectionType(sa, choices);
     }
 
     @Override
     public CounterType chooseCounterType(List<CounterType> options, SpellAbility sa, String prompt,
             Map<String, Object> params) {
-        List<RemoteChoice.Option> opts = new ArrayList<>();
+        List<Decisions.Opt> opts = new ArrayList<>();
         for (CounterType c : options) {
-            opts.add(new RemoteChoice.Option(c.getName(), null));
+            opts.add(new Decisions.Opt(c.getName(), null));
         }
-        CounterType r = pick(options, RemoteChoice.single(g(), seat, prompt, sa, null, opts, false));
+        CounterType r = pick(options, Decisions.option(g(), seat, prompt, sa, null, opts, false));
         return r != null ? r : super.chooseCounterType(options, sa, prompt, params);
     }
 
     @Override
     public ICardFace chooseSingleCardFace(SpellAbility sa, List<ICardFace> faces, String message) {
-        List<RemoteChoice.Option> opts = new ArrayList<>();
+        List<Decisions.Opt> opts = new ArrayList<>();
         for (ICardFace f : faces) {
-            opts.add(new RemoteChoice.Option(f.getName(), null));
+            opts.add(new Decisions.Opt(f.getName(), null));
         }
-        ICardFace r = pick(faces, RemoteChoice.single(g(), seat, message, sa, null, opts, false));
+        ICardFace r = pick(faces, Decisions.option(g(), seat, message, sa, null, opts, false));
         return r != null ? r : super.chooseSingleCardFace(sa, faces, message);
     }
 
     @Override
     public CardState chooseSingleCardState(SpellAbility sa, List<CardState> states, String message,
             Map<String, Object> params) {
-        List<RemoteChoice.Option> opts = new ArrayList<>();
+        List<Decisions.Opt> opts = new ArrayList<>();
         for (CardState st : states) {
-            opts.add(new RemoteChoice.Option(st.getName(), null));
+            opts.add(new Decisions.Opt(st.getName(), null));
         }
-        CardState r = pick(states, RemoteChoice.single(g(), seat, message, sa, null, opts, false));
+        CardState r = pick(states, Decisions.option(g(), seat, message, sa, null, opts, false));
         return r != null ? r : super.chooseSingleCardState(sa, states, message, params);
     }
 
     @Override
     public Player chooseStartingPlayer(boolean isFirstGame) {
         List<Player> players = new ArrayList<>(g().getPlayers());
-        List<RemoteChoice.Option> opts = new ArrayList<>();
+        List<Decisions.Opt> opts = new ArrayList<>();
         for (Player p : players) {
-            opts.add(new RemoteChoice.Option(p == getPlayer() ? p.getName() + " (du)" : p.getName(), null));
+            opts.add(new Decisions.Opt(p == getPlayer() ? p.getName() + " (du)" : p.getName(), null));
         }
-        Player r = pick(players, RemoteChoice.single(g(), seat, "Wer beginnt?", null, null, opts, false));
+        Player r = pick(players, Decisions.option(g(), seat, "Wer beginnt?", null, null, opts, false));
         return r != null ? r : super.chooseStartingPlayer(isFirstGame);
     }
 
     @Override
     public Object vote(SpellAbility sa, String prompt, List<Object> options, ListMultimap<Object, Player> votes,
             Player forPlayer, boolean optional) {
-        Object r = pick(options, RemoteChoice.single(g(), seat, prompt, sa, null, RemoteChoice.options(options),
+        Object r = pick(options, Decisions.option(g(), seat, prompt, sa, null, Decisions.opts(options),
                 optional));
         return r != null ? r : optional ? null : super.vote(sa, prompt, options, votes, forPlayer, optional);
     }
 
     @Override
     public Integer chooseRollToIgnore(List<Integer> rolls) {
-        Integer r = pick(rolls, RemoteChoice.single(g(), seat, "Welchen Wurf ignorieren?", null, null,
-                RemoteChoice.options(rolls), false));
+        Integer r = pick(rolls, Decisions.option(g(), seat, "Welchen Wurf ignorieren?", null, null,
+                Decisions.opts(rolls), false));
         return r != null ? r : super.chooseRollToIgnore(rolls);
     }
 
     @Override
     public Integer chooseRollToModify(List<Integer> rolls) {
-        Integer r = pick(rolls, RemoteChoice.single(g(), seat, "Welchen Wurf verändern?", null, null,
-                RemoteChoice.options(rolls), true));
+        Integer r = pick(rolls, Decisions.option(g(), seat, "Welchen Wurf verändern?", null, null,
+                Decisions.opts(rolls), true));
         return r;
     }
 
     @Override
     public List<Integer> chooseDiceToReroll(List<Integer> rolls) {
-        List<Integer> chosen = RemoteChoice.multi(g(), seat, "Welche Würfel neu werfen?", null, null,
-                RemoteChoice.options(rolls), 0, rolls.size(), false);
+        List<Integer> chosen = Decisions.options(g(), seat, "Welche Würfel neu werfen?", null, null,
+                Decisions.opts(rolls), 0, rolls.size(), false);
         if (chosen == null) {
             return super.chooseDiceToReroll(rolls);
         }
@@ -519,8 +543,8 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     @Override
     public int chooseSprocket(Card assignee, List<Integer> sprockets) {
-        Integer r = pick(sprockets, RemoteChoice.single(g(), seat, "Wähle ein Zahnrad", null, assignee,
-                RemoteChoice.options(sprockets), false));
+        Integer r = pick(sprockets, Decisions.option(g(), seat, "Wähle ein Zahnrad", null, assignee,
+                Decisions.opts(sprockets), false));
         return r != null ? r : super.chooseSprocket(assignee, sprockets);
     }
 
@@ -529,30 +553,30 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public boolean confirmAction(SpellAbility sa, PlayerActionConfirmMode mode, String message,
             List<String> options, Card cardToShow, Map<String, Object> params) {
-        String yes = options != null && options.size() == 2 ? options.get(0) : "Ja";
-        String no = options != null && options.size() == 2 ? options.get(1) : "Nein";
-        Boolean r = RemoteChoice.confirm(g(), seat, message, sa, cardToShow, yes, no);
+        Boolean r = options != null && options.size() == 2
+                ? Decisions.binary(g(), seat, message, sa, cardToShow, options.get(0), options.get(1))
+                : Decisions.confirm(g(), seat, message, sa, cardToShow);
         return r != null ? r : super.confirmAction(sa, mode, message, options, cardToShow, params);
     }
 
     @Override
     public boolean confirmTrigger(WrappedAbility wrapper) {
-        Boolean r = RemoteChoice.confirm(g(), seat, "Ausgelöste Fähigkeit nutzen?\n" + wrapper.toUnsuppressedString(),
-                wrapper, wrapper.getHostCard(), "Ja", "Nein");
+        Boolean r = Decisions.optionalTrigger(g(), seat, wrapper.toUnsuppressedString(), wrapper,
+                wrapper.getHostCard());
         return r != null ? r : super.confirmTrigger(wrapper);
     }
 
     @Override
     public boolean confirmReplacementEffect(ReplacementEffect replacementEffect, SpellAbility effectSA,
             GameEntity affected, String question) {
-        Boolean r = RemoteChoice.confirm(g(), seat, question, effectSA, replacementEffect.getHostCard(), "Ja", "Nein");
+        Boolean r = Decisions.confirm(g(), seat, question, effectSA, replacementEffect.getHostCard());
         return r != null ? r : super.confirmReplacementEffect(replacementEffect, effectSA, affected, question);
     }
 
     @Override
     public boolean confirmStaticApplication(Card hostCard, PlayerActionConfirmMode mode, String message,
             String logic) {
-        Boolean r = RemoteChoice.confirm(g(), seat, message, null, hostCard, "Ja", "Nein");
+        Boolean r = Decisions.confirm(g(), seat, message, null, hostCard);
         return r != null ? r : super.confirmStaticApplication(hostCard, mode, message, logic);
     }
 
@@ -568,21 +592,21 @@ public class RemotePlayerController extends PlayerControllerAi {
             case AddOrRemove -> new String[] {"Hinzufügen", "Entfernen"};
             case IncreaseOrDecrease -> new String[] {"Erhöhen", "Verringern"};
         };
-        Boolean r = RemoteChoice.confirm(g(), seat, question, sa, null, labels[0], labels[1]);
+        Boolean r = Decisions.binary(g(), seat, question, sa, null, labels[0], labels[1]);
         return r != null ? r : super.chooseBinary(sa, question, kindOfChoice, defaultVal);
     }
 
     @Override
     public boolean chooseFlipResult(SpellAbility sa, Player flipper, boolean call) {
         Boolean r = call
-                ? RemoteChoice.confirm(g(), seat, "Kopf oder Zahl?", sa, null, "Kopf", "Zahl")
-                : RemoteChoice.confirm(g(), seat, "Ergebnis des Münzwurfs wählen", sa, null, "Gewinnen", "Verlieren");
+                ? Decisions.binary(g(), seat, "Kopf oder Zahl?", sa, null, "Kopf", "Zahl")
+                : Decisions.binary(g(), seat, "Ergebnis des Münzwurfs wählen", sa, null, "Gewinnen", "Verlieren");
         return r != null ? r : super.chooseFlipResult(sa, flipper, call);
     }
 
     @Override
     public boolean willPutCardOnTop(Card c) {
-        Boolean r = RemoteChoice.confirm(g(), seat, "Karte oben auf die Bibliothek legen?", null, c, "Oben",
+        Boolean r = Decisions.binary(g(), seat, "Karte oben auf die Bibliothek legen?", null, c, "Oben",
                 "Unten");
         return r != null ? r : super.willPutCardOnTop(c);
     }
@@ -591,42 +615,42 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     @Override
     public int chooseNumber(SpellAbility sa, String title, int min, int max) {
-        Integer r = RemoteChoice.number(g(), seat, title, sa, null, min, max, false);
+        Integer r = Decisions.number(g(), seat, title, sa, null, min, max, false);
         return r != null ? r : super.chooseNumber(sa, title, min, max);
     }
 
     @Override
     public int chooseNumber(SpellAbility sa, String title, List<Integer> values, Player relatedPlayer) {
-        Integer r = pick(values, RemoteChoice.single(g(), seat, title, sa, null, RemoteChoice.options(values),
+        Integer r = pick(values, Decisions.option(g(), seat, title, sa, null, Decisions.opts(values),
                 false));
         return r != null ? r : super.chooseNumber(sa, title, values, relatedPlayer);
     }
 
-    /** X-Kosten und andere angesagte Werte beim Spielen. Abbrechen = Zauber nicht spielen. */
+    /** X-Kosten und andere angesagte Werte ({@code ChooseX}). Abbrechen = Zauber nicht spielen. */
     @Override
     public Integer announceRequirements(SpellAbility ability, int min, int max, String announce) {
-        return RemoteChoice.number(g(), seat, "Wert für " + announce + " wählen", ability, null, min, max, true);
+        return Decisions.chooseX(g(), seat, ability, announce, min, max);
     }
 
     @Override
     public int chooseNumberForCostReduction(SpellAbility sa, int min, int max) {
-        Integer r = RemoteChoice.number(g(), seat, "Um wie viel die Kosten verringern?", sa, null, min, max, false);
+        Integer r = Decisions.number(g(), seat, "Um wie viel die Kosten verringern?", sa, null, min, max, false);
         return r != null ? r : super.chooseNumberForCostReduction(sa, min, max);
     }
 
     @Override
     public int chooseNumberForKeywordCost(SpellAbility sa, Cost cost, KeywordInterface keyword, String prompt,
             int max) {
-        Integer r = RemoteChoice.number(g(), seat, prompt, sa, null, 0, max, false);
+        Integer r = Decisions.number(g(), seat, prompt, sa, null, 0, max, false);
         return r != null ? r : super.chooseNumberForKeywordCost(sa, cost, keyword, prompt, max);
     }
 
     // ------------------------------------------------------------------ Farben
 
-    private static List<RemoteChoice.Option> colorOptions(List<MagicColor.Color> colors) {
-        List<RemoteChoice.Option> opts = new ArrayList<>();
+    private static List<Decisions.Opt> colorOptions(List<MagicColor.Color> colors) {
+        List<Decisions.Opt> opts = new ArrayList<>();
         for (MagicColor.Color c : colors) {
-            opts.add(new RemoteChoice.Option(c.getTranslatedName(), c.getShortName().toUpperCase()));
+            opts.add(new Decisions.Opt(c.getTranslatedName(), c.getShortName().toUpperCase()));
         }
         return opts;
     }
@@ -634,16 +658,20 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public byte chooseColor(String message, SpellAbility sa, ColorSet colors) {
         List<MagicColor.Color> list = new ArrayList<>(colors.getOrderedColors());
-        MagicColor.Color r = pick(list, RemoteChoice.single(g(), seat, message, sa, null, colorOptions(list), false));
+        List<String> letters = new ArrayList<>();
+        for (MagicColor.Color c : list) {
+            letters.add(c.getShortName().toUpperCase());
+        }
+        MagicColor.Color r = pick(list, Decisions.color(g(), seat, message, sa, letters));
         return r != null ? r.getColorMask() : super.chooseColor(message, sa, colors);
     }
 
     @Override
     public byte chooseColorAllowColorless(String message, Card c, ColorSet colors) {
         List<MagicColor.Color> list = new ArrayList<>(colors.getOrderedColors());
-        List<RemoteChoice.Option> opts = colorOptions(list);
-        opts.add(new RemoteChoice.Option("Farblos", "C"));
-        Integer i = RemoteChoice.single(g(), seat, message, null, c, opts, false);
+        List<Decisions.Opt> opts = colorOptions(list);
+        opts.add(new Decisions.Opt("Farblos", "C"));
+        Integer i = Decisions.option(g(), seat, message, null, c, opts, false);
         if (i == null) {
             return super.chooseColorAllowColorless(message, c, colors);
         }
@@ -653,7 +681,12 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public ColorSet chooseColors(String message, SpellAbility sa, int min, int max, ColorSet options) {
         List<MagicColor.Color> list = new ArrayList<>(options.getOrderedColors());
-        List<Integer> chosen = RemoteChoice.multi(g(), seat, message, sa, null, colorOptions(list), min, max, false);
+        if (min == 1 && max == 1) {
+            // genau eine Farbe: NeoForges ChooseColor
+            byte c = chooseColor(message, sa, options);
+            return ColorSet.fromMask(c);
+        }
+        List<Integer> chosen = Decisions.options(g(), seat, message, sa, null, colorOptions(list), min, max, false);
         if (chosen == null) {
             return super.chooseColors(message, sa, min, max, options);
         }
@@ -668,44 +701,25 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     @Override
     public String chooseCardName(SpellAbility sa, List<ICardFace> faces, String message) {
-        List<RemoteChoice.Option> opts = new ArrayList<>();
+        List<String> names = new ArrayList<>();
         for (ICardFace f : faces) {
-            opts.add(new RemoteChoice.Option(f.getName(), null));
+            names.add(f.getName());
         }
-        ICardFace r = pick(faces, RemoteChoice.single(g(), seat, message, sa, null, opts, false));
-        return r != null ? r.getName() : super.chooseCardName(sa, faces, message);
+        String r = pick(names, Decisions.nameOrType(g(), seat, "NameCard", message, sa, null, names, false));
+        return r != null ? r : super.chooseCardName(sa, faces, message);
     }
 
-    /**
-     * Kartenname mit Bedingung: Bei wenigen erlaubten Karten (≤ 60) als Liste, sonst als
-     * Texteingabe; ungültige Namen werden mit Fehlermeldung erneut erfragt (höchstens 5-mal).
-     */
+    /** Kartenname mit Bedingung: {@code NameCard} mit allen erlaubten Namen (sortiert, eindeutig). */
     @Override
     public String chooseCardName(SpellAbility sa, Predicate<ICardFace> cpp, String valid, String message) {
-        List<ICardFace> allowed = new ArrayList<>();
+        TreeSet<String> names = new TreeSet<>();
         for (ICardFace f : StaticData.instance().getCommonCards().getAllFaces()) {
             if (cpp.test(f)) {
-                allowed.add(f);
-                if (allowed.size() > 60) {
-                    break;
-                }
+                names.add(f.getName());
             }
         }
-        if (!allowed.isEmpty() && allowed.size() <= 60) {
-            return chooseCardName(sa, allowed, message);
-        }
-        String error = null;
-        for (int attempt = 0; attempt < 5; attempt++) {
-            String name = RemoteChoice.text(g(), seat, message, sa, null, error, false);
-            if (name == null) {
-                break;
-            }
-            ICardFace face = StaticData.instance().getCommonCards().getFaceByName(name);
-            if (face != null && cpp.test(face)) {
-                return face.getName();
-            }
-            error = face == null ? "Unbekannte Karte: " + name : "Diese Karte ist hier nicht erlaubt: " + name;
-        }
-        return super.chooseCardName(sa, cpp, valid, message);
+        List<String> list = new ArrayList<>(names);
+        String r = pick(list, Decisions.nameOrType(g(), seat, "NameCard", message, sa, null, list, false));
+        return r != null ? r : super.chooseCardName(sa, cpp, valid, message);
     }
 }

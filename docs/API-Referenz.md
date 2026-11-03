@@ -57,7 +57,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `send_command(command: Dictionary)` | `bool` | Schickt einen beliebigen Befehl (Dictionary mit "cmd", siehe Protokoll). false, wenn die Brücke nicht läuft. |
 | `ping(nonce: int)` | `bool` | Verbindungstest; Antwort kommt als Nachricht `{type: "pong", nonce}`. |
 | `start_match(decks: PackedStringArray, remote_seats: PackedInt32Array, names: PackedStringArray, seed: int)` | `bool` | Startet eine Partie. `decks`: Pfade zu Forge-`.dck`-Dateien (`res://` erlaubt) oder Namen von Decks aus Forges Constructed-Sammlung, einer je Sitzplatz (mind. 2). `remote_seats`: Sitzplätze, die MTG Clash steuert (Rest = Forge-KI). `names`: Spielernamen (darf kürzer sein). `seed` < 0 = zufällig. |
-| `answer(request_id: int, choice: Variant)` | `bool` | Beantwortet eine Anfrage aus [signal decision_requested]. `choice`: bei "priority" der Index der Option oder -1 (passen), bei "mulligan" true (behalten) / false. |
+| `answer(request_id: int, choice: Variant)` | `bool` | Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im NeoForge-Format (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`; Aufbau siehe `docs/Forge-Schnittstelle.md`. |
 | `request_state(viewer: int)` | `bool` | Fragt den aktuellen Spielzustand ab → [signal state_received]. `viewer` = Sitzplatz, dessen Handkarten mitgeschickt werden (-1 = keiner). |
 
 ### Signale
@@ -67,7 +67,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `bridge_ready(protocol: int)` | Die Brücke ist gestartet und Forge geladen; `protocol` = Protokollversion. |
 | `message_received(message: Dictionary)` | Jede empfangene Nachricht (vor den speziellen Signalen), z. B. für eigene Auswertung. |
 | `forge_event(event: Dictionary)` | Ein Forge-Spielereignis: `{event, text, turn, phase}` (`event` = Forge-Klassenname, z. B. "GameEventCardChangeZone"). |
-| `decision_requested(request: Dictionary)` | Ein ferngesteuerter Spieler muss entscheiden: `{id, kind, player, …}`. kind "priority": `options` (Liste `{index, card, card_id, land, spell, text}`) und `state` – Antwort mit `answer()` (Index oder -1 = passen). kind "mulligan": `state`, `cards_to_return` – Antwort true = behalten. |
+| `decision_requested(request: Dictionary)` | Ein ferngesteuerter Spieler muss entscheiden (Protokoll v3): `{id, player, decision, prompt, source, ability, cancelable, labels, state}`; `decision` ist eine NeoForge-`Decision` (z. B. `{"type": "Priority", "actions": […]}`). Antwort mit `answer()` und einer NeoForge-`Choice`. Aufbau siehe `docs/Forge-Schnittstelle.md`. |
 | `decision_rejected(info: Dictionary)` | Die gewählte Option wurde von Forge abgelehnt (`{player, option, reason}`); es folgt eine neue Anfrage. |
 | `match_started(state: Dictionary)` | Die Partie hat begonnen; `state` = Spielzustand (siehe Protokoll). |
 | `state_received(state: Dictionary)` | Antwort auf `request_state()`. |
@@ -100,18 +100,18 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
-| `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene Prioritätsanfrage mit -1. |
-| `submit_choice(choice: Variant)` | `void` | Antwort aus dem Auswahlfenster des HUD auf die offene Entscheidung (Mulligan oder `choice`). Form je Modus: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Text = String, Abbrechen = null. |
+| `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
+| `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende NeoForge-`Choice` übersetzt; unpassende Eingaben werden ignoriert. |
 | `get_card(forge_id: int)` | `Card3D` | Karte auf dem Tisch zur Forge-Karten-ID (null, wenn nicht sichtbar). |
 | `get_state()` | `Dictionary` | Zuletzt von Forge empfangener Spielzustand (Aufbau siehe `docs/Forge-Schnittstelle.md`). |
-| `get_pending_kind()` | `String` | Hat der Spieler gerade eine offene Entscheidung? Liefert deren Art ("priority", "mulligan", "choice") oder einen leeren Text. |
+| `get_pending_kind()` | `String` | Hat der Spieler gerade eine offene Entscheidung? Liefert den Namen der NeoForge-`Decision` (z. B. "Priority", "Mulligan", "ChooseTargets", "ChooseOption") oder einen leeren Text. |
 | `on_bridge_ready(protocol: int)` | `void` | Brücke bereit → Partie starten (bei `autostart`). |
 | `on_state(state: Dictionary)` | `void` | Neuer Spielzustand von Forge (Spielstart oder Abfrage): Tisch abgleichen. |
 | `on_forge_event(event: Dictionary)` | `void` | Forge-Ereignis: Zustand bald neu abfragen (gebündelt, siehe `refresh_interval`). |
-| `on_decision_requested(request: Dictionary)` | `void` | Entscheidung des Spielers nötig: Zustand übernehmen, spielbare Karten leuchten lassen. |
+| `on_decision_requested(request: Dictionary)` | `void` | Entscheidung des Spielers nötig (Protokoll v3): Zustand übernehmen, Quellkarte markieren, spielbare Karten leuchten lassen. Unbekannte Entscheidungen werden mit `Cancel` beantwortet (die Engine entscheidet dann selbst). |
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
-| `on_card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | `void` | Karte wurde auf dem Tisch abgelegt: aus der Hand gespielt → passende Option an Forge; alles andere wird auf den Forge-Stand zurückgesetzt. |
+| `on_card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | `void` | Karte wurde auf dem Tisch abgelegt: Hat sie eine Aktion in der offenen `Priority`- Entscheidung (aus der Hand: Land spielen / wirken; auf dem Spielfeld: Fähigkeit aktivieren), wird diese gewählt. Aus der Hand zurück auf die Hand = abbrechen. Alles andere wird auf den Engine-Stand zurückgesetzt. |
 
 ## CardCutout
 
@@ -166,7 +166,6 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 |---|---|---|
 | `on_choice_option(index: int)` | `void` | Option `index` im Auswahlfenster angeklickt (eine Option / Ja-Nein: Antwort senden; Mehrfachauswahl: an-/abwählen). |
 | `on_choice_done()` | `void` | Knopf „Fertig“ / „OK“ im Auswahlfenster (Mehrfachauswahl, Zahl, Text). |
-| `on_choice_text_submitted(text: String)` | `void` | Eingabetaste im Textfeld des Auswahlfensters (wie „OK“). |
 | `on_choice_filter_changed(text: String)` | `void` | Suchfeld des Auswahlfensters geändert: Optionen filtern. |
 | `on_choice_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster: Antwort null. |
 | `on_next_pressed()` | `void` | Button „Passen“ bzw. Leertaste: ruft `ForgeTable.pass_priority()` auf. |

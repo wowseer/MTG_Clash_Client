@@ -67,7 +67,9 @@ table.tscn  ─────────────▶  TableController  Hover, 
 | `rust/src/forge/table.rs` | `ForgeTable`: gleicht den Tisch mit `state` ab (Karten-ID → `Card3D`), Deck-Stapel, Leuchten spielbarer Karten, Drops → Optionen, `hud_view()` |
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController` (regelfrei), Kulisse |
 | `rust/src/game/` | Anzeige-Bausteine: HUD, Medaillons, Phasen-Zeitstrahl, Mana-Typen, Kartendaten für das Kartenbild |
-| `forge-bridge/src/clash/forgebridge/` | `RemotePlayerController` (Entscheidungen des Spielers → `request`), `StateJson` (Zustand → JSON), `ForgeBridge` (Befehle, Partie, Anfragen) |
+| `rust/src/rules/` | Engine-Grenze: NeoForge-Modell (`Decision`, `Choice` …), `Request`, `RulesEngine` |
+| `rust/src/game/decision_view.rs` | `Decision` → Auswahlfenster → `Choice` (engine-neutral) |
+| `forge-bridge/src/clash/forgebridge/` | `RemotePlayerController` (Forge-Aufrufe), `Decisions` (→ NeoForge-`Decision`, Antwort-`Choice` lesen), `StateJson` (Zustand → JSON), `ForgeBridge` (Befehle, Partie, Anfragen) |
 | `forge-bridge/forge/` | lokale Kopie von Forge (Jar + `res/`), **nicht im Git** (GPL, Kartendaten von WotC) |
 | `docs/Forge-Schnittstelle.md` | Protokoll (Befehle, Nachrichten, `state`-Aufbau). **Bei jeder Protokolländerung pflegen** |
 
@@ -75,10 +77,10 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 
 ## Stand
 
-**Nächster Schritt (vor allem anderen): Protokoll v3 auf NeoForges `Decision`/`Choice` umstellen**
-und in Rust die Engine-Schnittstelle einziehen; bestehende Funktionen (Priorität, Mulligan,
-Auswahlfenster, Ziele) darauf umziehen. Danach jedes weitere Bedienmuster direkt gegen die
-passende `Decision`-Variante bauen.
+**Protokoll v3 steht:** NeoForges `Decision`/`Choice` in `rust/src/rules/` (Engine-Grenze,
+`RulesEngine`), Java-Übersetzer `forge-bridge/.../Decisions.java`, UI-Abbildung
+`rust/src/game/decision_view.rs`. Jedes weitere Bedienmuster direkt gegen die passende
+`Decision`-Variante bauen. Nächster Schritt: `ChooseTargets` per Klick/Pfeil auf dem Tisch.
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
@@ -160,7 +162,9 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
   3. `docs/Forge-Schnittstelle.md` bei jeder Protokolländerung
   4. `python3 tools/gen_api_doc.py`
 - **Nach jeder Aufgabe committen** auf `main` (`git add . && git commit`).
-- Rust-Build ohne Warnungen halten; toten Code löschen statt mit `allow` zu verstecken.
+- Rust-Build ohne Warnungen halten; toten Code löschen statt mit `allow` zu verstecken. Einzige
+  Ausnahme: noch ungenutzte Teile des NeoForge-Modells (`rules/decision.rs`) mit
+  `#[expect(dead_code, reason = …)]` – `expect` meldet sich, sobald sie benutzt werden.
 - Texte im Spiel zweisprachig: `tr!("Deutsch", "English")` / `trf!` aus `rust/src/i18n.rs`.
 - Godot-Logik in Rust (gdext), kein GDScript im Spiel (nur temporäre Testskripte).
 - Lizenz: `forge-bridge/` ist GPL-3.0 und läuft als getrennter Prozess; keinen Forge-Code in

@@ -112,7 +112,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | Bildmitte | nur bei Spielende: „Spielende – X gewinnt!“ |
 | unter der eigenen Länder-Reihe | Manapool als runde Symbole (`ManaPoolView`, `mana_view.rs`). Forge meldet den Pool noch nicht, daher derzeit leer |
 | linker Bildrand, oben / unten | Gegner (oben links) bzw. Spieler (unten links): Rundenzahl mit Sanduhr-Symbol (`HourglassIcon`, `hourglass.rs`), darunter der Spielername; der Name der Seite am Zug ist golden |
-| Bildschirmmitte | Auswahlfenster (`ChoicePanel`, `choice_panel.rs`) für alle allgemeinen Forge-Entscheidungen: eine Option, mehrere Optionen, Ja/Nein, Zahl, Text; Suchfeld bei langen Listen (Bedienung siehe Abschnitt 3) |
+| Bildschirmmitte | Auswahlfenster (`ChoicePanel`, `choice_panel.rs`) für alle allgemeinen Forge-Entscheidungen: eine Option, mehrere Optionen, Ja/Nein, Zahl; Suchfeld bei langen Listen (höchstens 40 Knöpfe, z. B. bei allen Kartennamen); welche Engine-Entscheidung welches Fenster ergibt, steht in `decision_view.rs` (Bedienung siehe Abschnitt 3) |
 | ganz oben, mittig | große Vorschau der Karte, die gerade aus der Hand gezogen wird (`card_preview.rs`); das Gegner-Medaillon liegt dann durchsichtig darüber |
 | unten rechts | großer Button „Passen“ (auch Leertaste), nur aktiv, wenn Forge auf deine Priorität wartet |
 
@@ -121,8 +121,9 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | Ordner / Datei | Inhalt |
 |---|---|
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Kartenbilder (`placeholder.rs`) |
-| `rust/src/game/` | Anzeige-Bausteine: `PlayerSeat`, Kartendaten (`cards.rs`, `ability.rs`), Mana-Typen und -Pool (`mana.rs`), Phasen-Liste (`phases.rs`), HUD (`hud.rs`), Spieler-Medaillon (`seat_badge.rs`), Sanduhr (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Phasen-Zeitstrahl (`phase_timeline.rs`), Kartenvorschau (`card_preview.rs`), Auswahlfenster (`choice_panel.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
-| `rust/src/forge/` | `ForgeBridge` (Verbindung zur Forge-Regel-Engine, Java-Prozess) und `ForgeTable` (Forge-Partie auf dem 3D-Tisch) |
+| `rust/src/game/` | Anzeige-Bausteine: `PlayerSeat`, Kartendaten (`cards.rs`, `ability.rs`), Mana-Typen und -Pool (`mana.rs`), Phasen-Liste (`phases.rs`), HUD (`hud.rs`), Spieler-Medaillon (`seat_badge.rs`), Sanduhr (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Phasen-Zeitstrahl (`phase_timeline.rs`), Kartenvorschau (`card_preview.rs`), Auswahlfenster (`choice_panel.rs`), Engine-Entscheidung → Auswahlfenster → Antwort (`decision_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
+| `rust/src/rules/` | Engine-Grenze: NeoForges Entscheidungsmodell (`Decision`, `Choice`, `Action`, `Target` …, `decision.rs`), offene Anfrage `Request` und Schnittstelle `RulesEngine` (`mod.rs`). Die UI kennt nur diese Typen |
+| `rust/src/forge/` | `ForgeBridge` (Java-Prozess mit Forge, setzt `RulesEngine` um) und `ForgeTable` (Partie auf dem 3D-Tisch) |
 | `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks; `forge/` = lokale Forge-Kopie (nicht im Git) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
 | `docs/` | diese Dokumentation, die Forge-Schnittstelle, die Kartenabdeckung (was für alle Karten fehlt) und die API-Referenz |
@@ -141,7 +142,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | Spielbare Handkarten | leuchten, sobald Forge auf deine Priorität wartet und du sie jetzt spielen und bezahlen kannst |
 | Leuchtende Karte aus der Hand ziehen und **irgendwo** auf dem Tisch loslassen (nicht über der Hand) | spielen: Forge bekommt die passende Option, zahlt das Mana automatisch und legt die Karte hin (Länder in die Länder-Reihe, bleibende Karten aufs Spielfeld, Zauber auf den Friedhof). Solange du ziehst, wird die Karte zusätzlich **groß ganz oben in der Bildmitte** angezeigt. Ungültige Züge springen an ihren Platz zurück |
 | Button „Passen“ bzw. Leertaste | Priorität abgeben |
-| Auswahlfenster (Bildschirmmitte) | erscheint bei jeder allgemeinen Entscheidung von Forge (Mulligan, Startspieler, Modi, Kreaturtyp, Farbe, Kartenname, Ja/Nein, Zahl …). Die Karte, um die es geht, ist golden markiert. **Eine Option:** Knopf anklicken. **Mehrere:** Knöpfe an-/abwählen (golden = gewählt), dann „Fertig (n/…)“ – aktiv erst bei gültiger Anzahl. **Zahl:** Zahlenfeld, „OK“. **Text** (Kartenname): eintippen, Eingabetaste oder „OK“; ungültige Namen werden mit Hinweis erneut erfragt. Ab 13 Optionen gibt es ein **Suchfeld**. „Abbrechen“ nur, wo Forge das erlaubt. Farb-Optionen sind in der Manafarbe eingefärbt |
+| Auswahlfenster (Bildschirmmitte) | erscheint bei jeder allgemeinen Entscheidung von Forge (Mulligan, Startspieler, Modi, Kreaturtyp, Farbe, Kartenname, Ja/Nein, Zahl …). Die Karte, um die es geht, ist golden markiert. **Eine Option:** Knopf anklicken. **Mehrere:** Knöpfe an-/abwählen (golden = gewählt), dann „Fertig (n/…)“ – aktiv erst bei gültiger Anzahl. **Zahl:** Zahlenfeld, „OK“. Ab 13 Optionen gibt es ein **Suchfeld** (Treffer, die mit dem Suchtext beginnen, zuerst); angezeigt werden höchstens 40 Knöpfe – bei „Kartennamen nennen“ (alle über 34.000 Namen) also einfach den Namen eintippen und anklicken. „Abbrechen“ nur, wo Forge das erlaubt. Farb-Optionen sind in der Manafarbe eingefärbt |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
 
 **Getappte** Karten werden leicht schräg gestellt (15°, `zone::TAP_ANGLE_DEGREES`), ausgegraut und
@@ -151,7 +152,8 @@ zeigen mittig ein graues Tapp-Symbol (`textures::tap_icon()`).
 alles, was der Zauber braucht: optionale Kosten (z. B. Kicker), Modus, X-Wert und das **Ziel**
 (Liste aller gültigen Spieler und Karten, „Abbrechen“ nimmt den Zug zurück). Aktivierte
 Fähigkeiten bleibender Karten (z. B. Ausrüsten) sind ebenfalls spielbar: Die Karte leuchtet, wenn
-die Fähigkeit möglich ist; zum Aktivieren die Karte aus ihrer Zone ziehen und loslassen.
+die Fähigkeit möglich ist; zum Aktivieren die Karte ein Stück ziehen und loslassen (ein Klick
+zum Aktivieren folgt mit dem Zielen auf dem Tisch).
 
 Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Manabezahlung,
 Angreifer, Blocker, Auswahl von Karten, Ziele ausgelöster Fähigkeiten. Ziele werden noch aus einer
@@ -171,7 +173,9 @@ Das Spiel selbst prüft nichts: Es zeigt Forges Spielzustand an und schickt dein
 
 ## 5. Forge-Regel-Engine (Java)
 
-Forge läuft als eigener Java-Prozess (`forge-bridge/`, GPL-3.0). Der Godot-Knoten `ForgeBridge`
+**Ziel ist NeoForge** (Rust-Neuentwicklung von Forges Regel-Engine): Die UI spricht deshalb
+NeoForges Entscheidungsmodell (`rust/src/rules/`); die Java-Brücke übersetzt Forge dorthin
+(Protokoll v3). Forge läuft als eigener Java-Prozess (`forge-bridge/`, GPL-3.0). Der Godot-Knoten `ForgeBridge`
 (`rust/src/forge/bridge.rs`) startet ihn und tauscht JSON-Zeilen über stdin/stdout aus.
 Entscheidungen des Spielers (Priorität, Mulligan, allgemeine Auswahl) kommen als Signal
 `decision_requested` und werden mit `answer()` beantwortet; alle Forge-Spielereignisse kommen als `forge_event`.
@@ -225,6 +229,6 @@ func _ready() -> void:
     forge.game_over.connect(func(r): print(r.winner, " gewinnt"))
 
 func status() -> void:
-    print(ft.get_pending_kind())          # "priority", "mulligan", "choice" oder ""
+    print(ft.get_pending_kind())          # z. B. "Priority", "Mulligan", "ChooseTargets" oder ""
     print(ft.get_state().get("phase"))    # z. B. "MAIN1"
 ```

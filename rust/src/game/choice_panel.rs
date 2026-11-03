@@ -1,15 +1,15 @@
 //! Auswahlfenster des HUD (Bildschirmmitte) für alle allgemeinen Entscheidungen von Forge.
 //!
-//! Fünf Modi ([`ChoiceMode`]):
+//! Vier Modi ([`ChoiceMode`]):
 //! - **Eine Option**: je Option ein Knopf, Klick = Antwort (Index).
 //! - **Mehrere Optionen**: Knöpfe zum An-/Abwählen, „Fertig (n)“ wird aktiv, sobald die Anzahl
 //!   zwischen Minimum und Maximum liegt (Antwort: Liste von Indizes).
 //! - **Ja/Nein**: zwei Knöpfe mit eigenen Beschriftungen (Antwort: true / false).
 //! - **Zahl**: Zahlenfeld mit Minimum/Maximum und „OK“ (Antwort: Zahl).
-//! - **Text**: Eingabefeld (z. B. Kartenname) mit „OK“ bzw. Eingabetaste, Fehlermeldung darüber.
 //!
 //! Optional „Abbrechen“ (Antwort: null). Bei vielen Optionen werden die Knöpfe zweispaltig und
-//! scrollbar angeordnet, ab [`FILTER_FROM`] Optionen gibt es ein Suchfeld; Farb-Optionen bekommen die Farbe der Manaart.
+//! scrollbar angeordnet, ab [`FILTER_FROM`] Optionen gibt es ein Suchfeld. Es werden höchstens
+//! [`MAX_SHOWN`] Knöpfe gebaut (lange Listen wie alle Kartennamen: nur die Suchtreffer); Farb-Optionen bekommen die Farbe der Manaart.
 //! Das Fenster wird nur neu aufgebaut, wenn eine neue Anfrage kommt ([`HudChoice::key`]).
 
 use godot::classes::control::{MouseFilter, SizeFlags};
@@ -31,8 +31,6 @@ pub enum ChoiceMode {
     Confirm,
     /// Zahl zwischen `min` und `max`.
     Number { min: i64, max: i64 },
-    /// Freie Eingabe; `error` = Hinweis nach einer ungültigen Eingabe.
-    Text { error: String },
 }
 
 /// Eine wählbare Option: Text und optional eine Farbe für den Knopf.
@@ -59,6 +57,8 @@ pub struct HudChoice {
 const TWO_COLUMNS_FROM: usize = 5;
 /// Ab so vielen Optionen erscheint ein Suchfeld, das die Knöpfe filtert.
 const FILTER_FROM: usize = 13;
+/// Höchstens so viele Optionsknöpfe gleichzeitig (der Rest ist über das Suchfeld erreichbar).
+const MAX_SHOWN: usize = 40;
 /// Maximale Höhe der Optionsliste in Pixeln (darüber scrollbar).
 const LIST_MAX_HEIGHT: f32 = 380.0;
 /// Hervorhebung ausgewählter Optionen (Mehrfachauswahl).
@@ -66,16 +66,21 @@ const SELECTED: Color = Color::from_rgb(0.95, 0.78, 0.4);
 
 /// Das Auswahlfenster. Gehört dem [`TurnHud`](super::hud::TurnHud); Knöpfe rufen dessen
 /// Methoden `on_choice_option(index)`, `on_choice_done()`, `on_choice_cancel()`,
-/// `on_choice_text_submitted(text)` und `on_choice_filter_changed(text)` auf.
+/// und `on_choice_filter_changed(text)` auf.
 pub struct ChoicePanel {
     panel: Gd<PanelContainer>,
     body: Gd<VBoxContainer>,
     current: Option<HudChoice>,
     selected: Vec<usize>,
-    option_buttons: Vec<Gd<Button>>,
+    /// Sichtbare Optionsknöpfe mit dem Index ihrer Option.
+    option_buttons: Vec<(usize, Gd<Button>)>,
+    /// Raster der Optionsknöpfe und Hinweis „… weitere“ (bei langen Listen).
+    grid: Option<Gd<GridContainer>>,
+    more: Option<Gd<godot::classes::Label>>,
+    /// Objekt, dessen Methoden die Knöpfe aufrufen (das HUD).
+    hud: Option<Gd<Object>>,
     done: Option<Gd<Button>>,
     spin: Option<Gd<SpinBox>>,
-    edit: Option<Gd<LineEdit>>,
     /// Feld, das beim Öffnen den Tastaturfokus bekommt (Suchfeld der Optionsliste).
     edit_focus: Option<Gd<LineEdit>>,
 }
@@ -105,9 +110,11 @@ impl ChoicePanel {
             current: None,
             selected: Vec::new(),
             option_buttons: Vec::new(),
+            grid: None,
+            more: None,
+            hud: None,
             done: None,
             spin: None,
-            edit: None,
             edit_focus: None,
         }
     }
@@ -136,7 +143,7 @@ impl ChoicePanel {
         // Größe neu berechnen (Inhalt hat sich geändert)
         let size = self.panel.get_combined_minimum_size();
         self.panel.set_size(size);
-        if let Some(edit) = self.edit.as_mut().or(self.edit_focus.as_mut()) {
+        if let Some(edit) = self.edit_focus.as_mut() {
             edit.grab_focus();
         }
     }
@@ -164,16 +171,59 @@ impl ChoicePanel {
         }
     }
 
-    /// Suchfeld geändert: nur Optionen anzeigen, deren Text `filter` enthält (ohne Groß/klein).
+    /// Suchfeld geändert: nur Optionen anzeigen, deren Text `filter` enthält (ohne Groß/klein),
+    /// höchstens [`MAX_SHOWN`].
     pub fn filter(&mut self, filter: &str) {
+        self.render_options(filter);
+        self.refresh_multi();
+    }
+
+    /// Baut die Optionsknöpfe für alle Optionen, die `filter` enthalten (höchstens [`MAX_SHOWN`];
+    /// Treffer, die mit dem Suchtext beginnen, zuerst).
+    fn render_options(&mut self, filter: &str) {
+        let (Some(choice), Some(mut grid), Some(hud)) = (self.current.clone(), self.grid.clone(), self.hud.clone()) else {
+            return;
+        };
+        for child in grid.get_children().iter_shared() {
+            child.clone().queue_free();
+            grid.remove_child(&child);
+        }
+        self.option_buttons.clear();
         let needle = filter.trim().to_lowercase();
-        let Some(choice) = self.current.as_ref() else { return };
-        for (b, option) in self.option_buttons.iter_mut().zip(&choice.options) {
-            b.set_visible(needle.is_empty() || option.text.to_lowercase().contains(&needle));
+        let mut matches: Vec<usize> = (0..choice.options.len())
+            .filter(|i| needle.is_empty() || choice.options[*i].text.to_lowercase().contains(&needle))
+            .collect();
+        if !needle.is_empty() {
+            matches.sort_by_key(|i| !choice.options[*i].text.to_lowercase().starts_with(&needle));
+        }
+        let total = matches.len();
+        for i in matches.into_iter().take(MAX_SHOWN) {
+            let option = &choice.options[i];
+            let mut b = super::hud::styled_button(16);
+            b.set_text(&option.text);
+            b.set_h_size_flags(SizeFlags::EXPAND_FILL);
+            b.set_text_overrun_behavior(godot::classes::text_server::OverrunBehavior::TRIM_ELLIPSIS);
+            b.set_tooltip_text(&option.text);
+            if let Some(c) = option.color {
+                b.add_theme_stylebox_override("normal", &super::hud::style(c.darkened(0.35), 6.0));
+                b.add_theme_stylebox_override("hover", &super::hud::style(c.darkened(0.15), 6.0));
+            }
+            b.connect("pressed", &Callable::from_object_method(&hud, "on_choice_option").bind(&[(i as i64).to_variant()]));
+            grid.add_child(&b);
+            self.option_buttons.push((i, b));
+        }
+        if let Some(more) = self.more.as_mut() {
+            let rest = total.saturating_sub(MAX_SHOWN);
+            more.set_visible(rest > 0 || total == 0);
+            more.set_text(&if total == 0 {
+                tr!("Keine Treffer", "No matches").to_string()
+            } else {
+                trf!("… {rest} weitere – Suchbegriff eingeben", "… {rest} more – type to search")
+            });
         }
     }
 
-    /// „Fertig“ / „OK“ / Eingabetaste: Antwort aus Mehrfachauswahl, Zahl oder Text.
+    /// „Fertig“ / „OK“: Antwort aus Mehrfachauswahl oder Zahl.
     pub fn on_done(&self) -> Option<Variant> {
         let choice = self.current.as_ref()?;
         match &choice.mode {
@@ -185,11 +235,6 @@ impl ChoicePanel {
                 })
             }
             ChoiceMode::Number { .. } => self.spin.as_ref().map(|s| (s.get_value().round() as i64).to_variant()),
-            ChoiceMode::Text { .. } => {
-                let text = self.edit.as_ref()?.get_text().to_string();
-                let text = text.trim();
-                (!text.is_empty()).then(|| text.to_variant())
-            }
             _ => None,
         }
     }
@@ -201,9 +246,10 @@ impl ChoicePanel {
             self.body.remove_child(&child);
         }
         self.option_buttons.clear();
+        self.grid = None;
+        self.more = None;
         self.done = None;
         self.spin = None;
-        self.edit = None;
         self.edit_focus = None;
     }
 
@@ -224,14 +270,6 @@ impl ChoicePanel {
             detail.set_custom_minimum_size(Vector2::new(460.0, 0.0));
             self.body.add_child(&detail);
         }
-        if let ChoiceMode::Text { error } = &choice.mode {
-            if !error.is_empty() {
-                let mut e = super::hud::label(14, Color::from_rgb(1.0, 0.45, 0.4));
-                e.set_text(error);
-                e.set_autowrap_mode(AutowrapMode::WORD_SMART);
-                self.body.add_child(&e);
-            }
-        }
 
         let method = |name: &str| Callable::from_object_method(hud, name);
         match &choice.mode {
@@ -251,22 +289,8 @@ impl ChoicePanel {
                 grid.add_theme_constant_override("h_separation", 6);
                 grid.add_theme_constant_override("v_separation", 6);
                 grid.set_h_size_flags(SizeFlags::EXPAND_FILL);
-                for (i, option) in choice.options.iter().enumerate() {
-                    let mut b = super::hud::styled_button(16);
-                    b.set_text(&option.text);
-                    b.set_h_size_flags(SizeFlags::EXPAND_FILL);
-                    b.set_text_overrun_behavior(godot::classes::text_server::OverrunBehavior::TRIM_ELLIPSIS);
-                    b.set_tooltip_text(&option.text);
-                    if let Some(c) = option.color {
-                        b.add_theme_stylebox_override("normal", &super::hud::style(c.darkened(0.35), 6.0));
-                        b.add_theme_stylebox_override("hover", &super::hud::style(c.darkened(0.15), 6.0));
-                    }
-                    b.connect("pressed", &method("on_choice_option").bind(&[(i as i64).to_variant()]));
-                    grid.add_child(&b);
-                    self.option_buttons.push(b);
-                }
-                let rows = choice.options.len().div_ceil(columns as usize);
-                if rows as f32 * 44.0 > LIST_MAX_HEIGHT {
+                let shown = choice.options.len().min(MAX_SHOWN);
+                if shown.div_ceil(columns as usize) as f32 * 44.0 > LIST_MAX_HEIGHT {
                     let mut scroll = ScrollContainer::new_alloc();
                     scroll.set_custom_minimum_size(Vector2::new(460.0, LIST_MAX_HEIGHT));
                     scroll.add_child(&grid);
@@ -274,6 +298,13 @@ impl ChoicePanel {
                 } else {
                     self.body.add_child(&grid);
                 }
+                let mut more = super::hud::label(13, parchment);
+                more.set_visible(false);
+                self.body.add_child(&more);
+                self.grid = Some(grid);
+                self.more = Some(more);
+                self.hud = Some(hud.clone());
+                self.render_options("");
             }
             ChoiceMode::Number { min, max } => {
                 let mut spin = SpinBox::new_alloc();
@@ -289,18 +320,10 @@ impl ChoicePanel {
                 self.body.add_child(&hint);
                 self.spin = Some(spin);
             }
-            ChoiceMode::Text { .. } => {
-                let mut edit = LineEdit::new_alloc();
-                edit.set_placeholder(tr!("Name eingeben …", "Enter a name …"));
-                edit.add_theme_font_size_override("font_size", 18);
-                edit.connect("text_submitted", &method("on_choice_text_submitted"));
-                self.body.add_child(&edit);
-                self.edit = Some(edit);
-            }
         }
 
         // Untere Zeile: Fertig/OK und Abbrechen
-        let needs_done = matches!(choice.mode, ChoiceMode::Multi { .. } | ChoiceMode::Number { .. } | ChoiceMode::Text { .. });
+        let needs_done = matches!(choice.mode, ChoiceMode::Multi { .. } | ChoiceMode::Number { .. });
         if needs_done || choice.cancelable {
             let mut row = HBoxContainer::new_alloc();
             row.add_theme_constant_override("separation", 8);
@@ -327,8 +350,8 @@ impl ChoicePanel {
     /// Mehrfachauswahl: ausgewählte Knöpfe golden umranden, „Fertig (n)“ nur bei gültiger Anzahl.
     fn refresh_multi(&mut self) {
         let Some(ChoiceMode::Multi { min, max }) = self.current.as_ref().map(|c| c.mode.clone()) else { return };
-        for (i, b) in self.option_buttons.iter_mut().enumerate() {
-            let on = self.selected.contains(&i);
+        for (i, b) in self.option_buttons.iter_mut() {
+            let on = self.selected.contains(i);
             b.add_theme_color_override("font_color", if on { SELECTED } else { Color::from_rgb(0.93, 0.87, 0.74) });
             b.set_modulate(if on { Color::WHITE } else { Color::from_rgba(1.0, 1.0, 1.0, 0.8) });
         }
@@ -341,73 +364,3 @@ impl ChoicePanel {
     }
 }
 
-/// Erzeugt einen [`HudChoice`] aus einer Forge-Anfrage `kind = "choice"`
-/// (Aufbau siehe `docs/Forge-Schnittstelle.md`). `None` bei unbekanntem Modus.
-pub fn from_forge_request(req: &VarDictionary) -> Option<HudChoice> {
-    let get = |k: &str| req.get(k).filter(|v| !v.is_nil());
-    let int = |k: &str| get(k).and_then(|v| v.try_to::<i64>().ok()).unwrap_or(0);
-    let text = |k: &str| get(k).map(|v| v.to_string()).unwrap_or_default();
-    let options: Vec<ChoiceOption> = get("options")
-        .and_then(|v| v.try_to::<VarArray>().ok())
-        .map(|arr| {
-            arr.iter_shared()
-                .filter_map(|o| o.try_to::<VarDictionary>().ok())
-                .map(|o| ChoiceOption {
-                    text: o.get("text").map(|v| v.to_string()).unwrap_or_default(),
-                    color: o.get("color").map(|v| v.to_string()).and_then(|c| forge_color(&c)),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let mode = match text("mode").as_str() {
-        "single" => ChoiceMode::Single,
-        "multi" => ChoiceMode::Multi { min: int("min").max(0) as usize, max: int("max").max(0) as usize },
-        "confirm" => ChoiceMode::Confirm,
-        "number" => ChoiceMode::Number { min: int("min"), max: int("max") },
-        "text" => ChoiceMode::Text { error: text("error") },
-        _ => return None,
-    };
-    let source = get("source")
-        .and_then(|v| v.try_to::<VarDictionary>().ok())
-        .and_then(|s| s.get("name"))
-        .map(|v| v.to_string())
-        .unwrap_or_default();
-    let ability = text("ability");
-    let detail = match (source.is_empty(), ability.is_empty() || ability == source) {
-        (true, true) => String::new(),
-        (false, true) => source,
-        (true, false) => ability,
-        (false, false) => format!("{source}: {ability}"),
-    };
-    let mut title = text("title");
-    if title.is_empty() {
-        title = tr!("Auswahl", "Choice").to_string();
-    }
-    Some(HudChoice { key: int("id"), title, detail, mode, options, cancelable: get("cancelable").is_some_and(|v| v.booleanize()) })
-}
-
-/// Forge-Farbkürzel (W, U, B, R, G, C) → Knopffarbe.
-fn forge_color(code: &str) -> Option<Color> {
-    use crate::game::mana::ManaType;
-    let t = match code {
-        "W" => ManaType::White,
-        "U" => ManaType::Blue,
-        "B" => ManaType::Black,
-        "R" => ManaType::Red,
-        "G" => ManaType::Green,
-        "C" => ManaType::Colorless,
-        _ => return None,
-    };
-    Some(t.color())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maps_forge_colors() {
-        assert!(forge_color("U").is_some());
-        assert!(forge_color("X").is_none());
-    }
-}
