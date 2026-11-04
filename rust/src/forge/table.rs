@@ -28,7 +28,7 @@ use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
 use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY};
 use crate::table::showcase::Showcase;
-use crate::table::card3d::{Card3D, CardMarker, LUNGE_OUT, PLAYABLE_GLOW};
+use crate::table::card3d::{Card3D, CardMarker, CARD_HEIGHT, CARD_WIDTH, LUNGE_OUT, PLAYABLE_GLOW, TILE_HEIGHT};
 use crate::table::card_inspector::{CardInspector, InspectorEntry};
 use crate::table::fx::{mana_color, ManaFx};
 use godot::classes::Label3D;
@@ -141,6 +141,9 @@ pub struct ForgeTable {
     /// 3D-Text; werden bei der Antwort ausgeblendet.
     choice_buttons: Vec<Gd<Button3D>>,
     choice_prompt: Option<Gd<Label3D>>,
+    /// ✕-Knopf an der Karte, die gerade gewirkt bzw. deren Fähigkeit aktiviert wird (Wirken
+    /// abbrechen, siehe [`Self::cast_cancel`]).
+    cancel_badge: Option<Gd<Button3D>>,
     /// Bühne vor der Kamera (z. B. Starthand beim Mulligan); schließt mit der Antwort.
     showcase: Option<Gd<Showcase>>,
     /// Karten, die nach einem Mulligan unter die Bibliothek sollen (Klick-Reihenfolge).
@@ -226,6 +229,7 @@ impl INode for ForgeTable {
             combat_armed: None,
             choice_buttons: Vec::new(),
             choice_prompt: None,
+            cancel_badge: None,
             showcase: None,
             hand_pick: Vec::new(),
             hand_pick_button: None,
@@ -281,6 +285,7 @@ impl INode for ForgeTable {
             controller.connect("card_dropped", &cb("on_card_dropped"));
             controller.connect("card_clicked", &cb("on_card_clicked"));
             controller.connect("aim_released", &cb("on_aim_released"));
+            controller.connect("cancel_pressed", &cb("cancel_cast"));
             // zurückgestellt: der Tisch baut in diesem Moment noch seine Kinder auf
             let arrows = TargetArrows::new_alloc();
             controller.call_deferred("add_child", &[arrows.to_variant()]);
@@ -360,8 +365,72 @@ impl ForgeTable {
                     self.answer(Choice::Cancel);
                 }
             }
-            _ => {}
+            // sonst beim Wirken/Aktivieren: der Knopf heißt „Abbrechen“ und nimmt es zurück
+            _ => {
+                if let Some(c) = self.cast_cancel() {
+                    self.answer(c);
+                }
+            }
         }
+    }
+
+    /// Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand
+    /// ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die
+    /// Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört.
+    #[func]
+    pub fn cancel_cast(&mut self) {
+        if self.stage_covers() {
+            return; // die Bühne hat ihre eigenen Knöpfe
+        }
+        if let Some(c) = self.cast_cancel() {
+            self.answer(c);
+        }
+    }
+
+    /// Kann das laufende Wirken / Aktivieren abgebrochen werden? Gibt die Abbrechen-Antwort der
+    /// offenen Frage zurück (`PayMana`: `Pay(Cancel)`, sonst `Cancel`), wenn die Engine sie
+    /// erlaubt und die Quelle der Frage eine eigene Karte ist, die gerade gewirkt wird (Eintrag
+    /// „Casting“ auf dem Stack, CR 601.2) oder deren Fähigkeit gerade aktiviert wird (CR 602.2:
+    /// eigene Karte auf dem Tisch, noch kein Stack-Eintrag von ihr).
+    fn cast_cancel(&self) -> Option<Choice> {
+        let req = self.pending.as_ref()?;
+        let choice = match &req.decision {
+            Decision::Priority { .. } | Decision::Mulligan { .. } | Decision::ChooseStartingPlayer { .. } => return None,
+            Decision::PayMana { options, .. } => options.contains(&PayAction::Cancel).then_some(Choice::Pay(PayAction::Cancel))?,
+            _ if req.cancelable => Choice::Cancel,
+            _ => return None,
+        };
+        let src = i64::from(req.source?);
+        let items = self.stack_items();
+        let casting = items
+            .iter()
+            .any(|i| get_str(i, "kind") == "Casting" && get_int(i, "source") == src && get_int(i, "controller") == LOCAL_SEAT);
+        let mine = self.zones(LOCAL_SEAT as usize);
+        let on_my_table = self
+            .cards
+            .get(&src)
+            .and_then(|c| c.bind().get_zone())
+            .is_some_and(|z| Some(&z) == mine.battlefield.as_ref() || Some(&z) == mine.resources.as_ref());
+        let activating = on_my_table && !items.iter().any(|i| get_int(i, "source") == src);
+        (casting || activating).then_some(choice)
+    }
+
+    /// ✕-Knopf an die Karte heften, deren Wirken bzw. Aktivieren gerade läuft (oben rechts an
+    /// der Karte, zur Kamera gedreht; folgt ihr). Nur ohne abdeckende Bühne.
+    fn show_cancel_badge(&mut self) {
+        if self.cancel_badge.is_some() || self.stage_covers() || self.cast_cancel().is_none() {
+            return;
+        }
+        let Some(src) = self.pending.as_ref().and_then(|r| r.source) else { return };
+        let Some(mut card) = self.cards.get(&i64::from(src)).filter(|c| c.is_instance_valid()).cloned() else { return };
+        let scale = card.get_global_transform().basis.col_a().length().max(0.01);
+        let height = if card.bind().is_tile() { TILE_HEIGHT } else { CARD_HEIGHT };
+        let mut b = Button3D::create_shaped(ButtonStyle::Grey, "✕", CANCEL_BADGE_WIDTH / scale, COMPACT_BODY);
+        b.set("face_camera", &true.to_variant());
+        b.set_position(Vector3::new(CARD_WIDTH * 0.5, CANCEL_BADGE_LIFT / scale, -height * 0.5));
+        b.connect("pressed", &Callable::from_object_method(&self.to_gd(), "cancel_cast"));
+        card.add_child(&b);
+        self.cancel_badge = Some(b);
     }
 
     /// Knopf „»»“ (Sofort beenden, nur im eigenen Zug): bis zum Ende dieser Runde automatisch
@@ -818,6 +887,7 @@ impl ForgeTable {
         if let Some(req) = library_pick {
             self.show_library_pick(&req);
         }
+        self.show_cancel_badge();
         self.update_glow();
     }
 
@@ -920,6 +990,15 @@ impl ForgeTable {
     #[func]
     fn on_aim_released(&mut self, card: Gd<Card3D>, target: Option<Gd<Card3D>>) {
         let Some(id) = self.forge_id(&card).and_then(|i| u32::try_from(i).ok()) else { return };
+        // die Karte, die gerade gewirkt wird, zurück auf die eigene Hand gezogen: abbrechen
+        if target.is_none() && self.pending.as_ref().and_then(|r| r.source) == Some(id) && self.cast_cancel().is_some() {
+            let hand = self.zones(LOCAL_SEAT as usize).hand;
+            let over = self.controller.as_ref().and_then(|c| c.bind().zone_under_mouse());
+            if hand.is_some() && over == hand {
+                self.cancel_cast();
+                return;
+            }
+        }
         let target = self.aim_target(target);
         let Some((kind, valid)) = self.aim_kind(id) else { return };
         let mut target = target.filter(|t| valid.contains(t));
@@ -1793,6 +1872,9 @@ impl ForgeTable {
                 p.queue_free();
             }
         }
+        if let Some(mut b) = self.cancel_badge.take().filter(|b| b.is_instance_valid()) {
+            b.bind_mut().dismiss();
+        }
     }
 
     /// Anzeige für das HUD.
@@ -2286,7 +2368,8 @@ impl ForgeTable {
                 let what = if description.is_empty() { req.prompt.clone() } else { description.clone() };
                 return Some((label, what));
             }
-            _ => return None,
+            // jede andere abbrechbare Frage beim Wirken/Aktivieren: Knopf „Abbrechen“
+            _ => return self.cast_cancel().map(|_| (tr!("Abbrechen", "Cancel").to_string(), String::new())),
         };
         let hint = if req.prompt.is_empty() || req.prompt.starts_with(standard) { String::new() } else { req.prompt.clone() };
         Some((label, hint))
@@ -3369,5 +3452,8 @@ const SCRY_SPLIT_X: f32 = -0.2;
 const SCRY_STEP: f32 = 0.42;
 /// Kartenwahl-Bühne (Cover-Flow): Kartenabstand (überlappend), Kartengröße, Lage von „Ablehnen“.
 const LIB_STEP: f32 = 0.3;
+/// ✕-Knopf „Wirken abbrechen“ an der Karte: Breite und Abstand vor der Karte (Welteinheiten).
+const CANCEL_BADGE_WIDTH: f32 = 1.6;
+const CANCEL_BADGE_LIFT: f32 = 0.15;
 const LIB_SCALE: f32 = 1.15;
 const LIB_DECLINE_POS: Vector2 = Vector2::new(1.75, -0.85);

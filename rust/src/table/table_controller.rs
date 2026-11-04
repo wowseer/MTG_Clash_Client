@@ -182,10 +182,11 @@ impl INode3D for TableController {
             }
             self.base().get_viewport().unwrap().set_input_as_handled();
         } else if let Ok(key) = event.try_cast::<InputEventKey>() {
-            if key.is_pressed() && key.get_keycode() == Key::ESCAPE {
+            if key.is_pressed() && !key.is_echo() && key.get_keycode() == Key::ESCAPE {
                 if let Some(cam) = self.camera.as_mut() {
                     cam.bind_mut().show_overview();
                 }
+                self.signals().cancel_pressed().emit();
             }
         }
     }
@@ -196,6 +197,19 @@ impl TableController {
     /// Wird ausgelöst, wenn eine Karte per Drag-and-Drop in eine Zone gelegt wurde.
     #[signal]
     fn card_dropped(card: Gd<Card3D>, from_zone: Gd<Zone>, to_zone: Gd<Zone>);
+
+    /// Escape gedrückt: die Kamera geht in die Übersicht; das Spiel bricht ein laufendes Wirken
+    /// bzw. Aktivieren ab, wo die Engine das erlaubt.
+    #[signal]
+    fn cancel_pressed();
+
+    /// Zone unter dem Mauszeiger (Drop-Fläche auf dem Zonen-Layer; `null` = keine), z. B. um zu
+    /// prüfen, ob ein Pfeil über der eigenen Hand losgelassen wurde.
+    #[func]
+    pub fn zone_under_mouse(&self) -> Option<Gd<Zone>> {
+        let (origin, dir) = self.mouse_ray()?;
+        self.raycast(origin, dir, ZONE_LAYER)?.collider.try_cast::<Zone>().ok()
+    }
 
     /// Eine Karte wurde angeklickt (gedrückt und ohne nennenswerte Bewegung losgelassen) –
     /// z. B. als Ziel wählen oder Fähigkeit aktivieren. Funktioniert in allen Zonen, auch bei

@@ -476,8 +476,10 @@ impl TurnHud {
             };
             l.set_text(&text);
         }
+        // ausgeblendet nur, solange eine Bühne den Tisch abdeckt (sie hat eigene Knöpfe); bei
+        // Bühnen am Tisch (z. B. X wählen) bleibt der Phasen-Knopf – beim Wirken „Abbrechen“
         for b in [self.button.as_mut(), self.end_turn_button.as_mut()].into_iter().flatten() {
-            b.set_visible(!view.stage_open);
+            b.set_visible(!view.stage_covers);
         }
         // 3D-Bühne offen (z. B. Starthand beim Mulligan, Abwerfen): Medaillons, Namen und Manapool
         // ausgrauen – der Blick gehört der Bühne
@@ -553,7 +555,7 @@ pub struct HudView {
     pub button_hint: String,
     /// Knopf „»»“ (Sofort beenden) anklickbar: Partie läuft, eigener Zug, nicht schon aktiv.
     pub end_turn_enabled: bool,
-    /// Eine 3D-Bühne (Startspieler, Mulligan) ist offen: Knöpfe unten rechts ausblenden.
+    /// Eine 3D-Bühne (Startspieler, Mulligan) ist offen: Medaillons und Namen ausgrauen.
     pub stage_open: bool,
     /// Die offene Bühne deckt den Tisch ab (abgedunkelt): Medaillons, Namen, Phasen-Zeitstrahl
     /// und Stack-Liste ganz ausblenden, damit nichts über Titel, Karten und Knöpfen der Bühne liegt.

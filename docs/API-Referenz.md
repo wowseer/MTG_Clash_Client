@@ -110,6 +110,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 |---|---|---|
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
+| `cancel_cast()` | `void` | Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört. |
 | `end_turn()` | `void` | Knopf „»»“ (Sofort beenden, nur im eigenen Zug): bis zum Ende dieser Runde automatisch passen; es wird ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die UI weiter. Legt ein anderer Spieler etwas auf den Stack, endet das automatische Passen, damit man antworten kann. |
 | `is_ending_turn()` | `bool` | Ist „Sofort beenden“ gerade aktiv? |
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
@@ -622,6 +623,7 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Drag-and-Drop per Raycast) und Kamer
 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
+| `zone_under_mouse()` | `Zone` | Zone unter dem Mauszeiger (Drop-Fläche auf dem Zonen-Layer; `null` = keine), z. B. um zu prüfen, ob ein Pfeil über der eigenen Hand losgelassen wurde. |
 | `static move_top_card(from: Zone, to: Zone, delay: float)` | `Card3D` | Bewegt die oberste Karte von `from` nach `to` (z. B. Gegner zieht / spielt aus). |
 | `set_language(code: String)` | `void` | Stellt die Sprache des Spiels um: `"de"` = Deutsch, `"en"` = Englisch. HUD, Hinweise und neue Protokolleinträge wechseln sofort; alle Karten werden neu beschriftet. Bereits geschriebene Protokolleinträge bleiben unverändert. |
 | `get_language()` | `String` | Aktuelle Sprache: `"de"` oder `"en"`. |
@@ -635,6 +637,7 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Drag-and-Drop per Raycast) und Kamer
 | Signal | Beschreibung |
 |---|---|
 | `card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | Wird ausgelöst, wenn eine Karte per Drag-and-Drop in eine Zone gelegt wurde. |
+| `cancel_pressed()` | Escape gedrückt: die Kamera geht in die Übersicht; das Spiel bricht ein laufendes Wirken bzw. Aktivieren ab, wo die Engine das erlaubt. |
 | `card_clicked(card: Card3D)` | Eine Karte wurde angeklickt (gedrückt und ohne nennenswerte Bewegung losgelassen) – z. B. als Ziel wählen oder Fähigkeit aktivieren. Funktioniert in allen Zonen, auch bei Karten, die man nicht ziehen kann. |
 | `aim_started(card: Card3D)` | Von einer nicht verschiebbaren Karte (z. B. Kreatur auf dem Spielfeld) wird gezogen: der Spieler zieht einen Pfeil. Wohin er zeigt, liefert `get_aim_point()`; worauf die Maus liegt, `get_hovered_card()`. |
 | `aim_released(card: Card3D, target: Card3D)` | Pfeil losgelassen: `target` = Karte unter der Maus (null = keine). Was das bedeutet (Angriff, Block, Ziel), entscheidet der `ForgeTable`. |
