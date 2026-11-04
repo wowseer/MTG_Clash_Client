@@ -1002,6 +1002,8 @@ impl ForgeTable {
             c.bind_mut().set_ready_glow(true);
         }
         showcase.bind_mut().show_cards(&cards);
+        // Karten nebeneinander, bei vielen Karten mit Schieberegler
+        showcase.bind_mut().enable_scroll();
         if req.cancelable {
             let mut cancel = Button3D::create(ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), Showcase::button_width());
             let cb = Callable::from_object_method(&self.to_gd(), "on_hand_pick_cancel");

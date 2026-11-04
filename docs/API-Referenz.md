@@ -25,6 +25,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [Card3D](#card3d) – erbt von `Area3D`
 - [ManaFx](#manafx) – erbt von `Node3D`
 - [Showcase](#showcase) – erbt von `Node3D`
+- [Slider3D](#slider3d) – erbt von `Area3D`
 - [TableCamera](#tablecamera) – erbt von `Camera3D`
 - [TableController](#tablecontroller) – erbt von `Node3D`
 - [TargetArrows](#targetarrows) – erbt von `Node3D`
@@ -507,9 +508,39 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 |---|---|---|
 | `open()` | `void` | Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene). |
 | `set_texts(title: String, subtitle: String, note: String)` | `void` | Titel, Untertitel und Hinweis setzen (leer = ausblenden). |
+| `enable_scroll()` | `void` | Fächer nebeneinander statt überlappend legen; passt er nicht ganz ins Bild, erscheint unter ihm ein `Slider3D`, mit dem man ihn nach links und rechts schiebt (Start: Mitte). |
+| `on_scroll(value: float)` | `void` | Schieberegler bewegt (0 = linkes Ende sichtbar, 1 = rechtes Ende). |
 | `static button_width()` | `float` | Breite eines Knopfes in dieser Bühne (Welteinheiten). |
 | `holds(card: Card3D)` | `bool` | Liegt `card` gerade in der Bühne? |
 | `close()` | `void` | Karten zurückgeben, Knöpfe ausblenden, abdunkeln aufheben und danach freigeben. |
+
+## Slider3D
+
+*Erbt von `Area3D` · Quelle: `rust/src/table/slider3d.rs`*
+
+Waagerechter Schieberegler in der 3D-Szene: Schiene der Breite `width` mit orangem Griff. `value` 0 … 1 (links … rechts); jede Änderung meldet [signal value_changed]. Bedient wird er per Maus über den `TableController` (Ziehen am Griff oder Klick auf die Schiene).
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `width` | `float` | Länge der Schiene (Welteinheiten). |
+| `value` | `float` | Stellung 0 (links) … 1 (rechts). |
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `set_value(value: float)` | `void` | Stellung setzen (0 … 1, wird begrenzt) und melden. |
+| `set_hovered(hovered: bool)` | `void` | Maus über dem Regler (vom `TableController`): Saum und Griff heller. |
+| `set_dragging(dragging: bool)` | `void` | Wird gerade gezogen (vom `TableController`): Griff leuchtet stärker. |
+| `drag_to(point: Vector3)` | `void` | Griff zu dem Weltpunkt `point` schieben (Lage entlang der Schiene). |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `value_changed(value: float)` | Die Stellung hat sich geändert (0 … 1). |
 
 ## TableCamera
 

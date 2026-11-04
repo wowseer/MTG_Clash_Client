@@ -45,6 +45,7 @@ Spiel nie auf.
 | Angreifer rückt vor | exponentiell (Faktor 10/s) | – | 0,22 nach vorn, Angriffsspitze sichtbar |
 | Schlag im Kampf (`Card3D::lunge`) | 0,22 s hin / 0,38 s zurück | quadratisch / Cubic-Out | bis 85 % (Spieler) bzw. 50 % (Kreatur) des Wegs, angehoben 0,6; Einschlag rot beim Treffer |
 | Pfeil-Bogen auf dem Stack | wächst wie jeder Pfeil (0,33 s) | weich | Ziel liegt unter der Quelle (näher als `LOOP_DISTANCE`): Bogen steigt aus der vorderen Karte auf (Scheitel 1,6) und landet auf dem sichtbaren Rand der Karte dahinter |
+| Hand-Bühne schieben (`Slider3D`) | Zonen-Tween 0,35 s | Cubic-Out | Karten gleiten dem Regler nach; Fächer 0,7 Abstand, bis ±Überbreite/2 |
 | „Wähle eins“ | Bühne wie Mulligan (0,20 s auf / 0,15 s zu) | Cubic-Out | Kartenkopien gleiten aus der Fächermitte in den Fächer |
 | Pfeil biegen | Feder 140 / Dämpfung 15 | leicht unterdämpft | Querbewegung eines Endes biegt den Pfeil (höchstens 0,3 der Länge), danach schwingt er gerade zurück |
 | Pfeil Lichtwellen | laufend, 1,5 Einheiten/s | – | fBm-Rauschen entlang des Pfeils zur Spitze hin (Treiber `frame/24`) |

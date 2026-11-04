@@ -23,6 +23,7 @@ use godot::prelude::*;
 
 use super::card3d::Card3D;
 use super::button3d::Button3D;
+use super::slider3d::Slider3D;
 use super::layers::{CARD_LAYER, CONTROL_LAYER, ZONE_LAYER};
 use super::table_camera::TableCamera;
 use super::zone::Zone;
@@ -77,6 +78,9 @@ pub struct TableController {
     hovered_control: Option<Gd<Button3D>>,
     /// Gedrücktes Bedienobjekt: Klick, wenn die Maus beim Loslassen noch darauf ist.
     control_press: Option<Gd<Button3D>>,
+    /// Schieberegler unter der Maus bzw. der gerade gezogen wird.
+    hovered_slider: Option<Gd<Slider3D>>,
+    slider_drag: Option<Gd<Slider3D>>,
     /// Zielen: von dieser Karte (nicht verschiebbar, z. B. auf dem Spielfeld) wird ein Pfeil
     /// gezogen. `aim_point` = Mauspunkt auf der Tischebene (immer aktuell).
     aim: Option<Gd<Card3D>>,
@@ -99,6 +103,8 @@ impl INode3D for TableController {
             press: None,
             hovered_control: None,
             control_press: None,
+            hovered_slider: None,
+            slider_drag: None,
             aim: None,
             aim_point: Vector3::ZERO,
             base,
@@ -140,6 +146,17 @@ impl INode3D for TableController {
                     self.signals().aim_started().emit(&card);
                 }
             }
+        }
+        // Schieberegler ziehen: Mausstrahl mit der Ebene des Reglers schneiden
+        if let Some(mut slider) = self.slider_drag.clone().filter(|s| s.is_instance_valid()) {
+            let xf = slider.get_global_transform();
+            let n = xf.basis.col_c().normalized();
+            let denom = dir.dot(n);
+            if denom.abs() > 1e-5 {
+                let t = (xf.origin - origin).dot(n) / denom;
+                slider.bind_mut().drag_to(origin + dir * t);
+            }
+            return;
         }
         if self.drag.is_some() {
             self.update_drag_target(origin, dir);
@@ -294,11 +311,18 @@ impl TableController {
             .get_viewport()
             .is_some_and(|v| v.gui_get_hovered_control().is_some());
         // 3D-Bedienobjekte zuerst: liegt die Maus auf einem, wird keine Karte gehovert
-        let control = if over_gui {
-            None
-        } else {
-            self.raycast(origin, dir, CONTROL_LAYER).and_then(|h| h.collider.try_cast::<Button3D>().ok())
-        };
+        let control_hit = if over_gui { None } else { self.raycast(origin, dir, CONTROL_LAYER) };
+        let slider = control_hit.as_ref().and_then(|h| h.collider.clone().try_cast::<Slider3D>().ok());
+        if slider != self.hovered_slider {
+            if let Some(mut old) = self.hovered_slider.take().filter(|s| s.is_instance_valid()) {
+                old.bind_mut().set_hovered(false);
+            }
+            if let Some(mut new) = slider.clone() {
+                new.bind_mut().set_hovered(true);
+            }
+            self.hovered_slider = slider.clone();
+        }
+        let control = control_hit.and_then(|h| h.collider.try_cast::<Button3D>().ok());
         if control != self.hovered_control {
             if let Some(mut old) = self.hovered_control.take() {
                 if old.is_instance_valid() {
@@ -310,7 +334,7 @@ impl TableController {
             }
             self.hovered_control = control.clone();
         }
-        let hit = if over_gui || control.is_some() {
+        let hit = if over_gui || control.is_some() || slider.is_some() {
             None
         } else {
             self.raycast(origin, dir, CARD_LAYER).and_then(|h| {
@@ -349,6 +373,11 @@ impl TableController {
     /// Drücken auf eine Karte: merken. Ob es ein Klick oder ein Ziehen wird, entscheidet die
     /// Mausbewegung (siehe `physics_process`).
     fn on_left_pressed(&mut self) {
+        if let Some(mut slider) = self.hovered_slider.clone().filter(|s| s.is_instance_valid()) {
+            slider.bind_mut().set_dragging(true);
+            self.slider_drag = Some(slider);
+            return;
+        }
         if let Some(control) = self.hovered_control.clone().filter(|c| c.is_instance_valid()) {
             self.control_press = Some(control);
             return;
@@ -425,6 +454,12 @@ impl TableController {
     }
 
     fn on_left_released(&mut self) {
+        if let Some(mut slider) = self.slider_drag.take() {
+            if slider.is_instance_valid() {
+                slider.bind_mut().set_dragging(false);
+            }
+            return;
+        }
         // Bedienobjekt: Klick, wenn die Maus noch darauf liegt
         if let Some(mut control) = self.control_press.take() {
             if control.is_instance_valid() && self.hovered_control.as_ref() == Some(&control) {

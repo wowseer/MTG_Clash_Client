@@ -2,7 +2,8 @@
 //!
 //! - unten rechts über dem Phasen-Knopf: Zeitstrahl der Phasen ([`PhaseTimeline`])
 //! - Bildmitte: nur die Meldung zum Spielende (keine Hinweistexte)
-//! - Medaillon ([`SeatBadge`]) mit Leben (ohne Text daneben): folgt je einem 3D-Ankerpunkt
+//! - Medaillon ([`SeatBadge`]) mit Leben (ohne Text daneben; ausgegraut, solange eine 3D-Bühne
+//!   wie der Mulligan offen ist): folgt je einem 3D-Ankerpunkt
 //!   (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne Anker oben links
 //!   (Gegner) bzw. unten links (Spieler)
 //! - unter der Ressourcen-Reihe des Spielers (3D-Anker, sonst rechts neben seinem Medaillon):
@@ -50,6 +51,9 @@ const DIM: Color = Color::from_rgba(0.93, 0.87, 0.74, 0.45);
 /// Seitenfarben (passen zu den Bannern der Arena).
 const PLAYER_ACCENT: Color = Color::from_rgb(0.25, 0.55, 0.95);
 const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
+/// Ausgegraut und fast durchsichtig, solange eine 3D-Bühne offen ist (Medaillons, Namen,
+/// Manapool) – sie liegen als 2D-Anzeige über der Bühne und dürfen Texte und Knöpfe nicht verdecken.
+const STAGE_TINT: Color = Color::from_rgba(0.42, 0.42, 0.46, 0.22);
 /// Phasen-Knopf und „Sofort beenden“ ([Button3D], unten rechts): Breite der Knopf-Fläche in
 /// Pixeln, Rand zum Bildschirm und Abstand zwischen den Knöpfen.
 const MAIN_FACE_PX: f32 = 225.0;
@@ -506,6 +510,20 @@ impl TurnHud {
         }
         for b in [self.button.as_mut(), self.end_turn_button.as_mut()].into_iter().flatten() {
             b.set_visible(!view.stage_open);
+        }
+        // 3D-Bühne offen (z. B. Starthand beim Mulligan, Abwerfen): Medaillons, Namen und Manapool
+        // ausgrauen – der Blick gehört der Bühne
+        let tint = if view.stage_open { STAGE_TINT } else { Color::WHITE };
+        for m in [self.opponent_mask.as_mut(), self.player_mask.as_mut()].into_iter().flatten() {
+            m.set_modulate(tint);
+        }
+        for l in [self.opponent_name.as_mut(), self.player_name.as_mut(), self.opponent_turn.as_mut(), self.player_turn.as_mut()]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(mut parent) = l.get_parent().and_then(|p| p.try_cast::<Control>().ok()) {
+                parent.set_modulate(tint);
+            }
         }
         if let Some(b) = self.button.as_mut() {
             let mut b = b.bind_mut();

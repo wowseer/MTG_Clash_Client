@@ -8,6 +8,8 @@
 //!   Platz auf dem Tisch hineingleiten und aus der sie wieder zurückgehen,
 //! - **Titel / Untertitel / Hinweis**: `Label3D`,
 //! - **Knöpfe**: [`Button3D`] in einer Reihe unter dem Fächer,
+//! - **Schieberegler** ([`Showcase::enable_scroll`]): bei breiten Fächern ein [`Slider3D`]
+//!   zwischen Fächer und Knöpfen,
 //! - **Optionen** ([`Showcase::show_options`]): eigene Karten (z. B. Kopien je Spielweise einer
 //!   Karte) mit Beschriftung darüber, die die Bühne beim Schließen freigibt.
 //!
@@ -20,6 +22,7 @@ use godot::classes::{INode3D, Label3D, MeshInstance3D, QuadMesh, StandardMateria
 use godot::prelude::*;
 
 use super::button3d::Button3D;
+use super::slider3d::Slider3D;
 use super::card3d::{Card3D, CARD_HEIGHT};
 use super::zone::{Zone, ZoneKind};
 
@@ -38,6 +41,13 @@ const BUTTON_WIDTH: f32 = 0.95;
 const BUTTON_GAP: f32 = 0.92;
 /// Abstand der Options-Beschriftung über der Kartenoberkante.
 const CAPTION_GAP: f32 = 0.07;
+/// Schiebbarer Fächer ([`Showcase::enable_scroll`]): Kartenabstand (nebeneinander, ohne
+/// Überlappung), Bogenradius (fast gerade), sichtbare Breite und Lage/Länge des Schiebereglers.
+const SCROLL_STEP: f32 = 0.7;
+const SCROLL_RADIUS: f32 = 30.0;
+const SCROLL_SPAN: f32 = 3.4;
+const SLIDER_Y: f32 = -0.42;
+const SLIDER_WIDTH: f32 = 3.0;
 
 /// Bühne vor der Kamera: Abdunkelung, Kartenfächer ([Zone]), Titel und [Button3D]-Knöpfe.
 /// [method open] stellt sie vor die aktuelle Kamera, [method show_cards] holt Karten herein,
@@ -51,6 +61,9 @@ pub struct Showcase {
     subtitle: Option<Gd<Label3D>>,
     note: Option<Gd<Label3D>>,
     buttons: Vec<Gd<Button3D>>,
+    /// Schiebbarer Fächer: Überbreite (Welteinheiten) und Regler.
+    scroll_extra: f32,
+    slider: Option<Gd<Slider3D>>,
     /// Karten und die Zone, aus der sie kamen (für die Rückgabe).
     borrowed: Vec<(Gd<Card3D>, Gd<Zone>)>,
     /// Eigene Karten der Bühne (z. B. Kopien als Optionen); werden beim Schließen freigegeben.
@@ -71,6 +84,8 @@ impl INode3D for Showcase {
             subtitle: None,
             note: None,
             buttons: Vec::new(),
+            scroll_extra: 0.0,
+            slider: None,
             borrowed: Vec::new(),
             owned: Vec::new(),
             t: 0.0,
@@ -182,6 +197,43 @@ impl Showcase {
             let x = (i as f32 - (n - 1.0) * 0.5) * BUTTON_GAP;
             b.set_position(Vector3::new(x, BUTTON_ROW_Y, 0.05));
         }
+    }
+
+    /// Fächer nebeneinander statt überlappend legen; passt er nicht ganz ins Bild, erscheint
+    /// unter ihm ein [Slider3D], mit dem man ihn nach links und rechts schiebt (Start: Mitte).
+    #[func]
+    pub fn enable_scroll(&mut self) {
+        let Some(mut zone) = self.zone.clone() else { return };
+        for (prop, value) in [
+            ("hand_radius", SCROLL_RADIUS.to_variant()),
+            ("hand_card_angle_degrees", (SCROLL_STEP / SCROLL_RADIUS).to_degrees().to_variant()),
+            ("hand_max_spread_degrees", 170.0f32.to_variant()),
+        ] {
+            zone.set(prop, &value);
+        }
+        zone.bind_mut().layout();
+        let n = zone.bind().get_card_count().max(1) as f32;
+        self.scroll_extra = ((n - 1.0) * SCROLL_STEP - SCROLL_SPAN).max(0.0);
+        if self.scroll_extra <= 0.0 || self.slider.is_some() {
+            return;
+        }
+        let mut slider = Slider3D::create(SLIDER_WIDTH, 0.5);
+        slider.set_position(Vector3::new(0.0, SLIDER_Y, 0.05));
+        let cb = Callable::from_object_method(&self.to_gd(), "on_scroll");
+        slider.connect("value_changed", &cb);
+        self.base_mut().add_child(&slider);
+        self.slider = Some(slider);
+    }
+
+    /// Schieberegler bewegt (0 = linkes Ende sichtbar, 1 = rechtes Ende).
+    #[func]
+    fn on_scroll(&mut self, value: f32) {
+        let Some(mut zone) = self.zone.clone() else { return };
+        let offset = (0.5 - value) * self.scroll_extra;
+        let mut xf = zone.get_transform();
+        xf.origin = FAN_CENTER + Vector3::new(offset, 0.0, 0.0);
+        zone.set_transform(xf);
+        zone.bind_mut().layout();
     }
 
     /// Breite eines Knopfes in dieser Bühne (Welteinheiten).
