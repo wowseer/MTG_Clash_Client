@@ -188,7 +188,8 @@ Karte oder Medaillon, siehe oben). Aktivierte Fähigkeiten bleibender Karten (z.
 leuchten, wenn sie möglich sind, und werden per Klick aktiviert.
 
 Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Würfel tauschen,
-Mana gezielt aus dem Manapool wählen, Spleißen, Schutzschilde verteilen. Fahrzeuge besetzen:
+Schutzschilde verteilen. Mana aus dem Pool: Gibt es mehrere passende Mana im Pool, fragt das Spiel,
+welches verwendet wird. Fahrzeuge besetzen:
 Kreaturen auf dem Tisch anklicken, bis die nötige Stärke erreicht ist, dann „Fertig“.
 
 ---

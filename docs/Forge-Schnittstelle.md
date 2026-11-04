@@ -81,6 +81,10 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `chooseCardsToDiscardUnlessType` | `ChooseCards { reason: "Discard", min: 1, max: n }`: n Karten oder eine Karte des Typs | `Cards` |
 | `chooseSaToActivateFromOpeningHand` (Leylines …) | `ChooseOptions` (0 bis alle) | `Modes` |
 | `getAbilityToPlay` | `ChooseOption` mit den Fähigkeiten der Karte | `Number` |
+| `chooseManaFromPool` (mehrere passende Mana im Pool) | `ChooseOption` mit Mana und Quelle (**Erweiterung**: NeoForges `PayAction` kennt keine Pool-Zahlung) | `Number` |
+| `chooseCardsForSplice` (CR 702.47) | `ChooseCards { reason: "Choose", min: 0 }` aus der Hand | `Cards` |
+| `chooseCardsForEffectMultiple` | je Gruppe ein `ChooseCards { min: 0/1, max: 1 }` | `Cards` |
+| `chooseTarget` (welches Ziel geändert wird) | `ChooseOption` „Zauber → Ziel“ | `Number` |
 | `chooseCardsToDelve` (CR 702.66) | `ChooseCards { reason: "Delve", options: Friedhof, min: 0, max }` | `Cards([…])` |
 | `chooseCardsForConvokeOrImprovise` (CR 702.51, 702.126, Waterbend) | `ChooseCards { reason: "Convoke" / "Improvise" / "Choose", options: ungetappte Kreaturen/Artefakte, min: 0, max }`; welches Mana jede Karte bezahlt, legt die Brücke fest (farbiges Symbol in einer Farbe der Kreatur, sonst generisch) | `Cards([…])` |
 | `orderBlockers`, `orderBlocker`, `orderAttackers` (Schadens-Reihenfolge, nur mit `order_combatants`) | `OrderTriggers { descriptions }` mit Kartennamen (wie `orderMoveToZoneList`) | `Order([…])` |
@@ -140,6 +144,7 @@ damit die UI unverändert mit NeoForge läuft:
 | `Decision::ChooseNumber { player, prompt, min, max }` → `Choice::Number(n)` | Zahl mit Untergrenze ≠ 0 bzw. außerhalb von X |
 | `Decision::DivideAmount { player, source, amount, targets, min_each }` → `Choice::Damage(mengen)` | Menge beim Wirken auf die gewählten Ziele verteilen (CR 601.2d) |
 | Ziele auf dem Stack in `ChooseTargets` | als `{"card": id}` der Quelle des Zaubers bzw. der Fähigkeit (NeoForges `Target` hat keine Stack-Einträge; nachziehen: `Target::Stack(id)`) |
+| `ChooseOption` für Mana aus dem Pool (`chooseManaFromPool`) | NeoForge: `PayAction::UsePool(Farbe)` nachziehen |
 | `ChooseTargets` auch für Spieler-/Kartenwahl durch Effekte (`chooseSingleEntityForEffect` mit Spielern) | NeoForge hat dafür keine Entscheidung; die UI behandelt sie wie Ziele (Klick auf Medaillon/Karte) |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
 | Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) und Kartendaten (`cards`: Liste wie im `state`) der Karten, um die es geht – auch aus verdeckten Zonen, z. B. bei `ChooseCards` mit `Search` |
@@ -376,6 +381,8 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Kaskade (Bloodbraid Elf → „Do you want to play Shock?“ → Ziel), Fact or Fiction (Stapelwahl) und
   Leyline of Punishment aus der Starthand getestet.
 - Besetzen getestet mit Smuggler's Copter (Crew 1) und Raging Goblin (Tisch-Modus).
+- `chooseManaFromPool`, Spleißen, Gruppenwahl und Zielwechsel ferngesteuert, aber nicht gezielt
+  ausgelöst (nur Regressionstest mit den Standard-Testdecks).
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

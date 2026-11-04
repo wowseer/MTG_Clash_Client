@@ -727,6 +727,77 @@ public class RemotePlayerController extends PlayerControllerAi {
         return i != null ? abilities.get(i) : null;
     }
 
+    /**
+     * Welches schwebende Mana aus dem Pool bezahlt wird, wenn es mehrere Möglichkeiten gibt
+     * ({@code ChooseOption}; NeoForges {@code PayAction} kennt keine Pool-Zahlung).
+     */
+    @Override
+    public forge.game.mana.Mana chooseManaFromPool(List<forge.game.mana.Mana> manaChoices) {
+        if (manaChoices.size() <= 1) {
+            return super.chooseManaFromPool(manaChoices);
+        }
+        List<Decisions.Opt> opts = new ArrayList<>();
+        for (forge.game.mana.Mana m : manaChoices) {
+            Card src = m.getSourceCard();
+            opts.add(new Decisions.Opt(m + (src == null ? "" : " (von " + src.getName() + ")"),
+                    String.valueOf(forge.card.MagicColor.toShortString(m.getColor()))));
+        }
+        Integer i = Decisions.option(getGame(), seat, "Mana aus dem Pool wählen", null, null, opts, false);
+        return i != null ? manaChoices.get(i) : super.chooseManaFromPool(manaChoices);
+    }
+
+    /** Spleißen (Splice onto Arcane, CR 702.47): welche Karten aus der Hand angespleißt werden. */
+    @Override
+    public List<Card> chooseCardsForSplice(SpellAbility sa, List<Card> cards) {
+        if (cards.isEmpty()) {
+            return super.chooseCardsForSplice(sa, cards);
+        }
+        CardCollection r = pickCards("Choose", new CardCollection(cards), 0, cards.size(),
+                "Spleißen: Karten wählen, die an " + (sa.getHostCard() == null ? "den Zauber" : sa.getHostCard().getName())
+                        + " angespleißt werden", sa, false);
+        return r != null ? new ArrayList<>(r) : super.chooseCardsForSplice(sa, cards);
+    }
+
+    /**
+     * Je eine Karte aus mehreren Gruppen wählen (z. B. „ein Artefakt, eine Kreatur, …“): nacheinander
+     * {@code ChooseCards} je Gruppe, ohne schon gewählte Karten.
+     */
+    @Override
+    public CardCollection chooseCardsForEffectMultiple(Map<String, CardCollection> validMap, SpellAbility sa,
+            String title, boolean isOptional) {
+        CardCollection chosen = new CardCollection();
+        for (Map.Entry<String, CardCollection> e : validMap.entrySet()) {
+            CardCollection options = new CardCollection(e.getValue());
+            options.removeAll(chosen);
+            if (options.isEmpty()) {
+                continue;
+            }
+            CardCollection r = pickCards("Choose", options, isOptional ? 0 : 1, 1,
+                    (title == null || title.isBlank() ? "Karte wählen" : title) + ": " + e.getKey(), sa, false);
+            if (r == null) {
+                return super.chooseCardsForEffectMultiple(validMap, sa, title, isOptional);
+            }
+            chosen.addAll(r);
+        }
+        return chosen;
+    }
+
+    /** Welches Ziel eines Zaubers geändert wird ({@code ChooseOption} „Zauber → Ziel“). */
+    @Override
+    public org.apache.commons.lang3.tuple.Pair<SpellAbilityStackInstance, GameObject> chooseTarget(SpellAbility sa,
+            List<org.apache.commons.lang3.tuple.Pair<SpellAbilityStackInstance, GameObject>> allTargets) {
+        if (allTargets.size() <= 1) {
+            return super.chooseTarget(sa, allTargets);
+        }
+        List<Decisions.Opt> opts = new ArrayList<>();
+        for (var p : allTargets) {
+            Card host = p.getLeft().getSourceCard();
+            opts.add(new Decisions.Opt((host == null ? "?" : host.getName()) + " → " + targetLabel(p.getRight()), null));
+        }
+        Integer i = Decisions.option(getGame(), seat, "Ziel wählen, das geändert wird", sa, null, opts, false);
+        return i != null ? allTargets.get(i) : super.chooseTarget(sa, allTargets);
+    }
+
     /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */
     private String targetLabel(GameObject e) {
         if (e instanceof SpellAbility s) {
