@@ -1,6 +1,7 @@
 //! TableController: verbindet Kamera, Zonen und Karten.
 //!
-//! - Hover: Raycast Maus -> Karten (CARD_LAYER), liefert Trefferpunkt für den Tilt.
+//! - Hover: Raycast Maus -> 3D-Bedienobjekte (CONTROL_LAYER, Vorrang), sonst Karten (CARD_LAYER),
+//!   liefert Trefferpunkt für den Tilt. Klick auf ein Bedienobjekt ruft dessen `activate()`.
 //! - Drag: Karte aus einer Zone greifen; sie folgt der Maus flach auf dem Bildschirm (Ebene
 //!   parallel zum Bildschirm durch den Greifpunkt) und behält Ausrichtung und Größe von dort
 //!   (Handkarten gerade, ohne Fächer-Drehung, in Handgröße) – kein Kippen, kein Schwung, die
@@ -21,7 +22,8 @@ use godot::global::{Key, MouseButton};
 use godot::prelude::*;
 
 use super::card3d::Card3D;
-use super::layers::{CARD_LAYER, ZONE_LAYER};
+use super::button3d::Button3D;
+use super::layers::{CARD_LAYER, CONTROL_LAYER, ZONE_LAYER};
 use super::table_camera::TableCamera;
 use super::zone::Zone;
 
@@ -71,6 +73,10 @@ pub struct TableController {
     /// Gedrückte Karte und Mausposition beim Drücken: wird zum Ziehen, sobald sich die Maus mehr
     /// als [`CLICK_SLOP`] Pixel bewegt; sonst ist das Loslassen ein Klick.
     press: Option<(Gd<Card3D>, Vector2)>,
+    /// 3D-Bedienobjekt unter der Maus (Vorrang vor Karten).
+    hovered_control: Option<Gd<Button3D>>,
+    /// Gedrücktes Bedienobjekt: Klick, wenn die Maus beim Loslassen noch darauf ist.
+    control_press: Option<Gd<Button3D>>,
 
     base: Base<Node3D>,
 }
@@ -87,6 +93,8 @@ impl INode3D for TableController {
             hover_zone: None,
             drag: None,
             press: None,
+            hovered_control: None,
+            control_press: None,
             base,
         }
     }
@@ -244,7 +252,24 @@ impl TableController {
             .base()
             .get_viewport()
             .is_some_and(|v| v.gui_get_hovered_control().is_some());
-        let hit = if over_gui {
+        // 3D-Bedienobjekte zuerst: liegt die Maus auf einem, wird keine Karte gehovert
+        let control = if over_gui {
+            None
+        } else {
+            self.raycast(origin, dir, CONTROL_LAYER).and_then(|h| h.collider.try_cast::<Button3D>().ok())
+        };
+        if control != self.hovered_control {
+            if let Some(mut old) = self.hovered_control.take() {
+                if old.is_instance_valid() {
+                    old.bind_mut().set_hovered(false);
+                }
+            }
+            if let Some(mut new) = control.clone() {
+                new.bind_mut().set_hovered(true);
+            }
+            self.hovered_control = control.clone();
+        }
+        let hit = if over_gui || control.is_some() {
             None
         } else {
             self.raycast(origin, dir, CARD_LAYER).and_then(|h| {
@@ -283,6 +308,10 @@ impl TableController {
     /// Drücken auf eine Karte: merken. Ob es ein Klick oder ein Ziehen wird, entscheidet die
     /// Mausbewegung (siehe `physics_process`).
     fn on_left_pressed(&mut self) {
+        if let Some(control) = self.hovered_control.clone().filter(|c| c.is_instance_valid()) {
+            self.control_press = Some(control);
+            return;
+        }
         let Some(card) = self.hovered.clone() else {
             return;
         };
@@ -355,6 +384,13 @@ impl TableController {
     }
 
     fn on_left_released(&mut self) {
+        // Bedienobjekt: Klick, wenn die Maus noch darauf liegt
+        if let Some(mut control) = self.control_press.take() {
+            if control.is_instance_valid() && self.hovered_control.as_ref() == Some(&control) {
+                control.bind_mut().activate();
+            }
+            return;
+        }
         if let Some((card, _)) = self.press.take() {
             if card.is_instance_valid() {
                 self.signals().card_clicked().emit(&card);

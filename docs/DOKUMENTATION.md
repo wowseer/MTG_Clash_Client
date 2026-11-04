@@ -142,6 +142,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 
 | Aktion | Wirkung |
 |---|---|
+| **Wer beginnt?** | Gewinnst du den Münzwurf, schweben über der Tischmitte zwei leuchtende 3D-Knöpfe untereinander: „Ich beginne“ (orange) und „Forge-KI beginnt“ (blau), darüber die Frage. Maus darüber = Knopf wächst, Leuchten wird heller; Klick = Wahl. Bausteine: `Button3D` (`table/button3d.rs`, Kollisions-Layer 3 `CONTROL_LAYER`, Vorrang vor Karten im `TableController`), Bilder aus `Assets/Buttons/*.blend` (`tools/render_buttons.sh` → `godot/assets/buttons/`) |
 | Maus über Karte | Karte neigt sich; offene Karten werden groß und lesbar angezeigt (Hover-Zoom). Nicht durch Buttons hindurch |
 | Deck (rechts außen) | verdeckter Stapel, so groß wie deine Bibliothek in Forge. Gezogen wird automatisch im Ziehschritt (Forge); die Karte gleitet sichtbar vom Deck auf die Hand |
 | Spielbare Handkarten | leuchten, sobald Forge auf deine Priorität wartet und du sie jetzt spielen und bezahlen kannst |

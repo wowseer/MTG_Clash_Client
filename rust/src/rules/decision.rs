@@ -146,6 +146,9 @@ pub enum Decision {
     ChooseOptions { player: PlayerId, prompt: String, options: Vec<OptionText>, min: u32, max: u32 },
     /// **Erweiterung:** Zahl zwischen `min` und `max`; Antwort `Choice::Number(n)`.
     ChooseNumber { player: PlayerId, prompt: String, min: u32, max: u32 },
+    /// **Erweiterung** (CR 103.1): wer beginnt die Partie? `players` = Sitzplätze zur Wahl;
+    /// Antwort `Choice::Number(index in players)`.
+    ChooseStartingPlayer { player: PlayerId, players: Vec<PlayerId> },
     /// **Erweiterung** (CR 601.2d): `amount` beim Wirken auf die gewählten `targets` verteilen,
     /// jedes mindestens `min_each`; Antwort `Choice::Damage(mengen)` in Ziel-Reihenfolge.
     DivideAmount { player: PlayerId, source: CardId, amount: u32, targets: Vec<Target>, min_each: u32 },
@@ -204,6 +207,7 @@ impl Decision {
             | ChooseOption { player, .. }
             | ChooseOptions { player, .. }
             | ChooseNumber { player, .. }
+            | ChooseStartingPlayer { player, .. }
             | DivideAmount { player, .. } => *player,
         }
     }
@@ -504,6 +508,10 @@ impl Decision {
                 options: options_from(&o),
                 min: o.u32("min"),
                 max: o.u32("max"),
+            },
+            "ChooseStartingPlayer" => Decision::ChooseStartingPlayer {
+                player,
+                players: o.ids("players").into_iter().map(|p| p.min(255) as PlayerId).collect(),
             },
             "ChooseNumber" => {
                 Decision::ChooseNumber { player, prompt: o.str("prompt"), min: o.u32("min"), max: o.u32("max") }

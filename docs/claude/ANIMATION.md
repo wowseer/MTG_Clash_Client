@@ -46,6 +46,8 @@ Spiel nie auf.
 | Lebenspunkte ändern | 0,6 s | – | Edelstein blitzt (schon vorhanden), Zahl zählt hoch/runter |
 | Phasenwechsel | 0,25 s | Cubic-Out | Zeitstrahl (vorhanden) |
 | Auswahlfenster / Kartenfächer öffnen | 0,20 s | Cubic-Out | Hintergrund abdunkeln 0,15 s |
+| 3D-Knopf erscheinen / verschwinden | 0,20 s / 0,15 s | Cubic-Out / linear | wächst aus der Mitte (`Button3D`, `APPEAR_TIME`, `DISMISS_TIME`) |
+| 3D-Knopf Hover / Klick | exponentiell (≈0,12 s) / 0,12 s | – / Sinus | +5 % Größe, Leuchten heller; Klick drückt 7 % ein; Leuchten pulsiert mit 0,6 Hz |
 | Kamera Fokus / Übersicht | exponentiell, `smoothing` | – | vorhanden (`TableCamera`) |
 
 Faustregel: Routine ≤ 0,3 s, wichtige Ereignisse 0,3–0,6 s, nie über 0,8 s ohne Grund.

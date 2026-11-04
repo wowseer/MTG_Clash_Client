@@ -28,7 +28,9 @@ use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
+use crate::table::button3d::Button3D;
 use crate::table::card3d::{Card3D, CardMarker, SELECT_GLOW};
+use godot::classes::{Label3D, Texture2D};
 use crate::table::target_arrows::{ArrowSpec, TargetArrows};
 use crate::table::placeholder;
 use crate::table::table_controller::TableController;
@@ -39,6 +41,11 @@ const LOCAL_SEAT: i64 = 0;
 /// Schlüssel der Karten für Fähigkeiten auf dem Stack: `ABILITY_KEY_BASE - Stack-ID`
 /// (verdeckte Gegner-Handkarten liegen zwischen −1 und dieser Grenze).
 const ABILITY_KEY_BASE: i64 = -1_000_000;
+/// Startspieler-Knöpfe: Breite, Abstand untereinander (in Bildschirm-Hochrichtung) und Mitte der
+/// Knopfspalte (über der Tischmitte, zum Spieler hin).
+const STARTING_BUTTON_WIDTH: f32 = 4.6;
+const STARTING_BUTTON_SPACING: f32 = 1.15;
+const STARTING_CHOICE_CENTER: Vector3 = Vector3::new(0.0, 1.6, 0.9);
 /// Gemerkte bzw. im HUD gezeigte Zeilen des Spielprotokolls.
 const LOG_KEEP: usize = 200;
 const LOG_SHOWN: usize = 7;
@@ -129,6 +136,10 @@ pub struct ForgeTable {
     fan_cards: Vec<(CardId, Gd<Card3D>, bool)>,
     /// Spielprotokoll der Engine (ältester zuerst, höchstens [LOG_KEEP] Einträge).
     log: std::collections::VecDeque<HudLogLine>,
+    /// 3D-Bedienobjekte der offenen Entscheidung (z. B. Startspieler-Knöpfe) und ihre Frage als
+    /// 3D-Text; werden bei der Antwort ausgeblendet.
+    choice_buttons: Vec<Gd<Button3D>>,
+    choice_prompt: Option<Gd<Label3D>>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -168,6 +179,8 @@ impl INode for ForgeTable {
             combat_armed: None,
             fan_cards: Vec::new(),
             log: std::collections::VecDeque::new(),
+            choice_buttons: Vec::new(),
+            choice_prompt: None,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -324,6 +337,20 @@ impl ForgeTable {
         }
     }
 
+    /// Ein Startspieler-Knopf wurde gedrückt (`index` = Eintrag in `players` der Entscheidung
+    /// `ChooseStartingPlayer`).
+    #[func]
+    fn on_starting_player_pressed(&mut self, index: i64) {
+        let Some(Decision::ChooseStartingPlayer { players, .. }) = self.pending.as_ref().map(|r| &r.decision) else {
+            return;
+        };
+        if let Ok(i) = usize::try_from(index) {
+            if i < players.len() {
+                self.answer(Choice::Number(i as u32));
+            }
+        }
+    }
+
     /// Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges
     /// Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt.
     #[func]
@@ -448,7 +475,11 @@ impl ForgeTable {
         self.attack_plan.clear();
         self.block_plan.clear();
         self.combat_armed = None;
+        let starting = matches!(req.decision, Decision::ChooseStartingPlayer { .. }).then(|| req.clone());
         self.pending = Some(req);
+        if let Some(req) = starting {
+            self.show_starting_player(&req);
+        }
         self.update_glow();
     }
 
@@ -547,6 +578,66 @@ struct SeatZones {
 }
 
 impl ForgeTable {
+    /// Startspieler wählen (CR 103.1) in 3D: je Sitzplatz ein Knopf über der Tischmitte,
+    /// untereinander – der eigene orange und oben, die der anderen blau –, darüber die Frage als
+    /// 3D-Text. „Untereinander“ gilt auf dem Bildschirm (Hochachse der Kamera).
+    fn show_starting_player(&mut self, req: &Request) {
+        let Decision::ChooseStartingPlayer { players, player } = &req.decision else { return };
+        self.clear_choice_objects();
+        let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
+        let tex = |name: &str| try_load::<Texture2D>(&format!("res://assets/buttons/{name}.png")).ok();
+        // Bildschirm-Hochrichtung in der Welt (Kamera schaut schräg auf den Tisch)
+        let up = self
+            .base()
+            .get_viewport()
+            .and_then(|v| v.get_camera_3d())
+            .map_or(Vector3::UP, |c| c.get_global_transform().basis.col_b().normalized());
+        // eigener Sitz zuerst (oben), dann die anderen in Sitzreihenfolge
+        let mut order: Vec<usize> = (0..players.len()).collect();
+        order.sort_by_key(|i| players[*i] != *player);
+        let n = players.len().max(1) as f32;
+        for (row, i) in order.into_iter().enumerate() {
+            let seat = &players[i];
+            let own = seat == player;
+            let (face, glow) = if own { ("button_orange_face", "button_orange_glow") } else { ("button_blue_face", "button_blue_glow") };
+            let name = Some(req.label(i)).filter(|l| !l.is_empty()).unwrap_or_else(|| self.seat_name(*seat as usize).to_string());
+            let text = if own { tr!("Ich beginne", "I go first").to_string() } else { trf!("{name} beginnt", "{name} goes first") };
+            let mut button = Button3D::create(tex(face), tex(glow), &text, STARTING_BUTTON_WIDTH);
+            let offset = ((n - 1.0) * 0.5 - row as f32) * STARTING_BUTTON_SPACING;
+            parent.add_child(&button);
+            button.set_position(STARTING_CHOICE_CENTER + up * offset);
+            let cb = Callable::from_object_method(&self.to_gd(), "on_starting_player_pressed").bind(&[(i as i64).to_variant()]);
+            button.connect("pressed", &cb);
+            self.choice_buttons.push(button);
+        }
+        let mut prompt = Label3D::new_alloc();
+        prompt.set_text(tr!("Wer beginnt?", "Who goes first?"));
+        prompt.set_billboard_mode(godot::classes::base_material_3d::BillboardMode::ENABLED);
+        prompt.set_font_size(96);
+        prompt.set_pixel_size(0.0055);
+        prompt.set_outline_size(16);
+        prompt.set_modulate(Color::from_rgb(0.98, 0.84, 0.5));
+        prompt.set_outline_modulate(Color::from_rgba(0.05, 0.03, 0.02, 0.9));
+        prompt.set_draw_flag(godot::classes::label_3d::DrawFlags::SHADED, false);
+        parent.add_child(&prompt);
+        prompt.set_position(STARTING_CHOICE_CENTER + up * ((n - 1.0) * 0.5 * STARTING_BUTTON_SPACING + 0.85));
+        self.choice_prompt = Some(prompt);
+    }
+
+    /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
+    fn clear_choice_objects(&mut self) {
+        for mut b in self.choice_buttons.drain(..) {
+            if b.is_instance_valid() {
+                b.bind_mut().dismiss();
+            }
+        }
+        if let Some(mut p) = self.choice_prompt.take() {
+            if p.is_instance_valid() {
+                p.queue_free();
+            }
+        }
+    }
+
     /// Anzeige für das HUD.
     pub fn hud_view(&self) -> HudView {
         let st = self.state.as_ref();
@@ -747,6 +838,7 @@ impl ForgeTable {
     /// Antwortet über die Engine-Schnittstelle auf die offene Entscheidung.
     fn answer(&mut self, choice: Choice) {
         let Some(req) = self.pending.take() else { return };
+        self.clear_choice_objects();
         self.menu = None;
         self.selection.clear();
         self.free_fan_cards();
@@ -1559,6 +1651,7 @@ fn decision_name(d: &Decision) -> &'static str {
         Decision::ChooseOption { .. } => "ChooseOption",
         Decision::ChooseOptions { .. } => "ChooseOptions",
         Decision::ChooseNumber { .. } => "ChooseNumber",
+        Decision::ChooseStartingPlayer { .. } => "ChooseStartingPlayer",
         Decision::DivideAmount { .. } => "DivideAmount",
     }
 }

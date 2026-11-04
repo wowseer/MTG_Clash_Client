@@ -176,6 +176,10 @@ pub fn to_choice(decision: &Decision, raw: &Variant) -> Option<Choice> {
             Choice::Targets(indices()?.into_iter().map(|i| candidates.get(i).copied()).collect::<Option<_>>()?)
         }
         Decision::ChooseX { .. } | Decision::ChooseNumber { .. } => Choice::Number(raw.try_to::<i64>().ok()?.max(0) as u32),
+        Decision::ChooseStartingPlayer { players, .. } => {
+            let i = index()?;
+            (i < players.len()).then_some(Choice::Number(i as u32))?
+        }
         Decision::ChooseColor { options, .. } => Choice::Color(*options.get(index()?)?),
         Decision::NameCard { .. } | Decision::ChooseType { .. } | Decision::ChooseOption { .. } => {
             Choice::Number(index()? as u32)

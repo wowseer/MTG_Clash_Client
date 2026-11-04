@@ -1578,11 +1578,13 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public Player chooseStartingPlayer(boolean isFirstGame) {
         List<Player> players = new ArrayList<>(g().getPlayers());
-        List<Decisions.Opt> opts = new ArrayList<>();
+        List<Integer> seats = new ArrayList<>();
+        List<String> names = new ArrayList<>();
         for (Player p : players) {
-            opts.add(new Decisions.Opt(p == getPlayer() ? p.getName() + " (du)" : p.getName(), null));
+            seats.add(StateJson.indexOf(g(), p));
+            names.add(p.getName());
         }
-        Player r = pick(players, Decisions.option(g(), seat, "Wer beginnt?", null, null, opts, false));
+        Player r = pick(players, Decisions.startingPlayer(g(), seat, seats, names));
         return r != null ? r : super.chooseStartingPlayer(isFirstGame);
     }
 

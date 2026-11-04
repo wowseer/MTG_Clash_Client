@@ -21,6 +21,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [SeatBadge](#seatbadge) – erbt von `Control`
 - [Hello](#hello) – erbt von `Node2D`
 - [Arena](#arena) – erbt von `Node3D`
+- [Button3D](#button3d) – erbt von `Area3D`
 - [Card3D](#card3d) – erbt von `Area3D`
 - [TableCamera](#tablecamera) – erbt von `Camera3D`
 - [TableController](#tablecontroller) – erbt von `Node3D`
@@ -107,6 +108,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
 | `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
+| `on_starting_player_pressed(index: int)` | `void` | Ein Startspieler-Knopf wurde gedrückt (`index` = Eintrag in `players` der Entscheidung `ChooseStartingPlayer`). |
 | `player_clicked(seat: int)` | `void` | Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt. |
 | `submit_fan(first: PackedInt64Array, second: PackedInt64Array)` | `void` | Antwort aus dem Kartenfächer: `first` = gewählte Karten (`ChooseCards`, `MulliganBottom`) bzw. Karten oben auf der Bibliothek (`Scry`, von oben nach unten), `second` = Karten unter die Bibliothek bzw. in den Friedhof. |
 | `set_choice_selection(selection: PackedInt64Array)` | `void` | Aktuelle Auswahl im Auswahlfenster (vom HUD jedes Frame gemeldet): gewählte Ziele werden auf dem Tisch golden markiert und bekommen einen Pfeil. |
@@ -383,6 +385,39 @@ Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in 
 | `set_rune_glow(value: float)` | `void` | Setter für `rune_glow`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
 | `set_player_color(value: Color)` | `void` | Setter für `player_color`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
 | `set_opponent_color(value: Color)` | `void` | Setter für `opponent_color`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
+
+## Button3D
+
+*Erbt von `Area3D` · Quelle: `rust/src/table/button3d.rs`*
+
+Anklickbarer Knopf in der 3D-Szene: Knopfbild (`face_texture`) mit Leuchten dahinter (`glow_texture`) und Beschriftung (`text`). Wird vom `TableController` per Raycast angeklickt (Kollisions-Layer 3) und meldet das mit [signal pressed]. Richtet sich auf Wunsch zur Kamera aus (`face_camera`).
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `face_texture` | `Texture2D` | Bild des Knopfes (transparenter Hintergrund). |
+| `glow_texture` | `Texture2D` | Bild des Leuchtens hinter dem Knopf (gleicher Bildausschnitt wie der Knopf). |
+| `text` | `String` | Beschriftung auf dem Knopf. |
+| `width` | `float` | Breite der Bildfläche in Welteinheiten (Höhe folgt aus dem Seitenverhältnis). |
+| `face_camera` | `bool` | Knopf immer parallel zur Bildebene der Kamera ausrichten. |
+| `enabled` | `bool` | Anklickbar? (Ausgegraut, wenn nicht.) |
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `set_hovered(hovered: bool)` | `void` | Maus über dem Knopf (vom `TableController` gesetzt): Knopf wächst, Leuchten wird heller. |
+| `is_hovered()` | `bool` | Ist die Maus über dem Knopf? |
+| `activate()` | `void` | Klick auslösen (vom `TableController` bzw. von Skripten): kurzes Eindrücken und [signal pressed]. Ohne Wirkung, wenn der Knopf nicht `enabled` ist oder gerade verschwindet. |
+| `dismiss()` | `void` | Knopf ausblenden (0,15 s) und danach freigeben; nicht mehr anklickbar. |
+| `set_label_text(text: String)` | `void` | Beschriftung ändern. |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `pressed()` | Der Knopf wurde angeklickt. |
 
 ## Card3D
 

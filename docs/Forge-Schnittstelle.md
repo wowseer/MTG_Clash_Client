@@ -179,6 +179,7 @@ Diese Teile gibt es im Vorbild (`decision.rs` aus forge-rules-rs) (noch) nicht:
 | `ChooseOption` für Mana aus dem Pool (`chooseManaFromPool`) | im Basismodell fehlt `PayAction::UsePool(Farbe)` |
 | `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
 | `ChooseCards` mit `reason: "Reveal"` und `max: 0` | Anzeige aufgedeckter Karten; im Basismodell fehlt ein `Decision::Reveal { cards }` bzw. Ereignis |
+| `Decision::ChooseStartingPlayer { player, players }` → `Choice::Number(index)` | wer beginnt die Partie (CR 103.1); `players` = Sitzplätze, `labels` = Spielernamen. Die UI zeigt dafür 3D-Knöpfe statt eines Fensters |
 | `ChooseTargets` auch für Spieler-/Kartenwahl durch Effekte (`chooseSingleEntityForEffect` mit Spielern) | Das Basismodell hat dafür keine Entscheidung; die UI behandelt sie wie Ziele (Klick auf Medaillon/Karte) |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
 | Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) und Kartendaten (`cards`: Liste wie im `state`) der Karten, um die es geht – auch aus verdeckten Zonen, z. B. bei `ChooseCards` mit `Search` |

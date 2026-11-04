@@ -681,6 +681,19 @@ final class Decisions {
         return i != null && i >= 0 && i < options.size() ? i : null;
     }
 
+    /**
+     * Erweiterung {@code ChooseStartingPlayer} (CR 103.1): wer beginnt? {@code players} =
+     * Sitzplätze zur Wahl, {@code labels} = Spielernamen; Antwort {@code Number(index)}.
+     */
+    static Integer startingPlayer(Game game, int seat, List<Integer> players, List<String> names) {
+        JsonObject d = decision("ChooseStartingPlayer", seat);
+        JsonArray arr = new JsonArray();
+        players.forEach(arr::add);
+        d.add("players", arr);
+        Integer i = number(ask(game, seat, d, "Wer beginnt?", null, null, false, names));
+        return i != null && i >= 0 && i < players.size() ? i : null;
+    }
+
     /** Erweiterung {@code ChooseOptions}: {@code min}–{@code max} Indizes (genau eine → {@code ChooseOption}). */
     static List<Integer> options(Game game, int seat, String prompt, SpellAbility sa, Card card, List<Opt> options,
             int min, int max, boolean cancelable) {
