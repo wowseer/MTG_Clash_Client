@@ -15,8 +15,6 @@
 //! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
 //! - oben rechts: Spielprotokoll ([`GameLogList`]), die letzten Einträge der Engine
 //! - linker Bildrand, Mitte: Stack-Liste ([`StackList`]) mit Quelle, Art und Text jedes Eintrags
-//! - ganz oben, mittig: große Vorschau der Karte, die gerade gezogen wird; das Gegner-Medaillon
-//!   liegt dann durchsichtig darüber
 //!
 //! Das HUD liest den Zustand jedes Frame vom [`ForgeTable`] (keine Signal-Kopplung nötig).
 //! Alle 2D-Flächen lassen Mausklicks durch; die 3D-Knöpfe klickt der `TableController` an.
@@ -37,7 +35,6 @@ use super::hourglass::HourglassIcon;
 use super::mana_view::ManaPoolView;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
-use super::card_preview;
 use super::card_fan::{CardFan, HudFan};
 use super::choice_panel::ChoicePanel;
 use super::log_view::{GameLogList, HudLogLine};
@@ -62,9 +59,6 @@ const BUTTON_MARGIN: f32 = 14.0;
 const BUTTON_GAP_PX: f32 = 8.0;
 /// Abstand des Phasen-Zeitstrahls über dem Phasen-Knopf.
 const TIMELINE_GAP: f32 = 10.0;
-/// Vorschau der gezogenen Karte: Abstand zum oberen Bildrand und Zeichenebene (z-Index).
-const PREVIEW_TOP: f32 = 8.0;
-const PREVIEW_Z: i32 = 50;
 
 /// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte,
 /// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
@@ -116,8 +110,6 @@ pub struct TurnHud {
     end_turn_button: Option<Gd<Button3D>>,
     /// Hinweis der Engine über dem Phasen-Zeitstrahl (z. B. ungültiger Angriff).
     button_hint: Option<Gd<Label>>,
-    /// Große Vorschau der gerade gezogenen Karte im oberen Bildbereich (Karte + Anzeige).
-    drag_preview: Option<(InstanceId, Gd<godot::classes::PanelContainer>)>,
     /// Elternknoten für die Vorschau (Vollbild-Root des HUD).
     root: Option<Gd<Control>>,
     /// Auswahlfenster in der Bildschirmmitte (alle allgemeinen Forge-Entscheidungen).
@@ -156,7 +148,6 @@ impl ICanvasLayer for TurnHud {
             button: None,
             end_turn_button: None,
             button_hint: None,
-            drag_preview: None,
             root: None,
             choice: None,
             fan: None,
@@ -454,41 +445,8 @@ impl TurnHud {
         }
     }
 
-    /// Während eine Karte gezogen wird: groß ganz oben in der Bildmitte anzeigen; das
-    /// Gegner-Medaillon liegt dann durchsichtig darüber (die Maske blendet es beim Ziehen ohnehin
-    /// auf 30 % aus). Beim Loslassen verschwindet die Vorschau.
-    fn update_drag_preview(&mut self) {
-        let dragged = self
-            .base()
-            .get_parent()
-            .and_then(|p| p.try_cast::<TableController>().ok())
-            .and_then(|t| t.bind().get_dragged_card());
-        let id = dragged.as_ref().map(|c| c.instance_id());
-        if self.drag_preview.as_ref().map(|(i, _)| *i) == id {
-            return;
-        }
-        if let Some((_, old)) = self.drag_preview.take() {
-            old.free();
-        }
-        // Gegner-Medaillon über die Vorschau legen, solange sie angezeigt wird
-        if let Some(mask) = self.opponent_mask.as_mut() {
-            mask.set_z_index(if dragged.is_some() { PREVIEW_Z + 1 } else { 0 });
-        }
-        let (Some(card), Some(mut root)) = (dragged, self.root.clone()) else { return };
-        let mut preview = card_preview::build_preview(&card);
-        // Über den übrigen HUD-Elementen (nur das Gegner-Medaillon liegt darüber)
-        preview.set_z_index(PREVIEW_Z);
-        root.add_child(&preview);
-        let screen = root.get_size();
-        let size = preview.get_combined_minimum_size();
-        preview.set_size(size);
-        preview.set_position(Vector2::new((screen.x - size.x) * 0.5, PREVIEW_TOP));
-        self.drag_preview = Some((card.instance_id(), preview));
-    }
-
     fn refresh(&mut self) {
         self.place_seat_rows();
-        self.update_drag_preview();
         let Some(ft) = self.forge_table.clone() else { return };
         let view = ft.bind().hud_view();
         let active = view.active_seat;

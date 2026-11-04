@@ -112,6 +112,8 @@ final class StateJson {
      * {@code text} (Forges Stack-Beschreibung), {@code targets} (Ziele je Fähigkeit der
      * Sub-Ability-Kette als Liste von Listen) und bei Zaubern {@code card} (Kartendaten der Karte
      * in der Stack-Zone). Ziele, die Zauber auf dem Stack sind, erscheinen als deren Karte.
+     * Zuoberst folgen Karten, die gerade gewirkt werden ({@code kind} {@code Casting}, {@code id} =
+     * minus Karten-ID, ohne Text und Ziele).
      */
     static JsonArray stack(Game game) {
         java.util.List<SpellAbilityStackInstance> items = new java.util.ArrayList<>();
@@ -144,6 +146,28 @@ final class StateJson {
                 targets.add(ts);
             }
             o.add("targets", targets);
+            arr.add(o);
+        }
+        // Karten, die gerade gewirkt werden (CR 601.2a: schon in der Stack-Zone, aber noch kein
+        // Stack-Eintrag – Ziele, Kosten …): oben als Eintrag "Casting", damit die UI sie zeigt
+        java.util.Set<Integer> onStack = new java.util.HashSet<>();
+        for (SpellAbilityStackInstance si : items) {
+            if (si.getSourceCard() != null) {
+                onStack.add(si.getSourceCard().getId());
+            }
+        }
+        for (Card c : game.getCardsIn(ZoneType.Stack)) {
+            if (onStack.contains(c.getId())) {
+                continue;
+            }
+            JsonObject o = new JsonObject();
+            o.addProperty("id", -c.getId());
+            o.addProperty("kind", "Casting");
+            o.addProperty("source", c.getId());
+            o.addProperty("controller", c.getController() == null ? -1 : indexOf(game, c.getController()));
+            o.addProperty("text", "");
+            o.add("card", card(c));
+            o.add("targets", new JsonArray());
             arr.add(o);
         }
         return arr;

@@ -1,5 +1,4 @@
-//! Große Kartenvorschau für das HUD (z. B. oben in der Bildmitte, während eine Karte aus der
-//! Hand gezogen wird).
+//! Kartenbild als HUD-Element (z. B. für den Kartenfächer).
 
 use godot::classes::control::MouseFilter;
 use godot::classes::texture_rect::{ExpandMode, StretchMode};
@@ -10,9 +9,6 @@ use godot::prelude::*;
 use crate::game::card_text;
 use crate::table::card3d::Card3D;
 use crate::table::placeholder;
-
-/// Höhe der Vorschaukarte in Pixeln (Breite folgt aus dem Kartenformat 256 × 358).
-pub const CARD_H: f32 = 290.0;
 
 /// Füllt `card` (Control in Kartengröße 256 × 358 · `scale`) mit Kartenbild und Beschriftung von
 /// `source`.
@@ -65,14 +61,8 @@ fn fill_face(card: &mut Gd<Control>, source: &Gd<Card3D>, scale: f32) {
     stats.add_theme_color_override("font_color", texts.stats_color);
 }
 
-/// Große Vorschau einer Karte (goldener Rahmen, klickdurchlässig), z. B. im oberen Bildbereich,
-/// während die Karte aus der Hand gezogen wird. Höhe der Karte = [`CARD_H`] Pixel.
-pub fn build_preview(source: &Gd<Card3D>) -> Gd<PanelContainer> {
-    build_preview_sized(source, CARD_H, Color::from_rgb(1.0, 0.82, 0.35))
-}
-
-/// Wie [`build_preview`], aber mit Kartenhöhe `height` (Pixel) und Rahmenfarbe `border`
-/// (z. B. für den Kartenfächer).
+/// Kartenbild von `source` mit Rahmen (klickdurchlässig): Kartenhöhe `height` (Pixel),
+/// Rahmenfarbe `border` (z. B. für den Kartenfächer).
 pub fn build_preview_sized(source: &Gd<Card3D>, height: f32, border: Color) -> Gd<PanelContainer> {
     let scale = height / 358.0;
     let mut frame = PanelContainer::new_alloc();

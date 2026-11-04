@@ -78,7 +78,7 @@ pub struct TableController {
     /// Gedrücktes Bedienobjekt: Klick, wenn die Maus beim Loslassen noch darauf ist.
     control_press: Option<Gd<Button3D>>,
     /// Zielen: von dieser Karte (nicht verschiebbar, z. B. auf dem Spielfeld) wird ein Pfeil
-    /// gezogen; `aim_point` = Mauspunkt auf der Tischebene.
+    /// gezogen. `aim_point` = Mauspunkt auf der Tischebene (immer aktuell).
     aim: Option<Gd<Card3D>>,
     aim_point: Vector3,
 
@@ -146,7 +146,8 @@ impl INode3D for TableController {
         } else {
             self.update_hover(origin, dir);
         }
-        if self.aim.is_some() && dir.y.abs() > 1e-4 {
+        // Mauspunkt auf der Tischebene (Pfeile zeichnen, auch ohne Drücken bei der Zielwahl)
+        if dir.y.abs() > 1e-4 {
             let t = (self.base().get_global_position().y - origin.y) / dir.y;
             if t > 0.0 {
                 self.aim_point = origin + dir * t;
@@ -238,7 +239,8 @@ impl TableController {
         self.aim.clone().filter(|c| c.is_instance_valid())
     }
 
-    /// Mauspunkt auf der Tischebene beim Pfeilziehen (Welt).
+    /// Mauspunkt auf der Tischebene (Welt), jedes Physik-Frame aktualisiert – Endpunkt gezogener
+    /// Pfeile.
     #[func]
     pub fn get_aim_point(&self) -> Vector3 {
         self.aim_point

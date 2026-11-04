@@ -286,6 +286,15 @@ impl ForgeTable {
                 let plan = self.block_plan.clone();
                 self.answer(Choice::Blocks(plan));
             }
+            // Zielwahl: genug Ziele = bestätigen, sonst Wirken abbrechen (wo Forge das erlaubt)
+            Some(Decision::ChooseTargets { candidates, min, .. }) => {
+                if self.selection.len() >= *min as usize {
+                    let targets = self.selection.iter().filter_map(|i| candidates.get(*i).copied()).collect();
+                    self.answer(Choice::Targets(targets));
+                } else if self.pending.as_ref().is_some_and(|r| r.cancelable) {
+                    self.answer(Choice::Cancel);
+                }
+            }
             _ => {}
         }
     }
@@ -440,7 +449,7 @@ impl ForgeTable {
             return;
         }
         if let Some(i) = self.candidate_index(Target::Player(seat)) {
-            self.signals().choice_option_clicked().emit(i as i64);
+            self.pick_candidate(i);
         }
     }
 
@@ -462,6 +471,10 @@ impl ForgeTable {
     /// auf dem Tisch golden markiert und bekommen einen Pfeil.
     #[func]
     pub fn set_choice_selection(&mut self, selection: PackedInt64Array) {
+        // Zielwahl läuft ohne Auswahlfenster: die Auswahl verwaltet der ForgeTable selbst
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseTargets { .. })) {
+            return;
+        }
         let sel: Vec<usize> = selection.as_slice().iter().filter_map(|i| usize::try_from(*i).ok()).collect();
         if sel != self.selection {
             self.selection = sel;
@@ -615,7 +628,7 @@ impl ForgeTable {
             return;
         }
         if let Some(i) = self.candidate_index(Target::Card(card_id)) {
-            self.signals().choice_option_clicked().emit(i as i64);
+            self.pick_candidate(i);
             return;
         }
         let in_hand = self.zones(0).hand.is_some_and(|h| card.bind().get_zone().as_ref() == Some(&h));
@@ -674,7 +687,7 @@ impl ForgeTable {
                 if let Some(t) = target {
                     if let Some(i) = self.candidate_index(t) {
                         self.drawn_arrows.insert(arrow_key(20, i64::from(id), t));
-                        self.signals().choice_option_clicked().emit(i as i64);
+                        self.pick_candidate(i);
                     }
                 }
             }
@@ -1037,6 +1050,7 @@ impl ForgeTable {
                 let kind = match get_str(item, "kind").as_str() {
                     "Spell" => tr!("Zauber", "Spell"),
                     "Trigger" => tr!("Ausgelöste Fähigkeit", "Triggered ability"),
+                    "Casting" => tr!("wird gewirkt", "being cast"),
                     _ => tr!("Aktivierte Fähigkeit", "Activated ability"),
                 };
                 HudStackEntry {
@@ -1320,8 +1334,9 @@ impl ForgeTable {
         })
     }
 
-    /// Kampf: Text des Phasen-Knopfs (bestätigt den Plan auf dem Tisch) und Hinweis der Engine
-    /// (z. B. nach ungültiger Erklärung; leer = keiner). `None` = kein Kampf offen.
+    /// Kampf und Zielwahl: Text des Phasen-Knopfs (bestätigt den Plan bzw. die Ziele auf dem
+    /// Tisch, bei zu wenigen Zielen „Abbrechen“) und Hinweis (Engine-Hinweis zum Kampf bzw. was die
+    /// Karte als Ziel verlangt; leer = keiner). `None` = weder Kampf noch Zielwahl offen.
     fn combat_button(&self) -> Option<(String, String)> {
         let req = self.pending.as_ref()?;
         let (label, standard) = match &req.decision {
@@ -1338,6 +1353,21 @@ impl ForgeTable {
                     if n == 0 { tr!("Blocken  »", "Block  »").to_string() } else { trf!("Blocken ({n})  »", "Block ({n})  »") },
                     "Blocker wählen",
                 )
+            }
+            // Zielwahl: Hinweis = was die Karte als Ziel verlangt
+            Decision::ChooseTargets { min, description, .. } => {
+                let n = self.selection.len();
+                let label = if n >= *min as usize && n > 0 {
+                    trf!("Ziele bestätigen ({n})  »", "Confirm targets ({n})  »")
+                } else if *min == 0 {
+                    tr!("Ohne Ziel weiter  »", "No target  »").to_string()
+                } else if req.cancelable {
+                    tr!("Abbrechen", "Cancel").to_string()
+                } else {
+                    tr!("Ziel wählen …", "Choose a target …").to_string()
+                };
+                let what = if description.is_empty() { req.prompt.clone() } else { description.clone() };
+                return Some((label, what));
             }
             _ => return None,
         };
@@ -1420,6 +1450,27 @@ impl ForgeTable {
             _ => return None,
         };
         Some(HudFan { key: req.id, title, detail: req.source_name.clone(), mode, cards, cancelable: req.cancelable })
+    }
+
+    /// Kandidat `index` angeklickt bzw. per Pfeil gewählt. Zielwahl (`ChooseTargets`): wählen bzw.
+    /// abwählen; sind so viele Ziele gewählt, wie die Karte höchstens erlaubt, geht die Antwort
+    /// sofort an Forge. Kartenwahl auf dem Tisch: weiter an das Auswahlfenster.
+    fn pick_candidate(&mut self, index: usize) {
+        let Some(Decision::ChooseTargets { candidates, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else {
+            self.signals().choice_option_clicked().emit(index as i64);
+            return;
+        };
+        if let Some(pos) = self.selection.iter().position(|i| *i == index) {
+            self.selection.remove(pos);
+        } else {
+            self.selection.push(index);
+        }
+        if self.selection.len() >= max.max(1) as usize {
+            let targets = self.selection.iter().filter_map(|i| candidates.get(*i).copied()).collect();
+            self.answer(Choice::Targets(targets));
+            return;
+        }
+        self.update_glow();
     }
 
     /// Index des Kandidaten `target` in der offenen Zielwahl.
@@ -1604,10 +1655,18 @@ impl ForgeTable {
     }
 
     /// Pfeil, den der Spieler gerade zieht: von der Karte zur Maus bzw. zum gültigen Ziel
-    /// darunter (rastet ein). `None` = es wird nicht gezogen bzw. nicht von dieser Karte.
+    /// darunter (rastet ein). Bei der Zielwahl hängt er ohne Drücken an der Quelle (Zauber auf dem
+    /// Stack bzw. Karte der Fähigkeit). `None` = kein Pfeil.
     fn live_arrow(&self) -> Option<(CardId, ArrowSpec)> {
         let controller = self.controller.as_ref()?;
-        let card = controller.bind().get_aiming_card()?;
+        // Zielwahl: der Pfeil hängt ohne Drücken an der Quelle und folgt der Maus
+        let target_source = match self.pending.as_ref() {
+            Some(Request { decision: Decision::ChooseTargets { .. }, source: Some(s), .. }) => {
+                self.cards.get(&i64::from(*s)).filter(|c| c.is_instance_valid()).cloned()
+            }
+            _ => None,
+        };
+        let card = controller.bind().get_aiming_card().or(target_source)?;
         let id = u32::try_from(self.forge_id(&card)?).ok()?;
         let (kind, valid) = self.aim_kind(id)?;
         let hovered = controller.bind().get_hovered_card().filter(|h| *h != card);
@@ -1741,8 +1800,8 @@ impl ForgeTable {
         d
     }
 
-    /// Alle Pfeile: Kampf, Ziele auf dem Stack (violett) und Zielwahl: Quelle → gewählte Ziele
-    /// (gold), Quelle → gültiges Ziel unter dem Mauszeiger (blasser, Vorschau).
+    /// Alle Pfeile: Kampf, Ziele auf dem Stack (violett), Zielwahl: Quelle → gewählte Ziele (gold),
+    /// und der Pfeil, den der Spieler gerade zeichnet ([`Self::live_arrow`]).
     fn update_arrows(&mut self) {
         let Some(mut layer) = self.arrows.clone() else { return };
         let mut specs = self.combat_arrows();
@@ -1758,17 +1817,8 @@ impl ForgeTable {
                     .filter(|c| c.is_instance_valid())
                     .map(|c| c.get_global_position());
                 if let Some(from) = from {
-                    let mut targets: Vec<(Target, f32)> =
+                    let targets: Vec<(Target, f32)> =
                         self.selection.iter().filter_map(|i| candidates.get(*i)).map(|t| (*t, 1.0)).collect();
-                    let hovered = self.controller.as_ref().and_then(|c| c.bind().get_hovered_card());
-                    let hovered_target = hovered
-                        .and_then(|h| self.forge_id(&h))
-                        .and_then(|id| u32::try_from(id).ok())
-                        .map(Target::Card)
-                        .filter(|t| candidates.contains(t) && !targets.iter().any(|(s, _)| s == t));
-                    if let Some(t) = hovered_target {
-                        targets.push((t, 0.45));
-                    }
                     let source = req.source.map_or(-1, i64::from);
                     for (t, alpha) in targets {
                         if let Some(to) = self.target_position(t) {

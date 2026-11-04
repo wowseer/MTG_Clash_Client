@@ -291,6 +291,9 @@ zuletzt**. Je Eintrag `id` (Forges Stack-ID), `kind` (`Spell` / `Ability` / `Tri
 `card` (Kartendaten der Karte in der Stack-Zone, wie in den Spielerzonen). Ein Zauber als Ziel
 (z. B. Gegenzauber) erscheint als `{"card": id}` seiner Karte; eine Fähigkeit als Ziel als Karte
 ihrer Quelle (das Basismodell (`Target`) kennt keine Stack-Einträge).
+Zuoberst stehen Karten, die **gerade gewirkt werden** (CR 601.2a: schon in der Stack-Zone, Ziele und
+Kosten noch offen): `kind` `"Casting"`, `id` = minus Karten-ID, `text` leer, `targets` leer, `card`
+wie bei Zaubern. So bleibt die Karte während der Zielwahl sichtbar (Startpunkt des Zielpfeils).
 
 ```json
 "stack": [
@@ -345,7 +348,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 |---|---|
 | `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt; `library` = verdeckter Stapel in der Deck-Zone, neue Handkarten werden von dort gezogen |
 | `Priority` | Karten mit einer Aktion leuchten; Handkarte auf den Tisch ziehen → `PlayLand`/`Cast`; Klick auf eine Karte außerhalb der Hand → ihre `Activate`- bzw. `ActivateMana`-Aktion (mehrere: Menü „Fähigkeit wählen“, nur UI; reine Manaquellen leuchten nicht); Hauptbutton / Leertaste → `Action::Pass` |
-| `ChooseTargets` | gültige Karten leuchten, wählbare Spieler-Medaillons pulsieren golden; Klick wählt (Signal `ForgeTable.choice_option_clicked` → Auswahlfenster am rechten Rand); gewählte Ziele golden markiert, Pfeile Quelle → Ziel (`TargetArrows`); Pfeil von der Quellkarte auf ein Ziel ziehen wirkt wie ein Klick darauf (`TableController.aim_released` → `ForgeTable.on_aim_released`) |
+| `ChooseTargets` | kein Fenster: von der Quelle (Karte auf dem Stack bzw. Karte der Fähigkeit) hängt ein goldener Pfeil an der Maus und rastet auf gültigen Zielen ein (Karten leuchten, Medaillons pulsieren golden); Klick bzw. Pfeil ziehen und loslassen wählt (`ForgeTable.pick_candidate`), erneut = abwählen. Sind `max` Ziele gewählt, geht `Targets` sofort an Forge; sonst Phasen-Knopf „Ziele bestätigen (n) »“ (ab `min`) bzw. „Abbrechen“ (`Cancel`). Was die Karte verlangt (`description`), steht golden über dem Zeitstrahl |
 | `ChooseCards` mit Karten, die alle offen auf dem Tisch liegen (Spielfeld, Länder-Reihe, Kommandozone, Stack) | Tisch-Modus: Karten leuchten, Klick wählt (gold), Fenster am rechten Rand mit Kartennamen und „Fertig“ → `Cards` |
 | `Mulligan` / `MulliganBottom` | 3D-Bühne (`Showcase`): Hand groß vor der Kamera, `Button3D` „Mulligan“/„Behalten“ → `Mulligan` / `Keep`; bei `MulliganBottom` Karten anklicken, „Fertig (n/N)“ → `Cards` |
 | `ChooseCards` / `Scry` | Kartenfächer-Overlay (`card_fan.rs`): Karten groß (Tischkarten bzw. temporäre Karten aus `cards`), Klick wählt bzw. wechselt die Reihe; „Fertig“ → `ForgeTable.submit_fan` → `Cards` / `Arrange` |
@@ -358,7 +361,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |
 | `command`, `face`, `face_down`, `monarch`, `initiative`, `day`, `ring_level` | Kommandozone je Seite als Spalte (Spieler rechts unten, Gegner rechts oben); Seitenwechsel als Umdreh-Animation, verdeckte Karten mit Rückseitenmuster; Plaketten „Commander“, „Ringträger“, „Raum: …“, „↺ andere Seite“; Monarch, Initiative, Stadtsegen, Ring-Stufe unter dem Namen, Tag/Nacht neben der Rundenzahl |
 | `log` | Spielprotokoll oben rechts im HUD: die letzten 7 Einträge ohne `PHASE`/`MANA`, IDs entfernt, Rundenbeginn golden |
-| `stack` | Zone `Stack` in der Tischmitte: Zauber als ihre Karte, Fähigkeiten als Karte ihrer Quelle; violette Pfeile zu den Zielen; Liste im HUD (linker Rand) mit Quelle, Art, Text |
+| `stack` | Zone `Stack` in der Tischmitte: Zauber (auch `Casting`) als ihre Karte, Fähigkeiten als Karte ihrer Quelle; violette Pfeile zu den Zielen; Liste im HUD (linker Rand) mit Quelle, Art, Text |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
 ## Stand und nächste Schritte

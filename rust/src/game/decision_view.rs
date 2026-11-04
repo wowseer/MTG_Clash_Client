@@ -26,15 +26,8 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(Target) -> String) -> Option<H
             single_or_multi(*min, *max),
             plain(modes.iter().map(|(_, t)| t.clone()).collect()),
         ),
-        Decision::ChooseTargets { candidates, min, max, description, .. } => (
-            description.clone(),
-            single_or_multi(*min, *max),
-            plain(
-                (0..candidates.len())
-                    .map(|i| Some(req.label(i)).filter(|l| !l.is_empty()).unwrap_or_else(|| name_of(candidates[i])))
-                    .collect(),
-            ),
-        ),
+        // Zielwahl: Pfeil auf dem Tisch zeichnen (ForgeTable), kein Fenster
+        Decision::ChooseTargets { .. } => return None,
         Decision::ChooseX { max, .. } => {
             (tr!("Wert für X wählen", "Choose a value for X").into(), ChoiceMode::Number { min: 0, max: *max as i64 }, vec![])
         }
@@ -136,12 +129,10 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(Target) -> String) -> Option<H
         (true, false) => req.ability.clone(),
         (false, false) => format!("{}: {}", req.source_name, req.ability),
     };
-    // Bei der Zielwahl an den Rand: Ziele werden auch direkt auf dem Tisch angeklickt
-    let side = matches!(req.decision, Decision::ChooseTargets { .. });
     let numbered = matches!(req.decision, Decision::OrderTriggers { .. });
     // „You may choose the same mode more than once“ (z. B. Confluence-Zauber)
     let repeat = matches!(req.decision, Decision::ChooseModes { can_repeat: true, .. });
-    Some(HudChoice { key: req.id, title, detail, mode, options, cancelable: req.cancelable, side, numbered, repeat })
+    Some(HudChoice { key: req.id, title, detail, mode, options, cancelable: req.cancelable, side: false, numbered, repeat })
 }
 
 /// Eingabe aus dem Auswahlfenster (Index, Indizes, bool, Zahl; nil = Abbrechen) → [`Choice`]

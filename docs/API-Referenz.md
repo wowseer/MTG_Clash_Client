@@ -542,7 +542,7 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Drag-and-Drop per Raycast) und Kamer
 | `get_language()` | `String` | Aktuelle Sprache: `"de"` oder `"en"`. |
 | `get_hovered_card()` | `Card3D` | Die Karte, die gerade unter dem Mauszeiger liegt. |
 | `get_aiming_card()` | `Card3D` | Karte, von der gerade ein Pfeil gezogen wird (null = keine). |
-| `get_aim_point()` | `Vector3` | Mauspunkt auf der Tischebene beim Pfeilziehen (Welt). |
+| `get_aim_point()` | `Vector3` | Mauspunkt auf der Tischebene (Welt), jedes Physik-Frame aktualisiert – Endpunkt gezogener Pfeile. |
 | `get_dragged_card()` | `Card3D` | Die Karte, die gerade gezogen wird. |
 
 ### Signale
