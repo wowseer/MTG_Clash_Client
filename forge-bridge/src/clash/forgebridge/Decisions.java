@@ -208,7 +208,7 @@ final class Decisions {
     static List<Integer> targets(Game game, int seat, SpellAbility sa, String description,
             List<GameEntity> candidates, List<String> labels, int min, int max) {
         JsonObject d = decision("ChooseTargets", seat);
-        Card src = sa.getHostCard();
+        Card src = sa == null ? null : sa.getHostCard();
         d.addProperty("source", src == null ? -1 : src.getId());
         d.addProperty("description", withName(description, src));
         JsonArray arr = new JsonArray();

@@ -286,6 +286,23 @@ impl ForgeTable {
             }
             _ => {}
         }
+        // Tisch-Modus von ChooseCards: Indizes der Liste → Karten
+        if let Some(options) = self.table_pick(&req.decision) {
+            if choice.is_nil() {
+                self.answer(Choice::Cancel);
+                return;
+            }
+            let indices: Vec<i64> = match choice.try_to::<VarArray>() {
+                Ok(arr) => arr.iter_shared().filter_map(|v| v.try_to::<i64>().ok()).collect(),
+                Err(_) => choice.try_to::<i64>().ok().into_iter().collect(),
+            };
+            let cards: Option<Vec<CardId>> =
+                indices.iter().map(|i| usize::try_from(*i).ok().and_then(|i| options.get(i).copied())).collect();
+            if let Some(cards) = cards {
+                self.answer(Choice::Cards(cards));
+            }
+            return;
+        }
         match decision_view::to_choice(&req.decision, &choice) {
             Some(c) => self.answer(c),
             None => {
@@ -534,7 +551,10 @@ impl ForgeTable {
             side: false,
             numbered: false,
         });
-        let combat_choice = self.pending.as_ref().and_then(|req| self.combat_choice(req));
+        let combat_choice = self
+            .pending
+            .as_ref()
+            .and_then(|req| self.combat_choice(req).or_else(|| self.table_pick_choice(req)));
         let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().and_then(|req| {
             // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
             let name_of = |t: Target| match t {
@@ -754,6 +774,13 @@ impl ForgeTable {
                     self.selection.iter().filter_map(|i| candidates.get(*i)).filter_map(card).collect(),
                 )
             }
+            Some(d @ Decision::ChooseCards { .. }) if self.table_pick(d).is_some() => {
+                let options = self.table_pick(d).unwrap_or_default();
+                (
+                    options.iter().map(|c| i64::from(*c)).collect(),
+                    self.selection.iter().filter_map(|i| options.get(*i)).map(|c| i64::from(*c)).collect(),
+                )
+            }
             Some(Decision::DeclareAttackers { candidates, defenders, .. }) => {
                 let mut glow: HashSet<i64> = candidates.iter().map(|c| i64::from(*c)).collect();
                 // Mit gewähltem Angreifer: Planeswalker/Schlachten als Ziel wählbar
@@ -954,6 +981,9 @@ impl ForgeTable {
     /// den mitgeschickten Kartendaten).
     fn prepare_fan(&mut self, req: &Request) {
         self.free_fan_cards();
+        if self.table_pick(&req.decision).is_some() {
+            return; // Karten werden auf dem Tisch angeklickt
+        }
         for id in Self::fan_ids(&req.decision) {
             if let Some(card) = self.cards.get(&i64::from(id)).cloned() {
                 self.fan_cards.push((id, card, false));
@@ -1018,8 +1048,57 @@ impl ForgeTable {
     fn candidate_index(&self, target: Target) -> Option<usize> {
         match self.pending.as_ref().map(|r| &r.decision) {
             Some(Decision::ChooseTargets { candidates, .. }) => candidates.iter().position(|t| *t == target),
+            Some(d @ Decision::ChooseCards { .. }) => match target {
+                Target::Card(c) => self.table_pick(d)?.iter().position(|o| *o == c),
+                Target::Player(_) => None,
+            },
             _ => None,
         }
+    }
+
+    /// `ChooseCards`, deren Karten alle offen auf dem Tisch liegen (Spielfeld, Länder-Reihe,
+    /// Kommandozone, Stack): werden auf dem Tisch angeklickt statt im Kartenfächer gewählt.
+    /// Liefert die wählbaren Karten (sonst None = Kartenfächer).
+    fn table_pick(&self, decision: &Decision) -> Option<Vec<CardId>> {
+        let Decision::ChooseCards { options, .. } = decision else { return None };
+        let mut table_zones: Vec<Gd<Zone>> = Vec::new();
+        for seat in 0..2 {
+            let z = self.zones(seat);
+            table_zones.extend([z.battlefield, z.resources, z.command].into_iter().flatten());
+        }
+        table_zones.extend(self.stack_zone.clone());
+        let on_table = |id: &CardId| {
+            self.cards
+                .get(&i64::from(*id))
+                .and_then(|c| c.bind().get_zone())
+                .is_some_and(|z| table_zones.contains(&z))
+        };
+        (!options.is_empty() && options.iter().all(on_table)).then(|| options.clone())
+    }
+
+    /// Auswahlfenster am rechten Rand für `ChooseCards` im Tisch-Modus: Kartennamen als Liste
+    /// (Ausweichweg zum Klick), „Fertig“ bei Mehrfachwahl.
+    fn table_pick_choice(&self, req: &Request) -> Option<HudChoice> {
+        let options = self.table_pick(&req.decision)?;
+        let Decision::ChooseCards { min, max, .. } = &req.decision else { return None };
+        let name = |id: &CardId| {
+            self.cards.get(&i64::from(*id)).map(|c| c.bind().card_name().to_string()).unwrap_or_else(|| format!("#{id}"))
+        };
+        let title = if req.prompt.is_empty() { tr!("Karten wählen", "Choose cards").to_string() } else { req.prompt.clone() };
+        Some(HudChoice {
+            key: req.id,
+            title,
+            detail: tr!("Karte auf dem Tisch anklicken", "Click a card on the table").into(),
+            mode: if *min == 1 && *max == 1 {
+                ChoiceMode::Single
+            } else {
+                ChoiceMode::Multi { min: *min as usize, max: *max as usize }
+            },
+            options: options.iter().map(|id| ChoiceOption { text: name(id), color: None }).collect(),
+            cancelable: req.cancelable,
+            side: true,
+            numbered: false,
+        })
     }
 
     /// Position eines Ziels auf dem Tisch: Karte bzw. Medaillon-Anker des Sitzplatzes.

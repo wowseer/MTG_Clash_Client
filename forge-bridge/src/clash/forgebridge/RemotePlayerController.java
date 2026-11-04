@@ -616,14 +616,10 @@ public class RemotePlayerController extends PlayerControllerAi {
                 return t;
             }
         } else {
-            List<Decisions.Opt> opts = new ArrayList<>();
-            list.forEach(e -> opts.add(new Decisions.Opt(targetLabel(e), null)));
-            Integer i = Decisions.option(getGame(), seat, title, sa, null, opts, isOptional);
-            if (i != null) {
-                return list.get(i);
-            }
-            if (isOptional) {
-                return null;
+            // Spieler (ggf. mit Karten): wie Ziele per Klick auf Medaillon bzw. Karte
+            List<Integer> r = entities(list, isOptional ? 0 : 1, 1, title, sa);
+            if (r != null) {
+                return r.isEmpty() ? null : list.get(r.get(0));
             }
         }
         return super.chooseSingleEntityForEffect(optionList, delayedReveal, sa, title, isOptional, relatedPlayer,
@@ -641,9 +637,7 @@ public class RemotePlayerController extends PlayerControllerAi {
             list.forEach(e -> cards.add((Card) e));
             chosen = Decisions.cards(getGame(), seat, "Choose", cards, min, max, title, sa, false);
         } else {
-            List<Decisions.Opt> opts = new ArrayList<>();
-            list.forEach(e -> opts.add(new Decisions.Opt(targetLabel(e), null)));
-            chosen = Decisions.options(getGame(), seat, title, sa, null, opts, min, max, false);
+            chosen = entities(list, min, max, title, sa);
         }
         if (chosen == null) {
             return super.chooseEntitiesForEffect(optionList, min, max, delayedReveal, sa, title, relatedPlayer,
@@ -652,6 +646,19 @@ public class RemotePlayerController extends PlayerControllerAi {
         List<T> result = new ArrayList<>();
         chosen.forEach(i -> result.add(list.get(i)));
         return result;
+    }
+
+    /**
+     * Spieler und/oder Karten für einen Effekt wählen: {@code ChooseTargets} (Klick auf Medaillon
+     * bzw. Karte). NeoForge kennt dafür keine eigene Entscheidung (Erweiterung, siehe
+     * Forge-Schnittstelle.md). Liefert die gewählten Indizes oder {@code null} (Engine entscheidet).
+     */
+    private <T extends GameEntity> List<Integer> entities(List<T> list, int min, int max, String title,
+            SpellAbility sa) {
+        List<GameEntity> candidates = new ArrayList<>(list);
+        List<String> labels = new ArrayList<>();
+        list.forEach(e -> labels.add(targetLabel(e)));
+        return Decisions.targets(getGame(), seat, sa, title, candidates, labels, min, max);
     }
 
     @Override
@@ -676,6 +683,52 @@ public class RemotePlayerController extends PlayerControllerAi {
         r.get(0).forEach(i -> top.add(list.get(i)));
         r.get(1).forEach(i -> bottom.add(list.get(i)));
         return ImmutablePair.of(top, bottom);
+    }
+
+    /**
+     * Schadens-Reihenfolge der Blocker eines Angreifers (nur mit Forges Regel-Option
+     * „Kampfteilnehmer ordnen“, alte CR 509.2): Reihenfolge-Fenster mit Kartennamen.
+     */
+    @Override
+    public CardCollection orderBlockers(Card attacker, CardCollection blockers) {
+        CardCollection r = orderCards(blockers, "Reihenfolge der Blocker für " + attacker.getName()
+                + " (erster bekommt zuerst Schaden)");
+        return r != null ? r : super.orderBlockers(attacker, blockers);
+    }
+
+    /** Neuer Blocker wird in eine bestehende Reihenfolge eingefügt (z. B. durch einen Effekt). */
+    @Override
+    public CardCollection orderBlocker(Card attacker, Card blocker, CardCollection oldBlockers) {
+        CardCollection all = new CardCollection(oldBlockers);
+        all.add(blocker);
+        CardCollection r = orderCards(all, "Reihenfolge der Blocker für " + attacker.getName()
+                + " (erster bekommt zuerst Schaden)");
+        return r != null ? r : super.orderBlocker(attacker, blocker, oldBlockers);
+    }
+
+    /** Schadens-Reihenfolge der Angreifer, die ein Blocker blockt (alte Regel, siehe oben). */
+    @Override
+    public CardCollection orderAttackers(Card blocker, CardCollection attackers) {
+        CardCollection r = orderCards(attackers, "Reihenfolge der Angreifer für " + blocker.getName()
+                + " (erster bekommt zuerst Schaden)");
+        return r != null ? r : super.orderAttackers(blocker, attackers);
+    }
+
+    /** Karten ordnen ({@code OrderTriggers} mit Kartennamen); {@code null} = Engine entscheidet. */
+    private CardCollection orderCards(CardCollection cards, String title) {
+        if (cards.size() <= 1) {
+            return new CardCollection(cards);
+        }
+        List<Card> list = new ArrayList<>(cards);
+        List<String> names = new ArrayList<>();
+        list.forEach(c -> names.add(c.getName()));
+        List<Integer> order = Decisions.order(getGame(), seat, names, title, list);
+        if (order == null) {
+            return null;
+        }
+        CardCollection result = new CardCollection();
+        order.forEach(i -> result.add(list.get(i)));
+        return result;
     }
 
     /** Reihenfolge von Karten beim Zonenwechsel ({@code OrderTriggers} mit Kartennamen). */

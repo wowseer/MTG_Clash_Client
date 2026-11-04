@@ -67,7 +67,8 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `declareBlockers` | `DeclareBlockers { candidates, attackers }` | `Blocks([[blocker, angreifer], …])`; leer = nicht blocken |
 | `applyManaToCost` (über `payManaCost`) | `PayMana { remaining, options: [ActivateMana(karte, i), AutoPay, Cancel] }` | `Pay(ActivateMana(…))` → Quelle tappen, Mana einsetzen, erneut fragen bis bezahlt; `Pay(AutoPay)`; `Pay(Cancel)` = Wirken zurücknehmen |
 | `chooseCardsForEffect`, `chooseCardsForZoneChange`, `chooseSingleCardForZoneChange`, `chooseCardsToDiscardFrom`, `chooseCardsToDiscardToMaximumHandSize`, `choosePermanentsToSacrifice`, `choosePermanentsToDestroy`, `chooseCardsToRevealFromHand`, `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` (nur Karten) | `ChooseCards { reason, options, min, max }` (`reason`: `Choose`, `Search`, `Discard`, `DiscardToHandSize`, `Sacrifice`) | `Cards([…])` |
-| `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` mit Spielern | `ChooseOption` / `ChooseOptions` (**Erweiterung**) | `Number` / `Modes` |
+| `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` mit Spielern (z. B. „Choose a player“) | `ChooseTargets { source, description, candidates, min, max }` (**Erweiterung**: NeoForge kennt keine Spielerwahl für Effekte; `source` = −1, wenn es keine Quelle gibt) | `Targets([…])` |
+| `orderBlockers`, `orderBlocker`, `orderAttackers` (Schadens-Reihenfolge, nur mit `order_combatants`) | `OrderTriggers { descriptions }` mit Kartennamen (wie `orderMoveToZoneList`) | `Order([…])` |
 | `arrangeForScry`, `arrangeForSurveil` | `Scry { cards, graveyard }` | `Arrange { top, bottom }` |
 | `orderSimultaneousSa` (eigene Trigger), `orderMoveToZoneList` | `OrderTriggers { descriptions }` | `Order([…])` (erstes zuerst) |
 | `tuckCardsViaMulligan` | `MulliganBottom { hand, count }` | `Cards([…])` |
@@ -123,6 +124,7 @@ damit die UI unverändert mit NeoForge läuft:
 | `Decision::ChooseOptions { player, prompt, options, min, max }` → `Choice::Modes(indizes)` | allgemeine Mehrfachauswahl |
 | `Decision::ChooseNumber { player, prompt, min, max }` → `Choice::Number(n)` | Zahl mit Untergrenze ≠ 0 bzw. außerhalb von X |
 | `Decision::DivideAmount { player, source, amount, targets, min_each }` → `Choice::Damage(mengen)` | Menge beim Wirken auf die gewählten Ziele verteilen (CR 601.2d) |
+| `ChooseTargets` auch für Spieler-/Kartenwahl durch Effekte (`chooseSingleEntityForEffect` mit Spielern) | NeoForge hat dafür keine Entscheidung; die UI behandelt sie wie Ziele (Klick auf Medaillon/Karte) |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
 | Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) und Kartendaten (`cards`: Liste wie im `state`) der Karten, um die es geht – auch aus verdeckten Zonen, z. B. bei `ChooseCards` mit `Search` |
 
@@ -135,7 +137,7 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `cmd` | Felder | Wirkung |
 |---|---|---|
 | `ping` | `nonce` (optional) | Antwort `pong` mit gleichem `nonce` |
-| `start_match` | `decks`: Liste von `.dck`-Pfaden oder Forge-Decknamen (mind. 2) · `remote`: Liste bool je Sitzplatz (true = von MTG Clash gesteuert) · `names`: Spielernamen · `seed` (optional) · `starting_life` (optional) | startet eine Partie (Constructed, 1 Spiel) |
+| `start_match` | `decks`: Liste von `.dck`-Pfaden oder Forge-Decknamen (mind. 2) · `remote`: Liste bool je Sitzplatz (true = von MTG Clash gesteuert) · `names`: Spielernamen · `seed` (optional) · `starting_life` (optional) · `order_combatants` (optional, bool: Forges alte Regel „Kampfteilnehmer ordnen“, Schadens-Reihenfolge vor der CR-Änderung 2024) | startet eine Partie (Constructed, 1 Spiel) |
 | `answer` | `id`: Anfrage-ID · `choice`: Antwort | beantwortet eine `request` |
 | `state` | `viewer`: Sitzplatz mit offener Hand (-1 = keiner) | Antwort `state` |
 | `quit` | – | beendet den Prozess |
@@ -286,6 +288,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt; `library` = verdeckter Stapel in der Deck-Zone, neue Handkarten werden von dort gezogen |
 | `Priority` | Karten mit einer Aktion leuchten; Handkarte auf den Tisch ziehen → `PlayLand`/`Cast`; Klick auf eine Karte außerhalb der Hand → ihre `Activate`-Aktion (mehrere: Menü „Fähigkeit wählen“, nur UI); Hauptbutton / Leertaste → `Action::Pass` |
 | `ChooseTargets` | gültige Karten leuchten, wählbare Spieler-Medaillons pulsieren golden; Klick wählt (Signal `ForgeTable.choice_option_clicked` → Auswahlfenster am rechten Rand); gewählte Ziele golden markiert, Pfeile Quelle → Ziel (`TargetArrows`) |
+| `ChooseCards` mit Karten, die alle offen auf dem Tisch liegen (Spielfeld, Länder-Reihe, Kommandozone, Stack) | Tisch-Modus: Karten leuchten, Klick wählt (gold), Fenster am rechten Rand mit Kartennamen und „Fertig“ → `Cards` |
 | `ChooseCards` / `MulliganBottom` / `Scry` | Kartenfächer-Overlay (`card_fan.rs`): Karten groß (Tischkarten bzw. temporäre Karten aus `cards`), Klick wählt bzw. wechselt die Reihe; „Fertig“ → `ForgeTable.submit_fan` → `Cards` / `Arrange` |
 | `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
 | `AssignCombatDamage` / `DivideAmount` | Auswahlfenster „Verteilen“: Zahlenfeld je Empfänger, vorbelegt, Summenanzeige, „OK“ nur bei richtiger Summe → `Damage` |
@@ -342,6 +345,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Seasoned Dungeoneer, Palace Jailer, Call of the Ring) gegen `gegner.dck`: The Ring, The Monarch,
   The Initiative, Undercity mit Raum, Effekt von Palace Jailer in der Kommandozone; Manifest
   (verdeckt 2/2); Tag/Nacht und Transformieren Brutal Cathar ↔ Moonrage Brute.
+- Effekt-Wahl getestet mit einem Testdeck (Sawhorn Nemesis, Goblin Bombardment, Raging Goblin):
+  „Choose a player“ und „any target“ per Klick auf das Medaillon, Opfern als Kosten per Klick auf
+  die Kreatur (Tisch-Modus). Reihenfolge der Blocker nicht ausgelöst (die KI blockte nie doppelt).
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

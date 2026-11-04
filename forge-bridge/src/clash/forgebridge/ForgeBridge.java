@@ -170,6 +170,10 @@ public final class ForgeBridge {
 
         GameRules rules = new GameRules(GameType.Constructed);
         rules.setGamesPerMatch(1);
+        // Alte Regel „Kampfteilnehmer ordnen“ (Schadens-Reihenfolge der Blocker, vor CR-Änderung 2024)
+        if (cmd.has("order_combatants")) {
+            rules.setOrderCombatants(cmd.get("order_combatants").getAsBoolean());
+        }
         Match match = new Match(rules, players, "MTG Clash");
         Game game = match.createGame();
         currentGame = game;
