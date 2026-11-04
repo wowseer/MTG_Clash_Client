@@ -289,17 +289,24 @@ impl Showcase {
     /// unter ihm ein [Slider3D], mit dem man ihn nach links und rechts schiebt (Start: Mitte).
     #[func]
     pub fn enable_scroll(&mut self) {
+        self.enable_scroll_with(SCROLL_STEP, SCROLL_RADIUS);
+    }
+
+    /// Wie [method enable_scroll], mit eigenem Kartenabstand `step` (kleiner als eine
+    /// Kartenbreite = überlappend) und Bogenradius `radius` (klein = stärker gebogen).
+    #[func]
+    pub fn enable_scroll_with(&mut self, step: f32, radius: f32) {
         let Some(mut zone) = self.zone.clone() else { return };
         for (prop, value) in [
-            ("hand_radius", SCROLL_RADIUS.to_variant()),
-            ("hand_card_angle_degrees", (SCROLL_STEP / SCROLL_RADIUS).to_degrees().to_variant()),
+            ("hand_radius", radius.to_variant()),
+            ("hand_card_angle_degrees", (step / radius).to_degrees().to_variant()),
             ("hand_max_spread_degrees", 170.0f32.to_variant()),
         ] {
             zone.set(prop, &value);
         }
         zone.bind_mut().layout();
         let n = zone.bind().get_card_count().max(1) as f32;
-        self.scroll_extra = ((n - 1.0) * SCROLL_STEP - SCROLL_SPAN).max(0.0);
+        self.scroll_extra = ((n - 1.0) * step - SCROLL_SPAN).max(0.0);
         if self.scroll_extra <= 0.0 || self.slider.is_some() {
             return;
         }
@@ -320,6 +327,95 @@ impl Showcase {
         xf.origin = FAN_CENTER + Vector3::new(offset, 0.0, 0.0);
         zone.set_transform(xf);
         zone.bind_mut().layout();
+    }
+
+    /// Weitere Ablage auf der Bühne (Zone der Art Hand in der Bühnenebene, Vorderseite zur
+    /// Kamera): Mitte `center`, Größe `size`, Fächer mit Radius `radius` und Kartenabstand `step`
+    /// (höchstens `max_spread` Grad); `drops` = Karten lassen sich hinein- und herausziehen.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_zone(&mut self, name: &str, center: Vector3, size: Vector3, radius: f32, step: f32, max_spread: f32, drops: bool) -> Gd<Zone> {
+        let mut zone = Zone::new_alloc();
+        zone.set_name(name);
+        for (prop, value) in [
+            ("kind", ZoneKind::Hand.to_variant()),
+            ("size", size.to_variant()),
+            ("accepts_drops", drops.to_variant()),
+            ("cards_draggable", drops.to_variant()),
+            ("face_up", true.to_variant()),
+            ("hand_radius", radius.to_variant()),
+            ("hand_card_angle_degrees", (step / radius).to_degrees().to_variant()),
+            ("hand_max_spread_degrees", max_spread.to_variant()),
+        ] {
+            zone.set(prop, &value);
+        }
+        // Zone-Ebene: lokal y → zur Kamera, z → nach unten
+        zone.set_transform(Transform3D::new(Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2), center));
+        self.base_mut().add_child(&zone);
+        zone
+    }
+
+    /// Eigene Karten (Kopien) in die Ablage `zone` der Bühne legen; die Bühne gibt sie beim
+    /// Schließen frei.
+    pub fn add_owned_cards(&mut self, mut zone: Gd<Zone>, cards: Vec<Gd<Card3D>>) {
+        let start = zone.get_global_transform();
+        for mut card in cards {
+            self.base_mut().add_child(&card);
+            card.set_global_transform(start);
+            card.bind_mut().set_bright(true);
+            zone.bind_mut().add_card(card.clone(), -1, 0.0);
+            self.owned.push(card);
+        }
+    }
+
+    /// Dunkler Kasten mit hellem Rand auf der Bühne (z. B. Ablagefläche bei Hellsicht): Mitte
+    /// und Größe in Bühnen-Koordinaten.
+    pub fn add_frame(&mut self, center: Vector2, size: Vector2) {
+        let mut mat = StandardMaterial3D::new_gd();
+        mat.set_shading_mode(ShadingMode::UNSHADED);
+        mat.set_transparency(Transparency::ALPHA);
+        mat.set_albedo(Color::from_rgba(0.03, 0.03, 0.05, 0.75));
+        mat.set_render_priority(0);
+        let mut quad = QuadMesh::new_gd();
+        quad.set_size(size);
+        quad.set_material(&mat);
+        let mut frame = MeshInstance3D::new_alloc();
+        frame.set_mesh(&quad);
+        frame.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+        frame.set_position(Vector3::new(center.x, center.y, -0.05));
+        self.base_mut().add_child(&frame);
+        // Rand als etwas größere, hellere Fläche dahinter
+        let mut edge_mat = StandardMaterial3D::new_gd();
+        edge_mat.set_shading_mode(ShadingMode::UNSHADED);
+        edge_mat.set_transparency(Transparency::ALPHA);
+        edge_mat.set_albedo(Color::from_rgba(0.55, 0.55, 0.6, 0.55));
+        let mut edge_quad = QuadMesh::new_gd();
+        edge_quad.set_size(size + Vector2::splat(0.012));
+        edge_quad.set_material(&edge_mat);
+        let mut edge = MeshInstance3D::new_alloc();
+        edge.set_mesh(&edge_quad);
+        edge.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+        edge.set_position(Vector3::new(center.x, center.y, -0.052));
+        self.base_mut().add_child(&edge);
+    }
+
+    /// Beschriftung auf der Bühne (z. B. „UNTEN“ / „OBEN“), linksbündig ab `pos`.
+    pub fn add_caption(&mut self, text: &str, pos: Vector2, right_aligned: bool) {
+        let mut l = Label3D::new_alloc();
+        l.set_text(text);
+        l.set_font_size(72);
+        l.set_pixel_size(0.0013);
+        l.set_outline_size(10);
+        l.set_modulate(Color::from_rgb(0.95, 0.95, 0.95));
+        l.set_outline_modulate(Color::from_rgba(0.02, 0.02, 0.03, 0.9));
+        l.set_draw_flag(DrawFlags::SHADED, false);
+        l.set_horizontal_alignment(if right_aligned { godot::global::HorizontalAlignment::RIGHT } else { godot::global::HorizontalAlignment::LEFT });
+        l.set_position(Vector3::new(pos.x, pos.y, 0.05));
+        self.base_mut().add_child(&l);
+    }
+
+    /// Der Hauptfächer der Bühne.
+    pub fn fan_zone(&self) -> Option<Gd<Zone>> {
+        self.zone.clone()
     }
 
     /// Breite eines Knopfes in dieser Bühne (Welteinheiten).
@@ -386,26 +482,7 @@ impl Showcase {
         self.dimmer = Some(mat);
 
         // Kartenfächer: Zone (Hand) – Karten liegen in ihrer Ebene, Vorderseite zur Kamera
-        let mut zone = Zone::new_alloc();
-        zone.set_name("Fan");
-        for (prop, value) in [
-            ("kind", ZoneKind::Hand.to_variant()),
-            ("size", Vector3::new(4.4, 0.1, 1.2).to_variant()),
-            ("accepts_drops", false.to_variant()),
-            ("cards_draggable", false.to_variant()),
-            ("face_up", true.to_variant()),
-            ("hand_radius", FAN_RADIUS.to_variant()),
-            ("hand_card_angle_degrees", (FAN_STEP / FAN_RADIUS).to_degrees().to_variant()),
-            ("hand_max_spread_degrees", 40.0f32.to_variant()),
-        ] {
-            zone.set(prop, &value);
-        }
-        // Zone-Ebene: lokal y → zur Kamera, z → nach unten
-        zone.set_transform(Transform3D::new(
-            Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2),
-            FAN_CENTER,
-        ));
-        self.base_mut().add_child(&zone);
+        let zone = self.add_zone("Fan", FAN_CENTER, Vector3::new(4.4, 0.1, 1.2), FAN_RADIUS, FAN_STEP, 40.0, false);
         self.zone = Some(zone);
 
         self.title = Some(self.label(0.92, 96, 0.0019, Color::from_rgb(0.98, 0.86, 0.55)));

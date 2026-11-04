@@ -123,12 +123,13 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_x_step(delta: int)` | `void` | X-Knöpfe: Wert um `delta` ändern (−5, −1, +1, +5), begrenzt auf 0 … Maximum. |
 | `on_x_pay()` | `void` | „Bezahlen X = n“: Wert an Forge. |
 | `on_x_cancel()` | `void` | „Abbrechen“ beim X wählen: Wirken zurücknehmen. |
+| `on_scry_done()` | `void` | Hellsicht/Überwachen: „Fertig“ – Karten im Feld „oben“ (die rechte Karte zuoberst) und „unten“ bzw. Friedhof an Forge. |
+| `on_pick_done(decline: bool)` | `void` | Kartenwahl auf der Bühne: „Fertig“ (mehrere Karten) bzw. „Ablehnen“ (keine). |
 | `inspect_card(card: Card3D)` | `void` | Kartenansicht für `card` zeigen wie beim Hovern (für Skripte und Tests; null = wieder der Karte unter der Maus folgen). |
 | `on_hand_pick_cancel()` | `void` | „Abbrechen“ auf der Hand-Bühne (nur wo Forge das erlaubt). |
 | `on_mulligan_pressed(keep: bool)` | `void` | Ein Mulligan-Knopf wurde gedrückt: `keep` = Starthand behalten, sonst Mulligan. |
 | `on_starting_player_pressed(index: int)` | `void` | Ein Startspieler-Knopf wurde gedrückt (`index` = Eintrag in `players` der Entscheidung `ChooseStartingPlayer`). |
 | `player_clicked(seat: int)` | `void` | Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt. |
-| `submit_fan(first: PackedInt64Array, second: PackedInt64Array)` | `void` | Antwort aus dem Kartenfächer: `first` = gewählte Karten (`ChooseCards`, `MulliganBottom`) bzw. Karten oben auf der Bibliothek (`Scry`, von oben nach unten), `second` = Karten unter die Bibliothek bzw. in den Friedhof. |
 | `set_choice_selection(selection: PackedInt64Array)` | `void` | Aktuelle Auswahl im Auswahlfenster (vom HUD jedes Frame gemeldet): gewählte Ziele werden auf dem Tisch golden markiert und bekommen einen Pfeil. |
 | `get_card(forge_id: int)` | `Card3D` | Karte auf dem Tisch zur Forge-Karten-ID (null, wenn nicht sichtbar). |
 | `get_state()` | `Dictionary` | Zuletzt von Forge empfangener Spielzustand (Aufbau siehe `docs/Forge-Schnittstelle.md`). |
@@ -203,9 +204,6 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 |---|---|---|
 | `on_choice_option(index: int)` | `void` | Option `index` im Auswahlfenster angeklickt (eine Option / Ja-Nein: Antwort senden; Mehrfachauswahl: an-/abwählen). |
 | `on_choice_done()` | `void` | Knopf „Fertig“ / „OK“ im Auswahlfenster (Mehrfachauswahl, Zahl, Text). |
-| `on_fan_card(index: int)` | `void` | Karte `index` im Kartenfächer angeklickt (wählen bzw. in die andere Reihe legen). |
-| `on_fan_done()` | `void` | „Fertig“ im Kartenfächer: Auswahl bzw. Anordnung an den `ForgeTable`. |
-| `on_fan_cancel()` | `void` | „Abbrechen“ im Kartenfächer. |
 | `on_pool_clicked(mana: int)` | `void` | Mana-Symbol im Manapool angeklickt → an den `ForgeTable` (beim Bezahlen einsetzen). |
 | `on_badge_clicked(seat: int)` | `void` | Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den `ForgeTable` weitergeben. |
 | `on_choice_values_changed(value: float)` | `void` | Ein Zahlenfeld beim Verteilen wurde geändert: Summe und „Fertig“ aktualisieren. |
@@ -499,7 +497,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 
 *Erbt von `Node3D` · Quelle: `rust/src/table/card_inspector.rs`*
 
-Kartenansicht beim Hovern: große, helle Kopie der Karte am Bildschirmrand und daneben eine Tafel mit Fähigkeiten und Buffs. `hide()` blendet sie aus.
+Kartenansicht beim Hovern wie `Fähigkeiten.png`: helle Kopie der Karte am Bildschirmrand, daneben eine dunkle Tafel mit Fähigkeiten (Symbol, Name fett, Erklärung kursiv) und Veränderungen. `hide_card()` blendet sie aus.
 
 ### Funktionen
 
@@ -537,6 +535,7 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 | `set_focus_layout()` | `void` | Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell in der Mitte, die Knöpfe untereinander darunter, kein Untertitel (er läge auf der Karte). Vor `add_button()` aufrufen. |
 | `static focus_button_width()` | `float` | Breite eines Knopfes in der Fokus-Anordnung (Welteinheiten). |
 | `enable_scroll()` | `void` | Fächer nebeneinander statt überlappend legen; passt er nicht ganz ins Bild, erscheint unter ihm ein `Slider3D`, mit dem man ihn nach links und rechts schiebt (Start: Mitte). |
+| `enable_scroll_with(step: float, radius: float)` | `void` | Wie `enable_scroll()`, mit eigenem Kartenabstand `step` (kleiner als eine Kartenbreite = überlappend) und Bogenradius `radius` (klein = stärker gebogen). |
 | `on_scroll(value: float)` | `void` | Schieberegler bewegt (0 = linkes Ende sichtbar, 1 = rechtes Ende). |
 | `static button_width()` | `float` | Breite eines Knopfes in dieser Bühne (Welteinheiten). |
 | `holds(card: Card3D)` | `bool` | Liegt `card` gerade in der Bühne? |

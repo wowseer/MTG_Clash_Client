@@ -17,7 +17,6 @@ use godot::prelude::*;
 use super::bridge::ForgeBridge;
 use crate::game::cards::{CardDef, CardKind};
 use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
-use crate::game::card_fan::{FanMode, HudFan};
 use crate::game::decision_view;
 use crate::game::card_text;
 use crate::game::counters;
@@ -138,10 +137,6 @@ pub struct ForgeTable {
     /// Zuletzt gewählte Kreatur im Kampf: Angreifer, dessen Ziel ein Klick auf ein anderes
     /// Angriffsziel ändert, bzw. Blocker, der auf seinen Angreifer wartet.
     combat_armed: Option<CardId>,
-    /// Kartenbilder für den Kartenfächer der offenen Anfrage: Karten vom Tisch oder (für
-    /// verdeckte Zonen) temporäre Karten aus den mitgeschickten Kartendaten. Temporäre Karten
-    /// (zweiter Wert true) werden nach der Antwort freigegeben.
-    fan_cards: Vec<(CardId, Gd<Card3D>, bool)>,
     /// 3D-Bedienobjekte der offenen Entscheidung (z. B. Startspieler-Knöpfe) und ihre Frage als
     /// 3D-Text; werden bei der Antwort ausgeblendet.
     choice_buttons: Vec<Gd<Button3D>>,
@@ -163,6 +158,11 @@ pub struct ForgeTable {
     mode_pick: Vec<usize>,
     /// Optionale Kosten mit mehreren Möglichkeiten: an/aus je Option.
     option_toggles: Vec<bool>,
+    /// Hellsicht/Überwachen bzw. Kartenwahl aus verdeckten Zonen: Kartenkopien auf der Bühne mit
+    /// ihrer Forge-ID, die Ablagen „unten“/„oben“ (Hellsicht) und die Wahl.
+    pick_cards: Vec<(Gd<Card3D>, CardId)>,
+    scry_zones: Option<(Gd<Zone>, Gd<Zone>)>,
+    pick_chosen: Vec<CardId>,
     /// Laufende Mana-Zahlung wird von Hand bezahlt: Beim ersten `PayMana` lag schon Mana im Pool
     /// (vorher getappt). Bleibt gesetzt, bis eine andere Entscheidung kommt.
     manual_pay: bool,
@@ -224,7 +224,6 @@ impl INode for ForgeTable {
             attack_plan: Vec::new(),
             block_plan: Vec::new(),
             combat_armed: None,
-            fan_cards: Vec::new(),
             choice_buttons: Vec::new(),
             choice_prompt: None,
             showcase: None,
@@ -236,6 +235,9 @@ impl INode for ForgeTable {
             mode_cards: Vec::new(),
             mode_pick: Vec::new(),
             option_toggles: Vec::new(),
+            pick_cards: Vec::new(),
+            scry_zones: None,
+            pick_chosen: Vec::new(),
             manual_pay: false,
             auto_pass_turn: None,
             drawn_arrows: HashSet::new(),
@@ -554,6 +556,31 @@ impl ForgeTable {
         }
     }
 
+    /// Hellsicht/Überwachen: „Fertig“ – Karten im Feld „oben“ (die rechte Karte zuoberst) und
+    /// „unten“ bzw. Friedhof an Forge.
+    #[func]
+    fn on_scry_done(&mut self) {
+        let Some((bottom, top)) = self.scry_zones.clone() else { return };
+        let ids = |z: &Gd<Zone>| -> Vec<CardId> {
+            z.bind().get_cards().iter_shared().filter_map(|c| self.pick_cards.iter().find(|(k, _)| *k == c).map(|(_, id)| *id)).collect()
+        };
+        let mut top_ids = ids(&top);
+        top_ids.reverse();
+        let bottom_ids = ids(&bottom);
+        self.answer(Choice::Arrange { top: top_ids, bottom: bottom_ids });
+    }
+
+    /// Kartenwahl auf der Bühne: „Fertig“ (mehrere Karten) bzw. „Ablehnen“ (keine).
+    #[func]
+    fn on_pick_done(&mut self, decline: bool) {
+        let Some(Decision::ChooseCards { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        let pick = if decline { Vec::new() } else { self.pick_chosen.clone() };
+        let n = pick.len() as u32;
+        if n >= min && n <= max {
+            self.answer(Choice::Cards(pick));
+        }
+    }
+
     /// Kartenansicht für `card` zeigen wie beim Hovern (für Skripte und Tests; null = wieder der
     /// Karte unter der Maus folgen).
     #[func]
@@ -603,19 +630,6 @@ impl ForgeTable {
         }
     }
 
-    /// Antwort aus dem Kartenfächer: `first` = gewählte Karten (`ChooseCards`, `MulliganBottom`)
-    /// bzw. Karten oben auf der Bibliothek (`Scry`, von oben nach unten), `second` = Karten unter die
-    /// Bibliothek bzw. in den Friedhof.
-    #[func]
-    pub fn submit_fan(&mut self, first: PackedInt64Array, second: PackedInt64Array) {
-        let ids = |a: &PackedInt64Array| a.as_slice().iter().filter_map(|i| u32::try_from(*i).ok()).collect::<Vec<_>>();
-        let choice = match self.pending.as_ref().map(|r| &r.decision) {
-            Some(Decision::ChooseCards { .. }) | Some(Decision::MulliganBottom { .. }) => Choice::Cards(ids(&first)),
-            Some(Decision::Scry { .. }) => Choice::Arrange { top: ids(&first), bottom: ids(&second) },
-            _ => return,
-        };
-        self.answer(choice);
-    }
 
     /// Aktuelle Auswahl im Auswahlfenster (vom HUD jedes Frame gemeldet): gewählte Ziele werden
     /// auf dem Tisch golden markiert und bekommen einen Pfeil.
@@ -720,7 +734,6 @@ impl ForgeTable {
         // Karte, um die es geht, golden markieren
         let source = req.source.and_then(|id| self.cards.get(&(id as i64)).cloned());
         self.set_marked(source);
-        self.prepare_fan(&req);
         self.attack_plan.clear();
         self.block_plan.clear();
         self.combat_armed = None;
@@ -729,6 +742,10 @@ impl ForgeTable {
         let hand_pick = self.hand_choice(&req.decision).is_some().then(|| req.clone());
         let choose_x = matches!(req.decision, Decision::ChooseX { .. }).then(|| req.clone());
         let stage_3d = Self::stage_kind(&req.decision).map(|k| (k, req.clone()));
+        let library_pick = (matches!(req.decision, Decision::ChooseCards { .. })
+            && self.table_pick(&req.decision).is_none()
+            && self.hand_choice(&req.decision).is_none())
+        .then(|| req.clone());
         let auto_pay = self.auto_pay(&req.decision);
         self.pending = Some(req);
         if auto_pay {
@@ -765,7 +782,11 @@ impl ForgeTable {
                 StageKind::Modes => self.show_modes(&req),
                 StageKind::Binary => self.show_binary(&req),
                 StageKind::OptionalCost => self.show_optional_cost(&req),
+                StageKind::Scry => self.show_scry(&req),
             }
+        }
+        if let Some(req) = library_pick {
+            self.show_library_pick(&req);
         }
         self.update_glow();
     }
@@ -795,6 +816,12 @@ impl ForgeTable {
     /// das Fähigkeiten-Menü.
     #[func]
     fn on_card_clicked(&mut self, card: Gd<Card3D>) {
+        if let Some(id) = self.pick_cards.iter().find(|(c, _)| *c == card).map(|(_, id)| *id) {
+            if self.scry_zones.is_none() {
+                self.library_click(id);
+            }
+            return;
+        }
         if let Some(mode) = self.mode_cards.iter().find(|(c, _)| *c == card).map(|(_, m)| *m) {
             self.mode_click(mode);
             return;
@@ -899,6 +926,12 @@ impl ForgeTable {
     /// wird auf den Engine-Stand zurückgesetzt.
     #[func]
     fn on_card_dropped(&mut self, card: Gd<Card3D>, from_zone: Gd<Zone>, to_zone: Gd<Zone>) {
+        // Hellsicht: Karten werden zwischen „unten“ und „oben“ verschoben – nur Anzeige
+        if let Some((bottom, top)) = self.scry_zones.as_ref() {
+            if [bottom, top].contains(&&to_zone) || [bottom, top].contains(&&from_zone) {
+                return;
+            }
+        }
         let hand = self.zones(0).hand;
         let back_to_hand = hand.as_ref() == Some(&from_zone) && hand.as_ref() == Some(&to_zone);
         let id = self.forge_id(&card);
@@ -1047,6 +1080,7 @@ impl ForgeTable {
             | Decision::PayLifeForPhyrexian { .. } => Some(StageKind::Binary),
             Decision::ChooseOption { options, .. } if options.len() == 2 => Some(StageKind::Binary),
             Decision::ChooseOptions { purpose, .. } if purpose == "OptionalCost" => Some(StageKind::OptionalCost),
+            Decision::Scry { .. } => Some(StageKind::Scry),
             _ => None,
         }
     }
@@ -1251,6 +1285,144 @@ impl ForgeTable {
         }
     }
 
+    /// Kartenkopien für `ids` aus den Kartendaten der Anfrage (bzw. des Zustands).
+    fn copies_for(&self, req: &Request, ids: &[CardId]) -> Vec<(Gd<Card3D>, CardId)> {
+        ids.iter()
+            .map(|id| {
+                let data = req
+                    .cards
+                    .iter()
+                    .find(|c| get_int(c, "id") == i64::from(*id))
+                    .cloned()
+                    .or_else(|| self.card_data(i64::from(*id)))
+                    .unwrap_or_default();
+                let mut copy = Self::stage_card(&data, None);
+                copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+                (copy, *id)
+            })
+            .collect()
+    }
+
+    /// Hellsicht / Überwachen (CR 701.18, 701.25) wie im Video des Users: Titel und Anleitung,
+    /// ein dunkler Kasten, darunter links „UNTEN“ (bzw. „FRIEDHOF“) und rechts „OBEN“. Alle Karten
+    /// liegen zuerst rechts; man zieht sie nach links oder rechts. „Fertig“ schickt sie an Forge.
+    fn show_scry(&mut self, req: &Request) {
+        let Decision::Scry { cards, graveyard, .. } = &req.decision else { return };
+        let (title, sub, left) = if *graveyard {
+            (tr!("Überwachen", "Surveil"), tr!("Ziehe die Karten oben auf deine Bibliothek oder in den Friedhof.", "Drag cards to the top of your library or into your graveyard."), tr!("FRIEDHOF", "GRAVEYARD"))
+        } else {
+            (tr!("Hellsicht", "Scry"), tr!("Ziehe die Karten nach oben oder unten in deine Bibliothek.", "Drag cards to the top or bottom of your library."), tr!("UNTEN", "BOTTOM"))
+        };
+        let Some(mut showcase) = self.open_stage(title, sub) else { return };
+        showcase.bind_mut().add_frame(SCRY_FRAME_CENTER, SCRY_FRAME_SIZE);
+        let half = SCRY_FRAME_SIZE.x * 0.25;
+        let size = Vector3::new(SCRY_FRAME_SIZE.x * 0.5 - 0.05, 0.1, SCRY_FRAME_SIZE.y - 0.1);
+        let bottom = showcase.bind_mut().add_zone("ScryBottom", Vector3::new(SCRY_FRAME_CENTER.x - half, SCRY_FRAME_CENTER.y, 0.0), size, 30.0, 0.5, 170.0, true);
+        let top = showcase.bind_mut().add_zone("ScryTop", Vector3::new(SCRY_FRAME_CENTER.x + half, SCRY_FRAME_CENTER.y, 0.0), size, 30.0, 0.5, 170.0, true);
+        let y = SCRY_FRAME_CENTER.y - SCRY_FRAME_SIZE.y * 0.5 - 0.09;
+        showcase.bind_mut().add_caption(left, Vector2::new(SCRY_FRAME_CENTER.x - SCRY_FRAME_SIZE.x * 0.5, y), false);
+        showcase.bind_mut().add_caption(tr!("OBEN", "TOP"), Vector2::new(SCRY_FRAME_CENTER.x + SCRY_FRAME_SIZE.x * 0.5, y), true);
+        self.pick_cards = self.copies_for(req, cards);
+        let copies: Vec<Gd<Card3D>> = self.pick_cards.iter().map(|(c, _)| c.clone()).collect();
+        showcase.bind_mut().add_owned_cards(top.clone(), copies);
+        self.scry_zones = Some((bottom, top));
+        let mut done = Button3D::create(ButtonStyle::Orange, tr!("Fertig", "Done"), Showcase::button_width());
+        let cb = Callable::from_object_method(&self.to_gd(), "on_scry_done");
+        done.connect("pressed", &cb);
+        showcase.bind_mut().add_button(done);
+    }
+
+    /// Karten aus verdeckten Zonen wählen (Bibliothek durchsuchen, Friedhof, aufgedeckte Karten …)
+    /// wie im Video des Users: Titel („Wähle bis zu einer“ …) mit Quelle und Text, die Karten als
+    /// weiter, überlappender Fächer (blau = wählbar), Schieberegler bei vielen Karten. Eine Karte:
+    /// Klick wählt sofort; mehrere: Klick wählt (orange), „Fertig (n/…)“. Darf man keine nehmen,
+    /// steht blau „Ablehnen“ unten rechts. Nur ansehen (max 0): „Fertig“.
+    fn show_library_pick(&mut self, req: &Request) {
+        let Decision::ChooseCards { options, min, max, .. } = &req.decision else { return };
+        let (min, max) = (*min, *max);
+        let title = match (min, max) {
+            (_, 0) => if req.prompt.is_empty() { tr!("Aufgedeckt", "Revealed").to_string() } else { req.prompt.clone() },
+            (0, 1) => tr!("Wähle bis zu einer Karte", "Choose up to one").to_string(),
+            (1, 1) => tr!("Wähle eine Karte", "Choose one card").to_string(),
+            (a, b) if a == b => trf!("Wähle {b} Karten", "Choose {b} cards"),
+            (0, b) => trf!("Wähle bis zu {b} Karten", "Choose up to {b} cards"),
+            (a, b) => trf!("Wähle {a}–{b} Karten", "Choose {a}–{b} cards"),
+        };
+        let sub = match (req.source_name.is_empty(), max == 0 || req.prompt.is_empty()) {
+            (false, false) => format!("({}) {}", req.source_name, req.prompt),
+            (false, true) => format!("({})", req.source_name),
+            (true, false) => req.prompt.clone(),
+            (true, true) => String::new(),
+        };
+        let Some(mut showcase) = self.open_stage(&title, &sub) else { return };
+        self.pick_cards = self.copies_for(req, options);
+        let copies: Vec<Gd<Card3D>> = self.pick_cards.iter().map(|(c, _)| c.clone()).collect();
+        let fan = showcase.bind().fan_zone();
+        if let Some(zone) = fan {
+            showcase.bind_mut().add_owned_cards(zone, copies);
+        }
+        showcase.bind_mut().enable_scroll_with(LIB_STEP, LIB_RADIUS);
+        let me = self.to_gd();
+        let mut button = |style: ButtonStyle, text: &str, pos: Option<Vector2>, decline: bool| {
+            let mut b = Button3D::create(style, text, Showcase::button_width());
+            let cb = Callable::from_object_method(&me, "on_pick_done").bind(&[decline.to_variant()]);
+            b.connect("pressed", &cb);
+            match pos {
+                Some(p) => showcase.bind_mut().add_button_at(b, p),
+                None => showcase.bind_mut().add_button(b),
+            }
+        };
+        if max == 0 {
+            button(ButtonStyle::Orange, tr!("Fertig", "Done"), None, true);
+        } else if max > 1 {
+            button(ButtonStyle::Orange, &pick_label(0, min, max), None, false);
+        }
+        if min == 0 && max > 0 {
+            button(ButtonStyle::Blue, tr!("Ablehnen", "Decline"), Some(LIB_DECLINE_POS), true);
+        }
+        if req.cancelable {
+            self.stage_button(&mut showcase, ButtonStyle::Grey, tr!("Abbrechen", "Cancel"), Showcase::button_width(), Choice::Cancel);
+        }
+        self.refresh_pick_buttons();
+    }
+
+    /// Klick auf eine Karte der Kartenwahl-Bühne.
+    fn library_click(&mut self, id: CardId) {
+        let Some(Decision::ChooseCards { max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        if max == 0 {
+            return;
+        }
+        if max == 1 {
+            self.answer(Choice::Cards(vec![id]));
+            return;
+        }
+        if let Some(pos) = self.pick_chosen.iter().position(|c| *c == id) {
+            self.pick_chosen.remove(pos);
+        } else if self.pick_chosen.len() < max as usize {
+            self.pick_chosen.push(id);
+        }
+        for (card, cid) in self.pick_cards.iter_mut() {
+            let on = self.pick_chosen.contains(cid);
+            card.bind_mut().set_marker(if on { CardMarker::Selected } else { CardMarker::None });
+        }
+        self.refresh_pick_buttons();
+    }
+
+    /// „Fertig (n/…)“ der Kartenwahl-Bühne aktualisieren.
+    fn refresh_pick_buttons(&mut self) {
+        let Some(Decision::ChooseCards { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        if max <= 1 {
+            return;
+        }
+        let n = self.pick_chosen.len() as u32;
+        for mut b in self.stage_buttons() {
+            if b.bind().get_text().to_string().starts_with(tr!("Fertig", "Done")) {
+                b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
+                b.bind_mut().set_enabled(n >= min && n <= max);
+            }
+        }
+    }
+
     /// X wählen (wie im Video des Users): Bühne am Stack rechts (ohne Abdunkeln) mit der Karte
     /// groß, hell und lesbar (orange leuchtend), darunter eine Knopfreihe
     /// „−5“, „−“, orange „Bezahlen X = n“, „+“, „+5“, darunter grau „Abbrechen“ (wo erlaubt);
@@ -1433,6 +1605,9 @@ impl ForgeTable {
         self.mode_cards.clear();
         self.mode_pick.clear();
         self.option_toggles.clear();
+        self.pick_cards.clear();
+        self.scry_zones = None;
+        self.pick_chosen.clear();
         if let Some(mut s) = self.showcase.take() {
             if s.is_instance_valid() {
                 s.bind_mut().close();
@@ -1565,7 +1740,6 @@ impl ForgeTable {
                 .map(|a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).collect())
                 .unwrap_or_default(),
             choice,
-            fan: self.pending.as_ref().and_then(|req| self.hud_fan(req)),
             targetable_seats: seat_state(false),
             selected_seats: seat_state(true),
         }
@@ -1661,7 +1835,6 @@ impl ForgeTable {
         self.clear_choice_objects();
         self.menu = None;
         self.selection.clear();
-        self.free_fan_cards();
         self.attack_plan.clear();
         self.block_plan.clear();
         self.combat_armed = None;
@@ -1966,83 +2139,6 @@ impl ForgeTable {
         };
         let hint = if req.prompt.is_empty() || req.prompt.starts_with(standard) { String::new() } else { req.prompt.clone() };
         Some((label, hint))
-    }
-
-    /// Karten-IDs, die der Kartenfächer für `decision` zeigt (leer = kein Fächer).
-    fn fan_ids(decision: &Decision) -> Vec<CardId> {
-        match decision {
-            Decision::ChooseCards { options, .. } => options.clone(),
-            Decision::Scry { cards, .. } => cards.clone(),
-            // MulliganBottom und Wahl aus der eigenen Hand: 3D-Bühne (show_hand_pick)
-            _ => Vec::new(),
-        }
-    }
-
-    /// Stellt die Kartenbilder für den Kartenfächer bereit (Tischkarte oder temporäre Karte aus
-    /// den mitgeschickten Kartendaten).
-    fn prepare_fan(&mut self, req: &Request) {
-        self.free_fan_cards();
-        if self.table_pick(&req.decision).is_some() || self.hand_choice(&req.decision).is_some() {
-            return; // Karten werden auf dem Tisch bzw. auf der Hand-Bühne angeklickt
-        }
-        for id in Self::fan_ids(&req.decision) {
-            if let Some(card) = self.cards.get(&i64::from(id)).cloned() {
-                self.fan_cards.push((id, card, false));
-                continue;
-            }
-            let data = req.cards.iter().find(|c| get_int(c, "id") == i64::from(id));
-            let def = data.map(CardDef::from_state).unwrap_or_else(|| CardDef::named("?"));
-            let mut card = Card3D::new_alloc();
-            {
-                let mut c = card.bind_mut();
-                c.set_face_texture(Some(placeholder::card_face(&def)));
-                c.apply_def(&def);
-            }
-            self.fan_cards.push((id, card, true));
-        }
-    }
-
-    fn free_fan_cards(&mut self) {
-        for (_, card, temporary) in self.fan_cards.drain(..) {
-            if temporary && card.is_instance_valid() {
-                card.free();
-            }
-        }
-    }
-
-    /// Inhalt des Kartenfächers für die offene Anfrage.
-    fn hud_fan(&self, req: &Request) -> Option<HudFan> {
-        if self.fan_cards.is_empty() {
-            return None;
-        }
-        let cards = self.fan_cards.iter().map(|(id, c, _)| (*id, c.clone())).collect();
-        let (title, mode) = match &req.decision {
-            Decision::ChooseCards { reason, min, max, .. } => {
-                let fallback = match reason {
-                    CardChoiceReason::Discard | CardChoiceReason::DiscardCost => tr!("Karten abwerfen", "Discard cards"),
-                    CardChoiceReason::DiscardToHandSize => tr!("Auf Handkartenlimit abwerfen", "Discard to hand size"),
-                    CardChoiceReason::Sacrifice | CardChoiceReason::SacrificeCost => tr!("Bleibende Karten opfern", "Sacrifice permanents"),
-                    CardChoiceReason::Search => tr!("Bibliothek durchsuchen", "Search your library"),
-                    _ => tr!("Karten wählen", "Choose cards"),
-                };
-                let title = if req.prompt.is_empty() { fallback.to_string() } else { req.prompt.clone() };
-                (title, FanMode::Pick { min: *min as usize, max: *max as usize })
-            }
-            Decision::MulliganBottom { count, .. } => (
-                trf!("{count} Karte(n) unter die Bibliothek legen", "Put {count} card(s) on the bottom of your library"),
-                FanMode::Pick { min: *count as usize, max: *count as usize },
-            ),
-            Decision::Scry { graveyard, .. } => (
-                if *graveyard {
-                    tr!("Überwachen: Klick legt eine Karte in die andere Reihe", "Surveil: click a card to move it to the other row").into()
-                } else {
-                    tr!("Hellsicht: Klick legt eine Karte in die andere Reihe", "Scry: click a card to move it to the other row").into()
-                },
-                FanMode::Arrange { graveyard: *graveyard },
-            ),
-            _ => return None,
-        };
-        Some(HudFan { key: req.id, title, detail: req.source_name.clone(), mode, cards, cancelable: req.cancelable })
     }
 
     /// Kandidat `index` angeklickt bzw. per Pfeil gewählt. Zielwahl (`ChooseTargets`): wählen bzw.
@@ -3106,4 +3202,14 @@ enum StageKind {
     Binary,
     /// Optionale Kosten (Kicker …): Karte groß, Knöpfe „Kicker“ / „Normal“.
     OptionalCost,
+    /// Hellsicht/Überwachen: Kasten mit „UNTEN“/„OBEN“, Karten dorthin ziehen.
+    Scry,
 }
+
+/// Hellsicht-Bühne: Mitte und Größe des Kastens (Bühnen-Koordinaten).
+const SCRY_FRAME_CENTER: Vector2 = Vector2::new(0.0, 0.14);
+const SCRY_FRAME_SIZE: Vector2 = Vector2::new(3.0, 1.1);
+/// Kartenwahl-Bühne: Kartenabstand (überlappend) und Bogenradius des Fächers, Lage von „Ablehnen“.
+const LIB_STEP: f32 = 0.4;
+const LIB_RADIUS: f32 = 6.0;
+const LIB_DECLINE_POS: Vector2 = Vector2::new(1.75, -0.85);

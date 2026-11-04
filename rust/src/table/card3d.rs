@@ -822,8 +822,7 @@ impl Card3D {
     }
 
     /// Alle Texte der Kartenvorderseite in der aktuellen Sprache, mit Positionen in
-    /// Pixeln der Kartentextur (256 × 358). Gemeinsame Quelle für die 3D-Beschriftung
-    /// und 2D-Ansichten (z. B. die Stack-Anzeige im HUD).
+    /// Pixeln der Kartentextur (256 × 358) – Quelle der 3D-Beschriftung.
     pub fn face_texts(&self) -> FaceTexts {
         let (stats, stats_color) = self.def.stats_text();
         let name = self.card_name.to_string();
@@ -862,11 +861,6 @@ impl Card3D {
         if let Some(l) = self.labels.as_mut() {
             l.badges.set_text(text);
         }
-    }
-
-    /// Vorderseiten-Textur (für 2D-Ansichten).
-    pub fn face_tex(&self) -> Option<Gd<Texture2D>> {
-        self.face_texture.clone()
     }
 
     pub(crate) fn refresh_labels(&mut self) {

@@ -2,8 +2,6 @@
 
 pub mod card_cutout;
 pub mod card_text;
-pub mod card_fan;
-pub mod card_preview;
 pub mod choice_panel;
 pub mod counters;
 pub mod decision_view;

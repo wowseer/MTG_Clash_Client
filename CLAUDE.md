@@ -92,7 +92,7 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 `Decision`-Variante bauen. Fertig: `ChooseTargets` per Klick/Pfeil, Aktivieren per Klick,
 `DeclareAttackers` / `DeclareBlockers` per Klick mit Kampfpfeilen, `PayMana` (Quellen anklicken,
 Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.playSpellAbility`
-(im Jar), der die überschriebenen Controller-Methoden fragt. Kartenfächer (`card_fan.rs`) für
+(im Jar), der die überschriebenen Controller-Methoden fragt. 3D-Bühnen (`table/showcase.rs`) für
 `ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Kosten-Auswahlen
 (`RemoteCostDecision`), `AssignCombatDamage`, `DivideAmount`, `PayUnlessCost`,
 `PayLifeForPhyrexian`, Trigger über den menschlichen Ablauf. Nächster Schritt laut Fahrplan:

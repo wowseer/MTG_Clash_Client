@@ -358,7 +358,8 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `ChooseModes` | 3D-Bühne: Kartenkopie je Modus mit nur diesem Modus als Regeltext → `Modes` |
 | `Confirm`, `OptionalTrigger`, `PayUnlessCost`, `PayLifeForPhyrexian`, `ChooseOption` mit 2 Optionen | 3D-Bühne: Quellkarte groß, zwei Knöpfe untereinander (orange = erste Antwort, blau = zweite) → `Yes`/`No` bzw. `Number` |
 | `ChooseOptions` mit `purpose` `OptionalCost` | 3D-Bühne: Karte groß, orange „Kicker – {R}“ → `Modes([0])`, grau „Normal“ → `Modes([])` |
-| `ChooseCards` / `Scry` | Kartenfächer-Overlay (`card_fan.rs`): Karten groß (Tischkarten bzw. temporäre Karten aus `cards`), Klick wählt bzw. wechselt die Reihe; „Fertig“ → `ForgeTable.submit_fan` → `Cards` / `Arrange` |
+| `Scry` | 3D-Bühne: Kasten mit „UNTEN“/„FRIEDHOF“ und „OBEN“, Karten ziehen → `Arrange { top, bottom }` (rechte Karte zuoberst) |
+| `ChooseCards` (nicht Hand, nicht Tisch) | 3D-Bühne mit Kartenfächer und Schieberegler; Klick → `Cards([id])` bei einer Karte, sonst Auswahl + „Fertig“; „Ablehnen“ → `Cards([])` |
 | `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
 | `AssignCombatDamage` / `DivideAmount` | Auswahlfenster „Verteilen“: Zahlenfeld je Empfänger, vorbelegt, Summenanzeige, „OK“ nur bei richtiger Summe → `Damage` |
 | `PayUnlessCost` / `PayLifeForPhyrexian` | Ja/Nein-Fenster („Zahlen“ / „Nicht zahlen“, „2 Leben zahlen“ / „Mit Mana zahlen“) |
