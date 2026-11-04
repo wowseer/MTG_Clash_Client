@@ -138,7 +138,8 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 - ~~Kommandozone (Embleme, Commander, Dungeons, Ring), doppelseitige/verdeckte Karten~~ ✔
 
 **Als Nächstes:** reine 3D-Oberfläche – alle 2D-Fenster und HUD-Anzeigen in die 3D-Szene holen.
-Liste aller Interface-Aktionen zum Abhaken: `docs/UI-Aktionen.xlsx` (Spalte „Erledigt“).
+Liste zum Abhaken: `docs/UI-Aktionen.xlsx` – Blätter „Bausteine“ (neue 3D-Bausteine in Bau-Reihenfolge),
+„Aktionen“ (87 Interface-Aktionen) und „Elemente“ (jedes sichtbare Element und was daraus wird).
 NeoForge-Integration steht (siehe Ziel); danach mehr als 2 Spieler (Commander).
 Deckauswahl und Formate übernimmt NeoForge.
 
