@@ -40,6 +40,19 @@ const MIN_SHRINK: f32 = 0.45;
 /// Abstand zwischen den Gruppen.
 const LAND_STACK_STEP: f32 = 0.3;
 const LAND_GROUP_GAP: f32 = 0.12;
+/// Cover-Flow ([member Zone.coverflow]): ab diesem seitlichen Abstand (Zonen-Einheiten) von der
+/// Mitte sind Karten ganz zur Seite gedreht ([`COVERFLOW_YAW`] Grad) und um die Hälfte von
+/// [`COVERFLOW_ROLL`] im Bogen geneigt; je Einheit Abstand liegen sie [`COVERFLOW_DEPTH`]
+/// weiter hinten (größer als sin(Drehung), damit sich Nachbarn nicht durchdringen), höchstens
+/// [`COVERFLOW_MAX_DEPTH`]. Jenseits von [`COVERFLOW_EDGE`] stapeln sie sich dicht am Rand.
+const COVERFLOW_REACH: f32 = 0.9;
+const COVERFLOW_YAW: f32 = 28.0;
+const COVERFLOW_ROLL: f32 = 7.0;
+const COVERFLOW_DEPTH: f32 = 0.55;
+const COVERFLOW_MAX_DEPTH: f32 = 1.1;
+const COVERFLOW_EDGE: f32 = 1.75;
+const COVERFLOW_EDGE_STEP: f32 = 0.035;
+const COVERFLOW_DROP: f32 = 0.06;
 
 /// Art der Zone: 0 = Hand (Fächer), 1 = Stapel, 2 = Spielfeld, 3 = Ressourcen-Reihe, 4 = Stack.
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Debug)]
@@ -93,6 +106,18 @@ pub struct Zone {
     /// Hand: maximaler Gesamtwinkel des Fächers (Grad).
     #[export]
     hand_max_spread_degrees: f32,
+    /// Hand als Cover-Flow (Kartenwahl-Bühne): Karten im Abstand [member coverflow_step]
+    /// nebeneinander, die mittlere vorn und gerade, die übrigen zur Seite gedreht, nach hinten
+    /// versetzt und überlappend; am Rand dicht gestapelt. Ersetzt den Fächerbogen.
+    #[export]
+    coverflow: bool,
+    /// Cover-Flow: Abstand der Karten (Zonen-Einheiten, kleiner als die Kartenbreite = überlappend).
+    #[export]
+    coverflow_step: f32,
+    /// Cover-Flow: Verschiebung aller Karten nach rechts (Zonen-Einheiten); was dadurch in die
+    /// Mitte rückt, dreht sich nach vorn (Schieberegler der Bühne).
+    #[export]
+    coverflow_scroll: f32,
 
     /// Stapel: Höhe je Karte.
     #[export_group(name = "Pile")]
@@ -154,6 +179,9 @@ impl IArea3D for Zone {
             face_up: true,
             hand_radius: 5.0,
             hand_card_angle_degrees: 6.0,
+            coverflow: false,
+            coverflow_step: 0.3,
+            coverflow_scroll: 0.0,
             hand_max_spread_degrees: 40.0,
             pile_spacing: 0.004,
             grid_columns: 6,
@@ -586,6 +614,26 @@ impl Zone {
     }
 
     /// Lokale Slot-Transform für Karte `i` von `n`.
+    /// Platz im Cover-Flow: seitlich linear, zur Seite gedreht (Außenkante weiter hinten), nach
+    /// hinten versetzt, leicht im Bogen geneigt; Karten jenseits des Rands liegen dicht gestapelt.
+    fn coverflow_slot(&self, i: usize, n: usize, flip: Basis) -> Transform3D {
+        let x = (i as f32 - (n as f32 - 1.0) * 0.5) * self.coverflow_step + self.coverflow_scroll;
+        let side = x.signum();
+        let x_shown = if x.abs() > COVERFLOW_EDGE { side * (COVERFLOW_EDGE + (x.abs() - COVERFLOW_EDGE) * COVERFLOW_EDGE_STEP / self.coverflow_step.max(0.01)) } else { x };
+        // gerade Mitte eine halbe Kartenbreite weit: die beiden mittleren Karten liegen flach
+        // übereinander, statt sich gegeneinander gedreht zu durchdringen
+        let off_center = (x_shown.abs() - self.coverflow_step * 0.5).max(0.0);
+        let u = side * (off_center / COVERFLOW_REACH).min(1.0);
+        let depth = ((x.abs() - self.coverflow_step * 0.5).max(0.0) * COVERFLOW_DEPTH).min(COVERFLOW_MAX_DEPTH) - i as f32 * 0.004;
+        // Drehung um die Kartenachse von oben nach unten (Zone: z = Bildschirm unten): +X der
+        // Karte rechts von der Mitte nach hinten (−Y), links nach vorn
+        let yaw = Basis::from_axis_angle(Vector3::BACK, -u * COVERFLOW_YAW.to_radians());
+        // im Bogen: außen etwas tiefer und nach außen geneigt (wie ein gehaltener Fächer)
+        let roll = Basis::from_axis_angle(Vector3::UP, -u * 0.5 * COVERFLOW_ROLL.to_radians());
+        let pos = Vector3::new(x_shown, CARD_THICKNESS * 0.5 - depth, u * u * COVERFLOW_DROP);
+        Transform3D::new(roll * yaw * flip, pos)
+    }
+
     fn slot_transform(&self, i: usize, n: usize) -> Transform3D {
         let flip = if self.face_up {
             Basis::IDENTITY
@@ -595,6 +643,7 @@ impl Zone {
         let half_t = CARD_THICKNESS * 0.5;
 
         match self.kind {
+            ZoneKind::Hand if self.coverflow => self.coverflow_slot(i, n, flip),
             ZoneKind::Hand => {
                 let step = if n > 1 {
                     self.hand_card_angle_degrees

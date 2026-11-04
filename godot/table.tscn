@@ -68,6 +68,7 @@ click_to_draw = true
 face_up = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.9, 0, 4.2)
 visible = false
+card_scale = 1.7
 
 [node name="Discard" type="Zone" parent="Player"]
 kind = 1
@@ -143,6 +144,7 @@ accepts_drops = false
 cards_draggable = false
 face_up = false
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 8.9, 0, -4.2)
+card_scale = 1.7
 
 [node name="Discard" type="Zone" parent="Opponent"]
 kind = 1

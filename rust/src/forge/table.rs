@@ -1439,13 +1439,21 @@ impl ForgeTable {
     }
 
     /// Karten aus verdeckten Zonen wählen (Bibliothek durchsuchen, Friedhof, aufgedeckte Karten …)
-    /// wie im Video des Users: Titel („Wähle bis zu einer“ …) mit Quelle und Text, die Karten als
-    /// weiter, überlappender Fächer (blau = wählbar), Schieberegler bei vielen Karten. Eine Karte:
-    /// Klick wählt sofort; mehrere: Klick wählt (orange), „Fertig (n/…)“. Darf man keine nehmen,
-    /// steht blau „Ablehnen“ unten rechts. Nur ansehen (max 0): „Fertig“.
+    /// wie im Video des Users: Beim Durchsuchen der Bibliothek leuchtet zuerst der eigene
+    /// Bibliotheksstapel auf. Titel („Wähle bis zu einer“ …) mit Quelle und Text, die Karten groß
+    /// als Cover-Flow (blau = wählbar; die Karte unter der Maus kommt groß und gerade nach vorn),
+    /// Schieberegler bei vielen Karten, oben rechts „Schlachtfeld ansehen“. Eine Karte: Klick
+    /// wählt sofort; mehrere: Klick wählt (orange), „Fertig (n/…)“. Darf man keine nehmen, steht
+    /// blau „Ablehnen“ unten rechts. Nur ansehen (max 0): „Fertig“.
     fn show_library_pick(&mut self, req: &Request) {
-        let Decision::ChooseCards { options, min, max, .. } = &req.decision else { return };
+        let Decision::ChooseCards { options, min, max, reason, player } = &req.decision else { return };
         let (min, max) = (*min, *max);
+        if *reason == CardChoiceReason::Search {
+            let seat = *player as usize;
+            if let Some(mut top) = self.deck_cards.get(seat).and_then(|d| d.last()).cloned().filter(|c| c.is_instance_valid()) {
+                top.bind_mut().flash();
+            }
+        }
         let title = match (min, max) {
             (_, 0) => if req.prompt.is_empty() { tr!("Aufgedeckt", "Revealed").to_string() } else { req.prompt.clone() },
             (0, 1) => tr!("Wähle bis zu einer Karte", "Choose up to one").to_string(),
@@ -1467,7 +1475,8 @@ impl ForgeTable {
         if let Some(zone) = fan {
             showcase.bind_mut().add_owned_cards(zone, copies);
         }
-        showcase.bind_mut().enable_scroll_with(LIB_STEP, LIB_RADIUS);
+        showcase.bind_mut().enable_coverflow(LIB_STEP, LIB_SCALE);
+        showcase.bind_mut().enable_peek();
         let me = self.to_gd();
         let mut button = |style: ButtonStyle, text: &str, pos: Option<Vector2>, decline: bool| {
             let mut b = Button3D::create(style, text, Showcase::button_width());
@@ -3280,7 +3289,7 @@ enum StageKind {
 /// Hellsicht-Bühne: Mitte und Größe des Kastens (Bühnen-Koordinaten).
 const SCRY_FRAME_CENTER: Vector2 = Vector2::new(0.0, 0.14);
 const SCRY_FRAME_SIZE: Vector2 = Vector2::new(3.0, 1.1);
-/// Kartenwahl-Bühne: Kartenabstand (überlappend) und Bogenradius des Fächers, Lage von „Ablehnen“.
-const LIB_STEP: f32 = 0.4;
-const LIB_RADIUS: f32 = 6.0;
+/// Kartenwahl-Bühne (Cover-Flow): Kartenabstand (überlappend), Kartengröße, Lage von „Ablehnen“.
+const LIB_STEP: f32 = 0.3;
+const LIB_SCALE: f32 = 1.15;
 const LIB_DECLINE_POS: Vector2 = Vector2::new(1.75, -0.85);

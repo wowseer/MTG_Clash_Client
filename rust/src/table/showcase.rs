@@ -11,26 +11,44 @@
 //! - **Schieberegler** ([`Showcase::enable_scroll`]): bei breiten Fächern ein [`Slider3D`]
 //!   zwischen Fächer und Knöpfen,
 //! - **Optionen** ([`Showcase::show_options`]): eigene Karten (z. B. Kopien je Spielweise einer
-//!   Karte) mit Beschriftung darüber, die die Bühne beim Schließen freigibt.
+//!   Karte) mit Beschriftung darüber, die die Bühne beim Schließen freigibt,
+//! - **Cover-Flow** ([`Showcase::enable_coverflow`]): großer Fächer zum Durchsuchen vieler Karten
+//!   (Bibliothek), die Karte unter der Maus kommt groß und gerade nach vorn,
+//! - **Schlachtfeld ansehen** ([`Showcase::enable_peek`]): Knopf oben rechts, der die Bühne
+//!   ausblendet, bis man ihn noch einmal drückt,
+//! - **Sperre**: solange abgedunkelt ist, lassen sich Karten auf dem Tisch dahinter nicht hovern.
 //!
 //! Zeiten nach `docs/claude/ANIMATION.md`: Öffnen 0,20 s (Abdunkeln 0,15 s), Schließen 0,15 s.
 
 use godot::classes::base_material_3d::{ShadingMode, Transparency};
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::label_3d::DrawFlags;
-use godot::classes::{INode3D, Label3D, MeshInstance3D, QuadMesh, StandardMaterial3D};
+use godot::classes::{Area3D, BoxShape3D, CollisionObject3D, CollisionShape3D, INode3D, Label3D, MeshInstance3D, QuadMesh, StandardMaterial3D};
 use godot::prelude::*;
 
-use super::button3d::Button3D;
+use super::button3d::{Button3D, ButtonStyle};
+use super::layers::CARD_LAYER;
 use super::slider3d::Slider3D;
 use super::card3d::{Card3D, CARD_HEIGHT};
 use super::zone::{Zone, ZoneKind};
 
 /// Abstand der Bühne vor der Kamera (Welteinheiten).
 const DISTANCE: f32 = 4.5;
-/// Deckkraft der Abdunkelung und ihre Ein-/Ausblendzeit.
+/// Deckkraft der Abdunkelung und ihre Ein-/Ausblendzeit; Abstand der Abdunkelung (und der
+/// Sperre für Tischkarten) hinter der Bühnenebene – hinter den hintersten Cover-Flow-Karten.
 const DIM_ALPHA: f32 = 0.62;
 const DIM_TIME: f32 = 0.15;
+const DIM_DEPTH: f32 = 1.6;
+const DIM_SIZE: Vector2 = Vector2::new(16.0, 9.0);
+/// Cover-Flow ([`Showcase::enable_coverflow`]): Höhe der Fächermitte, Lage des Schiebereglers,
+/// Breite, ab der er erscheint, und Größe der Karte unter der Maus (Anteil der Bildhöhe).
+const COVERFLOW_CENTER_Y: f32 = 0.1;
+const COVERFLOW_SLIDER_Y: f32 = -0.66;
+const COVERFLOW_SCROLL_MIN: f32 = 3.0;
+const COVERFLOW_ZOOM_HEIGHT: f32 = 0.56;
+/// „Schlachtfeld ansehen“: Lage und Breite des Knopfes (oben rechts neben dem Titel).
+const PEEK_POS: Vector2 = Vector2::new(1.62, 0.93);
+const PEEK_WIDTH: f32 = 0.86;
 /// Kartenfächer: Mitte (lokal), Radius und Abstand der Karten (sehr flacher Bogen).
 const FAN_CENTER: Vector3 = Vector3::new(0.0, 0.18, 0.0);
 const FAN_RADIUS: f32 = 10.0;
@@ -74,6 +92,14 @@ pub struct Showcase {
     slider: Option<Gd<Slider3D>>,
     /// Fokus-Anordnung: Karte groß, Knöpfe untereinander darunter statt in einer Reihe.
     focus: bool,
+    /// Fächer als Cover-Flow: Schieben verschiebt die Karten statt der Zone.
+    coverflow: bool,
+    /// Sperre hinter der Bühne (Kartenlayer): Tischkarten dahinter bekommen keinen Hover.
+    blocker: Option<Gd<Area3D>>,
+    /// „Schlachtfeld ansehen“: Knopf und – solange die Bühne ausgeblendet ist – je Kind der
+    /// Bühne Sichtbarkeit und Kollisionslayer vor dem Ausblenden.
+    peek_button: Option<Gd<Button3D>>,
+    peek_saved: Vec<(Gd<Node3D>, bool, Option<u32>)>,
     /// Karten und die Zone, aus der sie kamen (für die Rückgabe).
     borrowed: Vec<(Gd<Card3D>, Gd<Zone>)>,
     /// Eigene Karten der Bühne (z. B. Kopien als Optionen); werden beim Schließen freigegeben.
@@ -100,6 +126,10 @@ impl INode3D for Showcase {
             scroll_extra: 0.0,
             slider: None,
             focus: false,
+            coverflow: false,
+            blocker: None,
+            peek_button: None,
+            peek_saved: Vec::new(),
             borrowed: Vec::new(),
             owned: Vec::new(),
             hidden: Vec::new(),
@@ -116,7 +146,8 @@ impl INode3D for Showcase {
     fn process(&mut self, delta: f64) {
         self.t += delta as f32;
         let k = (self.t / DIM_TIME).min(1.0);
-        let alpha = if self.closing { DIM_ALPHA * (1.0 - k) } else { DIM_ALPHA * k };
+        let peeking = !self.peek_saved.is_empty();
+        let alpha = if self.closing { DIM_ALPHA * (1.0 - k) } else if peeking { 0.0 } else { DIM_ALPHA * k };
         if let Some(m) = self.dimmer.as_mut() {
             m.set_albedo(Color::from_rgba(0.02, 0.02, 0.04, alpha));
         }
@@ -147,8 +178,11 @@ impl Showcase {
         let basis = cam.get_global_transform().basis.orthonormalized();
         let toward_cam = basis.col_c();
         self.base_mut().set_global_transform(Transform3D::new(basis.scaled(Vector3::splat(scale)), point + toward_cam * lift));
-        // ohne Abdunkelung: der Tisch bleibt sichtbar
+        // ohne Abdunkelung: der Tisch bleibt sichtbar und bedienbar
         self.dimmer = None;
+        if let Some(mut b) = self.blocker.take() {
+            b.queue_free();
+        }
         if let Some(mut n) = self.base().get_node_or_null("Dimmer").and_then(|n| n.try_cast::<Node3D>().ok()) {
             n.set_visible(false);
         }
@@ -322,11 +356,112 @@ impl Showcase {
     #[func]
     fn on_scroll(&mut self, value: f32) {
         let Some(mut zone) = self.zone.clone() else { return };
+        if self.coverflow {
+            zone.set("coverflow_scroll", &((0.5 - value) * self.scroll_extra).to_variant());
+            zone.bind_mut().layout();
+            return;
+        }
         let offset = (0.5 - value) * self.scroll_extra;
         let mut xf = zone.get_transform();
         xf.origin = FAN_CENTER + Vector3::new(offset, 0.0, 0.0);
         zone.set_transform(xf);
         zone.bind_mut().layout();
+    }
+
+    /// Fächer als Cover-Flow zum Durchsuchen vieler Karten (Bibliothek, Friedhof …), nach
+    /// [method show_options] bzw. [method add_owned_cards] aufrufen: Karten in Größe `scale`
+    /// im Abstand `step` überlappend nebeneinander, die mittlere vorn und gerade, die übrigen zur
+    /// Seite gedreht und nach hinten versetzt, am Rand dicht gestapelt
+    /// ([member Zone.coverflow]). Die Karte unter der Maus kommt groß und gerade nach vorn
+    /// (Hover-Zoom). Bei vielen Karten erscheint darunter ein [Slider3D]; Schieben lässt die
+    /// Karten durch die Mitte laufen (Start: Mitte).
+    #[func]
+    pub fn enable_coverflow(&mut self, step: f32, scale: f32) {
+        let Some(mut zone) = self.zone.clone() else { return };
+        self.coverflow = true;
+        let mut xf = zone.get_transform();
+        xf.origin = Vector3::new(0.0, COVERFLOW_CENTER_Y, 0.0);
+        zone.set_transform(xf);
+        for (prop, value) in [
+            ("coverflow", true.to_variant()),
+            ("coverflow_step", step.to_variant()),
+            ("coverflow_scroll", 0.0f32.to_variant()),
+            ("card_scale", scale.to_variant()),
+            ("zoom_cards", true.to_variant()),
+        ] {
+            zone.set(prop, &value);
+        }
+        for card in zone.bind().get_cards().iter_shared() {
+            let mut card = card;
+            card.set("zoom_screen_height", &COVERFLOW_ZOOM_HEIGHT.to_variant());
+        }
+        zone.bind_mut().layout();
+        let n = zone.bind().get_card_count().max(1) as f32;
+        let width = (n - 1.0) * step;
+        if width < COVERFLOW_SCROLL_MIN || self.slider.is_some() {
+            return;
+        }
+        self.scroll_extra = width;
+        let mut slider = Slider3D::create(SLIDER_WIDTH, 0.5);
+        slider.set_position(Vector3::new(0.0, COVERFLOW_SLIDER_Y, 0.05));
+        let cb = Callable::from_object_method(&self.to_gd(), "on_scroll");
+        slider.connect("value_changed", &cb);
+        self.base_mut().add_child(&slider);
+        self.slider = Some(slider);
+    }
+
+    /// Knopf „Schlachtfeld ansehen“ oben rechts: blendet die Bühne samt Abdunkelung aus (der
+    /// Tisch ist dann sichtbar und hoverbar), ein erneuter Druck („Zurück zur Auswahl“) holt sie
+    /// zurück. Die Entscheidung bleibt dabei offen.
+    #[func]
+    pub fn enable_peek(&mut self) {
+        if self.peek_button.is_some() {
+            return;
+        }
+        let mut b = Button3D::create(ButtonStyle::Grey, tr!("Schlachtfeld ansehen", "View battlefield"), PEEK_WIDTH);
+        b.set_position(Vector3::new(PEEK_POS.x, PEEK_POS.y, 0.05));
+        let cb = Callable::from_object_method(&self.to_gd(), "on_peek");
+        b.connect("pressed", &cb);
+        self.base_mut().add_child(&b);
+        self.peek_button = Some(b);
+    }
+
+    /// „Schlachtfeld ansehen“ gedrückt: Bühne aus- bzw. wieder einblenden.
+    #[func]
+    fn on_peek(&mut self) {
+        if self.closing {
+            return;
+        }
+        let peek = self.peek_button.clone();
+        if self.peek_saved.is_empty() {
+            for child in self.base().get_children().iter_shared() {
+                let Ok(mut node) = child.try_cast::<Node3D>() else { continue };
+                if peek.as_ref().is_some_and(|p| p.clone().upcast::<Node3D>() == node) {
+                    continue;
+                }
+                let layer = node.clone().try_cast::<CollisionObject3D>().ok().map(|mut c| {
+                    let l = c.get_collision_layer();
+                    c.set_collision_layer(0);
+                    l
+                });
+                self.peek_saved.push((node.clone(), node.is_visible(), layer));
+                node.set_visible(false);
+            }
+        } else {
+            for (mut node, visible, layer) in self.peek_saved.drain(..) {
+                if !node.is_instance_valid() {
+                    continue;
+                }
+                node.set_visible(visible);
+                if let (Some(l), Ok(mut c)) = (layer, node.clone().try_cast::<CollisionObject3D>()) {
+                    c.set_collision_layer(l);
+                }
+            }
+        }
+        let text = if self.peek_saved.is_empty() { tr!("Schlachtfeld ansehen", "View battlefield") } else { tr!("Zurück zur Auswahl", "Back to choice") };
+        if let Some(mut b) = peek {
+            b.bind_mut().set_label_text(GString::from(text));
+        }
     }
 
     /// Weitere Ablage auf der Bühne (Zone der Art Hand in der Bühnenebene, Vorderseite zur
@@ -446,6 +581,15 @@ impl Showcase {
                 }
             }
         }
+        if !self.peek_saved.is_empty() {
+            self.on_peek();
+        }
+        if let Some(mut b) = self.peek_button.take().filter(|b| b.is_instance_valid()) {
+            b.bind_mut().dismiss();
+        }
+        if let Some(mut b) = self.blocker.take() {
+            b.queue_free();
+        }
         for mut b in self.buttons.drain(..) {
             if b.is_instance_valid() {
                 b.bind_mut().dismiss();
@@ -471,15 +615,32 @@ impl Showcase {
         mat.set_albedo(Color::from_rgba(0.02, 0.02, 0.04, 0.0));
         mat.set_render_priority(-1);
         let mut quad = QuadMesh::new_gd();
-        quad.set_size(Vector2::new(12.0, 7.0));
+        quad.set_size(DIM_SIZE);
         quad.set_material(&mat);
         let mut dim = MeshInstance3D::new_alloc();
         dim.set_name("Dimmer");
         dim.set_mesh(&quad);
         dim.set_cast_shadows_setting(ShadowCastingSetting::OFF);
-        dim.set_position(Vector3::new(0.0, 0.0, -0.6));
+        dim.set_position(Vector3::new(0.0, 0.0, -DIM_DEPTH));
         self.base_mut().add_child(&dim);
         self.dimmer = Some(mat);
+
+        // Sperre auf dem Kartenlayer in der Ebene der Abdunkelung: der Mausstrahl trifft sie vor
+        // den Tischkarten, aber hinter den Karten der Bühne
+        let mut blocker = Area3D::new_alloc();
+        blocker.set_name("Blocker");
+        blocker.set_collision_layer(CARD_LAYER);
+        blocker.set_collision_mask(0);
+        blocker.set_monitoring(false);
+        blocker.set_monitorable(false);
+        let mut shape = BoxShape3D::new_gd();
+        shape.set_size(Vector3::new(DIM_SIZE.x, DIM_SIZE.y, 0.01));
+        let mut col = CollisionShape3D::new_alloc();
+        col.set_shape(&shape);
+        blocker.add_child(&col);
+        blocker.set_position(Vector3::new(0.0, 0.0, -DIM_DEPTH));
+        self.base_mut().add_child(&blocker);
+        self.blocker = Some(blocker);
 
         // Kartenfächer: Zone (Hand) – Karten liegen in ihrer Ebene, Vorderseite zur Kamera
         let zone = self.add_zone("Fan", FAN_CENTER, Vector3::new(4.4, 0.1, 1.2), FAN_RADIUS, FAN_STEP, 40.0, false);

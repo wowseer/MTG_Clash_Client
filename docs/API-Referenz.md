@@ -540,6 +540,9 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 | `enable_scroll()` | `void` | Fächer nebeneinander statt überlappend legen; passt er nicht ganz ins Bild, erscheint unter ihm ein `Slider3D`, mit dem man ihn nach links und rechts schiebt (Start: Mitte). |
 | `enable_scroll_with(step: float, radius: float)` | `void` | Wie `enable_scroll()`, mit eigenem Kartenabstand `step` (kleiner als eine Kartenbreite = überlappend) und Bogenradius `radius` (klein = stärker gebogen). |
 | `on_scroll(value: float)` | `void` | Schieberegler bewegt (0 = linkes Ende sichtbar, 1 = rechtes Ende). |
+| `enable_coverflow(step: float, scale: float)` | `void` | Fächer als Cover-Flow zum Durchsuchen vieler Karten (Bibliothek, Friedhof …), nach `show_options()` bzw. `add_owned_cards()` aufrufen: Karten in Größe `scale` im Abstand `step` überlappend nebeneinander, die mittlere vorn und gerade, die übrigen zur Seite gedreht und nach hinten versetzt, am Rand dicht gestapelt (`Zone.coverflow`). Die Karte unter der Maus kommt groß und gerade nach vorn (Hover-Zoom). Bei vielen Karten erscheint darunter ein `Slider3D`; Schieben lässt die Karten durch die Mitte laufen (Start: Mitte). |
+| `enable_peek()` | `void` | Knopf „Schlachtfeld ansehen“ oben rechts: blendet die Bühne samt Abdunkelung aus (der Tisch ist dann sichtbar und hoverbar), ein erneuter Druck („Zurück zur Auswahl“) holt sie zurück. Die Entscheidung bleibt dabei offen. |
+| `on_peek()` | `void` | „Schlachtfeld ansehen“ gedrückt: Bühne aus- bzw. wieder einblenden. |
 | `static button_width()` | `float` | Breite eines Knopfes in dieser Bühne (Welteinheiten). |
 | `holds(card: Card3D)` | `bool` | Liegt `card` gerade in der Bühne? |
 | `close()` | `void` | Karten zurückgeben, Knöpfe ausblenden, abdunkeln aufheben und danach freigeben. |
@@ -694,6 +697,9 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `hand_radius` | `float` | Hand: Radius des Fächerbogens. |
 | `hand_card_angle_degrees` | `float` | Hand: Winkel zwischen zwei Karten (Grad). |
 | `hand_max_spread_degrees` | `float` | Hand: maximaler Gesamtwinkel des Fächers (Grad). |
+| `coverflow` | `bool` | Hand als Cover-Flow (Kartenwahl-Bühne): Karten im Abstand `coverflow_step` nebeneinander, die mittlere vorn und gerade, die übrigen zur Seite gedreht, nach hinten versetzt und überlappend; am Rand dicht gestapelt. Ersetzt den Fächerbogen. |
+| `coverflow_step` | `float` | Cover-Flow: Abstand der Karten (Zonen-Einheiten, kleiner als die Kartenbreite = überlappend). |
+| `coverflow_scroll` | `float` | Cover-Flow: Verschiebung aller Karten nach rechts (Zonen-Einheiten); was dadurch in die Mitte rückt, dreht sich nach vorn (Schieberegler der Bühne). |
 | `pile_spacing` | `float` | Stapel: Höhe je Karte. |
 | `grid_columns` | `int` | Spielfeld im Rastermodus: Anzahl Spalten. |
 | `grid_spacing` | `Vector2` | Spielfeld im Rastermodus: Abstand der Karten (x, z). |
