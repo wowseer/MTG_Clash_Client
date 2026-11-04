@@ -798,6 +798,66 @@ public class RemotePlayerController extends PlayerControllerAi {
         return i != null ? allTargets.get(i) : super.chooseTarget(sa, allTargets);
     }
 
+    /**
+     * Aufgedeckte Karten zeigen (CR 701.16): Kartenfächer ohne Auswahl ({@code ChooseCards} mit
+     * {@code max: 0}, „Fertig“ = gesehen). Eigene Handkarten, die der Spieler ohnehin sieht, und
+     * leere Listen werden übersprungen.
+     */
+    @Override
+    public void reveal(CardCollectionView cards, ZoneType zone, Player owner, String messagePrefix, boolean addSuffix) {
+        if (cards == null || cards.isEmpty() || (owner == getPlayer() && zone == ZoneType.Hand)) {
+            return;
+        }
+        String who = owner == null ? "" : (owner == getPlayer() ? "Deine" : owner.getName() + ":");
+        String prompt = (messagePrefix == null || messagePrefix.isBlank() ? "Aufgedeckt" : messagePrefix.trim())
+                + " – " + who + " " + zoneName(zone);
+        Decisions.cards(getGame(), seat, "Reveal", new ArrayList<>(cards), 0, 0, prompt, null, false);
+    }
+
+    private static String zoneName(ZoneType zone) {
+        if (zone == null) {
+            return "";
+        }
+        return switch (zone) {
+            case Library -> "Bibliothek";
+            case Hand -> "Hand";
+            case Graveyard -> "Friedhof";
+            case Battlefield -> "Spielfeld";
+            case Exile -> "Exil";
+            case Command -> "Kommandozone";
+            case Stack -> "Stack";
+            default -> zone.name();
+        };
+    }
+
+    @Override
+    public void reveal(List<forge.game.card.CardView> cards, ZoneType zone, forge.game.player.PlayerView owner,
+            String messagePrefix, boolean addSuffix) {
+        CardCollection real = new CardCollection();
+        for (forge.game.card.CardView v : cards) {
+            Card c = getGame().findById(v.getId());
+            if (c != null) {
+                real.add(c);
+            }
+        }
+        Player p = owner == null ? null : getGame().getPlayer(owner);
+        reveal(real, zone, p, messagePrefix, addSuffix);
+    }
+
+    /** Mitteilung (z. B. „Forge-KI wählt Rot“): als Eintrag im Spielprotokoll ({@code log}, Art INFORMATION). */
+    @Override
+    public void notifyOfValue(SpellAbility saSource, GameObject realtedTarget, String value) {
+        com.google.gson.JsonObject m = ForgeBridge.message("log");
+        m.addProperty("kind", "INFORMATION");
+        Card host = saSource == null ? null : saSource.getHostCard();
+        m.addProperty("text", (host == null ? "" : host.getName() + ": ") + value);
+        if (host != null) {
+            m.addProperty("card", host.getId());
+        }
+        m.addProperty("turn", getGame().getPhaseHandler().getTurn());
+        ForgeBridge.send(m);
+    }
+
     /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */
     private String targetLabel(GameObject e) {
         if (e instanceof SpellAbility s) {
