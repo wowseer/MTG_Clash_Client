@@ -48,6 +48,14 @@ const SCROLL_RADIUS: f32 = 30.0;
 const SCROLL_SPAN: f32 = 3.4;
 const SLIDER_Y: f32 = -0.42;
 const SLIDER_WIDTH: f32 = 3.0;
+/// Fokus-Anordnung ([`Showcase::set_focus_layout`]) für Fragen zu einer Karte (Kicker, Ja/Nein):
+/// Karte groß in der Mitte (Größe, Lage), Knöpfe untereinander darunter (oberster Knopf,
+/// Abstand, Breite).
+const FOCUS_SCALE: f32 = 1.3;
+const FOCUS_CENTER: Vector3 = Vector3::new(0.0, 0.3, 0.0);
+const FOCUS_BUTTON_TOP: f32 = -0.5;
+const FOCUS_STEP: f32 = 0.3;
+const FOCUS_BUTTON_WIDTH: f32 = 1.3;
 
 /// Bühne vor der Kamera: Abdunkelung, Kartenfächer ([Zone]), Titel und [Button3D]-Knöpfe.
 /// [method open] stellt sie vor die aktuelle Kamera, [method show_cards] holt Karten herein,
@@ -64,6 +72,8 @@ pub struct Showcase {
     /// Schiebbarer Fächer: Überbreite (Welteinheiten) und Regler.
     scroll_extra: f32,
     slider: Option<Gd<Slider3D>>,
+    /// Fokus-Anordnung: Karte groß, Knöpfe untereinander darunter statt in einer Reihe.
+    focus: bool,
     /// Karten und die Zone, aus der sie kamen (für die Rückgabe).
     borrowed: Vec<(Gd<Card3D>, Gd<Zone>)>,
     /// Eigene Karten der Bühne (z. B. Kopien als Optionen); werden beim Schließen freigegeben.
@@ -86,6 +96,7 @@ impl INode3D for Showcase {
             buttons: Vec::new(),
             scroll_extra: 0.0,
             slider: None,
+            focus: false,
             borrowed: Vec::new(),
             owned: Vec::new(),
             t: 0.0,
@@ -153,6 +164,7 @@ impl Showcase {
             }
             from.bind_mut().remove_card(card.clone());
             self.borrowed.push((card.clone(), from));
+            card.clone().bind_mut().set_bright(true);
             zone.bind_mut().add_card(card.clone(), -1, 0.0);
         }
     }
@@ -166,6 +178,7 @@ impl Showcase {
             // in den Baum (unter die Bühne), aus der Fächermitte heraus
             self.base_mut().add_child(&card);
             card.set_global_transform(start);
+            card.bind_mut().set_bright(true);
             zone.bind_mut().add_card(card.clone(), -1, 0.0);
             if !caption.is_empty() {
                 let mut l = Label3D::new_alloc();
@@ -193,10 +206,39 @@ impl Showcase {
         self.base_mut().add_child(&button);
         self.buttons.push(button.clone());
         let n = self.buttons.len() as f32;
+        let focus = self.focus;
         for (i, b) in self.buttons.iter_mut().enumerate() {
-            let x = (i as f32 - (n - 1.0) * 0.5) * BUTTON_GAP;
-            b.set_position(Vector3::new(x, BUTTON_ROW_Y, 0.05));
+            let pos = if focus {
+                Vector3::new(0.0, FOCUS_BUTTON_TOP - i as f32 * FOCUS_STEP, 0.05)
+            } else {
+                Vector3::new((i as f32 - (n - 1.0) * 0.5) * BUTTON_GAP, BUTTON_ROW_Y, 0.05)
+            };
+            b.set_position(pos);
         }
+    }
+
+    /// Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell
+    /// in der Mitte, die Knöpfe untereinander darunter, kein Untertitel (er läge auf der Karte).
+    /// Vor [method add_button] aufrufen.
+    #[func]
+    pub fn set_focus_layout(&mut self) {
+        self.focus = true;
+        if let Some(mut zone) = self.zone.clone() {
+            let mut xf = zone.get_transform();
+            xf.origin = FOCUS_CENTER;
+            zone.set_transform(xf);
+            zone.set("card_scale", &FOCUS_SCALE.to_variant());
+            zone.bind_mut().layout();
+        }
+        if let Some(l) = self.subtitle.as_mut() {
+            l.set_visible(false);
+        }
+    }
+
+    /// Breite eines Knopfes in der Fokus-Anordnung (Welteinheiten).
+    #[func]
+    pub fn focus_button_width() -> f32 {
+        FOCUS_BUTTON_WIDTH
     }
 
     /// Fächer nebeneinander statt überlappend legen; passt er nicht ganz ins Bild, erscheint
@@ -258,6 +300,7 @@ impl Showcase {
         if let Some(mut zone) = self.zone.clone() {
             for (card, mut to) in self.borrowed.drain(..) {
                 if card.is_instance_valid() && to.is_instance_valid() && card.bind().get_zone().as_ref() == Some(&zone) {
+                    card.clone().bind_mut().set_bright(false);
                     zone.bind_mut().remove_card(card.clone());
                     to.bind_mut().add_card(card, -1, 0.0);
                 }

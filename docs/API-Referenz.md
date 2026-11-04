@@ -114,6 +114,11 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
 | `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
 | `on_hand_pick_done()` | `void` | „Fertig“ auf der Hand-Bühne: gewählte Karten an die Engine. |
+| `on_stage_choice(index: int)` | `void` | Knopf `index` einer 3D-Bühne (Ja/Nein, Kicker/Normal …): die hinterlegte Antwort an Forge. |
+| `on_modes_done()` | `void` | Modus-Bühne: „Fertig“ (mehrere Modi) – gewählte Modi an Forge. |
+| `on_modes_reset()` | `void` | Modus-Bühne: Wahl zurücksetzen (bei wiederholbaren Modi). |
+| `on_option_toggle(index: int)` | `void` | Optionale Kosten mit mehreren Möglichkeiten: Option `index` an/aus. |
+| `on_options_done()` | `void` | Optionale Kosten mit mehreren Möglichkeiten: „Fertig“ – eingeschaltete Optionen an Forge. |
 | `on_x_step(delta: int)` | `void` | X-Knöpfe: Wert um `delta` ändern (−5, −1, +1, +5), begrenzt auf 0 … Maximum. |
 | `on_x_pay()` | `void` | „Bezahlen X = n“: Wert an Forge. |
 | `on_x_cancel()` | `void` | „Abbrechen“ beim X wählen: Wirken zurücknehmen. |
@@ -480,6 +485,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `flash()` | `void` | Rahmen leuchtet kurz hell und orange auf (etwas wurde aktiviert: gespielt, Fähigkeit, Mana-Einschlag, Angriff …), danach zurück zum normalen Leuchten. |
 | `set_attacking(attacking: bool)` | `void` | Angreifer im Kampf: Karte rückt etwas zum Gegner vor und trägt die rote Angriffsspitze an der Oberkante (`false` = zurück an ihren Platz). |
 | `set_tile(tile: bool)` | `void` | Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen und Ziehen wird die ganze Karte gezeigt. Setzt die Zone beim Anordnen. |
+| `set_bright(bright: bool)` | `void` | Immer hell in Originalfarben zeigen (Karten auf einer 3D-Bühne vor der Kamera). |
 | `is_tile()` | `bool` | Wird die Karte als Kachel gezeigt? |
 | `is_attacking()` | `bool` | Ist die Karte als Angreifer markiert (vorgerückt, mit Angriffsspitze)? |
 | `lunge(target: Vector3, reach: float, delay: float)` | `void` | Schlag im Kampf: die Karte holt zum Weltpunkt `target` aus (Anteil `reach` des Wegs, angehoben), trifft nach [`LUNGE_OUT`] Sekunden und kehrt zurück; Start nach `delay`. |
@@ -513,6 +519,8 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 |---|---|---|
 | `open()` | `void` | Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene). |
 | `set_texts(title: String, subtitle: String, note: String)` | `void` | Titel, Untertitel und Hinweis setzen (leer = ausblenden). |
+| `set_focus_layout()` | `void` | Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell in der Mitte, die Knöpfe untereinander darunter, kein Untertitel (er läge auf der Karte). Vor `add_button()` aufrufen. |
+| `static focus_button_width()` | `float` | Breite eines Knopfes in der Fokus-Anordnung (Welteinheiten). |
 | `enable_scroll()` | `void` | Fächer nebeneinander statt überlappend legen; passt er nicht ganz ins Bild, erscheint unter ihm ein `Slider3D`, mit dem man ihn nach links und rechts schiebt (Start: Mitte). |
 | `on_scroll(value: float)` | `void` | Schieberegler bewegt (0 = linkes Ende sichtbar, 1 = rechtes Ende). |
 | `static button_width()` | `float` | Breite eines Knopfes in dieser Bühne (Welteinheiten). |

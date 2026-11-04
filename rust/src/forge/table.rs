@@ -160,6 +160,13 @@ pub struct ForgeTable {
     /// X wählen: gewählter Wert und der Bezahlen-Knopf (zeigt den Wert).
     x_value: u32,
     x_pay_button: Option<Gd<Button3D>>,
+    /// Bühnen-Knöpfe: Antwort je Knopf (Index = Argument von `on_stage_choice`).
+    stage_choices: Vec<Choice>,
+    /// Modus-Bühne: Kartenkopie je Modus (Modusnummer der Engine) und die Wahl.
+    mode_cards: Vec<(Gd<Card3D>, usize)>,
+    mode_pick: Vec<usize>,
+    /// Optionale Kosten mit mehreren Möglichkeiten: an/aus je Option.
+    option_toggles: Vec<bool>,
     /// Laufende Mana-Zahlung wird von Hand bezahlt: Beim ersten `PayMana` lag schon Mana im Pool
     /// (vorher getappt). Bleibt gesetzt, bis eine andere Entscheidung kommt.
     manual_pay: bool,
@@ -225,6 +232,10 @@ impl INode for ForgeTable {
             hand_pick_button: None,
             x_value: 0,
             x_pay_button: None,
+            stage_choices: Vec::new(),
+            mode_cards: Vec::new(),
+            mode_pick: Vec::new(),
+            option_toggles: Vec::new(),
             manual_pay: false,
             auto_pass_turn: None,
             drawn_arrows: HashSet::new(),
@@ -466,6 +477,53 @@ impl ForgeTable {
         self.answer(Choice::Cards(pick));
     }
 
+    /// Knopf `index` einer 3D-Bühne (Ja/Nein, Kicker/Normal …): die hinterlegte Antwort an Forge.
+    #[func]
+    fn on_stage_choice(&mut self, index: i64) {
+        let Some(choice) = usize::try_from(index).ok().and_then(|i| self.stage_choices.get(i).cloned()) else { return };
+        self.answer(choice);
+    }
+
+    /// Modus-Bühne: „Fertig“ (mehrere Modi) – gewählte Modi an Forge.
+    #[func]
+    fn on_modes_done(&mut self) {
+        let Some(Decision::ChooseModes { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        let n = self.mode_pick.len() as u32;
+        if n >= min && n <= max {
+            let pick = std::mem::take(&mut self.mode_pick);
+            self.answer(Choice::Modes(pick));
+        }
+    }
+
+    /// Modus-Bühne: Wahl zurücksetzen (bei wiederholbaren Modi).
+    #[func]
+    fn on_modes_reset(&mut self) {
+        self.mode_pick.clear();
+        self.refresh_mode_cards();
+    }
+
+    /// Optionale Kosten mit mehreren Möglichkeiten: Option `index` an/aus.
+    #[func]
+    fn on_option_toggle(&mut self, index: i64) {
+        let Some(Decision::ChooseOptions { options, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        let Some(i) = usize::try_from(index).ok().filter(|i| *i < self.option_toggles.len()) else { return };
+        self.option_toggles[i] = !self.option_toggles[i];
+        let on = self.option_toggles[i];
+        let label = options.get(i).map(|o| o.text.clone()).unwrap_or_default();
+        for mut b in self.stage_buttons() {
+            if b.bind().get_text().to_string().trim_start_matches("✓ ") == label {
+                b.bind_mut().set_label_text(GString::from(if on { format!("✓ {label}") } else { label.clone() }.as_str()));
+            }
+        }
+    }
+
+    /// Optionale Kosten mit mehreren Möglichkeiten: „Fertig“ – eingeschaltete Optionen an Forge.
+    #[func]
+    fn on_options_done(&mut self) {
+        let pick: Vec<usize> = self.option_toggles.iter().enumerate().filter(|(_, on)| **on).map(|(i, _)| i).collect();
+        self.answer(Choice::Modes(pick));
+    }
+
     /// X-Knöpfe: Wert um `delta` ändern (−5, −1, +1, +5), begrenzt auf 0 … Maximum.
     #[func]
     fn on_x_step(&mut self, delta: i64) {
@@ -677,6 +735,7 @@ impl ForgeTable {
         let mulligan = matches!(req.decision, Decision::Mulligan { .. }).then(|| req.clone());
         let hand_pick = self.hand_choice(&req.decision).is_some().then(|| req.clone());
         let choose_x = matches!(req.decision, Decision::ChooseX { .. }).then(|| req.clone());
+        let stage_3d = Self::stage_kind(&req.decision).map(|k| (k, req.clone()));
         let auto_pay = self.auto_pay(&req.decision);
         self.pending = Some(req);
         if auto_pay {
@@ -708,6 +767,13 @@ impl ForgeTable {
         if let Some(req) = choose_x {
             self.show_choose_x(&req);
         }
+        if let Some((kind, req)) = stage_3d {
+            match kind {
+                StageKind::Modes => self.show_modes(&req),
+                StageKind::Binary => self.show_binary(&req),
+                StageKind::OptionalCost => self.show_optional_cost(&req),
+            }
+        }
         self.update_glow();
     }
 
@@ -736,6 +802,10 @@ impl ForgeTable {
     /// das Fähigkeiten-Menü.
     #[func]
     fn on_card_clicked(&mut self, card: Gd<Card3D>) {
+        if let Some(mode) = self.mode_cards.iter().find(|(c, _)| *c == card).map(|(_, m)| *m) {
+            self.mode_click(mode);
+            return;
+        }
         if let Some(action) = self.action_options.iter().find(|(c, _)| *c == card).map(|(_, a)| *a) {
             self.answer(Choice::Action(action));
             return;
@@ -974,6 +1044,220 @@ impl ForgeTable {
         self.showcase = Some(showcase);
     }
 
+    /// Welche 3D-Bühne zeigt diese Entscheidung (statt eines 2D-Fensters)?
+    fn stage_kind(decision: &Decision) -> Option<StageKind> {
+        match decision {
+            Decision::ChooseModes { .. } => Some(StageKind::Modes),
+            Decision::Confirm { .. }
+            | Decision::OptionalTrigger { .. }
+            | Decision::PayUnlessCost { .. }
+            | Decision::PayLifeForPhyrexian { .. } => Some(StageKind::Binary),
+            Decision::ChooseOption { options, .. } if options.len() == 2 => Some(StageKind::Binary),
+            Decision::ChooseOptions { purpose, .. } if purpose == "OptionalCost" => Some(StageKind::OptionalCost),
+            _ => None,
+        }
+    }
+
+    /// Kartendaten der Karte, um die es geht (Quelle der Anfrage; auch aus Hand oder Stack).
+    fn source_data(&self, req: &Request) -> Option<VarDictionary> {
+        let id = i64::from(req.source?);
+        self.card_data(id).or_else(|| req.cards.iter().find(|c| get_int(c, "id") == id).cloned())
+    }
+
+    /// Kartenkopie für eine Bühne aus Kartendaten (mit verändertem Regeltext `text`, falls gesetzt).
+    fn stage_card(data: &VarDictionary, text: Option<&str>) -> Gd<Card3D> {
+        let mut def = CardDef::from_state(data);
+        if let Some(t) = text {
+            def.text = t.to_string();
+        }
+        let mut copy = Card3D::new_alloc();
+        {
+            let mut c = copy.bind_mut();
+            c.set_face_texture(Some(placeholder::card_face(&def)));
+            c.apply_def(&def);
+        }
+        copy
+    }
+
+    /// Leere Bühne mit Titel und Untertitel öffnen.
+    fn open_stage(&mut self, title: &str, subtitle: &str) -> Option<Gd<Showcase>> {
+        self.clear_choice_objects();
+        let mut parent = self.controller.clone()?.upcast::<Node>();
+        let mut showcase = Showcase::new_alloc();
+        parent.add_child(&showcase);
+        showcase.bind_mut().open();
+        showcase.bind_mut().set_texts(GString::from(title), GString::from(subtitle), GString::new());
+        self.showcase = Some(showcase.clone());
+        Some(showcase)
+    }
+
+    /// Knopf auf der Bühne, der beim Drücken `choice` an Forge schickt.
+    fn stage_button(&mut self, showcase: &mut Gd<Showcase>, style: ButtonStyle, text: &str, width: f32, choice: Choice) {
+        let i = self.stage_choices.len() as i64;
+        self.stage_choices.push(choice);
+        let mut b = Button3D::create(style, text, width);
+        let cb = Callable::from_object_method(&self.to_gd(), "on_stage_choice").bind(&[i.to_variant()]);
+        b.connect("pressed", &cb);
+        showcase.bind_mut().add_button(b);
+    }
+
+    /// Alle Knöpfe der offenen Bühne.
+    fn stage_buttons(&self) -> Vec<Gd<Button3D>> {
+        self.showcase
+            .as_ref()
+            .filter(|s| s.is_instance_valid())
+            .map(|s| s.get_children().iter_shared().filter_map(|c| c.try_cast::<Button3D>().ok()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Modus wählen (CR 700.2): je Modus eine Kopie der Karte, auf der nur dieser Modus steht.
+    /// Ein Modus: Klick wählt sofort. Mehrere: Klick wählt (orange) bzw. hebt auf, „Fertig (n/…)“;
+    /// wiederholbare Modi zählen je Klick hoch („×2“), „Zurücksetzen“ leert die Wahl.
+    fn show_modes(&mut self, req: &Request) {
+        let Decision::ChooseModes { modes, min, max, can_repeat, .. } = &req.decision else { return };
+        let (min, max, can_repeat) = (*min, *max, *can_repeat);
+        let data = self.source_data(req).unwrap_or_default();
+        let title = if min == max && max == 1 {
+            tr!("Wähle einen Modus", "Choose one").to_string()
+        } else if min == max {
+            trf!("Wähle {max} Modi", "Choose {max}")
+        } else {
+            trf!("Wähle {min}–{max} Modi", "Choose {min}–{max}")
+        };
+        let subtitle = if req.source_name.is_empty() { String::new() } else { req.source_name.clone() };
+        let Some(mut showcase) = self.open_stage(&title, &subtitle) else { return };
+        let mut cards = Vec::new();
+        for (n, (index, text)) in modes.iter().enumerate() {
+            let mut copy = Self::stage_card(&data, Some(text));
+            copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+            cards.push((copy.clone(), trf!("Modus {}", "Mode {}", n + 1)));
+            self.mode_cards.push((copy, *index));
+        }
+        showcase.bind_mut().show_options(cards);
+        showcase.bind_mut().enable_scroll();
+        if req.cancelable {
+            self.stage_button(&mut showcase, ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), Showcase::button_width(), Choice::Cancel);
+        }
+        if max > 1 {
+            if can_repeat {
+                let mut reset = Button3D::create(ButtonStyle::Blue, tr!("Zurücksetzen", "Reset"), Showcase::button_width());
+                let cb = Callable::from_object_method(&self.to_gd(), "on_modes_reset");
+                reset.connect("pressed", &cb);
+                showcase.bind_mut().add_button(reset);
+            }
+            let mut done = Button3D::create(ButtonStyle::Orange, &pick_label(0, min, max), Showcase::button_width() * 1.2);
+            done.bind_mut().set_enabled(min == 0);
+            let cb = Callable::from_object_method(&self.to_gd(), "on_modes_done");
+            done.connect("pressed", &cb);
+            showcase.bind_mut().add_button(done);
+        }
+    }
+
+    /// Klick auf eine Modus-Karte.
+    fn mode_click(&mut self, mode: usize) {
+        let Some(Decision::ChooseModes { max, can_repeat, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        if max <= 1 {
+            self.answer(Choice::Modes(vec![mode]));
+            return;
+        }
+        let picked = self.mode_pick.iter().filter(|m| **m == mode).count();
+        if can_repeat {
+            if self.mode_pick.len() < max as usize {
+                self.mode_pick.push(mode);
+            }
+        } else if picked > 0 {
+            self.mode_pick.retain(|m| *m != mode);
+        } else if self.mode_pick.len() < max as usize {
+            self.mode_pick.push(mode);
+        }
+        self.refresh_mode_cards();
+    }
+
+    /// Modus-Karten markieren (orange = gewählt), Zähler im Fertig-Knopf.
+    fn refresh_mode_cards(&mut self) {
+        let Some(Decision::ChooseModes { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        for (card, mode) in self.mode_cards.iter_mut() {
+            let n = self.mode_pick.iter().filter(|m| *m == mode).count();
+            card.bind_mut().set_marker(if n > 0 { CardMarker::Selected } else { CardMarker::None });
+            card.bind_mut().set_badges(&if n > 1 { format!("×{n}") } else { String::new() });
+        }
+        let n = self.mode_pick.len() as u32;
+        for mut b in self.stage_buttons() {
+            if b.bind().get_text().to_string().starts_with(tr!("Fertig", "Done")) {
+                b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
+                b.bind_mut().set_enabled(n >= min && n <= max);
+            }
+        }
+    }
+
+    /// Ja/Nein-Fragen und Entweder-oder (optionale Fähigkeit, „… es sei denn, du zahlst“,
+    /// phyrexianisches Mana, zwei Optionen): zwei Knöpfe untereinander – oben orange (erste
+    /// Antwort, z. B. „Ja“), darunter blau; die Quellkarte groß darüber.
+    fn show_binary(&mut self, req: &Request) {
+        let name_of = |t: Target| format!("{t:?}");
+        let Some(hud) = decision_view::hud_choice(req, &name_of) else { return };
+        if hud.options.len() < 2 {
+            return;
+        }
+        let confirm_like = !matches!(req.decision, Decision::ChooseOption { .. });
+        let data = self.source_data(req);
+        let Some(mut showcase) = self.open_stage(&hud.title, &hud.detail) else { return };
+        if let Some(data) = data {
+            showcase.bind_mut().show_options(vec![(Self::stage_card(&data, None), String::new())]);
+        }
+        showcase.bind_mut().set_focus_layout();
+        let width = Showcase::focus_button_width();
+        for (i, (style, opt)) in [ButtonStyle::Orange, ButtonStyle::Blue].into_iter().zip(hud.options.iter()).enumerate() {
+            let raw = if confirm_like { (i == 0).to_variant() } else { (i as i64).to_variant() };
+            if let Some(choice) = decision_view::to_choice(&req.decision, &raw) {
+                self.stage_button(&mut showcase, style, &opt.text, width, choice);
+            }
+        }
+        if hud.cancelable {
+            self.stage_button(&mut showcase, ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), width * 0.8, Choice::Cancel);
+        }
+    }
+
+    /// Optionale Kosten (Kicker, Buyback, Entwinden …): die Karte groß und hell im Vordergrund,
+    /// darüber der Name der Kosten (z. B. „Kicker“), darunter untereinander orange
+    /// „Kicker – {R}“ und grau „Normal“.
+    /// Mehrere optionale Kosten: je Kosten ein Knopf zum An-/Abschalten (✓) und „Fertig“.
+    fn show_optional_cost(&mut self, req: &Request) {
+        let Decision::ChooseOptions { options, .. } = &req.decision else { return };
+        let first = options.first().map(|o| o.text.clone()).unwrap_or_default();
+        let title = if options.len() == 1 {
+            first.split([' ', '–', '-']).next().unwrap_or("").to_string()
+        } else {
+            tr!("Optionale Kosten", "Optional costs").to_string()
+        };
+        let data = self.source_data(req);
+        let Some(mut showcase) = self.open_stage(&title, &req.source_name) else { return };
+        if let Some(data) = data {
+            showcase.bind_mut().show_options(vec![(Self::stage_card(&data, None), String::new())]);
+        }
+        showcase.bind_mut().set_focus_layout();
+        let width = Showcase::focus_button_width();
+        if options.len() == 1 {
+            self.stage_button(&mut showcase, ButtonStyle::Orange, &first, width, Choice::Modes(vec![0]));
+            self.stage_button(&mut showcase, ButtonStyle::Grey, tr!("Normal", "Normal"), width, Choice::Modes(Vec::new()));
+        } else {
+            self.option_toggles = vec![false; options.len()];
+            for (i, o) in options.iter().enumerate() {
+                let mut b = Button3D::create(ButtonStyle::Orange, &o.text, width);
+                let cb = Callable::from_object_method(&self.to_gd(), "on_option_toggle").bind(&[(i as i64).to_variant()]);
+                b.connect("pressed", &cb);
+                showcase.bind_mut().add_button(b);
+            }
+            let mut done = Button3D::create(ButtonStyle::Blue, tr!("Fertig", "Done"), width);
+            let cb = Callable::from_object_method(&self.to_gd(), "on_options_done");
+            done.connect("pressed", &cb);
+            showcase.bind_mut().add_button(done);
+        }
+        if req.cancelable {
+            self.stage_button(&mut showcase, ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), width * 0.8, Choice::Cancel);
+        }
+    }
+
     /// X wählen (wie im Video des Users): unter der Karte auf dem Stack eine Knopfreihe
     /// „−5“, „−“, orange „Bezahlen X = n“, „+“, „+5“, dazu blau „Abbrechen“ (wo erlaubt) und in
     /// der Tischmitte „Wähle einen Wert für X.“. Kein Fenster.
@@ -985,7 +1269,8 @@ impl ForgeTable {
         let Some(cam) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else { return };
         let right = cam.get_global_transform().basis.col_a().normalized();
         // unter der obersten Karte des Stacks (dort liegt die Karte, die gerade gewirkt wird)
-        let center = self.stack_zone.as_ref().map_or(Vector3::new(6.0, 1.6, 1.4), |z| z.get_global_transform() * X_ROW_LOCAL);
+        let center = self.stack_zone.as_ref().map_or(Vector3::new(6.0, 1.6, 1.4), |z| z.get_global_transform() * X_ROW_LOCAL)
+            + right * X_ROW_SHIFT;
         let mut add = |button: Gd<Button3D>, offset: f32, method: &str, arg: Option<i64>| {
             let mut button = button;
             parent.add_child(&button);
@@ -1006,7 +1291,7 @@ impl ForgeTable {
         if req.cancelable {
             let mut cancel = Button3D::create(ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), X_PAY_WIDTH * 0.8);
             parent.add_child(&cancel);
-            cancel.set_global_position(center + right * 0.0 + Vector3::new(0.0, 0.0, X_CANCEL_BELOW));
+            cancel.set_global_position(center + Vector3::new(0.0, 0.0, X_CANCEL_BELOW));
             let cb = Callable::from_object_method(&self.to_gd(), "on_x_cancel");
             cancel.connect("pressed", &cb);
             self.choice_buttons.push(cancel);
@@ -1156,6 +1441,10 @@ impl ForgeTable {
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
     fn clear_choice_objects(&mut self) {
         self.action_options.clear();
+        self.stage_choices.clear();
+        self.mode_cards.clear();
+        self.mode_pick.clear();
+        self.option_toggles.clear();
         if let Some(mut s) = self.showcase.take() {
             if s.is_instance_valid() {
                 s.bind_mut().close();
@@ -1201,7 +1490,7 @@ impl ForgeTable {
             .pending
             .as_ref()
             .and_then(|req| self.pay_choice(req).or_else(|| self.table_pick_choice(req)));
-        let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().and_then(|req| {
+        let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().filter(|r| Self::stage_kind(&r.decision).is_none()).and_then(|req| {
             // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
             let name_of = |t: Target| match t {
                 Target::Player(p) => self.seat_name(p as usize).to_string(),
@@ -2725,10 +3014,25 @@ fn x_pay_label(x: u32) -> String {
 }
 
 /// X-Knopfreihe: Lage unter der obersten Stack-Karte (lokal in der Stack-Zone), Abstände der
-/// Knöpfe von der Mitte (Kamera-Rechtsrichtung), Breiten, Abbrechen darunter (Welt-z).
+/// Knöpfe von der Mitte (Kamera-Rechtsrichtung; so gewählt, dass zwischen den Knöpfen eine
+/// sichtbare Lücke bleibt), Breiten, Abbrechen darunter (Welt-z).
 const X_ROW_LOCAL: Vector3 = Vector3::new(0.0, 0.25, 0.68);
-const X_INNER: f32 = 1.12;
-const X_OUTER: f32 = 1.62;
-const X_SMALL_WIDTH: f32 = 0.95;
-const X_PAY_WIDTH: f32 = 2.4;
-const X_CANCEL_BELOW: f32 = 1.0;
+/// Reihe gegenüber der Stack-Mitte nach links verschoben (Kamera-Rechtsrichtung), damit die
+/// äußeren Knöpfe nicht über den Bildrand ragen.
+const X_ROW_SHIFT: f32 = -1.6;
+const X_INNER: f32 = 2.2;
+const X_OUTER: f32 = 3.35;
+const X_SMALL_WIDTH: f32 = 1.6;
+const X_PAY_WIDTH: f32 = 3.6;
+const X_CANCEL_BELOW: f32 = 1.5;
+
+/// Welche 3D-Bühne eine Entscheidung bekommt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StageKind {
+    /// Modus wählen: Kartenkopie je Modus.
+    Modes,
+    /// Ja/Nein bzw. zwei Antworten: zwei Knöpfe untereinander.
+    Binary,
+    /// Optionale Kosten (Kicker …): Karte groß, Knöpfe „Kicker“ / „Normal“.
+    OptionalCost,
+}

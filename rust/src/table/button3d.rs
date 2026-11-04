@@ -23,13 +23,15 @@ use super::button_shader::button_shader;
 use super::layers::CONTROL_LAYER;
 
 /// Farbstil eines Knopfes (Farben aus den Blender-Dateien): 0 = Orange (Feuer, „Button_Ornage“),
-/// 1 = Blau (Wolken, „Button_Blau“).
+/// 1 = Blau (Wolken, „Button_Blau“), 2 = Grau (neutrale Alternative, z. B. „Normal“ statt Kicker;
+/// gleiche Oberfläche wie Blau, entsättigt).
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[godot(via = i64)]
 pub enum ButtonStyle {
     #[default]
     Orange,
     Blue,
+    Grey,
 }
 
 /// Shader-Farben eines Stils (linear, aus den Blender-Materialien).
@@ -63,6 +65,15 @@ fn palette(style: ButtonStyle) -> Palette {
             rim: c(0.7529, 0.9131, 1.0),
             glow_inner: c(0.0612, 0.013, 0.5776),
             glow_outer: c(0.1559, 0.0612, 1.0),
+        },
+        ButtonStyle::Grey => Palette {
+            ramp: [c(0.62, 0.63, 0.66), c(0.36, 0.37, 0.4), c(0.22, 0.23, 0.25), c(0.33, 0.34, 0.37)],
+            ramp_pos: [0.0, 0.2, 0.7, 1.0],
+            streak: c(0.8, 0.81, 0.84),
+            shade: c(0.12, 0.12, 0.14),
+            rim: c(0.9, 0.91, 0.93),
+            glow_inner: c(0.1, 0.1, 0.12),
+            glow_outer: c(0.45, 0.46, 0.5),
         },
     }
 }

@@ -178,6 +178,7 @@ Diese Teile gibt es im Vorbild (`decision.rs` aus forge-rules-rs) (noch) nicht:
 | Ziele auf dem Stack in `ChooseTargets` | als `{"card": id}` der Quelle des Zaubers bzw. der Fähigkeit (das Basismodell (`Target`) hat keine Stack-Einträge; nachziehen: `Target::Stack(id)`) |
 | `ChooseOption` für Mana aus dem Pool (`chooseManaFromPool`) | im Basismodell fehlt `PayAction::UsePool(Farbe)` |
 | `Action::ActivateMana { card, index }` in `Priority.actions` | Manafähigkeit mit Priorität aktivieren (CR 605.3a), z. B. Länder vorab tappen; `index` wie bei `PayAction::ActivateMana`. Das Basismodell kennt Manafähigkeiten nur beim Bezahlen |
+| `ChooseOptions.purpose` (`"OptionalCost"` bei `chooseOptionalCosts`) | wofür die Mehrfachwahl ist, damit die UI optionale Kosten (Kicker …) als eigene Bühne zeigt; sonst leer |
 | `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
 | `ChooseCards` mit `reason: "Reveal"` und `max: 0` | Anzeige aufgedeckter Karten; im Basismodell fehlt ein `Decision::Reveal { cards }` bzw. Ereignis |
 | `Decision::ChooseStartingPlayer { player, players }` → `Choice::Number(index)` | wer beginnt die Partie (CR 103.1); `players` = Sitzplätze, `labels` = Spielernamen. Die UI zeigt dafür 3D-Knöpfe statt eines Fensters |
@@ -354,6 +355,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `ChooseCards` mit Karten, die alle offen auf dem Tisch liegen (Spielfeld, Länder-Reihe, Kommandozone, Stack) | Tisch-Modus: Karten leuchten, Klick wählt (gold), Fenster am rechten Rand mit Kartennamen und „Fertig“ → `Cards` |
 | `Mulligan` / `MulliganBottom` | 3D-Bühne (`Showcase`): Hand groß vor der Kamera, `Button3D` „Mulligan“/„Behalten“ → `Mulligan` / `Keep`; bei `MulliganBottom` Karten anklicken, „Fertig (n/N)“ → `Cards` |
 | `ChooseCards`, alle Optionen auf der eigenen Hand (Abwerfen, `DiscardToHandSize`, Kosten …) | Hand-Bühne wie `MulliganBottom` (`ForgeTable.show_hand_pick`): Karten anklicken, „Fertig (n/min–max)“ → `Cards`, „Abbrechen“ → `Cancel` (nur wenn `cancelable`) |
+| `ChooseModes` | 3D-Bühne: Kartenkopie je Modus mit nur diesem Modus als Regeltext → `Modes` |
+| `Confirm`, `OptionalTrigger`, `PayUnlessCost`, `PayLifeForPhyrexian`, `ChooseOption` mit 2 Optionen | 3D-Bühne: Quellkarte groß, zwei Knöpfe untereinander (orange = erste Antwort, blau = zweite) → `Yes`/`No` bzw. `Number` |
+| `ChooseOptions` mit `purpose` `OptionalCost` | 3D-Bühne: Karte groß, orange „Kicker – {R}“ → `Modes([0])`, grau „Normal“ → `Modes([])` |
 | `ChooseCards` / `Scry` | Kartenfächer-Overlay (`card_fan.rs`): Karten groß (Tischkarten bzw. temporäre Karten aus `cards`), Klick wählt bzw. wechselt die Reihe; „Fertig“ → `ForgeTable.submit_fan` → `Cards` / `Arrange` |
 | `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
 | `AssignCombatDamage` / `DivideAmount` | Auswahlfenster „Verteilen“: Zahlenfeld je Empfänger, vorbelegt, Summenanzeige, „OK“ nur bei richtiger Summe → `Damage` |

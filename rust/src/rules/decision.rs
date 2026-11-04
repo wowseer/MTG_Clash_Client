@@ -148,7 +148,8 @@ pub enum Decision {
     ChooseOption { player: PlayerId, prompt: String, options: Vec<OptionText> },
     /// **Erweiterung:** `min`–`max` Optionen (optionale Kosten, mehrere Farben, Würfel …);
     /// Antwort `Choice::Modes(indizes)`.
-    ChooseOptions { player: PlayerId, prompt: String, options: Vec<OptionText>, min: u32, max: u32 },
+    /// `purpose` (Erweiterung): wofür die Wahl ist, z. B. `"OptionalCost"` (Kicker u. Ä.).
+    ChooseOptions { player: PlayerId, prompt: String, options: Vec<OptionText>, min: u32, max: u32, purpose: String },
     /// **Erweiterung:** Zahl zwischen `min` und `max`; Antwort `Choice::Number(n)`.
     ChooseNumber { player: PlayerId, prompt: String, min: u32, max: u32 },
     /// **Erweiterung** (CR 103.1): wer beginnt die Partie? `players` = Sitzplätze zur Wahl;
@@ -520,6 +521,7 @@ impl Decision {
                 options: options_from(&o),
                 min: o.u32("min"),
                 max: o.u32("max"),
+                purpose: o.str("purpose"),
             },
             "ChooseStartingPlayer" => Decision::ChooseStartingPlayer {
                 player,

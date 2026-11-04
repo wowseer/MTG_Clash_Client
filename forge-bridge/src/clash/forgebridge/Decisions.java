@@ -699,6 +699,15 @@ final class Decisions {
     /** Erweiterung {@code ChooseOptions}: {@code min}–{@code max} Indizes (genau eine → {@code ChooseOption}). */
     static List<Integer> options(Game game, int seat, String prompt, SpellAbility sa, Card card, List<Opt> options,
             int min, int max, boolean cancelable) {
+        return options(game, seat, prompt, sa, card, options, min, max, cancelable, null);
+    }
+
+    /**
+     * Wie {@link #options}, mit Erweiterung {@code purpose}: wofür die Wahl ist (z. B.
+     * {@code "OptionalCost"} = optionale Kosten wie Kicker), damit die UI sie passend zeigt.
+     */
+    static List<Integer> options(Game game, int seat, String prompt, SpellAbility sa, Card card, List<Opt> options,
+            int min, int max, boolean cancelable, String purpose) {
         max = Math.min(max, options.size());
         min = Math.max(0, Math.min(min, max));
         if (min == 1 && max == 1) {
@@ -710,6 +719,9 @@ final class Decisions {
         d.add("options", optionsJson(options, source(sa, card)));
         d.addProperty("min", min);
         d.addProperty("max", max);
+        if (purpose != null) {
+            d.addProperty("purpose", purpose);
+        }
         List<Integer> chosen = intList(ask(game, seat, d, prompt, sa, card, cancelable, null), "Modes", "modes");
         return valid(chosen, options.size(), min, max, false) ? chosen : null;
     }

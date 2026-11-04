@@ -1525,7 +1525,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public List<OptionalCostValue> chooseOptionalCosts(SpellAbility sa, List<OptionalCostValue> optionalCost) {
         List<Integer> chosen = Decisions.options(g(), seat, "Optionale Kosten zahlen?", sa, null,
-                Decisions.opts(optionalCost), 0, optionalCost.size(), false);
+                Decisions.opts(optionalCost), 0, optionalCost.size(), false, "OptionalCost");
         if (chosen == null) {
             return super.chooseOptionalCosts(sa, optionalCost);
         }

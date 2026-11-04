@@ -210,6 +210,9 @@ pub struct Card3D {
     tile: bool,
     tile_shown: bool,
     shape_refs: Option<ShapeRefs>,
+    /// Immer unbeleuchtet in Originalfarben (Karten auf einer 3D-Bühne vor der Kamera, wo das
+    /// Tischlicht nicht hinreicht – sonst wirken sie grau).
+    bright: bool,
     /// Hat in diesem Zug angegriffen (ausgegraut, bis sie enttappt wird).
     attacked: bool,
     /// Laufendes Umdrehen: vergangene Zeit und die neue Seite (Kartendaten, Bild), die bei
@@ -272,6 +275,7 @@ impl IArea3D for Card3D {
             tile: false,
             tile_shown: false,
             shape_refs: None,
+            bright: false,
             attacked: false,
             flip: None,
             owner_seat: 0,
@@ -335,21 +339,11 @@ impl IArea3D for Card3D {
 
         if zoomed != self.zoomed {
             self.zoomed = zoomed;
+            self.apply_brightness();
             // Die schwebende Karte soll keinen riesigen Schatten auf den Tisch werfen.
             let setting = if zoomed { ShadowCastingSetting::OFF } else { ShadowCastingSetting::ON };
             for mesh in self.meshes.iter_mut() {
                 mesh.set_cast_shadows_setting(setting);
-            }
-            // Vor der Kamera liegt die Karte außerhalb der Tischbeleuchtung:
-            // gezoomt unbeleuchtet in Originalfarben anzeigen, damit sie lesbar ist.
-            let shading = if zoomed { ShadingMode::UNSHADED } else { ShadingMode::PER_PIXEL };
-            if let Some(mat) = self.face_material.as_mut() {
-                mat.set_shading_mode(shading);
-            }
-            if let Some(labels) = self.labels.as_mut() {
-                for l in labels.all() {
-                    l.set_draw_flag(DrawFlags::SHADED, !zoomed);
-                }
             }
         }
 
@@ -558,6 +552,13 @@ impl Card3D {
         }
     }
 
+    /// Immer hell in Originalfarben zeigen (Karten auf einer 3D-Bühne vor der Kamera).
+    #[func]
+    pub fn set_bright(&mut self, bright: bool) {
+        self.bright = bright;
+        self.apply_brightness();
+    }
+
     /// Wird die Karte als Kachel gezeigt?
     #[func]
     pub fn is_tile(&self) -> bool {
@@ -718,6 +719,21 @@ impl Card3D {
     pub fn set_marker(&mut self, marker: CardMarker) {
         self.marker = marker;
         self.apply_glow();
+    }
+
+    /// Unbeleuchtet in Originalfarben, wenn gezoomt oder [method set_bright]: vor der Kamera liegt
+    /// die Karte außerhalb der Tischbeleuchtung und wäre sonst dunkel bzw. grau.
+    fn apply_brightness(&mut self) {
+        let bright = self.zoomed || self.bright;
+        let shading = if bright { ShadingMode::UNSHADED } else { ShadingMode::PER_PIXEL };
+        if let Some(mat) = self.face_material.as_mut() {
+            mat.set_shading_mode(shading);
+        }
+        if let Some(labels) = self.labels.as_mut() {
+            for l in labels.all() {
+                l.set_draw_flag(DrawFlags::SHADED, !bright);
+            }
+        }
     }
 
     /// Sichtbare Länge der Karte (ganz bzw. Kachel).
@@ -1094,6 +1110,7 @@ impl Card3D {
         if self.tile_shown {
             self.apply_shape();
         }
+        self.apply_brightness();
     }
 }
 
