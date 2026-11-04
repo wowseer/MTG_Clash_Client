@@ -24,9 +24,11 @@ import forge.game.zone.ZoneType;
  * ({@code Decision::ChooseCards} mit Grund {@code SacrificeCost}, {@code DiscardCost},
  * {@code TapCost}, {@code ReturnCost}, {@code ExileCost}).
  *
+ * Fahrzeuge besetzen (Gesamtstärke) wählt der Spieler ebenfalls.
+ *
  * <p>Alles andere – Mana (geht ohnehin über {@code payManaCost} an den Spieler), Leben, Marken,
- * Sonderfälle wie „Hand abwerfen“, „zufällig“, Fahrzeuge (Gesamtstärke), „Karte selbst“ – bleibt
- * bei der geerbten KI-Logik. Antwortet der Client ungültig, entscheidet ebenfalls die KI.
+ * Sonderfälle ohne echte Wahl wie „Hand abwerfen“, „zufällig“, „Karte selbst“ – bleibt bei der
+ * geerbten KI-Logik. Antwortet der Client ungültig, entscheidet ebenfalls die KI.
  */
 final class RemoteCostDecision extends AiCostDecision {
     private final int seat;
@@ -82,7 +84,11 @@ final class RemoteCostDecision extends AiCostDecision {
     @Override
     public PaymentDecision visit(CostTapType cost) {
         String type = cost.getType();
-        if (type.contains("withTotalPowerGE") || type.contains("sharesCreatureTypeWith")) {
+        if (type.contains("+withTotalPowerGE")) {
+            PaymentDecision d = crew(cost, type);
+            return d != null ? d : super.visit(cost);
+        }
+        if (type.contains("sharesCreatureTypeWith")) {
             return super.visit(cost);
         }
         int c = cost.getAbilityAmount(ability);
@@ -113,6 +119,47 @@ final class RemoteCostDecision extends AiCostDecision {
                 CardPredicates.canExiledBy(ability, isEffect()));
         PaymentDecision d = ask("ExileCost", valid, c, "Kosten: " + c + " Karte(n) exilieren");
         return d != null ? d : super.visit(cost);
+    }
+
+    /**
+     * Besetzen (Crew, CR 702.122) u. Ä.: beliebig viele ungetappte Kreaturen mit zusammen
+     * mindestens N Stärke tappen. Zu wenig Stärke → bis zu drei Mal erneut fragen, dann KI.
+     */
+    private PaymentDecision crew(CostTapType cost, String type) {
+        int needed;
+        try {
+            needed = Integer.parseInt(type.split("withTotalPowerGE")[1].trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        String base = type.replace("+withTotalPowerGE" + type.split("withTotalPowerGE")[1], "");
+        CardCollection valid = CardLists.filter(valid(ZoneType.Battlefield, base),
+                card -> card.canTap() && (cost.canTapSource || card != source));
+        int total = 0;
+        for (Card c : valid) {
+            total += Math.max(0, c.getNetPower());
+        }
+        if (valid.isEmpty() || total < needed) {
+            return null;
+        }
+        List<Card> list = new ArrayList<>(valid);
+        for (int attempt = 0; attempt < 3; attempt++) {
+            List<Integer> chosen = Decisions.cards(player.getGame(), seat, "TapCost", list, 1, list.size(),
+                    "Besetzen: Kreaturen mit zusammen mindestens " + needed + " Stärke tappen", ability, false);
+            if (chosen == null) {
+                return null;
+            }
+            CardCollection result = new CardCollection();
+            int power = 0;
+            for (int i : chosen) {
+                result.add(list.get(i));
+                power += Math.max(0, list.get(i).getNetPower());
+            }
+            if (power >= needed) {
+                return PaymentDecision.card(result);
+            }
+        }
+        return null;
     }
 
     @Override

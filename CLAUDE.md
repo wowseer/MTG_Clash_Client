@@ -87,8 +87,8 @@ Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.pla
 `ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Kosten-Auswahlen
 (`RemoteCostDecision`), `AssignCombatDamage`, `DivideAmount`, `PayUnlessCost`,
 `PayLifeForPhyrexian`, Trigger über den menschlichen Ablauf. Nächster Schritt laut Fahrplan:
-Sonderkosten (ganze Hand, zufällig, Fahrzeuge besetzen), Würfel/Münzen, Abstimmungen und die
-restlichen Methoden aus `docs/Kartenabdeckung.md`; der Zustand ist vollständig.
+Mana gezielt aus dem Pool (`chooseManaFromPool`), Spleißen, Würfel tauschen, Schutzschilde
+verteilen, `reveal` anzeigen; der Zustand ist vollständig.
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen

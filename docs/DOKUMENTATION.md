@@ -187,8 +187,9 @@ der Zauber braucht: optionale Kosten (z. B. Kicker), Modus, X-Wert und das **Zie
 Karte oder Medaillon, siehe oben). Aktivierte Fähigkeiten bleibender Karten (z. B. Ausrüsten)
 leuchten, wenn sie möglich sind, und werden per Klick aktiviert.
 
-Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich):
-Sonderkosten (ganze Hand abwerfen, zufällig, Fahrzeuge besetzen).
+Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Würfel tauschen,
+Mana gezielt aus dem Manapool wählen, Spleißen, Schutzschilde verteilen. Fahrzeuge besetzen:
+Kreaturen auf dem Tisch anklicken, bis die nötige Stärke erreicht ist, dann „Fertig“.
 
 ---
 

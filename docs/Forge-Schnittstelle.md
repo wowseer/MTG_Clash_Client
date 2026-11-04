@@ -87,7 +87,7 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `arrangeForScry`, `arrangeForSurveil` | `Scry { cards, graveyard }` | `Arrange { top, bottom }` |
 | `orderSimultaneousSa` (eigene Trigger), `orderMoveToZoneList` | `OrderTriggers { descriptions }` | `Order([…])` (erstes zuerst) |
 | `tuckCardsViaMulligan` | `MulliganBottom { hand, count }` | `Cards([…])` |
-| Kosten: Opfern, Abwerfen, Tappen, Zurückgeben, Exilieren (`getCostDecisionMaker` → `RemoteCostDecision`) | `ChooseCards { reason: SacrificeCost / DiscardCost / TapCost / ReturnCost / ExileCost }`; Exil-Sonderfälle (Karte selbst, alle, oberste Friedhofskarten, Mindest-Manawert, Bibliothek, „aus demselben Friedhof“) entscheidet die Engine | `Cards([…])` |
+| Kosten: Opfern, Abwerfen, Tappen, Zurückgeben, Exilieren (`getCostDecisionMaker` → `RemoteCostDecision`) | `ChooseCards { reason: SacrificeCost / DiscardCost / TapCost / ReturnCost / ExileCost }`; Exil-Sonderfälle (Karte selbst, alle, oberste Friedhofskarten, Mindest-Manawert, Bibliothek, „aus demselben Friedhof“) entscheidet die Engine; Fahrzeuge besetzen (Crew, Gesamtstärke ≥ N) als `TapCost` mit `min: 1`, zu wenig Stärke → erneut fragen | `Cards([…])` |
 | `assignCombatDamage` | `AssignCombatDamage { attacker, amount, blockers, lethal, trample_to }` | `Damage([je Blocker…, Trampel])` |
 | `chooseTargetsFor` bei „DividedAsYouChoose“ | `DivideAmount { source, amount, targets, min_each }` (**Erweiterung**) | `Damage([…])` |
 | `payCostToPreventEffect` | `PayUnlessCost { cost }` (nur wenn bezahlbar) | `Yes` / `No` |
@@ -375,6 +375,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   und Rekrutieren (Yavimaya Steelcrusher) im Tisch-Modus getestet.
 - Kaskade (Bloodbraid Elf → „Do you want to play Shock?“ → Ziel), Fact or Fiction (Stapelwahl) und
   Leyline of Punishment aus der Starthand getestet.
+- Besetzen getestet mit Smuggler's Copter (Crew 1) und Raging Goblin (Tisch-Modus).
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.
