@@ -9,7 +9,7 @@
 //!
 //! Verhalten (Zeiten nach `docs/claude/ANIMATION.md`): Erscheinen 0,20 s Cubic-Out (wächst aus der
 //! Mitte), Hover weich in ca. 0,12 s (Knopf etwas größer, Leuchten heller), Klick drückt den
-//! Knopf kurz ein, Verschwinden 0,15 s. Die Oberfläche läuft in einer 4-s-Schleife (Treiber der
+//! Knopf kurz ein, Verschwinden 0,15 s. Die Oberfläche läuft in einer 8-s-Schleife (Treiber der
 //! Blender-Datei), jeder Knopf mit eigenem Zeitversatz.
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;

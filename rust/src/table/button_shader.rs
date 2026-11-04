@@ -9,7 +9,8 @@
 //! - Farbe: senkrechter Verlauf (Color Ramp über `y·1,1111 + 0,5`), darüber zwei 4D-fBm-Rauschen
 //!   (Skala 2,2 / Detail 4 / Rauheit 0,55 / Verzerrung 1,2 und 3,5 / 2 / 0,5 / 0,8) an
 //!   `p·(0,55; 1,6; 1) + (0; 0; z)`, heller Rand `clamp(1 + d/0,06)^1,8 · (0,35 + 0,75·(1 − t))`.
-//! - Treiber (30 fps, Schleife 120 Frames = 4 s): `z = 0,7·sin φ`, `w₁ = 0,7·cos φ`,
+//! - Treiber (30 fps, Schleife 120 Frames = 4 s in Blender; hier mit `speed` 0,5 = 8 s, ruhiger):
+//!   `z = 0,7·sin φ`, `w₁ = 0,7·cos φ`,
 //!   `w₂ = 5 + 0,5·sin φ`, Leuchten `0,85 + 0,15·sin 2φ` mit `φ = 2π·frame/120`.
 //! - Leuchten: `g = clamp(1 − d/0,32)^2,2`, Farbe `mix(A, B, g)`, Deckkraft `g · Puls · 0,9`.
 //!
@@ -41,6 +42,7 @@ uniform vec4 glow_outer;     // Glow Mix B
 // Bedienung
 uniform float glow_boost = 1.0;   // Hover: > 1
 uniform float time_offset = 0.0;  // damit nicht alle Knöpfe gleich laufen
+uniform float speed = 0.5;        // Tempo gegenüber Blender (0,5 = halb so schnell, ruhiger)
 uniform float disabled = 0.0;     // 1 = ausgegraut
 
 // Bildausschnitt (Blender-Einheiten) und halbe Länge des geraden Knopfkörpers (1,795 = Blender)
@@ -73,7 +75,7 @@ void fragment() {
     float d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - 0.405;
 
     // Treiber: 30 fps, 120 Frames
-    float frame = (TIME + time_offset) * 30.0 + 1.0;
+    float frame = (TIME * speed + time_offset) * 30.0 + 1.0;
     float phi = 6.28318530718 * frame / 120.0;
     float z = 0.7 * sin(phi);
     float w1 = 0.7 * cos(phi);
