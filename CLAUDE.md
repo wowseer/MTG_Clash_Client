@@ -38,9 +38,10 @@
   `Choice::Number(index)`). Jede Erweiterung in `docs/Forge-Schnittstelle.md` unter
   „Erweiterungen gegenüber dem Basismodell“ auflisten.
 - IDs: `CardId` = Forge-Karten-ID, `PlayerId` = Sitzplatz-Index.
-- **Multiplayer mitdenken:** nie „den Gegner“ als einzelnen Spieler hartkodieren (NeoForge spielt
-  Commander mit bis zu vier Spielern). Die 3D-Szene hat heute zwei Sitzplätze; neuer Code muss mit
-  `PlayerId`s und Listen arbeiten.
+- **Genau zwei Spieler:** Der 3D-Tisch ist nur für Partien mit zwei Spielern (du und ein Gegner,
+  auch Commander 1 gegen 1). Partien mit mehr als zwei Spielern startet NeoForge automatisch mit
+  seiner 2D-Oberfläche – dafür wird hier **keine** UI gebaut. Code arbeitet trotzdem mit
+  `PlayerId`s (Sitzplatz-Index) statt „dem Gegner“ als Sonderfall, wo das nichts kostet.
 - **Umfang dieses Projekts:** Formate Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander,
   Booster Draft, Cube. **Keine UI bauen für** Archenemy, Planechase (Planar-Würfel), Vanguard,
   Conspiracy, Un-Sets (Contraptions, Attractions, Sticker), Alchemy/Digital-only, Ante. Im Scope
@@ -140,7 +141,8 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 **Als Nächstes:** reine 3D-Oberfläche – alle 2D-Fenster und HUD-Anzeigen in die 3D-Szene holen.
 Liste zum Abhaken: `docs/UI-Aktionen.xlsx` – Blätter „Bausteine“ (neue 3D-Bausteine in Bau-Reihenfolge),
 „Aktionen“ (87 Interface-Aktionen) und „Elemente“ (jedes sichtbare Element und was daraus wird).
-NeoForge-Integration steht (siehe Ziel); danach mehr als 2 Spieler (Commander).
+NeoForge-Integration steht (siehe Ziel). Mehr als 2 Spieler gibt es im 3D-Tisch nicht (NeoForge
+nimmt dann seine 2D-Oberfläche).
 Deckauswahl und Formate übernimmt NeoForge.
 
 ## Quellcode von Forge und NeoForge
