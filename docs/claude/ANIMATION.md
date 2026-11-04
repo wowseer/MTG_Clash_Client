@@ -39,6 +39,9 @@ Spiel nie auf.
 | Stack → Friedhof (Spontanzauber) | 0,45 s | Cubic-In | Karte zerfällt / löst sich auf, dann Friedhof |
 | Tappen / Enttappen | 0,18 s | Quad-Out | Drehung um 90° bzw. projekteigene Neigung |
 | Angriff erklären | 0,25 s | Back-Out | Karte rückt 0,3 nach vorn, Pfeil wächst aus der Karte |
+| Pfeil erscheinen | 0,33 s (Blender: Frame 1 → 9 bei 24 fps) | weich (smoothstep) | wächst vom Start zum Ziel (`TargetArrows`, `GROW_TIME`); selbst gezogene Pfeile wachsen nicht |
+| Pfeil biegen | Feder 140 / Dämpfung 15 | leicht unterdämpft | Querbewegung eines Endes biegt den Pfeil (höchstens 0,3 der Länge), danach schwingt er gerade zurück |
+| Pfeil Lichtwellen | laufend, 1,5 Einheiten/s | – | fBm-Rauschen entlang des Pfeils zur Spitze hin (Treiber `frame/24`) |
 | Kampfschaden | 0,30 s Stoß + 0,2 s zurück | Expo-Out / Quad-In | Zahl springt aus dem Ziel, Treffer-Blitz |
 | Kreatur stirbt | 0,50 s | Quad-In | entsättigen, zerfallen, dann zum Friedhof |
 | Spielstein entsteht / vergeht | 0,30 s | Back-Out / Quad-In | aus Licht aufbauen / in Partikel zerfallen |

@@ -1,6 +1,6 @@
 //! `Button3D`: anklickbarer Knopf in der 3D-Szene (Baustein „Bedienobjekt“ der 3D-Oberfläche).
 //!
-//! Aufbau: eine Fläche mit dem Knopf-Shader ([`BUTTON_SHADER`]: Nachbau der Blender-Materialien
+//! Aufbau: eine Fläche mit dem Knopf-Shader ([`button_shader`]: Nachbau der Blender-Materialien
 //! aus `Assets/Buttons`, Feuer bzw. Wolken bewegen sich wie in Blender, das Leuchten pulsiert),
 //! darüber die Beschriftung als `Label3D` und eine Kollisionsbox auf dem Physik-Layer
 //! [`CONTROL_LAYER`]. Den Klick erkennt der
@@ -19,7 +19,7 @@ use godot::classes::{
 };
 use godot::prelude::*;
 
-use super::button_shader::BUTTON_SHADER;
+use super::button_shader::button_shader;
 use super::layers::CONTROL_LAYER;
 
 /// Farbstil eines Knopfes (Farben aus den Blender-Dateien): 0 = Orange (Feuer, „Button_Ornage“),
@@ -362,7 +362,7 @@ impl Button3D {
 /// zufälligen Zeitversatz, damit nebeneinanderliegende Knöpfe nicht im Gleichtakt laufen.
 fn surface(style: ButtonStyle, size: Vector2) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
     let mut shader = Shader::new_gd();
-    shader.set_code(BUTTON_SHADER);
+    shader.set_code(&button_shader());
     let mut mat = ShaderMaterial::new_gd();
     mat.set_shader(&shader);
     mat.set_render_priority(1);

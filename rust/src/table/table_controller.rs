@@ -77,6 +77,10 @@ pub struct TableController {
     hovered_control: Option<Gd<Button3D>>,
     /// Gedrücktes Bedienobjekt: Klick, wenn die Maus beim Loslassen noch darauf ist.
     control_press: Option<Gd<Button3D>>,
+    /// Zielen: von dieser Karte (nicht verschiebbar, z. B. auf dem Spielfeld) wird ein Pfeil
+    /// gezogen; `aim_point` = Mauspunkt auf der Tischebene.
+    aim: Option<Gd<Card3D>>,
+    aim_point: Vector3,
 
     base: Base<Node3D>,
 }
@@ -95,6 +99,8 @@ impl INode3D for TableController {
             press: None,
             hovered_control: None,
             control_press: None,
+            aim: None,
+            aim_point: Vector3::ZERO,
             base,
         }
     }
@@ -128,6 +134,10 @@ impl INode3D for TableController {
                 let zone = card.bind().get_zone().filter(|z| z.bind().cards_draggable());
                 if let Some(zone) = zone.filter(|_| card.is_instance_valid()) {
                     self.start_drag(card, zone);
+                } else if card.is_instance_valid() {
+                    // Nicht verschiebbar: Pfeil ziehen (zielen)
+                    self.aim = Some(card.clone());
+                    self.signals().aim_started().emit(&card);
                 }
             }
         }
@@ -135,6 +145,12 @@ impl INode3D for TableController {
             self.update_drag_target(origin, dir);
         } else {
             self.update_hover(origin, dir);
+        }
+        if self.aim.is_some() && dir.y.abs() > 1e-4 {
+            let t = (self.base().get_global_position().y - origin.y) / dir.y;
+            if t > 0.0 {
+                self.aim_point = origin + dir * t;
+            }
         }
     }
 
@@ -168,6 +184,17 @@ impl TableController {
     /// Karten, die man nicht ziehen kann.
     #[signal]
     fn card_clicked(card: Gd<Card3D>);
+
+    /// Von einer nicht verschiebbaren Karte (z. B. Kreatur auf dem Spielfeld) wird gezogen: der
+    /// Spieler zieht einen Pfeil. Wohin er zeigt, liefert [method get_aim_point]; worauf die Maus
+    /// liegt, [method get_hovered_card].
+    #[signal]
+    fn aim_started(card: Gd<Card3D>);
+
+    /// Pfeil losgelassen: `target` = Karte unter der Maus (null = keine). Was das bedeutet
+    /// (Angriff, Block, Ziel), entscheidet der [ForgeTable].
+    #[signal]
+    fn aim_released(card: Gd<Card3D>, target: Option<Gd<Card3D>>);
 
 
     /// Bewegt die oberste Karte von `from` nach `to` (z. B. Gegner zieht / spielt aus).
@@ -203,6 +230,18 @@ impl TableController {
     #[func]
     pub fn get_hovered_card(&self) -> Option<Gd<Card3D>> {
         self.hovered.clone()
+    }
+
+    /// Karte, von der gerade ein Pfeil gezogen wird (null = keine).
+    #[func]
+    pub fn get_aiming_card(&self) -> Option<Gd<Card3D>> {
+        self.aim.clone().filter(|c| c.is_instance_valid())
+    }
+
+    /// Mauspunkt auf der Tischebene beim Pfeilziehen (Welt).
+    #[func]
+    pub fn get_aim_point(&self) -> Vector3 {
+        self.aim_point
     }
 
     /// Die Karte, die gerade gezogen wird.
@@ -394,6 +433,13 @@ impl TableController {
         if let Some((card, _)) = self.press.take() {
             if card.is_instance_valid() {
                 self.signals().card_clicked().emit(&card);
+            }
+            return;
+        }
+        if let Some(card) = self.aim.take() {
+            if card.is_instance_valid() {
+                let target = self.hovered.clone().filter(|h| h.is_instance_valid() && *h != card);
+                self.signals().aim_released().emit(&card, target.as_ref());
             }
             return;
         }

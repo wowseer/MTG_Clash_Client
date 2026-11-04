@@ -2,6 +2,7 @@
 
 pub mod button3d;
 mod button_shader;
+mod shader_noise;
 pub mod card3d;
 pub mod layers;
 pub(crate) mod placeholder;

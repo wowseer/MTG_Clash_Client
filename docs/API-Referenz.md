@@ -128,6 +128,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
+| `on_aim_released(card: Card3D, target: Card3D)` | `void` | Pfeil losgelassen (vom `TableController`): Angreifer → Spieler/Planeswalker = angreifen, Blocker → Angreifer = blocken, Quelle der Zielwahl → gültiges Ziel = Ziel wählen. Ins Leere losgelassen nimmt den Angriff bzw. Block dieser Kreatur zurück. |
 | `on_card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | `void` | Karte wurde auf dem Tisch abgelegt: Hat sie eine Aktion in der offenen `Priority`- Entscheidung (aus der Hand: Land spielen / wirken; auf dem Spielfeld: Fähigkeit aktivieren), wird diese gewählt. Aus der Hand zurück auf die Hand = abbrechen. Alles andere wird auf den Engine-Stand zurückgesetzt. |
 
 ### Signale
@@ -539,6 +540,8 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Drag-and-Drop per Raycast) und Kamer
 | `set_language(code: String)` | `void` | Stellt die Sprache des Spiels um: `"de"` = Deutsch, `"en"` = Englisch. HUD, Hinweise und neue Protokolleinträge wechseln sofort; alle Karten werden neu beschriftet. Bereits geschriebene Protokolleinträge bleiben unverändert. |
 | `get_language()` | `String` | Aktuelle Sprache: `"de"` oder `"en"`. |
 | `get_hovered_card()` | `Card3D` | Die Karte, die gerade unter dem Mauszeiger liegt. |
+| `get_aiming_card()` | `Card3D` | Karte, von der gerade ein Pfeil gezogen wird (null = keine). |
+| `get_aim_point()` | `Vector3` | Mauspunkt auf der Tischebene beim Pfeilziehen (Welt). |
 | `get_dragged_card()` | `Card3D` | Die Karte, die gerade gezogen wird. |
 
 ### Signale
@@ -547,18 +550,20 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Drag-and-Drop per Raycast) und Kamer
 |---|---|
 | `card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | Wird ausgelöst, wenn eine Karte per Drag-and-Drop in eine Zone gelegt wurde. |
 | `card_clicked(card: Card3D)` | Eine Karte wurde angeklickt (gedrückt und ohne nennenswerte Bewegung losgelassen) – z. B. als Ziel wählen oder Fähigkeit aktivieren. Funktioniert in allen Zonen, auch bei Karten, die man nicht ziehen kann. |
+| `aim_started(card: Card3D)` | Von einer nicht verschiebbaren Karte (z. B. Kreatur auf dem Spielfeld) wird gezogen: der Spieler zieht einen Pfeil. Wohin er zeigt, liefert `get_aim_point()`; worauf die Maus liegt, `get_hovered_card()`. |
+| `aim_released(card: Card3D, target: Card3D)` | Pfeil losgelassen: `target` = Karte unter der Maus (null = keine). Was das bedeutet (Angriff, Block, Ziel), entscheidet der `ForgeTable`. |
 
 ## TargetArrows
 
 *Erbt von `Node3D` · Quelle: `rust/src/table/target_arrows.rs`*
 
-Zeichnet gebogene, leuchtende Zielpfeile über dem Tisch (Angriff, Block, Zielwahl). Wird vom `ForgeTable` erzeugt und jedes Frame mit den aktuellen Pfeilen gefüttert; Höhe des Tisches = y dieses Nodes.
+Zeichnet die leuchtenden Pfeile aus `Assets/Pfeil/MTG_Pfeil.blend` auf dem Tisch (Angriff, Block, Zielwahl, Ziele auf dem Stack). Wird vom `ForgeTable` erzeugt und jedes Frame mit den aktuellen Pfeilen gefüttert; Höhe des Tisches = y dieses Nodes. Neue Pfeile wachsen in 0,33 s vom Start zum Ziel.
 
 ### Funktionen
 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
-| `set_arrow_pairs(points: PackedVector3Array, colors: PackedColorArray)` | `void` | Setzt Pfeile aus Skripten: `points` enthält je zwei Punkte (Start, Ziel; Welt) pro Pfeil, `colors` eine Farbe pro Pfeil (fehlt sie: Gold). Der `ForgeTable` überschreibt die Pfeile jedes Frame, solange er läuft. |
+| `set_arrow_pairs(points: PackedVector3Array, colors: PackedInt32Array)` | `void` | Setzt Pfeile aus Skripten: `points` enthält je zwei Punkte (Start, Ziel; Welt) pro Pfeil, `colors` einen Farbindex pro Pfeil (0 Gold, 1 Blau, 2 Schwarz, 3 Rot, 4 Grün, 5 Grau, 6 Orange; fehlt er: Gold). Der `ForgeTable` überschreibt die Pfeile jedes Frame, solange er läuft. |
 
 ## FlickerLight
 

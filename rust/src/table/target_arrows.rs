@@ -1,65 +1,150 @@
-//! TargetArrows: gebogene, leuchtende Zielpfeile über dem Spieltisch.
+//! TargetArrows: leuchtende Pfeile auf dem Spieltisch (Zielwahl, Kampf, Ziele auf dem Stack).
 //!
-//! - Zielwahl (`ChooseTargets`): goldene Pfeile von der Quellkarte zu den gewählten Zielen,
-//!   ein schwächerer Pfeil zum gültigen Ziel unter dem Mauszeiger.
-//! - Geplant: Angreifer (rot) und Blocker (blau) im Kampf.
+//! Nachbau des Pfeils aus `Assets/Pfeil/MTG_Pfeil.blend` (Geometry-Nodes-Gruppe „MTG_Pfeil_GN“,
+//! Material „MTG_Pfeil_Mat“):
+//! - **Form:** quadratische Bézier-Kurve in der Tischebene von Start `S` nach Ziel `Z`, seitlich
+//!   gebogen: Kontrollpunkt `(S+Z)/2 + 2·Bogen·|Z−S|·rechts`. Anders als in Blender (fest 0,3) ist
+//!   „Bogen“ **dynamisch**: in Ruhe 0 (gerader Pfeil); bewegt sich ein Ende quer zum Pfeil, bleibt
+//!   die Mitte zurück wie bei einem Seil (Feder mit leichtem Nachschwingen, [`BEND_STIFFNESS`],
+//!   [`BEND_DAMPING`]), höchstens [`MAX_BOGEN`]. Darüber ein flaches
+//!   Band (Profil von −2·[`BREITE`] bis +2·[`BREITE`], Rest ist Leuchten). Auf den letzten
+//!   [`SPITZE_LAENGE`] (höchstens halbe Länge) springt die Breite auf das [`SPITZE_BREITE`]-fache
+//!   und läuft bis zur Spitze linear auf 0 – die Pfeilspitze.
+//! - **Erscheinen:** `Fortschritt` 0 → 1 in Frame 1 … 9 bei 24 fps (≈ 0,33 s, weich): der Pfeil
+//!   wächst vom Start zum Ziel (Teilkurve nach de Casteljau). Danach steht er.
+//! - **Material:** `q = |quer − 0,5|·2` (0 = Mitte, 1 = Rand); Kern
+//!   `1 − smoothstep(0,2; 0,262; q)`, heller Mittelstreifen `1 − smoothstep(0; 0,075; q)`,
+//!   Leuchten `(1 − q)^2,5 · 0,55`; Deckkraft `max(Kern, Leuchten) · smoothstep(0; 0,5; Länge)`.
+//!   Farbe = Mischung aus Grund- und Hellfarbe der Farbpalette ([`ArrowColor`]); Stärke aus
+//!   fBm-Rauschen (Skala 3, Detail 3) an `(Länge − 1,5·t, quer)` → 0,975 … 1,625: Lichtwellen
+//!   laufen zur Spitze. Werte über 1 leuchten über das Glow der Umgebung (in Blender: Bloom).
 //!
-//! Jeder Pfeil ist eine quadratische Bézier-Kurve, die sich über den Tisch wölbt: ein flaches
-//! Band (Breite [`SHAFT_WIDTH`]) mit Pfeilspitze, darauf laufen Chevrons zur Spitze hin. Alle
-//! Pfeile liegen in einem `ImmediateMesh`, das jedes Frame aus den übergebenen
+//! Alle Pfeile liegen in einem `ImmediateMesh`, das jedes Frame aus den übergebenen
 //! [`ArrowSpec`]s neu gebaut wird (wenige Pfeile – günstig). Der Tiefentest bleibt aktiv:
 //! Gezoomte Karten vor der Kamera verdecken die Pfeile.
+
+use std::collections::HashMap;
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::mesh::PrimitiveType;
 use godot::classes::{ImmediateMesh, INode3D, MeshInstance3D, Shader, ShaderMaterial};
 use godot::prelude::*;
 
-/// Breite des Pfeilschafts (Einheiten; Karte = 0,63 breit).
-const SHAFT_WIDTH: f32 = 0.2;
-const HEAD_WIDTH: f32 = 0.52;
-const HEAD_LENGTH: f32 = 0.42;
-/// Abschnitte der Kurve.
-const SEGMENTS: usize = 28;
-/// Höhe der Endpunkte über dem Tisch (über flach liegenden Karten).
-const END_LIFT: f32 = 0.06;
+use super::shader_noise::PERLIN_FBM;
 
-/// Pfeil-Shader: Farbe aus der Vertexfarbe, hellerer Kern, laufende Chevrons Richtung Spitze,
-/// weiches Einblenden am Anfang und weiche Ränder.
+/// Größte seitliche Biegung relativ zur Länge (Blender-Eingang „Bogen“ = 0,3).
+const MAX_BOGEN: f32 = 0.3;
+/// Biegung je Querbewegung eines Endes (Pfeillängen pro Sekunde → Bogen).
+const BEND_PER_SPEED: f32 = 0.22;
+/// Feder der Biegung: Steifigkeit (1/s²) und Dämpfung (1/s); leicht unterdämpft = Nachschwingen.
+const BEND_STIFFNESS: f32 = 140.0;
+const BEND_DAMPING: f32 = 15.0;
+/// Blender-Eingang „Breite“ (dort 0,14; hier etwas kräftiger für die weiter entfernte
+/// Tischkamera). Das Band ist 4 × so breit, der sichtbare Kern etwa so breit wie dieser Wert.
+const BREITE: f32 = 0.18;
+/// Länge der Pfeilspitze und ihre Breite relativ zum Schaft.
+const SPITZE_LAENGE: f32 = 0.4;
+const SPITZE_BREITE: f32 = 2.4;
+/// Abstand der Kurvenpunkte (Blender „Aufloesung“) und Grenzen der Punktzahl.
+const AUFLOESUNG: f32 = 0.02;
+const MIN_POINTS: usize = 32;
+const MAX_POINTS: usize = 240;
+/// Dauer des Erscheinens (Blender: Frame 1 → 9 bei 24 fps).
+const GROW_TIME: f32 = 8.0 / 24.0;
+/// Höhe über dem Tisch (über flach liegenden Karten).
+const END_LIFT: f32 = 0.06;
+/// Kürzeste Pfeillänge; kürzere Pfeile werden nicht gezeichnet.
+const MIN_LENGTH: f32 = 0.15;
+
+/// Farben des Pfeils (Index in die Farbpalette des Blender-Materials „MTG_Pfeil_Mat“).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArrowColor {
+    /// Gold (Weiß) – Zielwahl.
+    Gold = 0,
+    /// Blau – Blocker.
+    Blue = 1,
+    /// Violett mit schwarzem Kern (Schwarz) – Ziele auf dem Stack.
+    Black = 2,
+    /// Rot – Angreifer.
+    Red = 3,
+    Green = 4,
+    /// Grau (farblos).
+    Gray = 5,
+    Orange = 6,
+}
+
+/// Pfeil-Shader (Nachbau von „MTG_Pfeil_Mat“). UV.x = Länge ab Start (Welteinheiten),
+/// UV.y = quer (0 … 1), UV2.x = Farbindex, UV2.y = Deckkraft.
 const SHADER: &str = r#"
 shader_type spatial;
 render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_never;
 
+// Farbpalette (Color Ramp / Color Ramp.001, konstant, 7 Einträge; linear wie in Blender)
+const vec3 BASE[7] = vec3[7](
+    vec3(1.0, 0.86, 0.5), vec3(0.0, 0.5, 1.0), vec3(0.32, 0.0, 0.5), vec3(1.0, 0.008, 0.004),
+    vec3(0.05, 0.85, 0.12), vec3(0.45, 0.47, 0.52), vec3(1.0, 0.11, 0.0));
+const vec3 HIGH[7] = vec3[7](
+    vec3(1.0, 1.0, 0.92), vec3(0.65, 0.95, 1.0), vec3(0.0, 0.0, 0.0), vec3(1.0, 0.55, 0.45),
+    vec3(0.8, 1.0, 0.75), vec3(1.0, 1.0, 1.0), vec3(1.0, 0.88, 0.6));
+
+%NOISE%
+
 void fragment() {
-    float across = abs(UV.y - 0.5) * 2.0;
-    bool head = UV2.x > 0.5;
-    // Chevrons, die zur Spitze laufen
-    float stripe = fract(UV.x * 3.0 - across * 0.6 - TIME * 1.6);
-    float chevron = head ? 1.0 : 0.7 + 0.3 * smoothstep(0.35, 0.5, stripe) * smoothstep(0.85, 0.7, stripe);
-    vec3 col = mix(COLOR.rgb, vec3(1.0), (1.0 - smoothstep(0.0, 0.3, across)) * 0.2);
-    float edge = head ? 1.0 : smoothstep(1.0, 0.75, across);
-    float start = smoothstep(0.0, 0.45, UV.x);
-    ALBEDO = col * chevron * 0.85;
-    ALPHA = COLOR.a * edge * start * 0.95;
+    float laenge = UV.x;
+    float quer = UV.y;
+    int idx = clamp(int(UV2.x + 0.5), 0, 6);
+    float q = abs(quer - 0.5) * 2.0;
+    float core = 1.0 - smoothstep(0.2, 0.262, q);
+    float center = 1.0 - smoothstep(0.0, 0.075, q);
+    float glow = pow(clamp(1.0 - q, 0.0, 1.0), 2.5) * 0.55;
+    float alpha = clamp(max(core, glow) * smoothstep(0.0, 0.5, laenge), 0.0, 1.0);
+    vec3 col = mix(BASE[idx], HIGH[idx], center * core);
+    float n = fbm(vec4(vec3(laenge - 1.5 * TIME, quer, 0.0) * 3.0, 0.0), 4, 0.5);
+    float strength = (0.75 + clamp((n - 0.3) / 0.4, 0.0, 1.0) * 0.5) * 1.3;
+    ALBEDO = col * strength;
+    ALPHA = alpha * UV2.y;
 }
 "#;
 
-/// Ein Pfeil: von `from` nach `to` (Weltkoordinaten, Höhe wird auf den Tisch gelegt) in `color`.
+/// Ein Pfeil: von `from` nach `to` (Weltkoordinaten, Höhe wird auf den Tisch gelegt).
+/// `key` kennzeichnet den Pfeil über Frames hinweg (gleicher Schlüssel = derselbe Pfeil: Biegung
+/// läuft weiter, Wachsen nur beim ersten Erscheinen), `alpha` dämpft ihn (z. B. Vorschau unter
+/// der Maus), `grow` = beim Erscheinen vom Start zum Ziel wachsen (aus bei Pfeilen, die der
+/// Spieler gerade selbst gezogen hat).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ArrowSpec {
+    pub key: u64,
     pub from: Vector3,
     pub to: Vector3,
-    pub color: Color,
+    pub color: ArrowColor,
+    pub alpha: f32,
+    pub grow: bool,
 }
 
-/// Zeichnet gebogene, leuchtende Zielpfeile über dem Tisch (Angriff, Block, Zielwahl).
-/// Wird vom [ForgeTable] erzeugt und jedes Frame mit den aktuellen Pfeilen gefüttert;
-/// Höhe des Tisches = y dieses Nodes.
+/// Laufender Zustand eines Pfeils (je Schlüssel).
+#[derive(Clone, Copy, Debug)]
+struct ArrowState {
+    born: f64,
+    from: Vector3,
+    to: Vector3,
+    bend: f32,
+    bend_velocity: f32,
+}
+
+/// Zeichnet die leuchtenden Pfeile aus `Assets/Pfeil/MTG_Pfeil.blend` auf dem Tisch (Angriff,
+/// Block, Zielwahl, Ziele auf dem Stack). Wird vom [ForgeTable] erzeugt und jedes Frame mit den
+/// aktuellen Pfeilen gefüttert; Höhe des Tisches = y dieses Nodes. Neue Pfeile wachsen in
+/// 0,33 s vom Start zum Ziel.
 #[derive(GodotClass)]
 #[class(base=Node3D)]
 pub struct TargetArrows {
     mesh: Gd<ImmediateMesh>,
     material: Gd<ShaderMaterial>,
+    /// Zustand je Pfeil-Schlüssel (Erscheinen, letzte Enden, Biegung).
+    states: HashMap<u64, ArrowState>,
+    /// Laufende Spielzeit dieses Knotens (Summe der Frame-Zeiten) und Stand beim letzten Aufbau.
+    clock: f64,
+    last_build: f64,
     base: Base<Node3D>,
 }
 
@@ -67,12 +152,12 @@ pub struct TargetArrows {
 impl INode3D for TargetArrows {
     fn init(base: Base<Node3D>) -> Self {
         let mut shader = Shader::new_gd();
-        shader.set_code(SHADER);
+        shader.set_code(&SHADER.replace("%NOISE%", PERLIN_FBM));
         let mut material = ShaderMaterial::new_gd();
         material.set_shader(&shader);
         // Über Tisch und flach liegenden Karten zeichnen
         material.set_render_priority(10);
-        Self { mesh: ImmediateMesh::new_gd(), material, base }
+        Self { mesh: ImmediateMesh::new_gd(), material, states: HashMap::new(), clock: 0.0, last_build: 0.0, base }
     }
 
     fn ready(&mut self) {
@@ -83,23 +168,31 @@ impl INode3D for TargetArrows {
         mi.set_cast_shadows_setting(ShadowCastingSetting::OFF);
         self.base_mut().add_child(&mi);
     }
+
+    fn process(&mut self, delta: f64) {
+        self.clock += delta;
+    }
 }
 
 #[godot_api]
 impl TargetArrows {
     /// Setzt Pfeile aus Skripten: `points` enthält je zwei Punkte (Start, Ziel; Welt) pro Pfeil,
-    /// `colors` eine Farbe pro Pfeil (fehlt sie: Gold). Der [ForgeTable] überschreibt die
-    /// Pfeile jedes Frame, solange er läuft.
+    /// `colors` einen Farbindex pro Pfeil (0 Gold, 1 Blau, 2 Schwarz, 3 Rot, 4 Grün, 5 Grau,
+    /// 6 Orange; fehlt er: Gold). Der [ForgeTable] überschreibt die Pfeile jedes Frame, solange
+    /// er läuft.
     #[func]
-    pub fn set_arrow_pairs(&mut self, points: PackedVector3Array, colors: PackedColorArray) {
+    pub fn set_arrow_pairs(&mut self, points: PackedVector3Array, colors: PackedInt32Array) {
         let pts = points.as_slice();
         let specs: Vec<ArrowSpec> = pts
             .chunks_exact(2)
             .enumerate()
             .map(|(i, p)| ArrowSpec {
+                key: i as u64,
                 from: p[0],
                 to: p[1],
-                color: colors.as_slice().get(i).copied().unwrap_or(Color::from_rgb(1.0, 0.85, 0.35)),
+                color: colors.as_slice().get(i).map_or(ArrowColor::Gold, |c| color_from_index(*c)),
+                alpha: 1.0,
+                grow: true,
             })
             .collect();
         self.set_arrows(&specs);
@@ -110,96 +203,125 @@ impl TargetArrows {
     /// Ersetzt alle Pfeile durch `arrows` und baut das Mesh neu.
     pub fn set_arrows(&mut self, arrows: &[ArrowSpec]) {
         self.mesh.clear_surfaces();
+        let now = self.clock;
+        let dt = ((now - self.last_build) as f32).min(0.1);
+        self.last_build = now;
+        self.states.retain(|k, _| arrows.iter().any(|a| a.key == *k));
         let table_y = self.base().get_global_position().y;
         let inv = self.base().get_global_transform().affine_inverse();
         // Zu kurze Pfeile (z. B. Fähigkeit, die noch auf ihrer Quelle liegt) entfallen; ohne
         // einen einzigen Pfeil keine Fläche anlegen (Godot meldet sonst einen Fehler).
-        let ends: Vec<(Vector3, Vector3, Color)> = arrows
-            .iter()
-            .map(|a| {
-                let from = Vector3::new(a.from.x, table_y + END_LIFT, a.from.z);
-                let to = Vector3::new(a.to.x, table_y + END_LIFT, a.to.z);
-                (inv * from, inv * to, a.color)
-            })
-            .filter(|(from, to, _)| (*to - *from).length() >= MIN_LENGTH)
-            .collect();
+        let mut ends = Vec::new();
+        for a in arrows {
+            let from = inv * Vector3::new(a.from.x, table_y + END_LIFT, a.from.z);
+            let to = inv * Vector3::new(a.to.x, table_y + END_LIFT, a.to.z);
+            let length = (to - from).length();
+            if length < MIN_LENGTH {
+                continue;
+            }
+            let born = if a.grow { now } else { now - GROW_TIME as f64 };
+            let st = self.states.entry(a.key).or_insert(ArrowState { born, from, to, bend: 0.0, bend_velocity: 0.0 });
+            if dt > 1e-4 {
+                // Querbewegung der Enden (Pfeillängen/s): die Mitte bleibt zurück
+                let right = (to - from).cross(Vector3::UP).normalized_or_zero();
+                let moved = ((to - st.to) + (from - st.from) * 0.5).dot(right) / length / dt;
+                let target = (-moved * BEND_PER_SPEED).clamp(-MAX_BOGEN, MAX_BOGEN);
+                let accel = BEND_STIFFNESS * (target - st.bend) - BEND_DAMPING * st.bend_velocity;
+                st.bend_velocity += accel * dt;
+                st.bend = (st.bend + st.bend_velocity * dt).clamp(-MAX_BOGEN, MAX_BOGEN);
+            }
+            st.from = from;
+            st.to = to;
+            let k = (((now - st.born) as f32) / GROW_TIME).clamp(0.0, 1.0);
+            let progress = (k * k * (3.0 - 2.0 * k)).max(0.001);
+            ends.push((from, to, a.color, a.alpha, progress, st.bend));
+        }
         if ends.is_empty() {
             return;
         }
         self.mesh.surface_begin(PrimitiveType::TRIANGLES);
-        for (from, to, color) in ends {
-            build_arrow(&mut self.mesh, from, to, color);
+        for (from, to, color, alpha, progress, bend) in ends {
+            build_arrow(&mut self.mesh, from, to, color, alpha, progress, bend);
         }
         self.mesh.surface_end();
     }
 }
 
-/// Punkt der Bézier-Kurve (Bogen über dem Tisch, Höhe wächst mit der Länge).
-/// Kürzeste Pfeillänge; kürzere Pfeile werden nicht gezeichnet.
-const MIN_LENGTH: f32 = 0.15;
-
-fn curve(from: Vector3, to: Vector3, t: f32) -> Vector3 {
-    let len = (to - from).length();
-    let mid = (from + to) * 0.5 + Vector3::UP * (0.25 + 0.18 * len);
-    let u = 1.0 - t;
-    from * (u * u) + mid * (2.0 * u * t) + to * (t * t)
+fn color_from_index(i: i32) -> ArrowColor {
+    match i {
+        1 => ArrowColor::Blue,
+        2 => ArrowColor::Black,
+        3 => ArrowColor::Red,
+        4 => ArrowColor::Green,
+        5 => ArrowColor::Gray,
+        6 => ArrowColor::Orange,
+        _ => ArrowColor::Gold,
+    }
 }
 
-fn build_arrow(mesh: &mut Gd<ImmediateMesh>, from: Vector3, to: Vector3, color: Color) {
-    // Kurve abtasten, Bogenlänge aufsummieren
-    let pts: Vec<Vector3> = (0..=SEGMENTS).map(|i| curve(from, to, i as f32 / SEGMENTS as f32)).collect();
+/// Kontrollpunkte der (Teil-)Kurve bis `progress` (0 … 1) bei Biegung `bend`: Start, Mitte, Ende.
+fn control_points(from: Vector3, to: Vector3, progress: f32, bend: f32) -> [Vector3; 3] {
+    let d = to - from;
+    let right = d.cross(Vector3::UP).normalized_or_zero();
+    let offset = right * (d.length() * bend);
+    let p = (from + to) * 0.5 + offset * 2.0;
+    let mid = from.lerp(p, progress);
+    let end = mid.lerp(p.lerp(to, progress), progress);
+    [from, mid, end]
+}
+
+fn bezier(c: &[Vector3; 3], t: f32) -> Vector3 {
+    let u = 1.0 - t;
+    c[0] * (u * u) + c[1] * (2.0 * u * t) + c[2] * (t * t)
+}
+
+/// Ein Pfeil als Band aus Vierecken (zwei Punkte quer, wie Blenders Profil-Linie).
+fn build_arrow(mesh: &mut Gd<ImmediateMesh>, from: Vector3, to: Vector3, color: ArrowColor, alpha: f32, progress: f32, bend: f32) {
+    let c = control_points(from, to, progress, bend);
+    let n = ((from.distance_to(to) / AUFLOESUNG) as usize).clamp(MIN_POINTS, MAX_POINTS);
+    let pts: Vec<Vector3> = (0..=n).map(|i| bezier(&c, i as f32 / n as f32)).collect();
     let mut dist = vec![0.0f32];
     for w in pts.windows(2) {
         dist.push(dist.last().unwrap() + (w[1] - w[0]).length());
     }
     let total = *dist.last().unwrap();
-    let head_start = (total - HEAD_LENGTH).max(total * 0.4);
-
-    // Seitenvektor: waagerecht, quer zur Laufrichtung (Band liegt flach – gut sichtbar von oben)
+    let tip = SPITZE_LAENGE.min(total * 0.5).max(1e-4);
+    let tip_start = total - tip;
     let side_at = |i: usize| {
-        let tangent = pts[(i + 1).min(SEGMENTS)] - pts[i.saturating_sub(1)];
+        let tangent = pts[(i + 1).min(n)] - pts[i.saturating_sub(1)];
         let s = tangent.cross(Vector3::UP);
-        if s.length_squared() < 1e-6 { Vector3::RIGHT } else { s.normalized() }
+        if s.length_squared() < 1e-8 { Vector3::RIGHT } else { s.normalized() }
     };
-    let mut vertex = |p: Vector3, u: f32, v: f32, head: bool| {
-        mesh.surface_set_color(color);
-        mesh.surface_set_uv(Vector2::new(u, v));
-        mesh.surface_set_uv2(Vector2::new(if head { 1.0 } else { 0.0 }, 0.0));
+    // Querschnitte: (Punkt, Seitenrichtung, Länge ab Start, Breitenfaktor); am Spitzenansatz
+    // zweimal (Schaft endet mit 1, Spitze beginnt mit SPITZE_BREITE)
+    let mut rows: Vec<(Vector3, Vector3, f32, f32)> = Vec::with_capacity(n + 3);
+    for i in 0..=n {
+        if i > 0 && dist[i - 1] < tip_start && dist[i] >= tip_start {
+            let f = (tip_start - dist[i - 1]) / (dist[i] - dist[i - 1]).max(1e-6);
+            let p = pts[i - 1].lerp(pts[i], f);
+            rows.push((p, side_at(i), tip_start, 1.0));
+            rows.push((p, side_at(i), tip_start, SPITZE_BREITE));
+        }
+        let rest = total - dist[i];
+        let scale = if rest < tip { rest / tip * SPITZE_BREITE } else { 1.0 };
+        rows.push((pts[i], side_at(i), dist[i], scale));
+    }
+    let uv2 = Vector2::new(color as i32 as f32, alpha);
+    let mut vertex = |p: Vector3, len: f32, quer: f32| {
+        mesh.surface_set_uv(Vector2::new(len, quer));
+        mesh.surface_set_uv2(uv2);
         mesh.surface_add_vertex(p);
     };
-
-    // Schaft bis zum Beginn der Spitze
-    let mut prev: Option<(Vector3, Vector3, f32)> = None;
-    let mut base = None;
-    for i in 0..=SEGMENTS {
-        let (p, d) = if dist[i] <= head_start {
-            (pts[i], dist[i])
-        } else {
-            // Genau am Spitzenansatz enden (zwischen i-1 und i interpolieren)
-            let f = (head_start - dist[i - 1]) / (dist[i] - dist[i - 1]).max(1e-5);
-            (pts[i - 1].lerp(pts[i], f), head_start)
-        };
-        let half = side_at(i) * (SHAFT_WIDTH * 0.5);
-        let (l, r) = (p - half, p + half);
-        if let Some((pl, pr, pd)) = prev {
-            vertex(pl, pd, 0.0, false);
-            vertex(pr, pd, 1.0, false);
-            vertex(r, d, 1.0, false);
-            vertex(pl, pd, 0.0, false);
-            vertex(r, d, 1.0, false);
-            vertex(l, d, 0.0, false);
-        }
-        prev = Some((l, r, d));
-        if dist[i] > head_start {
-            base = Some((p, side_at(i)));
-            break;
-        }
+    for w in rows.windows(2) {
+        let (p0, s0, d0, k0) = w[0];
+        let (p1, s1, d1, k1) = w[1];
+        let h0 = s0 * (2.0 * BREITE * k0);
+        let h1 = s1 * (2.0 * BREITE * k1);
+        vertex(p0 - h0, d0, 0.0);
+        vertex(p0 + h0, d0, 1.0);
+        vertex(p1 + h1, d1, 1.0);
+        vertex(p0 - h0, d0, 0.0);
+        vertex(p1 + h1, d1, 1.0);
+        vertex(p1 - h1, d1, 0.0);
     }
-
-    // Spitze: Dreieck vom Ansatz bis zum Endpunkt
-    let (bp, side) = base.unwrap_or((pts[SEGMENTS - 1], side_at(SEGMENTS - 1)));
-    let half = side * (HEAD_WIDTH * 0.5);
-    vertex(bp - half, head_start, 0.0, true);
-    vertex(bp + half, head_start, 1.0, true);
-    vertex(to, total, 0.5, true);
 }

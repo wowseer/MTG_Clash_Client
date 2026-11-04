@@ -30,9 +30,9 @@ use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
 use crate::table::button3d::{Button3D, ButtonStyle};
 use crate::table::showcase::Showcase;
-use crate::table::card3d::{Card3D, CardMarker, SELECT_GLOW};
+use crate::table::card3d::{Card3D, CardMarker};
 use godot::classes::Label3D;
-use crate::table::target_arrows::{ArrowSpec, TargetArrows};
+use crate::table::target_arrows::{ArrowColor, ArrowSpec, TargetArrows};
 use crate::table::placeholder;
 use crate::table::table_controller::TableController;
 use crate::table::zone::Zone;
@@ -56,7 +56,6 @@ const STARTING_CHOICE_CENTER: Vector3 = Vector3::new(0.0, 1.6, 0.9);
 const LOG_KEEP: usize = 200;
 const LOG_SHOWN: usize = 7;
 /// Farbe der Pfeile vom Stack-Eintrag zu seinen Zielen.
-const STACK_ARROW: Color = Color::from_rgb(0.72, 0.5, 1.0);
 
 /// Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, Kamera,
 /// Drag-and-Drop und HUD sind dieselben wie im normalen Spiel, nur die Regeln kommen von Forge
@@ -155,6 +154,8 @@ pub struct ForgeTable {
     manual_pay: bool,
     /// „Sofort beenden“: in dieser Runde automatisch passen (Runde laut Zustand; `None` = aus).
     auto_pass_turn: Option<i64>,
+    /// Pfeile, die der Spieler selbst gezogen hat (wachsen nicht noch einmal).
+    drawn_arrows: HashSet<u64>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -200,6 +201,7 @@ impl INode for ForgeTable {
             bottom_pick: Vec::new(),
             manual_pay: false,
             auto_pass_turn: None,
+            drawn_arrows: HashSet::new(),
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -230,6 +232,7 @@ impl INode for ForgeTable {
         if let Some(mut controller) = self.controller.clone() {
             controller.connect("card_dropped", &cb("on_card_dropped"));
             controller.connect("card_clicked", &cb("on_card_clicked"));
+            controller.connect("aim_released", &cb("on_aim_released"));
             // zurückgestellt: der Tisch baut in diesem Moment noch seine Kinder auf
             let arrows = TargetArrows::new_alloc();
             controller.call_deferred("add_child", &[arrows.to_variant()]);
@@ -635,6 +638,44 @@ impl ForgeTable {
             1 => self.answer(mine[0].0.clone()),
             _ => self.menu = Some(mine.into_iter().unzip()),
         }
+    }
+
+    /// Pfeil losgelassen (vom [TableController]): Angreifer → Spieler/Planeswalker = angreifen,
+    /// Blocker → Angreifer = blocken, Quelle der Zielwahl → gültiges Ziel = Ziel wählen. Ins Leere
+    /// losgelassen nimmt den Angriff bzw. Block dieser Kreatur zurück.
+    #[func]
+    fn on_aim_released(&mut self, card: Gd<Card3D>, target: Option<Gd<Card3D>>) {
+        let Some(id) = self.forge_id(&card).and_then(|i| u32::try_from(i).ok()) else { return };
+        let target = self.aim_target(target);
+        let Some((kind, valid)) = self.aim_kind(id) else { return };
+        let target = target.filter(|t| valid.contains(t));
+        match kind {
+            AimKind::Attack => {
+                self.attack_plan.retain(|(c, _)| *c != id);
+                if let Some(t) = target {
+                    self.attack_plan.push((id, t));
+                    self.drawn_arrows.insert(arrow_key(ArrowColor::Red as u64, i64::from(id), t));
+                }
+                self.combat_armed = None;
+            }
+            AimKind::Block => {
+                self.block_plan.retain(|(b, _)| *b != id);
+                if let Some(Target::Card(a)) = target {
+                    self.block_plan.push((id, a));
+                    self.drawn_arrows.insert(arrow_key(ArrowColor::Blue as u64, i64::from(id), Target::Card(a)));
+                }
+                self.combat_armed = None;
+            }
+            AimKind::Target => {
+                if let Some(t) = target {
+                    if let Some(i) = self.candidate_index(t) {
+                        self.drawn_arrows.insert(arrow_key(20, i64::from(id), t));
+                        self.signals().choice_option_clicked().emit(i as i64);
+                    }
+                }
+            }
+        }
+        self.update_glow();
     }
 
     /// Karte wurde auf dem Tisch abgelegt: Hat sie eine Aktion in der offenen `Priority`-
@@ -1067,6 +1108,7 @@ impl ForgeTable {
         self.attack_plan.clear();
         self.block_plan.clear();
         self.combat_armed = None;
+        self.drawn_arrows.clear();
         self.set_marked(None);
         self.update_glow();
         if let Some(mut b) = self.bridge.clone() {
@@ -1279,14 +1321,14 @@ impl ForgeTable {
             Decision::DeclareAttackers { .. } => {
                 let n = self.attack_plan.len();
                 (
-                    if n == 0 { tr!("Nicht angreifen  »", "No attack  »").to_string() } else { trf!("Angreifen ({n})  »", "Attack ({n})  »") },
+                    if n == 0 { tr!("Angreifen  »", "Attack  »").to_string() } else { trf!("Angreifen ({n})  »", "Attack ({n})  »") },
                     "Angreifer wählen",
                 )
             }
             Decision::DeclareBlockers { .. } => {
                 let n = self.block_plan.len();
                 (
-                    if n == 0 { tr!("Nicht blocken  »", "No blocks  »").to_string() } else { trf!("Blocken ({n})  »", "Block ({n})  »") },
+                    if n == 0 { tr!("Blocken  »", "Block  »").to_string() } else { trf!("Blocken ({n})  »", "Block ({n})  »") },
                     "Blocker wählen",
                 )
             }
@@ -1431,14 +1473,24 @@ impl ForgeTable {
         })
     }
 
-    /// Position eines Ziels auf dem Tisch: Karte bzw. Medaillon-Anker des Sitzplatzes.
+    /// Medaillon-Anker eines Sitzplatzes (Welt).
+    fn hero_anchor(&self, seat: u8) -> Option<Vector3> {
+        let seat = if seat == 0 { self.player_seat.as_ref() } else { self.opponent_seat.as_ref() }?;
+        let anchor = seat.get_node_or_null("HeroAnchor").and_then(|n| n.try_cast::<Node3D>().ok());
+        Some(anchor.map_or(seat.get_global_position(), |a| a.get_global_position()))
+    }
+
+    /// Position eines Ziels auf dem Tisch: Karte bzw. Punkt vor dem Medaillon-Anker des
+    /// Sitzplatzes (zur Tischmitte hin).
     fn target_position(&self, target: Target) -> Option<Vector3> {
         match target {
             Target::Card(c) => self.cards.get(&i64::from(c)).filter(|c| c.is_instance_valid()).map(|c| c.get_global_position()),
             Target::Player(p) => {
-                let seat = if p == 0 { self.player_seat.as_ref() } else { self.opponent_seat.as_ref() }?;
-                let anchor = seat.get_node_or_null("HeroAnchor").and_then(|n| n.try_cast::<Node3D>().ok());
-                Some(anchor.map_or(seat.get_global_position(), |a| a.get_global_position()))
+                let p = self.hero_anchor(p)?;
+                // etwas zur Tischmitte hin: Pfeilspitzen bleiben vor dem Tischrand sichtbar
+                let center = self.controller.as_ref().map_or(Vector3::ZERO, |c| c.get_global_position());
+                let inward = Vector3::new(center.x - p.x, 0.0, center.z - p.z).normalized_or_zero();
+                Some(p + inward * PLAYER_TARGET_INSET)
             }
         }
     }
@@ -1447,25 +1499,27 @@ impl ForgeTable {
     /// Angreifer, gewählter Blocker gold → Angreifer unter der Maus), sonst der laufende Kampf aus
     /// dem Engine-Zustand (`combat`).
     fn combat_arrows(&self) -> Vec<ArrowSpec> {
-        const RED: Color = Color::from_rgb(1.0, 0.32, 0.25);
-        const BLUE: Color = Color::from_rgb(0.35, 0.62, 1.0);
         let pos = |c: CardId| self.target_position(Target::Card(c));
         let mut arrows = Vec::new();
-        let mut push = |from: Option<Vector3>, to: Option<Vector3>, color: Color| {
-            if let (Some(from), Some(to)) = (from, to) {
-                let dir = (to - from).normalized_or_zero();
-                arrows.push(ArrowSpec { from: from + dir * 0.3, to, color });
+        let aiming = self.live_arrow().map(|(id, _)| id);
+        let mut push = |from: CardId, to: Target, color: ArrowColor, alpha: f32| {
+            if aiming == Some(from) {
+                return; // wird gerade neu gezogen
+            }
+            if let (Some(a), Some(b)) = (pos(from), self.target_position(to)) {
+                let key = arrow_key(color as u64, i64::from(from), to);
+                arrows.push(arrow(key, a, b, color, alpha, !self.drawn_arrows.contains(&key)));
             }
         };
         match self.pending.as_ref().map(|r| &r.decision) {
             Some(Decision::DeclareAttackers { .. }) => {
                 for (c, t) in &self.attack_plan {
-                    push(pos(*c), self.target_position(*t), RED);
+                    push(*c, *t, ArrowColor::Red, 1.0);
                 }
             }
             Some(Decision::DeclareBlockers { attackers, .. }) => {
                 for (b, a) in &self.block_plan {
-                    push(pos(*b), pos(*a), BLUE);
+                    push(*b, Target::Card(*a), ArrowColor::Blue, 1.0);
                 }
                 if let Some(armed) = self.combat_armed {
                     let hovered = self
@@ -1476,7 +1530,7 @@ impl ForgeTable {
                         .and_then(|id| u32::try_from(id).ok())
                         .filter(|id| attackers.contains(id));
                     if let Some(a) = hovered {
-                        push(pos(armed), pos(a), Color::from_rgba(SELECT_GLOW.r, SELECT_GLOW.g, SELECT_GLOW.b, 0.5));
+                        push(armed, Target::Card(a), ArrowColor::Gold, 0.5);
                     }
                 }
             }
@@ -1488,17 +1542,90 @@ impl ForgeTable {
                         let Ok(a) = a.try_to::<VarDictionary>() else { continue };
                         let attacker = u32::try_from(get_int(&a, "card")).ok();
                         let target = a.get("target").and_then(|t| Target::from_var(&t));
-                        push(attacker.and_then(pos), target.and_then(|t| self.target_position(t)), RED);
+                        if let (Some(c), Some(t)) = (attacker, target) {
+                            push(c, t, ArrowColor::Red, 1.0);
+                        }
                     }
                     for pair in get_array(&combat, "blocks").unwrap_or_default().iter_shared() {
                         let Ok(pair) = pair.try_to::<VarArray>() else { continue };
                         let id = |i: usize| pair.get(i).and_then(|v| v.try_to::<i64>().ok()).and_then(|v| u32::try_from(v).ok());
-                        push(id(0).and_then(pos), id(1).and_then(pos), BLUE);
+                        if let (Some(b), Some(a)) = (id(0), id(1)) {
+                            push(b, Target::Card(a), ArrowColor::Blue, 1.0);
+                        }
                     }
                 }
             }
         }
         arrows
+    }
+
+    /// Darf von Karte `card` jetzt ein Pfeil gezogen werden? Art und gültige Ziele.
+    fn aim_kind(&self, card: CardId) -> Option<(AimKind, Vec<Target>)> {
+        let req = self.pending.as_ref()?;
+        match &req.decision {
+            Decision::DeclareAttackers { candidates, defenders, .. } if candidates.contains(&card) => {
+                Some((AimKind::Attack, defenders.clone()))
+            }
+            Decision::DeclareBlockers { candidates, attackers, .. } if candidates.contains(&card) => {
+                Some((AimKind::Block, attackers.iter().map(|a| Target::Card(*a)).collect()))
+            }
+            Decision::ChooseTargets { candidates, .. } if req.source == Some(card) => {
+                Some((AimKind::Target, candidates.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Worauf der gezogene Pfeil zeigt: Karte unter der Maus, sonst der Spieler, dessen
+    /// Medaillon am nächsten am Mauszeiger liegt (höchstens [`AIM_PLAYER_RADIUS`] Pixel).
+    fn aim_target(&self, hovered: Option<Gd<Card3D>>) -> Option<Target> {
+        if let Some(id) = hovered.and_then(|h| self.forge_id(&h)).and_then(|i| u32::try_from(i).ok()) {
+            return Some(Target::Card(id));
+        }
+        let viewport = self.base().get_viewport()?;
+        let cam = viewport.get_camera_3d()?;
+        let mouse = viewport.get_mouse_position();
+        // nächstes Medaillon im Umkreis
+        (0u8..2)
+            .filter_map(|seat| {
+                let p = self.hero_anchor(seat)?;
+                let d = (!cam.is_position_behind(p)).then(|| cam.unproject_position(p).distance_to(mouse))?;
+                (d < AIM_PLAYER_RADIUS).then_some((Target::Player(seat), d))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(t, _)| t)
+    }
+
+    /// Pfeil, den der Spieler gerade zieht: von der Karte zur Maus bzw. zum gültigen Ziel
+    /// darunter (rastet ein). `None` = es wird nicht gezogen bzw. nicht von dieser Karte.
+    fn live_arrow(&self) -> Option<(CardId, ArrowSpec)> {
+        let controller = self.controller.as_ref()?;
+        let card = controller.bind().get_aiming_card()?;
+        let id = u32::try_from(self.forge_id(&card)?).ok()?;
+        let (kind, valid) = self.aim_kind(id)?;
+        let hovered = controller.bind().get_hovered_card().filter(|h| *h != card);
+        let target = self.aim_target(hovered).filter(|t| valid.contains(t));
+        let (to, alpha) = match target.and_then(|t| self.target_position(t)) {
+            Some(p) => (p, 1.0),
+            None => (controller.bind().get_aim_point(), 0.7),
+        };
+        let color = match kind {
+            AimKind::Attack => ArrowColor::Red,
+            AimKind::Block => ArrowColor::Blue,
+            AimKind::Target => ArrowColor::Gold,
+        };
+        let from = card.get_global_position();
+        let dir = (to - from).normalized_or_zero();
+        // fester Schlüssel während des Ziehens: die Biegung läuft ohne Sprung weiter
+        let spec = ArrowSpec {
+            key: arrow_key(99, i64::from(id), Target::Player(u8::MAX)),
+            from: from + dir * 0.3,
+            to: if target.is_some() { to - dir * 0.35 } else { to },
+            color,
+            alpha,
+            grow: false,
+        };
+        Some((id, spec))
     }
 
     /// Pfeile vom Stack-Eintrag (seiner Karte in der Stack-Zone) zu allen seinen Zielen.
@@ -1514,8 +1641,7 @@ impl ForgeTable {
             };
             for t in stack_targets(&item) {
                 if let Some(to) = self.target_position(t) {
-                    let dir = (to - from).normalized_or_zero();
-                    arrows.push(ArrowSpec { from: from + dir * 0.3, to, color: STACK_ARROW });
+                    arrows.push(arrow(arrow_key(10, key, t), from, to, ArrowColor::Black, 1.0, true));
                 }
             }
         }
@@ -1608,12 +1734,15 @@ impl ForgeTable {
         d
     }
 
-    /// Pfeile der Zielwahl: Quelle → gewählte Ziele (gold), Quelle → gültiges Ziel unter dem
-    /// Mauszeiger (blasser, Vorschau).
+    /// Alle Pfeile: Kampf, Ziele auf dem Stack (violett) und Zielwahl: Quelle → gewählte Ziele
+    /// (gold), Quelle → gültiges Ziel unter dem Mauszeiger (blasser, Vorschau).
     fn update_arrows(&mut self) {
         let Some(mut layer) = self.arrows.clone() else { return };
         let mut specs = self.combat_arrows();
         specs.extend(self.stack_arrows());
+        if let Some((_, live)) = self.live_arrow() {
+            specs.push(live);
+        }
         if let Some(req) = self.pending.as_ref() {
             if let Decision::ChooseTargets { candidates, .. } = &req.decision {
                 let from = req
@@ -1622,8 +1751,8 @@ impl ForgeTable {
                     .filter(|c| c.is_instance_valid())
                     .map(|c| c.get_global_position());
                 if let Some(from) = from {
-                    let mut targets: Vec<(Target, Color)> =
-                        self.selection.iter().filter_map(|i| candidates.get(*i)).map(|t| (*t, SELECT_GLOW)).collect();
+                    let mut targets: Vec<(Target, f32)> =
+                        self.selection.iter().filter_map(|i| candidates.get(*i)).map(|t| (*t, 1.0)).collect();
                     let hovered = self.controller.as_ref().and_then(|c| c.bind().get_hovered_card());
                     let hovered_target = hovered
                         .and_then(|h| self.forge_id(&h))
@@ -1631,12 +1760,13 @@ impl ForgeTable {
                         .map(Target::Card)
                         .filter(|t| candidates.contains(t) && !targets.iter().any(|(s, _)| s == t));
                     if let Some(t) = hovered_target {
-                        targets.push((t, Color::from_rgba(SELECT_GLOW.r, SELECT_GLOW.g, SELECT_GLOW.b, 0.45)));
+                        targets.push((t, 0.45));
                     }
-                    for (t, color) in targets {
+                    let source = req.source.map_or(-1, i64::from);
+                    for (t, alpha) in targets {
                         if let Some(to) = self.target_position(t) {
-                            let dir = (to - from).normalized_or_zero();
-                            specs.push(ArrowSpec { from: from + dir * 0.3, to, color });
+                            let key = arrow_key(20, source, t);
+                            specs.push(arrow(key, from, to, ArrowColor::Gold, alpha, !self.drawn_arrows.contains(&key)));
                         }
                     }
                 }
@@ -2029,4 +2159,39 @@ mod tests {
         assert_eq!(phase_index("CLEANUP"), 8);
         assert_eq!(phase_index("???"), -1);
     }
+}
+
+/// Pfeil von `from` nach `to`; beginnt ein Stück vor der Quellkarte und endet kurz vor dem
+/// Ziel (die Spitze bleibt sichtbar, auch vor Medaillon und Tischrand).
+fn arrow(key: u64, from: Vector3, to: Vector3, color: ArrowColor, alpha: f32, grow: bool) -> ArrowSpec {
+    let dir = (to - from).normalized_or_zero();
+    ArrowSpec { key, from: from + dir * 0.3, to: to - dir * 0.35, color, alpha, grow }
+}
+
+/// Art eines Pfeils, den der Spieler zieht.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AimKind {
+    Attack,
+    Block,
+    Target,
+}
+
+/// Abstand (Pixel) zwischen Mauszeiger und Medaillon, ab dem ein gezogener Pfeil auf den Spieler
+/// einrastet.
+const AIM_PLAYER_RADIUS: f32 = 90.0;
+
+/// Pfeile auf Spieler enden so weit vor dem Medaillon-Anker zur Tischmitte hin.
+const PLAYER_TARGET_INSET: f32 = 1.0;
+
+/// Schlüssel eines Pfeils über Frames hinweg: Art, Quelle, Ziel.
+fn arrow_key(kind: u64, source: i64, target: Target) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    kind.hash(&mut h);
+    source.hash(&mut h);
+    match target {
+        Target::Card(c) => (0u8, c).hash(&mut h),
+        Target::Player(p) => (1u8, u32::from(p)).hash(&mut h),
+    }
+    h.finish()
 }
