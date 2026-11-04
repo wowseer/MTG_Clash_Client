@@ -438,6 +438,7 @@ impl Zone {
     fn auto_slots(&self, base: &[usize]) -> Vec<Transform3D> {
         #[derive(PartialEq)]
         enum Group {
+            /// Planeswalker und Schlachten: linke Spalte
             Hero,
             Creature,
             Other,
@@ -445,7 +446,7 @@ impl Zone {
         let groups: Vec<Group> = base
             .iter()
             .map(|&i| match self.cards[i].bind().kind() {
-                CardKind::Hero => Group::Hero,
+                CardKind::Planeswalker | CardKind::Battle => Group::Hero,
                 CardKind::Creature => Group::Creature,
                 _ => Group::Other,
             })

@@ -124,7 +124,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | Ordner / Datei | Inhalt |
 |---|---|
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Ziel- und Kampfpfeile `TargetArrows` (`target_arrows.rs`), Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Kartenbilder (`placeholder.rs`) |
-| `rust/src/game/` | Anzeige-Bausteine: `PlayerSeat`, Kartendaten (`cards.rs`, `ability.rs`), Mana-Typen und -Pool (`mana.rs`), Phasen-Liste (`phases.rs`), HUD (`hud.rs`), Spieler-Medaillon (`seat_badge.rs`), Sanduhr (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Phasen-Zeitstrahl (`phase_timeline.rs`), Kartenvorschau (`card_preview.rs`), Auswahlfenster (`choice_panel.rs`), Kartenfächer (`card_fan.rs`), Engine-Entscheidung → Auswahlfenster → Antwort (`decision_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
+| `rust/src/game/` | Anzeige-Bausteine: `PlayerSeat`, Kartenmodell aus den Kartendaten der Engine (`cards.rs`: `CardDef::from_state`, Kartenart, Wertefeld), Regeltext-Symbole und Schriftgrößen (`card_text.rs`), Markennamen (`counters.rs`), Stack-Liste (`stack_view.rs`), Mana-Typen und -Pool (`mana.rs`), Phasen-Liste (`phases.rs`), HUD (`hud.rs`), Spieler-Medaillon (`seat_badge.rs`), Sanduhr (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Phasen-Zeitstrahl (`phase_timeline.rs`), Kartenvorschau (`card_preview.rs`), Auswahlfenster (`choice_panel.rs`), Kartenfächer (`card_fan.rs`), Engine-Entscheidung → Auswahlfenster → Antwort (`decision_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
 | `rust/src/rules/` | Engine-Grenze: NeoForges Entscheidungsmodell (`Decision`, `Choice`, `Action`, `Target` …, `decision.rs`), offene Anfrage `Request` und Schnittstelle `RulesEngine` (`mod.rs`). Die UI kennt nur diese Typen |
 | `rust/src/forge/` | `ForgeBridge` (Java-Prozess mit Forge, setzt `RulesEngine` um) und `ForgeTable` (Partie auf dem 3D-Tisch) |
 | `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks; `forge/` = lokale Forge-Kopie (nicht im Git) |
@@ -164,6 +164,14 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | **Stack** | Zauber, die gewirkt werden, gleiten in die Stack-Zone in der Tischmitte; aktivierte und ausgelöste Fähigkeiten erscheinen dort als Karte ihrer Quelle. Der oberste Eintrag liegt rechts oben. Violette Pfeile zeigen die Ziele jedes Eintrags (auch auf andere Zauber im Stack, z. B. Gegenzauber). Die Liste am linken Bildrand nennt Quelle, Art und Text. Bei belegtem Stack ist der Hauptbutton orange |
 | Kampf der KI | Angriffe der KI erscheinen als rote Pfeile (Angreifer → Ziel), Blocks als blaue Pfeile, solange der Kampf läuft |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
+
+**Kartenbild:** Name, Kostensymbole, Typzeile und Regeltext kommen von der Engine. Symbole im
+Regeltext werden ersetzt (`{T}` → ↷, `{R}` → Ⓡ, `{2}` → ②, hybrid als „(R/G)“), die Schriftgröße
+von Name, Typzeile und Regeltext passt sich der Textlänge an (`card_text::fit_line` / `fit_font`).
+Wertefeld unten rechts: Kreaturen Stärke/Widerstand (grün = über dem Aufdruck, rot = darunter oder
+beschädigt), Planeswalker Loyalität, Schlachten Verteidigung. Rahmenfarbe = Kartenfarbe (Gold =
+mehrfarbig, Grau = farblos, Länder nach ihrer Manafarbe); Typsymbol im Bildfeld je Kartenart
+(Planeswalker = Krone, Schlacht = Schild). Planeswalker und Schlachten liegen links auf dem Spielfeld.
 
 **Getappte** Karten werden leicht schräg gestellt (15°, `zone::TAP_ANGLE_DEGREES`), ausgegraut und
 zeigen mittig ein graues Tapp-Symbol (`textures::tap_icon()`).

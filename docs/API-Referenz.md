@@ -376,7 +376,7 @@ Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in 
 
 *Erbt von `Area3D` · Quelle: `rust/src/table/card3d.rs`*
 
-Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, Hover-Neigung und Hover-Zoom (offene Karten werden groß und lesbar), Raycast-Ziel (Kollisions-Layer 1), Gleit-Animationen per Tween sowie alle Spielwerte (Typ, Kosten, Angriff/Verteidigung, Fähigkeiten, Tapp-Zustand).
+Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, Hover-Neigung und Hover-Zoom (offene Karten werden groß und lesbar), Raycast-Ziel (Kollisions-Layer 1), Gleit-Animationen per Tween sowie alle Spielwerte (Name, Typzeile, Kosten, Regeltext, Werte aus den Kartendaten der Engine; Tapp-Zustand).
 
 ### Eigenschaften
 
@@ -393,13 +393,8 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `zoom_margin_px` | `float` | Rand zum Bildschirmrand in Pixeln. |
 | `hover_lift` | `float` | Anheben (entlang der Kartennormalen) für verdeckte Karten / ohne Zoom. |
 | `hover_scale` | `float` | Skalierung für verdeckte Karten / ohne Zoom. |
-| `card_name` | `String` | Kartenname. |
-| `card_kind` | `int (Kartentyp)` | Kartentyp: 0 = Kreatur, 1 = Ressource, 2 = Sofortzauber, 3 = Hexerei, 4 = Held, 5 = Ausrüstung, 6 = Artefakt, 7 = Verzauberung, 8 = Aura. |
-| `mana_cost` | `ManaCost` | Manakosten (leer = kostenlos). |
-| `produces` | `int (Manafarbe)` | Nur Ressourcen: Farbe des Manas, das Tappen erzeugt. |
-| `attack` | `int` | Grundangriff (ohne Boni durch Ausrüstung, Auren, Verzauberungen). |
-| `defense` | `int` | Grundverteidigung (ohne Boni und ohne erlittenen Schaden). |
-| `ability` | `int (Fähigkeit)` | Fähigkeit einer Kreatur: 0 = keine, 1 = Heiler, 2 = Feuer, 3 = Raufbold. |
+| `card_name` | `String` | Kartenname (wie von der Engine). |
+| `card_kind` | `int (Kartentyp)` | Kartenart: 0 = Kreatur, 1 = Land, 2 = Spontanzauber, 3 = Hexerei, 4 = Planeswalker, 5 = Ausrüstung, 6 = Artefakt, 7 = Verzauberung, 8 = Aura, 9 = Schlacht. |
 | `owner_seat` | `int` | Besitzer (0 = Spieler, 1 = Gegner): auf dessen Friedhof geht die Karte. |
 
 ### Funktionen
@@ -419,17 +414,10 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `move_to(target: Transform3D, delay: float)` | `void` | Lässt die Karte per Tween sanft zu `target` (globale Transform) gleiten. |
 | `snap_to(target: Transform3D)` | `void` | Setzt die Karte sofort ohne Animation. |
 | `stop_motion()` | `void` | Bricht eine laufende Gleit-Animation ab. |
-| `get_current_attack()` | `int` | Angriff inklusive temporärer Boni. |
-| `get_remaining_defense()` | `int` | Verteidigung abzüglich erlittenen Schadens in dieser Runde. |
 | `set_ready_glow(on: bool)` | `void` | Dezenter goldener Rand „diese Karte kann eine Fähigkeit aktivieren“ an/aus (für Skripte; Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang. |
 | `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (rot), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
 | `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (schräg, ausgegraut, Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
 | `is_tapped()` | `bool` | Ist die Karte getappt (leicht schräg, ausgegraut, Tapp-Symbol)? |
-| `is_artifact()` | `bool` | Artefakt (inkl. Ausrüstung)? |
-| `is_enchantment()` | `bool` | Verzauberung (inkl. Aura)? |
-| `get_enchanted()` | `Card3D` | Kreatur, die diese Aura verzaubert (null = keine). |
-| `get_willpower()` | `int` | Aktuelle Willenskraft (nur Helden). |
-| `get_equipped_to()` | `Card3D` | Kreatur, an der diese Ausrüstung angelegt ist (null = frei). |
 | `get_zone()` | `Zone` | Die Zone, in der die Karte aktuell liegt (None während des Ziehens). |
 
 ## TableCamera

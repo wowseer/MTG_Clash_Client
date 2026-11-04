@@ -1,7 +1,7 @@
 //! Spiel-Darstellung: Sitzplätze, Kartendaten, Mana, Phasen und HUD. Die Regeln kommen von Forge.
 
-pub mod ability;
 pub mod card_cutout;
+pub mod card_text;
 pub mod card_fan;
 pub mod card_preview;
 pub mod choice_panel;

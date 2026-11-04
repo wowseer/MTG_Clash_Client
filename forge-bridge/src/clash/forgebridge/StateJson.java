@@ -157,7 +157,36 @@ final class StateJson {
         if (c.isCreature()) {
             o.addProperty("power", c.getNetPower());
             o.addProperty("toughness", c.getNetToughness());
+            o.addProperty("base_power", c.getBasePower());
+            o.addProperty("base_toughness", c.getBaseToughness());
         }
+        // Loyalität / Verteidigung: im Spiel die aktuellen Marken, sonst der aufgedruckte Wert
+        if (c.isPlaneswalker()) {
+            Integer v = c.isInPlay() ? Integer.valueOf(c.getCurrentLoyalty()) : printed(c.getCurrentState().getBaseLoyalty());
+            if (v != null) o.addProperty("loyalty", v);
+        }
+        if (c.isBattle()) {
+            Integer v = c.isInPlay() ? Integer.valueOf(c.getCurrentDefense()) : printed(c.getCurrentState().getBaseDefense());
+            if (v != null) o.addProperty("defense", v);
+        }
+        if (c.getDamage() > 0) {
+            o.addProperty("damage", c.getDamage());
+        }
+        // Farben (CR 105) als Buchstaben WUBRG, leer = farblos
+        forge.card.ColorSet col = c.getColor();
+        StringBuilder colors = new StringBuilder();
+        if (col.hasWhite()) colors.append('W');
+        if (col.hasBlue()) colors.append('U');
+        if (col.hasBlack()) colors.append('B');
+        if (col.hasRed()) colors.append('R');
+        if (col.hasGreen()) colors.append('G');
+        o.addProperty("colors", colors.toString());
+        // Regeltext mit den aktuellen Änderungen (wie Forges Kartendetail), sonst Oracle-Text
+        String text = c.getAbilityText();
+        if (text == null || text.isBlank()) {
+            text = c.getOracleText();
+        }
+        o.addProperty("text", text == null ? "" : text.trim());
         if (c.isToken()) {
             o.addProperty("token", true);
         }
@@ -184,6 +213,15 @@ final class StateJson {
             }
         }
         return o;
+    }
+
+    /** Aufgedruckter Zahlenwert ({@code null} bei leer oder „X“). */
+    private static Integer printed(String v) {
+        try {
+            return v == null || v.isBlank() ? null : Integer.valueOf(v.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     static JsonObject ability(int index, SpellAbility sa) {

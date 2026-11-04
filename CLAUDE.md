@@ -87,7 +87,7 @@ Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.pla
 `ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Kosten-Auswahlen
 (`RemoteCostDecision`), `AssignCombatDamage`, `DivideAmount`, `PayUnlessCost`,
 `PayLifeForPhyrexian`, Trigger über den menschlichen Ablauf. Nächster Schritt laut Fahrplan:
-fehlender Zustand (Regeltext, Protokoll); Stack, Exil, Marken, angelegte Karten, Spielsteine ✔.
+Spielprotokoll aus `forge_event`; Stack, Exil, Marken, angelegte Karten, Spielsteine, Regeltext ✔.
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
@@ -101,6 +101,7 @@ Angezeigt:
 - [x] Bibliothek als Deck-Stapel; Ziehen gleitet animiert vom Deck auf die Hand
 - [x] Phase, Leben, Runde, Spieler am Zug, Spielende
 - [x] Stack: Zauber und Fähigkeiten in der Tischmitte, Ziele als violette Pfeile, Liste im HUD
+- [x] Kartenbild aus Engine-Daten: Regeltext mit Symbolen, Typzeile, Farben, Stärke/Widerstand, Loyalität, Verteidigung
 - [x] Exil-Stapel, Marken- und Spielstein-Plaketten, angelegte Karten unter dem Träger, Spieler-Marken
 
 ## Fahrplan
@@ -120,7 +121,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 **Zustand, der noch fehlt:**
 - ~~Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile~~ ✔ (Zone `Stack`, Liste im HUD)
 - ~~Exil, Marken (Counter), angelegte Karten (Auren, Ausrüstung), Spielsteine~~ ✔
-- Regeltext von Forge auf dem Kartenbild; das Kartenmodell (`CardDef`/`Card3D`) auf Forges Kartendaten verschlanken (Helden/Willenskraft-Felder stammen aus dem alten Regelwerk)
+- ~~Regeltext auf dem Kartenbild; Kartenmodell verschlankt~~ ✔ (`CardDef::from_state`, `card_text.rs`)
 - Spielprotokoll aus `forge_event`
 
 **Später:** Deckauswahl, mehr als 2 Spieler (Commander), Formate, Umzug der UI nach NeoForge.

@@ -1,4 +1,5 @@
-//! Erzeugt Platzhalter-Texturen für Demo-Karten (bis echte Kartenbilder existieren).
+//! Erzeugt Platzhalter-Texturen für Karten (Rahmen, Kostensymbole, Typsymbol), bis echte
+//! Kartenbilder existieren. Texte kommen per Label3D dazu.
 
 use godot::classes::image::Format;
 use godot::classes::{Image, ImageTexture, Texture2D};
@@ -61,10 +62,10 @@ pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
     img.fill_rect(rect(20, 20, W - 40, 32), dark); // Titel
     img.fill_rect(rect(20, 60, W - 40, 140), art); // Bild
     img.fill_rect(rect(20, 208, W - 40, 22), dark); // Typzeile
-    img.fill_rect(rect(20, 238, W - 40, 96), Color::from_rgb(0.93, 0.9, 0.82)); // Text
+    img.fill_rect(rect(20, 238, W - 40, 76), Color::from_rgb(0.93, 0.9, 0.82)); // Text (über dem Wertefeld)
 
     match def.kind {
-        CardKind::Resource => {
+        CardKind::Land => {
             // Großes Farbsymbol im Bildfeld
             let c = def.produces.color();
             circle(&mut img, W / 2, 130, 52, Color::from_rgb(0.1, 0.08, 0.06));
@@ -88,8 +89,8 @@ pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
             }
             // Typsymbol im Bildfeld
             emblem(&mut img, kind, dark);
-            // Wertefeld unten rechts (Kreatur, Held, Ausrüstung, Aura)
-            if matches!(kind, CardKind::Creature | CardKind::Hero | CardKind::Equipment | CardKind::Aura) {
+            // Wertefeld unten rechts (Kreatur, Planeswalker, Schlacht)
+            if matches!(kind, CardKind::Creature | CardKind::Planeswalker | CardKind::Battle) {
                 img.fill_rect(rect(W - 82, 318, 64, 32), Color::from_rgb(0.12, 0.08, 0.06));
                 img.fill_rect(rect(W - 80, 320, 60, 28), dark);
             }
@@ -114,7 +115,7 @@ fn emblem(img: &mut Gd<Image>, kind: CardKind, c: Color) {
             circle(img, cx, cy, 38, c.lightened(0.85));
             circle(img, cx, cy, 10, c);
         }
-        CardKind::Hero => {
+        CardKind::Planeswalker => {
             // Krone: Sockel und drei Zacken
             img.fill_rect(rect(cx - 44, cy + 10, 88, 22), c);
             for (dx, h) in [(-38, 40), (-8, 56), (22, 40)] {
@@ -150,7 +151,15 @@ fn emblem(img: &mut Gd<Image>, kind: CardKind, c: Color) {
             circle(img, cx, cy + 4, 14, c);
             img.fill_rect(rect(cx - 20, cy + 18, 40, 38), c);
         }
-        CardKind::Creature | CardKind::Resource => {}
+        CardKind::Battle => {
+            // Schild: Fläche mit Spitze nach unten und Mittelstreifen
+            img.fill_rect(rect(cx - 40, cy - 46, 80, 60), c);
+            for k in 0..30 {
+                img.fill_rect(rect(cx - 40 + k * 4 / 3, cy + 14 + k, 80 - k * 8 / 3, 1), c);
+            }
+            img.fill_rect(rect(cx - 5, cy - 46, 10, 88), c.lightened(0.6));
+        }
+        CardKind::Creature | CardKind::Land => {}
     }
 }
 

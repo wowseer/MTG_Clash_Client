@@ -36,9 +36,9 @@ use godot::classes::label_3d::DrawFlags;
 use godot::classes::Label3D;
 use godot::global::HorizontalAlignment;
 
-use crate::game::ability::CardAbility;
-use crate::game::cards::{ActivatedAbility, AuraDef, CardDef, CardKind, EquipStats, HeroAbility, SpellEffect};
-use crate::game::mana::{ManaCost, ManaType};
+use crate::game::card_text;
+use crate::game::cards::{CardDef, CardKind};
+use crate::game::mana::ManaType;
 use super::placeholder;
 use super::layers::CARD_LAYER;
 use super::zone::Zone;
@@ -99,7 +99,7 @@ void fragment() {
 /// Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung,
 /// Hover-Neigung und Hover-Zoom (offene Karten werden groß und lesbar), Raycast-Ziel
 /// (Kollisions-Layer 1), Gleit-Animationen per Tween sowie alle Spielwerte
-/// (Typ, Kosten, Angriff/Verteidigung, Fähigkeiten, Tapp-Zustand).
+/// (Name, Typzeile, Kosten, Regeltext, Werte aus den Kartendaten der Engine; Tapp-Zustand).
 #[derive(GodotClass)]
 #[class(base=Area3D)]
 pub struct Card3D {
@@ -141,58 +141,24 @@ pub struct Card3D {
     #[export]
     hover_scale: f32,
 
-    /// Kartenname.
-    #[export_group(name = "Spielwerte")]
+    /// Kartenname (wie von der Engine).
+    #[export_group(name = "Karte")]
     #[export]
     card_name: GString,
-    /// Kartentyp: 0 = Kreatur, 1 = Ressource, 2 = Sofortzauber, 3 = Hexerei, 4 = Held, 5 = Ausrüstung, 6 = Artefakt, 7 = Verzauberung, 8 = Aura.
+    /// Kartenart: 0 = Kreatur, 1 = Land, 2 = Spontanzauber, 3 = Hexerei, 4 = Planeswalker,
+    /// 5 = Ausrüstung, 6 = Artefakt, 7 = Verzauberung, 8 = Aura, 9 = Schlacht.
     #[export]
     card_kind: CardKind,
-    /// Manakosten (leer = kostenlos).
-    #[export]
-    mana_cost: Option<Gd<ManaCost>>,
-    /// Nur Ressourcen: Farbe des Manas, das Tappen erzeugt.
-    #[export]
-    produces: ManaType,
-    /// Grundangriff (ohne Boni durch Ausrüstung, Auren, Verzauberungen).
-    #[export]
-    attack: i32,
-    /// Grundverteidigung (ohne Boni und ohne erlittenen Schaden).
-    #[export]
-    defense: i32,
-    /// Fähigkeit einer Kreatur: 0 = keine, 1 = Heiler, 2 = Feuer, 3 = Raufbold.
-    #[export]
-    ability: CardAbility,
+    /// Kartendaten für das Bild (Typzeile, Regeltext, Werte), siehe [`CardDef`].
+    def: CardDef,
 
-    // Laufzeit-Zustand (Regeln)
+    // Anzeige-Zustand
     tapped: bool,
-    damage: i32,
-    attack_bonus: i32,
     marker: CardMarker,
     /// Dezentes Leuchten in dieser Farbe: Karte kann gerade handeln (None = aus).
     ready_glow: Option<Color>,
     /// Hat in diesem Zug angegriffen (ausgegraut, bis sie enttappt wird).
     attacked: bool,
-
-    /// Sofortzauber / Hexerei: Effekt beim Auflösen.
-    pub(crate) effect: SpellEffect,
-    /// Held: Fähigkeiten und aktuelle Willenskraft.
-    pub(crate) hero_abilities: Vec<HeroAbility>,
-    pub(crate) willpower: i32,
-    /// Ausrüstung: Werte und Kreatur, an der sie angelegt ist.
-    pub(crate) equip: Option<EquipStats>,
-    pub(crate) equipped_to: Option<Gd<Card3D>>,
-    /// Kreatur: Summe der Boni aller angelegten Ausrüstungen und Auren.
-    equip_attack: i32,
-    equip_defense: i32,
-    /// Kreatur: Summe der globalen Boni (Artefakte/Verzauberungen), laufend neu berechnet.
-    global_attack: i32,
-    global_defense: i32,
-    /// Artefakt: Tapp-Fähigkeit.
-    pub(crate) activated: Option<ActivatedAbility>,
-    /// Aura: Zielklasse/Wirkung und verzauberte Karte.
-    pub(crate) aura: Option<AuraDef>,
-    pub(crate) enchanted: Option<Gd<Card3D>>,
     /// Besitzer (0 = Spieler, 1 = Gegner): auf dessen Friedhof geht die Karte.
     #[var]
     pub(crate) owner_seat: i64,
@@ -237,29 +203,11 @@ impl IArea3D for Card3D {
             hover_scale: 1.08,
             card_name: "Karte".into(),
             card_kind: CardKind::Creature,
-            mana_cost: None,
-            produces: ManaType::Colorless,
-            attack: 1,
-            defense: 1,
-            ability: CardAbility::None,
+            def: CardDef::named("Karte"),
             tapped: false,
-            damage: 0,
-            attack_bonus: 0,
             marker: CardMarker::None,
             ready_glow: None,
             attacked: false,
-            effect: SpellEffect::None,
-            hero_abilities: Vec::new(),
-            willpower: 0,
-            equip: None,
-            equipped_to: None,
-            equip_attack: 0,
-            equip_defense: 0,
-            global_attack: 0,
-            global_defense: 0,
-            activated: None,
-            aura: None,
-            enchanted: None,
             owner_seat: 0,
             labels: None,
             badges: String::new(),
@@ -475,18 +423,6 @@ impl Card3D {
         }
     }
 
-    /// Angriff inklusive temporärer Boni.
-    #[func]
-    pub fn get_current_attack(&self) -> i32 {
-        self.attack + self.attack_bonus + self.equip_attack + self.global_attack
-    }
-
-    /// Verteidigung abzüglich erlittenen Schadens in dieser Runde.
-    #[func]
-    pub fn get_remaining_defense(&self) -> i32 {
-        self.defense + self.equip_defense + self.global_defense - self.damage
-    }
-
     /// Dezenter goldener Rand „diese Karte kann eine Fähigkeit aktivieren“ an/aus (für Skripte;
     /// Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang.
     #[func]
@@ -520,36 +456,6 @@ impl Card3D {
         self.tapped
     }
 
-    /// Artefakt (inkl. Ausrüstung)?
-    #[func]
-    pub fn is_artifact(&self) -> bool {
-        self.card_kind.is_artifact()
-    }
-
-    /// Verzauberung (inkl. Aura)?
-    #[func]
-    pub fn is_enchantment(&self) -> bool {
-        self.card_kind.is_enchantment()
-    }
-
-    /// Kreatur, die diese Aura verzaubert (null = keine).
-    #[func]
-    pub fn get_enchanted(&self) -> Option<Gd<Card3D>> {
-        self.enchanted.clone()
-    }
-
-    /// Aktuelle Willenskraft (nur Helden).
-    #[func]
-    pub fn get_willpower(&self) -> i32 {
-        self.willpower
-    }
-
-    /// Kreatur, an der diese Ausrüstung angelegt ist (null = frei).
-    #[func]
-    pub fn get_equipped_to(&self) -> Option<Gd<Card3D>> {
-        self.equipped_to.clone()
-    }
-
     /// Die Zone, in der die Karte aktuell liegt (None während des Ziehens).
     #[func]
     pub fn get_zone(&self) -> Option<Gd<Zone>> {
@@ -560,21 +466,11 @@ impl Card3D {
 impl Card3D {
     // ------------------------------------------------------------ Spielwerte
 
-    /// Übernimmt alle Spielwerte aus einer Kartendefinition.
+    /// Übernimmt die Kartendaten (Name, Typ, Text, Werte) und beschriftet die Vorderseite neu.
     pub fn apply_def(&mut self, def: &CardDef) {
         self.card_name = def.name.as_str().into();
         self.card_kind = def.kind;
-        self.mana_cost = Some(ManaCost::from_cost(def.cost));
-        self.produces = def.produces;
-        self.attack = def.attack;
-        self.defense = def.defense;
-        self.ability = def.ability;
-        self.effect = def.effect;
-        self.hero_abilities = def.hero_abilities.clone();
-        self.willpower = def.willpower;
-        self.equip = def.equip;
-        self.activated = def.activated;
-        self.aura = def.aura;
+        self.def = def.clone();
         self.refresh_labels();
     }
 
@@ -587,8 +483,14 @@ impl Card3D {
         self.card_kind
     }
 
+    /// Aktuelle Kartendaten des Bildes.
+    pub fn def(&self) -> &CardDef {
+        &self.def
+    }
+
+    /// Nur Länder: Manafarbe (Spalte in der Länder-Reihe).
     pub fn produced_mana(&self) -> ManaType {
-        self.produces
+        self.def.produces
     }
 
     /// Tapp-Zustand setzen; die Drehung übernimmt die Zone beim nächsten `layout()`.
@@ -620,8 +522,9 @@ impl Card3D {
             }
         }
         if let Some(labels) = self.labels.as_mut() {
-            for l in labels.all() {
-                l.set_modulate(tint);
+            let colors = labels.colors;
+            for (l, c) in labels.all().into_iter().zip(colors) {
+                l.set_modulate(c * tint);
             }
         }
         if let Some(icon) = self.tap_icon.as_mut() {
@@ -654,67 +557,31 @@ impl Card3D {
     /// Pixeln der Kartentextur (256 × 358). Gemeinsame Quelle für die 3D-Beschriftung
     /// und 2D-Ansichten (z. B. die Stack-Anzeige im HUD).
     pub fn face_texts(&self) -> FaceTexts {
-        let atk = self.get_current_attack();
-        let def = self.get_remaining_defense();
-        let bonus = self.attack_bonus != 0
-            || self.equip_attack != 0
-            || self.equip_defense != 0
-            || self.global_attack != 0
-            || self.global_defense != 0;
-        let damaged = self.damage > 0;
-        let (kind, body, stats) = match self.card_kind {
-            CardKind::Creature => (self.ability.title().to_string(), self.ability.description().to_string(), format!("{atk}/{def}")),
-            CardKind::Instant | CardKind::Sorcery => (self.card_kind.title().to_string(), self.effect.description(), String::new()),
-            CardKind::Hero => (
-                tr!("Held", "Hero").to_string(),
-                self.hero_abilities.iter().map(|a| a.description()).collect::<Vec<_>>().join("\n"),
-                format!("WK {}", self.willpower),
-            ),
-            CardKind::Equipment => {
-                let e = self.equip.unwrap_or_default();
-                (self.card_kind.type_line().to_string(), e.description(), format!("+{}/+{}", e.attack, e.defense))
-            }
-            CardKind::Artifact | CardKind::Enchantment => {
-                let mut parts: Vec<String> = Vec::new();
-                if let Some(a) = self.activated {
-                    parts.push(a.description());
-                }
-                (self.card_kind.type_line().to_string(), parts.join("\n"), String::new())
-            }
-            CardKind::Aura => match self.aura {
-                Some(a) => (self.card_kind.type_line().to_string(), a.description(), a.stats_text()),
-                None => (self.card_kind.type_line().to_string(), String::new(), String::new()),
-            },
-            CardKind::Resource => {
-                let color = self.produces.name();
-                (
-                    trf!("Ressource – {color}", "Resource – {color}"),
-                    trf!("Tappen: +1 {color}-Mana.", "Tap: +1 {color} mana."),
-                    String::new(),
-                )
-            }
-        };
-        let name = crate::i18n::name(&self.card_name.to_string());
-        let (cost, cost_x, name_x) = if self.card_kind == CardKind::Resource {
-            (String::new(), 0.0, 128.0)
+        let (stats, stats_color) = self.def.stats_text();
+        let name = self.card_name.to_string();
+        let (cost, cost_x, name_x, name_width) = if self.card_kind == CardKind::Land {
+            (String::new(), 0.0, 128.0, 216.0)
         } else {
             // Generische Kosten als Zahl im grauen Kostensymbol (ganz links),
             // Name mittig im freien Bereich links der Kostensymbole
-            let c = self.mana_cost.as_ref().map(|c| c.bind().cost()).unwrap_or_default();
+            let c = self.def.cost;
             let pips = c.specific.total() as usize + usize::from(c.generic > 0);
             let centers = placeholder::pip_centers(pips);
             let left_pip = centers.first().copied().unwrap_or(256.0 - 20.0);
             let cost = if c.generic > 0 { c.generic.to_string() } else { String::new() };
-            (cost, centers.first().copied().unwrap_or(0.0), (26.0 + left_pip - 16.0) * 0.5)
+            (cost, centers.first().copied().unwrap_or(0.0), (26.0 + left_pip - 16.0) * 0.5, left_pip - 16.0 - 26.0)
         };
-        let stats_color = if damaged {
-            Color::from_rgb(1.0, 0.45, 0.4)
-        } else if bonus {
-            Color::from_rgb(0.6, 1.0, 0.5)
-        } else {
-            Color::WHITE
-        };
-        FaceTexts { name, name_x, cost, cost_x, kind, body, stats, stats_color }
+        FaceTexts {
+            name,
+            name_x,
+            name_width,
+            cost,
+            cost_x,
+            kind: self.def.type_line.clone(),
+            body: self.def.display_text(),
+            stats,
+            stats_color,
+        }
     }
 
     /// Plaketten über dem Bildfeld der Vorderseite (eine Zeile je Marke bzw. Kennzeichen,
@@ -743,8 +610,16 @@ impl Card3D {
             Vector3::new((x / 256.0 - 0.5) * CARD_WIDTH, CARD_THICKNESS * 0.5 + 0.0015, (y / 358.0 - 0.5) * CARD_HEIGHT)
         };
         let ty = placeholder::title_center_y();
+        // Schriftgrößen an die Textlänge anpassen. Umrechnung: 1 Schriftpunkt = PIXEL m,
+        // 1 Texturpixel = CARD_WIDTH / 256 m.
+        let per_px = (CARD_WIDTH / 256.0) / LABEL_PIXEL;
         l.name.set_text(&t.name);
+        l.name.set_font_size(card_text::fit_line(&t.name, t.name_width * per_px, 16, 36));
         l.name.set_position(px(t.name_x, ty));
+        l.kind.set_font_size(card_text::fit_line(&t.kind, 216.0 * per_px, 14, 34));
+        // Textfeld: 0,52 m breit (Umbruch), ca. 90 Texturpixel hoch
+        let area = (0.52 / LABEL_PIXEL) * (TEXT_BOX_HEIGHT * per_px);
+        l.text.set_font_size(card_text::fit_font(&t.body, area, 10, 30));
         l.cost.set_text(&t.cost);
         if !t.cost.is_empty() {
             l.cost.set_position(px(t.cost_x, ty));
@@ -752,7 +627,9 @@ impl Card3D {
         l.kind.set_text(&t.kind);
         l.text.set_text(&t.body);
         l.stats.set_text(&t.stats);
-        l.stats.set_modulate(t.stats_color);
+        l.colors[4] = t.stats_color;
+        let tint = if self.tapped || self.attacked { TAPPED_TINT } else { Color::WHITE };
+        l.stats.set_modulate(t.stats_color * tint);
     }
 
     fn build_labels(&mut self, visual: &mut Gd<Node3D>) {
@@ -766,9 +643,10 @@ impl Card3D {
             name: card_label(visual, px(110.0, 36.0), 36, light, 0.0),
             cost: card_label(visual, px(218.0, 36.0), 34, dark, 0.0),
             kind: card_label(visual, px(128.0, 219.0), 34, light, 0.0),
-            text: card_label(visual, px(128.0, 274.0), 30, dark, 0.52),
+            text: card_label(visual, px(128.0, TEXT_BOX_CENTER), 30, dark, 0.52),
             stats: card_label(visual, px(206.0, 333.0), 44, Color::WHITE, 0.0),
             badges: card_label(visual, px(128.0, 130.0), 34, Color::WHITE, 0.58),
+            colors: [light, dark, light, dark, Color::WHITE, Color::WHITE],
         };
         let mut badges = labels.badges.clone();
         badges.set_outline_size(14);
@@ -968,6 +846,9 @@ struct CardLabels {
     stats: Gd<Label3D>,
     /// Plaketten über dem Bildfeld: Marken, „Spielstein“ (siehe [`Card3D::set_badges`]).
     badges: Gd<Label3D>,
+    /// Grundfarbe je Beschriftung (Reihenfolge wie [`CardLabels::all`]); das Ausgrauen
+    /// getappter Karten multipliziert sie.
+    colors: [Color; 6],
 }
 
 impl CardLabels {
@@ -976,8 +857,16 @@ impl CardLabels {
     }
 }
 
+/// Textfeld für den Regeltext: Mitte und Höhe in Pixeln der Kartentextur (unten bleibt das
+/// Wertefeld frei).
+const TEXT_BOX_CENTER: f32 = 276.0;
+const TEXT_BOX_HEIGHT: f32 = 72.0;
+
+/// Größe eines Schriftpunkts der Kartenbeschriftung (m).
+const LABEL_PIXEL: f32 = 0.0008;
+
 fn card_label(parent: &mut Gd<Node3D>, pos: Vector3, font_size: i32, color: Color, wrap_width: f32) -> Gd<Label3D> {
-    const PIXEL: f32 = 0.0008;
+    const PIXEL: f32 = LABEL_PIXEL;
     let mut l = Label3D::new_alloc();
     l.set_pixel_size(PIXEL);
     l.set_font_size(font_size);
@@ -1003,6 +892,8 @@ fn card_label(parent: &mut Gd<Node3D>, pos: Vector3, font_size: i32, color: Colo
 pub struct FaceTexts {
     pub name: String,
     pub name_x: f32,
+    /// Freie Breite für den Namen (Pixel der Kartentextur).
+    pub name_width: f32,
     /// Generische Kosten als Zahl ("" = keine), Mitte des grauen Kostensymbols bei `cost_x`.
     pub cost: String,
     pub cost_x: f32,

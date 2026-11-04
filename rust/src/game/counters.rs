@@ -39,13 +39,20 @@ pub fn counter_name(name: &str) -> String {
     }
 }
 
-/// Plaketten einer Karte: „Spielstein“ (bei Spielsteinen), dann eine Zeile je Marke.
+/// Plaketten einer Karte: „Spielstein“ (bei Spielsteinen), dann eine Zeile je Marke (ohne
+/// Loyalität und Verteidigung, die im Wertefeld stehen).
 pub fn card_badges(token: bool, counters: &[(String, u32)]) -> String {
     let mut lines: Vec<String> = Vec::new();
     if token {
         lines.push(tr!("Spielstein", "Token").to_string());
     }
-    lines.extend(counters.iter().filter(|(_, n)| *n > 0).map(|(name, n)| counter_text(name, *n)));
+    // Loyalität und Verteidigung stehen schon im Wertefeld
+    lines.extend(
+        counters
+            .iter()
+            .filter(|(name, n)| *n > 0 && name != "LOYALTY" && name != "DEFENSE")
+            .map(|(name, n)| counter_text(name, *n)),
+    );
     lines.join("\n")
 }
 

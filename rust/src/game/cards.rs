@@ -1,260 +1,223 @@
-//! Kartentypen, Effekte und Demo-Kartenpool (Platzhalter, bis echte Kartendaten existieren).
+//! Kartendaten für Kartenbild und Anordnung, gelesen aus den Kartendaten der Engine (`state`).
+//! Keine Regeln: Werte, Text und Typ kommen fertig von der Engine; hier wird nur bestimmt, wie
+//! die Karte aussieht (Rahmenfarbe, Typsymbol, Wertefeld) und wo sie liegt.
 
 use godot::prelude::*;
 
-use super::ability::CardAbility;
+use super::card_text;
 use super::mana::{Cost, ManaType};
 
-/// Kartentyp. Bestimmt, wann eine Karte gespielt werden darf (siehe `timing.rs`)
-/// und wohin sie beim Ausspielen geht.
+/// Hauptkategorie einer Karte (aus der Typzeile, CR 205.2). Bestimmt Typsymbol, Wertefeld und
+/// Platz auf dem Tisch (Länder in der Länder-Reihe, Kreaturen in der Mitte, Planeswalker und
+/// Schlachten links, alles andere rechts).
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 #[godot(via = i64)]
 pub enum CardKind {
-    /// Bleibende Einheit mit Angriff/Verteidigung; greift an und blockt.
     #[default]
     Creature,
-    /// Liegt in der Ressourcen-Reihe; Tappen erzeugt 1 Mana der Farbe `produces`.
-    Resource,
-    /// Sofortzauber: jederzeit spielbar, auch im gegnerischen Zug.
+    Land,
     Instant,
-    /// Hexerei: nur in der eigenen Hauptphase bei leerem Stack.
     Sorcery,
-    /// Held: bleibend, mit Willenskraft und einmal pro Runde aktivierbaren Fähigkeiten.
-    Hero,
-    /// Ausrüstung (Artefakt): bleibend, wird in der Hauptphase für Mana an eine Kreatur angelegt.
+    Planeswalker,
+    /// Artefakt – Ausrüstung.
     Equipment,
-    /// Artefakt: bleibend, nur generische Kosten; passiver Bonus oder Tapp-Fähigkeit.
     Artifact,
-    /// Verzauberung: bleibend, globaler Effekt (z. B. alle eigenen Kreaturen +1/+1).
     Enchantment,
-    /// Aura (Verzauberung): wird zwingend auf eine Kreatur gewirkt und hängt an ihr.
-    /// Verlässt die Kreatur das Spielfeld, geht die Aura auf den Friedhof.
+    /// Verzauberung – Aura.
     Aura,
+    /// Schlacht (CR 310).
+    Battle,
 }
 
 impl CardKind {
-    pub fn title(self) -> &'static str {
-        match self {
-            CardKind::Creature => tr!("Kreatur", "Creature"),
-            CardKind::Resource => tr!("Ressource", "Resource"),
-            CardKind::Instant => tr!("Sofortzauber", "Instant"),
-            CardKind::Sorcery => tr!("Hexerei", "Sorcery"),
-            CardKind::Hero => tr!("Held", "Hero"),
-            CardKind::Equipment => tr!("Ausrüstung", "Equipment"),
-            CardKind::Artifact => tr!("Artefakt", "Artifact"),
-            CardKind::Enchantment => tr!("Verzauberung", "Enchantment"),
-            CardKind::Aura => tr!("Aura", "Aura"),
-        }
-    }
-
-    /// Typzeile auf der Karte (mit Obertyp).
-    pub fn type_line(self) -> &'static str {
-        match self {
-            CardKind::Equipment => tr!("Artefakt – Ausrüstung", "Artifact – Equipment"),
-            CardKind::Aura => tr!("Verzauberung – Aura", "Enchantment – Aura"),
-            other => other.title(),
-        }
-    }
-
-    pub fn is_artifact(self) -> bool {
-        matches!(self, CardKind::Artifact | CardKind::Equipment)
-    }
-
-    pub fn is_enchantment(self) -> bool {
-        matches!(self, CardKind::Enchantment | CardKind::Aura)
-    }
-
-}
-
-/// Effekt eines Zaubers oder einer Heldenfähigkeit. Die Regeln kommen von Forge, daher
-/// vorerst nur `None` (kein eigener Effekttext).
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum SpellEffect {
-    #[default]
-    None,
-}
-
-impl SpellEffect {
-    pub fn description(self) -> String {
-        String::new()
-    }
-}
-
-/// Welche bleibenden Karten eine Aura verzaubern darf ("Verzaubert eine …").
-/// Nicht alle Varianten kommen in den Demo-Decks vor – sie stehen für eigene Karten bereit.
-#[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AuraTarget {
-    Creature,
-    Resource,
-    Artifact,
-    Enchantment,
-    Hero,
-    /// Jede bleibende Karte (Kreatur, Ressource, Artefakt, Ausrüstung, Verzauberung, Aura, Held).
-    Permanent,
-}
-
-impl AuraTarget {
-
-    pub fn description(self) -> &'static str {
-        match self {
-            AuraTarget::Creature => tr!("Verzaubert eine Kreatur.", "Enchant creature."),
-            AuraTarget::Resource => tr!("Verzaubert eine Ressource.", "Enchant resource."),
-            AuraTarget::Artifact => tr!("Verzaubert ein Artefakt.", "Enchant artifact."),
-            AuraTarget::Enchantment => tr!("Verzaubert eine Verzauberung.", "Enchant enchantment."),
-            AuraTarget::Hero => tr!("Verzaubert einen Helden.", "Enchant hero."),
-            AuraTarget::Permanent => tr!("Verzaubert eine bleibende Karte.", "Enchant permanent."),
+    /// Kategorie aus einer englischen Typzeile (z. B. „Artifact Creature — Golem“). Reihenfolge
+    /// nach Vorrang: Land vor Kreatur (Artefaktländer), Kreatur vor Artefakt/Verzauberung.
+    pub fn from_type_line(ty: &str) -> CardKind {
+        let has = |w: &str| ty.split(|c: char| !c.is_alphanumeric()).any(|t| t == w);
+        if has("Land") {
+            CardKind::Land
+        } else if has("Creature") {
+            CardKind::Creature
+        } else if has("Planeswalker") {
+            CardKind::Planeswalker
+        } else if has("Battle") {
+            CardKind::Battle
+        } else if has("Instant") {
+            CardKind::Instant
+        } else if has("Sorcery") {
+            CardKind::Sorcery
+        } else if has("Aura") {
+            CardKind::Aura
+        } else if has("Equipment") {
+            CardKind::Equipment
+        } else if has("Enchantment") {
+            CardKind::Enchantment
+        } else {
+            CardKind::Artifact
         }
     }
 }
 
-/// Wirkung einer Aura auf die verzauberte Karte.
-#[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AuraEffect {
-    /// Kreatur erhält +a/+d (bzw. −).
-    Stats(i32, i32),
-    /// Ressource liefert beim Tappen n zusätzliches Mana ihrer Farbe.
-    ExtraMana(u32),
-    /// Karte wird getappt und enttappt nicht mehr.
-    NoUntap,
-    /// Held erhält beim Verzaubern n Willenskraft.
-    Willpower(i32),
-}
-
-impl AuraEffect {
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct AuraDef {
-    pub target: AuraTarget,
-    pub effect: AuraEffect,
-}
-
-impl AuraDef {
-    pub fn description(&self) -> String {
-        let fmt = |v: i32| if v >= 0 { format!("+{v}") } else { format!("−{}", -v) };
-        let effect = match self.effect {
-            AuraEffect::Stats(a, d) => trf!("Sie erhält {}/{}.", "It gets {}/{}.", fmt(a), fmt(d)),
-            AuraEffect::ExtraMana(n) => trf!("Beim Tappen liefert sie {n} zusätzliches Mana.", "When tapped, it produces {n} additional mana."),
-            AuraEffect::NoUntap => tr!("Sie wird getappt und enttappt nicht mehr.", "It becomes tapped and no longer untaps.").to_string(),
-            AuraEffect::Willpower(n) => trf!("Er erhält {} Willenskraft.", "It gets {} willpower.", fmt(n)),
-        };
-        format!("{} {effect}", self.target.description())
-    }
-
-    /// Kurzwert für das Wertefeld (nur bei Stat-Auren).
-    pub fn stats_text(&self) -> String {
-        let fmt = |v: i32| if v >= 0 { format!("+{v}") } else { format!("−{}", -v) };
-        match self.effect {
-            AuraEffect::Stats(a, d) => format!("{}/{}", fmt(a), fmt(d)),
-            _ => String::new(),
-        }
-    }
-}
-
-/// Aktivierbare Fähigkeit eines Artefakts: Tappen (+ ggf. Mana) -> Effekt.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct ActivatedAbility {
-    pub cost: Cost,
-    pub effect: SpellEffect,
-}
-
-impl ActivatedAbility {
-    pub fn description(&self) -> String {
-        let cost = if self.cost.total() > 0 { trf!("{}, Tappen", "{}, Tap", self.cost.to_text()) } else { tr!("Tappen", "Tap").into() };
-        format!("{cost}: {}", self.effect.description())
-    }
-}
-
-/// Aktivierbare Heldenfähigkeit: ändert die Willenskraft um `delta`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct HeroAbility {
-    pub delta: i32,
-    pub effect: SpellEffect,
-}
-
-impl HeroAbility {
-    pub fn description(self) -> String {
-        let sign = if self.delta >= 0 { "+" } else { "−" };
-        format!("{sign}{}: {}", self.delta.abs(), self.effect.description())
-    }
-}
-
-/// Werte einer Ausrüstung.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct EquipStats {
-    pub attack: i32,
-    pub defense: i32,
-    /// Kosten zum Anlegen.
-    pub cost: Cost,
-}
-
-impl EquipStats {
-    pub fn description(&self) -> String {
-        trf!(
-            "Angelegte Kreatur erhält +{}/+{}. Anlegen: {}", "Equipped creature gets +{}/+{}. Equip: {}",
-            self.attack,
-            self.defense,
-            self.cost.to_text()
-        )
-    }
-}
-
-#[derive(Clone)]
+/// Alles, was das Kartenbild braucht.
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct CardDef {
     pub name: String,
+    /// Typzeile wie von der Engine (Gedankenstrich als „—“).
+    pub type_line: String,
     pub kind: CardKind,
+    /// Manakosten für die Kostensymbole.
     pub cost: Cost,
-    pub attack: i32,
-    pub defense: i32,
-    pub ability: CardAbility,
-    /// Nur für Ressourcen: erzeugte Manafarbe.
+    /// Farben der Karte (CR 105), leer = farblos.
+    pub colors: Vec<ManaType>,
+    /// Regeltext (Symbole wie `{T}` noch nicht ersetzt).
+    pub text: String,
+    /// Aktuelle und aufgedruckte Stärke/Widerstand (nur Kreaturen).
+    pub stats: Option<(i32, i32)>,
+    pub base_stats: Option<(i32, i32)>,
+    /// Loyalität (Planeswalker) bzw. Verteidigung (Schlachten).
+    pub loyalty: Option<i32>,
+    pub defense: Option<i32>,
+    /// Erlittener Schaden in diesem Zug.
+    pub damage: i32,
+    /// Nur Länder: Manafarbe für Rahmen und Spalte der Länder-Reihe (aus dem Grundlandtyp bzw.
+    /// der einzigen Farbe; sonst farblos).
     pub produces: ManaType,
-    /// Sofortzauber / Hexerei.
-    pub effect: SpellEffect,
-    /// Held: Start-Willenskraft und Fähigkeiten.
-    pub willpower: i32,
-    pub hero_abilities: Vec<HeroAbility>,
-    /// Ausrüstung.
-    pub equip: Option<EquipStats>,
-    /// Artefakt: Tapp-Fähigkeit.
-    pub activated: Option<ActivatedAbility>,
-    /// Aura: Zielklasse und Wirkung.
-    pub aura: Option<AuraDef>,
 }
 
 impl CardDef {
-    pub fn base(name: impl Into<String>, kind: CardKind, cost: Cost) -> Self {
+    /// Karte ohne Werte (z. B. verdeckt: Name „?“).
+    pub fn named(name: impl Into<String>) -> Self {
+        Self { name: name.into(), ..Self::default() }
+    }
+
+    /// Liest die Kartendaten des Protokolls: `name`, `type`, `cost`, `colors`, `text`, `power`,
+    /// `toughness`, `base_power`, `base_toughness`, `loyalty`, `defense`, `damage` (fehlende
+    /// Felder = leer).
+    pub fn from_state(card: &VarDictionary) -> Self {
+        let s = |k: &str| card.get(k).filter(|v| !v.is_nil()).map(|v| v.to_string()).unwrap_or_default();
+        let i = |k: &str| card.get(k).and_then(|v| v.try_to::<i64>().ok()).map(|v| v as i32);
+        let pair = |a: &str, b: &str| i(a).zip(i(b));
+        let type_line = s("type").replace(" - ", " — ");
+        let kind = CardKind::from_type_line(&type_line);
+        let colors: Vec<ManaType> = s("colors").chars().filter_map(ManaType::from_wubrg).filter(|t| t.is_colored()).collect();
+        let produces = if kind == CardKind::Land {
+            [
+                ("Plains", ManaType::White),
+                ("Island", ManaType::Blue),
+                ("Swamp", ManaType::Black),
+                ("Mountain", ManaType::Red),
+                ("Forest", ManaType::Green),
+            ]
+            .into_iter()
+            .find(|(n, _)| type_line.contains(n))
+            .map(|(_, t)| t)
+            .or_else(|| (colors.len() == 1).then(|| colors[0]))
+            .unwrap_or(ManaType::Colorless)
+        } else {
+            ManaType::Colorless
+        };
+        let stats = pair("power", "toughness");
         Self {
-            name: name.into(),
+            name: s("name"),
             kind,
-            cost,
-            attack: 0,
-            defense: 0,
-            ability: CardAbility::None,
-            produces: ManaType::Colorless,
-            effect: SpellEffect::None,
-            willpower: 0,
-            hero_abilities: Vec::new(),
-            equip: None,
-            activated: None,
-            aura: None,
+            cost: parse_cost(&s("cost")),
+            colors,
+            text: s("text"),
+            base_stats: pair("base_power", "base_toughness").or(stats),
+            stats,
+            loyalty: i("loyalty"),
+            defense: i("defense"),
+            damage: i("damage").unwrap_or(0),
+            produces,
+            type_line,
         }
     }
 
+    /// Rahmenfarbe: Länder nach ihrer Manafarbe, sonst die Kartenfarbe (mehrfarbig = Gold,
+    /// farblos = Grau).
     pub fn frame_color(&self) -> Color {
-        if self.kind == CardKind::Resource {
+        if self.kind == CardKind::Land {
             return self.produces.color();
         }
-        let colors: Vec<ManaType> = ManaType::ALL
-            .into_iter()
-            .filter(|t| t.is_colored() && self.cost.specific.get(*t) > 0)
-            .collect();
-        match colors.as_slice() {
+        match self.colors.as_slice() {
             [] => ManaType::Colorless.color(),
             [one] => one.color(),
             _ => Color::from_rgb(0.85, 0.7, 0.3),
         }
+    }
+
+    /// Text und Farbe des Wertefelds: Kreatur „S/W“ (grün = über, rot = unter dem Aufdruck oder
+    /// beschädigt), Planeswalker Loyalität, Schlacht Verteidigung; sonst leer.
+    pub fn stats_text(&self) -> (String, Color) {
+        const NORMAL: Color = Color::WHITE;
+        const UP: Color = Color::from_rgb(0.6, 1.0, 0.5);
+        const DOWN: Color = Color::from_rgb(1.0, 0.45, 0.4);
+        if let Some((p, t)) = self.stats {
+            let (bp, bt) = self.base_stats.unwrap_or((p, t));
+            let color = if self.damage > 0 || p < bp || t < bt {
+                DOWN
+            } else if p > bp || t > bt {
+                UP
+            } else {
+                NORMAL
+            };
+            return (format!("{p}/{t}"), color);
+        }
+        match (self.loyalty, self.defense) {
+            (Some(l), _) => (l.to_string(), NORMAL),
+            (None, Some(d)) => (d.to_string(), NORMAL),
+            _ => (String::new(), NORMAL),
+        }
+    }
+
+    /// Regeltext zum Anzeigen (Symbole ersetzt).
+    pub fn display_text(&self) -> String {
+        card_text::with_symbols(&self.text)
+    }
+}
+
+/// Manakosten aus der Schreibweise der Engine (z. B. „2 R R“, „{1}{G}“, „X U“) → [`Cost`].
+/// Symbole ohne festen Wert (X, hybrid, phyrexianisch …) werden ignoriert.
+pub fn parse_cost(text: &str) -> Cost {
+    let mut cost = Cost::default();
+    for token in text.split(|c: char| c.is_whitespace() || c == '{' || c == '}').filter(|t| !t.is_empty()) {
+        if let Ok(n) = token.parse::<u32>() {
+            cost.generic += n;
+            continue;
+        }
+        if token.len() != 1 {
+            continue; // hybrid / phyrexianisch
+        }
+        if let Some(t) = token.chars().next().and_then(ManaType::from_wubrg) {
+            cost.specific.add(t, 1);
+        }
+    }
+    cost
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_costs() {
+        let c = parse_cost("2 R R");
+        assert_eq!(c.generic, 2);
+        assert_eq!(c.specific.get(ManaType::Red), 2);
+        let c = parse_cost("{1}{G}");
+        assert_eq!(c.generic, 1);
+        assert_eq!(c.specific.get(ManaType::Green), 1);
+        assert_eq!(parse_cost("X U").specific.get(ManaType::Blue), 1);
+        assert_eq!(parse_cost("{R/P}").total(), 0);
+    }
+
+    #[test]
+    fn kinds_from_type_lines() {
+        assert_eq!(CardKind::from_type_line("Artifact Creature — Golem"), CardKind::Creature);
+        assert_eq!(CardKind::from_type_line("Artifact Land"), CardKind::Land);
+        assert_eq!(CardKind::from_type_line("Legendary Planeswalker — Chandra"), CardKind::Planeswalker);
+        assert_eq!(CardKind::from_type_line("Enchantment — Aura"), CardKind::Aura);
+        assert_eq!(CardKind::from_type_line("Artifact — Equipment"), CardKind::Equipment);
+        assert_eq!(CardKind::from_type_line("Kindred Instant — Goblin"), CardKind::Instant);
     }
 }

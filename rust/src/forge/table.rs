@@ -19,12 +19,12 @@ use crate::game::cards::{CardDef, CardKind};
 use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::card_fan::{FanMode, HudFan};
 use crate::game::decision_view;
+use crate::game::card_text;
 use crate::game::counters;
 use crate::game::hud::HudView;
 use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
-use crate::game::mana::{Cost, ManaType};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
 use crate::table::card3d::{Card3D, CardMarker, SELECT_GLOW};
@@ -602,7 +602,7 @@ impl ForgeTable {
                 };
                 HudStackEntry {
                     title: format!("{name} · {kind}"),
-                    text: get_str(item, "text"),
+                    text: card_text::with_symbols(&get_str(item, "text")),
                     seat: get_int(item, "controller"),
                 }
             })
@@ -902,7 +902,7 @@ impl ForgeTable {
                 continue;
             }
             let data = req.cards.iter().find(|c| get_int(c, "id") == i64::from(id));
-            let def = data.map(def_from_forge).unwrap_or_else(|| CardDef::base("?", CardKind::Creature, Cost::default()));
+            let def = data.map(CardDef::from_state).unwrap_or_else(|| CardDef::named("?"));
             let mut card = Card3D::new_alloc();
             {
                 let mut c = card.bind_mut();
@@ -1259,19 +1259,16 @@ impl ForgeTable {
             let mut card = card;
             if let Some(data) = &data {
                 // Werte nur bei Änderung neu setzen (Kartenbild wird dabei neu gezeichnet)
-                let sig = format!(
-                    "{}|{}|{}|{}|{}|{}",
-                    get_str(data, "text"),
-                    get_str(data, "name"),
-                    get_str(data, "type"),
-                    get_str(data, "cost"),
-                    get_int(data, "power"),
-                    get_int(data, "toughness")
-                );
+                // Bild nur neu zeichnen, wenn sich Rahmen oder Kosten ändern; Beschriftung bei
+                // jeder Änderung der Kartendaten (Text, Werte, Schaden …)
+                let def = CardDef::from_state(data);
+                let sig = format!("{def:?}");
                 if self.signatures.get(&key) != Some(&sig) {
-                    let def = def_from_forge(data);
+                    let frame = |d: &CardDef| (d.kind, d.cost, d.produces, d.colors.clone());
                     let mut c = card.bind_mut();
-                    c.set_face_texture(Some(placeholder::card_face(&def)));
+                    if self.signatures.get(&key).is_none() || frame(c.def()) != frame(&def) {
+                        c.set_face_texture(Some(placeholder::card_face(&def)));
+                    }
                     c.apply_def(&def);
                     drop(c);
                     self.signatures.insert(key, sig);
@@ -1335,7 +1332,7 @@ impl ForgeTable {
             let mut c = card.bind_mut();
             c.owner_seat = seat as i64;
             c.set_back_texture(Some(placeholder::card_back()));
-            let hidden = CardDef::base("?", CardKind::Creature, Cost::default());
+            let hidden = CardDef::named("?");
             c.set_face_texture(Some(placeholder::card_face(&hidden)));
             c.apply_def(&hidden);
         }
@@ -1439,70 +1436,7 @@ fn counter_list(d: &VarDictionary) -> Vec<(String, u32)> {
 }
 
 fn is_land(card: &VarDictionary) -> bool {
-    get_str(card, "type").contains("Land")
-}
-
-/// Forge-Karte → Kartendefinition für Bild und Anzeige (Regeln macht Forge).
-fn def_from_forge(card: &VarDictionary) -> CardDef {
-    let ty = get_str(card, "type");
-    let kind = if ty.contains("Land") {
-        CardKind::Resource
-    } else if ty.contains("Creature") {
-        CardKind::Creature
-    } else if ty.contains("Instant") {
-        CardKind::Instant
-    } else if ty.contains("Sorcery") {
-        CardKind::Sorcery
-    } else if ty.contains("Aura") {
-        CardKind::Aura
-    } else if ty.contains("Equipment") {
-        CardKind::Equipment
-    } else if ty.contains("Enchantment") {
-        CardKind::Enchantment
-    } else {
-        CardKind::Artifact
-    };
-    let mut def = CardDef::base(get_str(card, "name"), kind, forge_cost(&get_str(card, "cost")));
-    def.attack = get_int(card, "power") as i32;
-    def.defense = get_int(card, "toughness") as i32;
-    if kind == CardKind::Resource {
-        def.produces = [
-            ("Plains", ManaType::White),
-            ("Island", ManaType::Blue),
-            ("Swamp", ManaType::Black),
-            ("Mountain", ManaType::Red),
-            ("Forest", ManaType::Green),
-        ]
-        .into_iter()
-        .find(|(n, _)| ty.contains(n))
-        .map_or(ManaType::Colorless, |(_, t)| t);
-    }
-    def
-}
-
-/// Forge-Manakosten (z. B. "2 R R", "{1}{G}", "X U") → [`Cost`]. Unbekannte Symbole
-/// (X, hybride Kosten …) werden ignoriert.
-fn forge_cost(text: &str) -> Cost {
-    let mut cost = Cost::default();
-    for token in text.split(|c: char| c.is_whitespace() || c == '{' || c == '}').filter(|t| !t.is_empty()) {
-        if let Ok(n) = token.parse::<u32>() {
-            cost.generic += n;
-            continue;
-        }
-        for ch in token.chars() {
-            let t = match ch {
-                'W' => ManaType::White,
-                'U' => ManaType::Blue,
-                'B' => ManaType::Black,
-                'R' => ManaType::Red,
-                'G' => ManaType::Green,
-                'C' => ManaType::Colorless,
-                _ => continue,
-            };
-            cost.specific.add(t, 1);
-        }
-    }
-    cost
+    CardKind::from_type_line(&get_str(card, "type")) == CardKind::Land
 }
 
 fn get_str(d: &VarDictionary, key: &str) -> String {
@@ -1524,17 +1458,6 @@ fn get_array(d: &VarDictionary, key: &str) -> Option<VarArray> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parses_forge_costs() {
-        let c = forge_cost("2 R R");
-        assert_eq!(c.generic, 2);
-        assert_eq!(c.specific.get(ManaType::Red), 2);
-        let c = forge_cost("{1}{G}");
-        assert_eq!(c.generic, 1);
-        assert_eq!(c.specific.get(ManaType::Green), 1);
-        assert_eq!(forge_cost("no cost").total(), 0);
-    }
 
     #[test]
     fn maps_forge_phases() {

@@ -197,8 +197,11 @@ Forge-KI. Eine Einfachauswahl mit nur einer Option und ohne Abbrechen wird gar n
 }
 ```
 
-Karten: `id`, `name`, `type`, `tapped`, bei Kreaturen zusätzlich `power`, `toughness`; nur wenn
-zutreffend: `token: true` (Spielstein), `attached_to` (Karten-ID des Trägers bei Auren, Ausrüstung,
+Karten: `id`, `name`, `type`, `tapped`, `cost`, `colors` (Farben als `WUBRG`-Buchstaben, leer =
+farblos), `text` (Regeltext mit aktuellen Änderungen, Symbole in `{…}`-Schreibweise); bei Kreaturen
+zusätzlich `power`, `toughness` (aktuell) und `base_power`, `base_toughness` (aufgedruckt), bei
+Planeswalkern `loyalty`, bei Schlachten `defense` (im Spiel die aktuellen Marken, sonst aufgedruckt),
+`damage` (nur > 0, erlittener Schaden); nur wenn zutreffend: `token: true` (Spielstein), `attached_to` (Karten-ID des Trägers bei Auren, Ausrüstung,
 Befestigungen), `counters` (Marken wie NeoForges `CardObj.counters`: Name → Anzahl, Namen =
 Forges `CounterEnumType`, z. B. `{"P1P1": 2, "LOYALTY": 4}`).
 
@@ -317,4 +320,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Bonesplitter, Chandra, Torch of Defiance, Magma Spray) gegen `testdecks/gegner.dck` (Rancor):
   Spielsteine, `LOYALTY`, Exil beider Seiten, Rancor an der Gegnerkreatur, Ausrüstung am Träger.
   Spieler-Marken nur über den Unit-Test geprüft.
+- Kartenbild aus den Kartendaten getestet (headless und Fenster-Nahaufnahme): Regeltext, Symbole
+  (↷, Ⓡ, ①), Typzeilen, Planeswalker-Loyalität (auf der Hand aufgedruckt, im Spiel aktuell),
+  Schriftanpassung bei langem Text (Chandra, Bonesplitter).
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

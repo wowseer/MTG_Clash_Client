@@ -75,7 +75,7 @@ erhöht ggf. die Protokollversion und wird in `docs/Forge-Schnittstelle.md` besc
 
 | Fähigkeit | Wofür | Heute |
 |---|---|---|
-| **Kartenbild aus Forge-Daten** mit Regeltext, Schriftgrößen-Anpassung bei langem Text, Symbol-Ersetzung (`{T}`, `{2}{R}` → eigene Symbole) | jede Karte lesbar | nur Name/Typ/Kosten/Werte |
+| **Kartenbild aus Forge-Daten** mit Regeltext, Schriftgrößen-Anpassung bei langem Text, Symbol-Ersetzung (`{T}`, `{2}{R}` → eigene Symbole) | jede Karte lesbar | **fertig** (`cards.rs`, `card_text.rs`); Symbole als Unicode-Zeichen, noch keine eigenen Grafiken |
 | **Auswahlmodus** (Zustandsautomat im `ForgeTable`): genau eine offene Anfrage bestimmt, was klickbar ist, was leuchtet und was Buttons tun | alle Muster M1–M13 | Priorität, Mulligan, `choice` (Quellkarte golden markiert) |
 | **Leuchten mit Bedeutung**: spielbar, gültiges Ziel, ausgewählt, Angreifer, Blocker (verschiedene Farben) | M1–M7 | `set_ready_glow`, `set_marker` vorhanden |
 | **Pfeile** (neu bauen): Quelle → Ziel, Angreifer → Ziel, Blocker → Angreifer, Stack-Eintrag → Ziele | M2, M6, M7, Stack | gelöscht, wird neu gebaut |

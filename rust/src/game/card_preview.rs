@@ -7,6 +7,7 @@ use godot::classes::{Control, Label, PanelContainer, StyleBoxFlat, TextureRect};
 use godot::global::{HorizontalAlignment, VerticalAlignment};
 use godot::prelude::*;
 
+use crate::game::card_text;
 use crate::table::card3d::Card3D;
 use crate::table::placeholder;
 
@@ -50,13 +51,16 @@ fn fill_face(card: &mut Gd<Control>, source: &Gd<Card3D>, scale: f32) {
         card.add_child(&l);
         l
     };
-    let name_w = (texts.name_x - 26.0) * 2.0;
-    label(&texts.name, Vector2::new(texts.name_x, ty), Vector2::new(name_w.max(60.0), 28.0), 17, light, false);
+    // Schriftgrößen an die Textlänge anpassen (Maße in Pixeln der Kartentextur)
+    let name_w = texts.name_width.max(60.0);
+    let name_font = card_text::fit_line(&texts.name, name_w, 9, 17);
+    label(&texts.name, Vector2::new(texts.name_x, ty), Vector2::new(name_w, 28.0), name_font, light, false);
     if !texts.cost.is_empty() {
         label(&texts.cost, Vector2::new(texts.cost_x, ty), Vector2::new(24.0, 24.0), 15, dark, false);
     }
-    label(&texts.kind, Vector2::new(128.0, 219.0), Vector2::new(216.0, 22.0), 14, light, false);
-    label(&texts.body, Vector2::new(128.0, 282.0), Vector2::new(206.0, 88.0), 14, dark, true);
+    label(&texts.kind, Vector2::new(128.0, 219.0), Vector2::new(216.0, 22.0), card_text::fit_line(&texts.kind, 216.0, 8, 14), light, false);
+    let body_font = card_text::fit_font(&texts.body, 206.0 * 72.0, 7, 14);
+    label(&texts.body, Vector2::new(128.0, 276.0), Vector2::new(206.0, 72.0), body_font, dark, true);
     let mut stats = label(&texts.stats, Vector2::new(206.0, 334.0), Vector2::new(60.0, 28.0), 18, Color::WHITE, false);
     stats.add_theme_color_override("font_color", texts.stats_color);
 }

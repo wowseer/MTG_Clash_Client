@@ -19,7 +19,7 @@ use godot::prelude::*;
 // ================================================================== ManaType
 
 /// Manafarbe. Als Zahl: 0 = Weiß, 1 = Blau, 2 = Schwarz, 3 = Rot, 4 = Grün, 5 = Farblos.
-#[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 #[godot(via = i64)]
 pub enum ManaType {
     White,
@@ -27,6 +27,7 @@ pub enum ManaType {
     Black,
     Red,
     Green,
+    #[default]
     Colorless,
 }
 
@@ -77,6 +78,19 @@ impl ManaType {
 
     pub fn from_letter(c: char) -> Option<Self> {
         Self::ALL.into_iter().find(|t| t.letter() == c.to_ascii_uppercase())
+    }
+
+    /// Farbe aus der Schreibweise der Comprehensive Rules (CR 105.1, `W U B R G`, `C` = farblos).
+    pub fn from_wubrg(c: char) -> Option<Self> {
+        Some(match c.to_ascii_uppercase() {
+            'W' => ManaType::White,
+            'U' => ManaType::Blue,
+            'B' => ManaType::Black,
+            'R' => ManaType::Red,
+            'G' => ManaType::Green,
+            'C' => ManaType::Colorless,
+            _ => return None,
+        })
     }
 
     /// Anzeigefarbe (z. B. für HUD-Symbole).
