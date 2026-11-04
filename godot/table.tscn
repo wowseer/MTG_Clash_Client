@@ -41,11 +41,12 @@ follow_distance = 6.6
 fov = 30.0
 far = 200.0
 
-[node name="Player" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
+[node name="Player" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "exile", "resource_zone", "mana_pool")]
 hand = NodePath("Hand")
 deck = NodePath("Deck")
 battlefield = NodePath("Battlefield")
 discard = NodePath("Discard")
+exile = NodePath("Exile")
 resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
@@ -70,6 +71,13 @@ kind = 1
 size = Vector3(0.95, 0.3, 1.2)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.6, 0, 1.6)
 
+[node name="Exile" type="Zone" parent="Player"]
+kind = 1
+size = Vector3(0.95, 0.3, 1.2)
+accepts_drops = false
+cards_draggable = false
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.6, 0, 0.15)
+
 [node name="Resources" type="Zone" parent="Player"]
 kind = 3
 size = Vector3(3.4, 0.3, 1.6)
@@ -91,13 +99,14 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 4.78)
 [node name="ManaAnchor" type="Marker3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.6, 0, 4.45)
 
-[node name="Opponent" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "resource_zone", "mana_pool")]
+[node name="Opponent" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "exile", "resource_zone", "mana_pool")]
 display_name = "Forge-KI"
 is_ai = true
 hand = NodePath("Hand")
 deck = NodePath("Deck")
 battlefield = NodePath("Battlefield")
 discard = NodePath("Discard")
+exile = NodePath("Exile")
 resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
@@ -124,6 +133,13 @@ size = Vector3(0.95, 0.3, 1.2)
 accepts_drops = false
 cards_draggable = false
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -8.6, 0, -1.6)
+
+[node name="Exile" type="Zone" parent="Opponent"]
+kind = 1
+size = Vector3(0.95, 0.3, 1.2)
+accepts_drops = false
+cards_draggable = false
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -8.6, 0, -0.15)
 
 [node name="Resources" type="Zone" parent="Opponent"]
 kind = 3

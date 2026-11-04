@@ -183,6 +183,23 @@ impl IArea3D for Zone {
 
 #[godot_api]
 impl Zone {
+    /// Legt `card` an `host` an (Aura, Ausrüstung, Befestigung; CR 301.5, 303.4): Sie liegt
+    /// dann versetzt unter dem Träger und folgt ihm beim Anordnen. `host` = null löst die
+    /// Verbindung. Beide Karten müssen in dieser Zone liegen; ordnet nur bei Änderung neu an.
+    #[func]
+    pub fn set_attached(&mut self, card: Gd<Card3D>, host: Option<Gd<Card3D>>) {
+        let id = card.instance_id();
+        let host = host.filter(|h| h != &card && self.cards.contains(h));
+        if self.attachments.get(&id) == host.as_ref() {
+            return;
+        }
+        match host {
+            Some(h) => self.attachments.insert(id, h),
+            None => self.attachments.remove(&id),
+        };
+        self.layout();
+    }
+
     /// Fügt eine Karte ein (index < 0 = ans Ende) und ordnet alle Karten neu an.
     /// `delay` verzögert nur die Animation der neuen Karte (z. B. zum Austeilen).
     #[func]

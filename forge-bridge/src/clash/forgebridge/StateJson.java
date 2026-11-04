@@ -7,6 +7,7 @@ import forge.card.MagicColor;
 import forge.game.Game;
 import forge.game.GameEntity;
 import forge.game.card.Card;
+import forge.game.card.CounterType;
 import forge.game.combat.Combat;
 import forge.game.phase.PhaseHandler;
 import forge.game.player.Player;
@@ -45,6 +46,8 @@ final class StateJson {
                 pool.add(p.getManaPool().getAmountOfColor(color));
             }
             po.add("mana_pool", pool);
+            // Spieler-Marken (Gift, Energie, Erfahrung …), CR 122.1
+            po.add("counters", counters(p));
             if (i == viewer) {
                 po.add("hand", cards(p, ZoneType.Hand));
             }
@@ -154,6 +157,31 @@ final class StateJson {
         if (c.isCreature()) {
             o.addProperty("power", c.getNetPower());
             o.addProperty("toughness", c.getNetToughness());
+        }
+        if (c.isToken()) {
+            o.addProperty("token", true);
+        }
+        Card host = c.getAttachedTo();
+        if (host != null) {
+            o.addProperty("attached_to", host.getId());
+        }
+        if (c.hasCounters()) {
+            o.add("counters", counters(c));
+        }
+        return o;
+    }
+
+    /**
+     * Marken wie NeoForges {@code counters} (Name → Anzahl), z. B. {@code {"P1P1": 2}}. Name =
+     * Forges {@code CounterEnumType}-Name (P1P1, M1M1, LOYALTY, POISON …).
+     */
+    static JsonObject counters(GameEntity e) {
+        JsonObject o = new JsonObject();
+        for (com.google.common.collect.Multiset.Entry<CounterType> en : e.getCounters().entrySet()) {
+            if (en.getCount() > 0) {
+                CounterType t = en.getElement();
+                o.addProperty(t instanceof Enum<?> en2 ? en2.name() : t.getName(), en.getCount());
+            }
         }
         return o;
     }

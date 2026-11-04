@@ -452,7 +452,12 @@ impl TurnHud {
             (0, self.player_name.as_mut(), self.player_turn.as_mut()),
         ] {
             if let Some(l) = name {
-                l.set_text(&view.names[seat]);
+                let text = if view.counters[seat].is_empty() {
+                    view.names[seat].to_string()
+                } else {
+                    format!("{}\n{}", view.names[seat], view.counters[seat])
+                };
+                l.set_text(&text);
                 l.add_theme_color_override("font_color", if seat as i64 == active { GOLD } else { PARCHMENT });
             }
             if let Some(l) = turn_label {
@@ -513,6 +518,8 @@ pub struct HudView {
     pub active_seat: i64,
     pub names: [GString; 2],
     pub lives: [i64; 2],
+    /// Spieler-Marken je Sitzplatz als Text (Gift, Energie …; leer = keine), unter dem Namen.
+    pub counters: [String; 2],
     pub turn: i64,
     /// Name des Siegers; leer = Partie läuft.
     pub winner: String,

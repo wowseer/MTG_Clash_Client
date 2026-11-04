@@ -32,6 +32,9 @@ pub struct PlayerSeat {
     /// Zone des Friedhofs (Ablagestapel).
     #[export]
     pub(crate) discard: Option<Gd<Zone>>,
+    /// Zone des Exils (CR 406): offener Stapel neben dem Friedhof.
+    #[export]
+    pub(crate) exile: Option<Gd<Zone>>,
     /// Reihe für ausgespielte Ressourcen-Karten.
     #[export]
     pub(crate) resource_zone: Option<Gd<Zone>>,
@@ -57,6 +60,7 @@ impl INode3D for PlayerSeat {
             deck: None,
             battlefield: None,
             discard: None,
+            exile: None,
             resource_zone: None,
             mana_pool: None,
             life: 20,
@@ -74,7 +78,7 @@ impl PlayerSeat {
     /// Gehört die Zone zu diesem Sitzplatz?
     #[func]
     pub fn owns_zone(&self, zone: Gd<Zone>) -> bool {
-        [&self.hand, &self.deck, &self.battlefield, &self.discard, &self.resource_zone]
+        [&self.hand, &self.deck, &self.battlefield, &self.discard, &self.exile, &self.resource_zone]
             .into_iter()
             .any(|z| z.as_ref() == Some(&zone))
     }

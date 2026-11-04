@@ -19,6 +19,7 @@ use crate::game::cards::{CardDef, CardKind};
 use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::card_fan::{FanMode, HudFan};
 use crate::game::decision_view;
+use crate::game::counters;
 use crate::game::hud::HudView;
 use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
@@ -477,6 +478,7 @@ struct SeatZones {
     deck: Option<Gd<Zone>>,
     battlefield: Option<Gd<Zone>>,
     discard: Option<Gd<Zone>>,
+    exile: Option<Gd<Zone>>,
     resources: Option<Gd<Zone>>,
 }
 
@@ -563,6 +565,7 @@ impl ForgeTable {
             active_seat: st.map_or(-1, |s| get_int(s, "active_player")),
             names: [self.seat_name(0), self.seat_name(1)],
             lives: [life(0), life(1)],
+            counters: [0, 1].map(|seat| player(seat).map(|p| counters::player_counters(&counter_list(&p))).unwrap_or_default()),
             turn: st.map_or(0, |s| get_int(s, "turn")),
             winner: self.winner.clone(),
             button_enabled: my_priority,
@@ -623,10 +626,11 @@ impl ForgeTable {
                     deck: s.deck.clone(),
                     battlefield: s.battlefield.clone(),
                     discard: s.discard.clone(),
+                    exile: s.exile.clone(),
                     resources: s.resource_zone.clone(),
                 }
             }
-            None => SeatZones { hand: None, deck: None, battlefield: None, discard: None, resources: None },
+            None => SeatZones { hand: None, deck: None, battlefield: None, discard: None, exile: None, resources: None },
         }
     }
 
@@ -1163,12 +1167,29 @@ impl ForgeTable {
                     wanted.push((get_int(&c, "id"), Some(c), zone, seat));
                 }
             }
-            if let Some(discard) = &z.discard {
-                for c in list("graveyard") {
-                    wanted.push((get_int(&c, "id"), Some(c), discard.clone(), seat));
+            for (key, zone) in [("graveyard", &z.discard), ("exile", &z.exile)] {
+                if let Some(zone) = zone {
+                    for c in list(key) {
+                        wanted.push((get_int(&c, "id"), Some(c), zone.clone(), seat));
+                    }
                 }
             }
         }
+        // Angelegte Karten (CR 301.5, 303.4) liegen in der Zone ihres Trägers – auch auf der
+        // Seite des Gegners (Aura auf seiner Kreatur); mehrere Durchläufe für Ketten
+        for _ in 0..4 {
+            let zone_of: HashMap<i64, Gd<Zone>> = wanted.iter().map(|w| (w.0, w.2.clone())).collect();
+            for w in wanted.iter_mut() {
+                let host = w.1.as_ref().map(|d| get_int(d, "attached_to")).filter(|h| *h > 0);
+                if let Some(zone) = host.and_then(|h| zone_of.get(&h)) {
+                    w.2 = zone.clone();
+                }
+            }
+        }
+        let attached: Vec<(i64, i64)> = wanted
+            .iter()
+            .filter_map(|w| w.1.as_ref().map(|d| (w.0, get_int(d, "attached_to"))))
+            .collect();
 
         // Stack (CR 405): Zauber als ihre Karte, Fähigkeiten als Karte ihrer Quelle;
         // unterster Eintrag zuerst, damit der oberste in der Zone oben liegt
@@ -1255,6 +1276,7 @@ impl ForgeTable {
                     drop(c);
                     self.signatures.insert(key, sig);
                 }
+                card.bind_mut().set_badges(&counters::card_badges(get_bool(data, "token"), &counter_list(data)));
                 let tapped = get_bool(data, "tapped");
                 if card.bind().is_tapped() != tapped {
                     card.bind_mut().set_tapped_state(tapped);
@@ -1276,6 +1298,13 @@ impl ForgeTable {
         }
         for card in from_hidden_hand.into_iter().flatten() {
             discard_card(card);
+        }
+        // Verbindungen setzen bzw. lösen (Träger in derselben Zone)
+        for (key, host) in attached {
+            let Some(card) = self.cards.get(&key).cloned() else { continue };
+            let Some(mut zone) = card.bind().get_zone() else { continue };
+            let host = self.cards.get(&host).cloned().filter(|_| host > 0);
+            zone.bind_mut().set_attached(card, host);
         }
         for (seat, p) in players.iter().enumerate().take(2) {
             self.sync_deck(seat, get_int(p, "library").max(0) as usize);
@@ -1393,6 +1422,19 @@ fn stack_targets(item: &VarDictionary) -> Vec<Target> {
             }
         }
     }
+    out
+}
+
+/// Marken einer Karte bzw. eines Spielers (`counters` = Name → Anzahl), nach Namen sortiert.
+fn counter_list(d: &VarDictionary) -> Vec<(String, u32)> {
+    let Some(map) = d.get("counters").and_then(|v| v.try_to::<VarDictionary>().ok()) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, u32)> = map
+        .iter_shared()
+        .map(|(k, v)| (k.to_string(), v.try_to::<i64>().unwrap_or(0).max(0) as u32))
+        .collect();
+    out.sort();
     out
 }
 

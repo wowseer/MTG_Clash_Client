@@ -41,6 +41,7 @@ Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Kamera-Fok
 ├── Player (PlayerSeat)          Spieler unten (Forge-Sitzplatz 0)
 │   ├── Battlefield (Zone)       Spielfeld (automatische Anordnung, `auto_arrange`)
 │   ├── Deck, Discard (Zone)     Deck, Friedhof
+│   ├── Exile (Zone)             Exil (offener Stapel zwischen Friedhof und Tischmitte)
 │   ├── Resources (Zone)         Länder-Reihe
 │   ├── ManaPool (ManaPool)      Manavorrat (Anzeige)
 │   ├── HeroAnchor (Marker3D)    Position des Medaillons (direkt über der Hand)
@@ -159,6 +160,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | **Ziele ausgelöster Fähigkeiten** | Eigene Trigger mit Ziel (z. B. „Wenn … ins Spiel kommt, fügt einer Kreatur 4 Schaden zu“) fragen das Ziel wie beim Wirken (Klick auf Karte/Medaillon) |
 | **Angreifen** (Angriffsschritt) | Kreaturen, die angreifen können, leuchten. Klick = angreifen (roter Pfeil zum Gegner, rote Markierung), erneuter Klick = nicht angreifen. Gibt es mehrere Angriffsziele (z. B. Planeswalker), danach Klick auf das gewünschte Ziel (Karte bzw. golden pulsierendes Medaillon) = der zuletzt gewählte Angreifer greift es an. Bestätigen mit „Angreifen (n)“ bzw. „Nicht angreifen“ im Fenster am rechten Rand. Ungültige Angriffe (z. B. eine Kreatur muss angreifen) werden mit Hinweis erneut gefragt |
 | **Blocken** (Blockschritt) | Eigene Kreaturen, die blocken können, leuchten. Klick auf eine davon (goldene Markierung), dann Klick auf einen Angreifer = blocken (blauer Pfeil, blaue Markierung; ein blasser Pfeil zeigt vorher auf den Angreifer unter der Maus). Klick auf einen Blocker = Block aufheben. Mehrere Blocker auf denselben Angreifer sind möglich. Bestätigen mit „Blocken (n)“ bzw. „Nicht blocken“; ungültige Blocks werden mit Forges Begründung erneut gefragt |
+| **Marken, Spielsteine, angelegte Karten, Exil** | Marken stehen als helle Plaketten über dem Bildfeld der Karte („+1/+1 ×2“, „Loyalität 4“), Spielsteine tragen die Plakette „Spielstein“. Auren und Ausrüstung liegen leicht versetzt unter ihrem Träger und wandern mit ihm. Exilierte Karten liegen offen auf dem Exil-Stapel neben dem Friedhof. Spieler-Marken (Gift, Energie, Erfahrung …) stehen am linken Bildrand unter dem Namen |
 | **Stack** | Zauber, die gewirkt werden, gleiten in die Stack-Zone in der Tischmitte; aktivierte und ausgelöste Fähigkeiten erscheinen dort als Karte ihrer Quelle. Der oberste Eintrag liegt rechts oben. Violette Pfeile zeigen die Ziele jedes Eintrags (auch auf andere Zauber im Stack, z. B. Gegenzauber). Die Liste am linken Bildrand nennt Quelle, Art und Text. Bei belegtem Stack ist der Hauptbutton orange |
 | Kampf der KI | Angriffe der KI erscheinen als rote Pfeile (Angreifer → Ziel), Blocks als blaue Pfeile, solange der Kampf läuft |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
@@ -207,8 +209,11 @@ vor `~/Games/Forge` verwendet.
   (du), Sitzplatz 1 = Gegner oben (Forge-KI).
 - Baut bei jedem neuen Forge-Zustand den Tisch ab: Für jede Forge-Karte eine `Card3D` (Bild aus
   Name, Typ, Kosten, Stärke/Widerstand); Hand → Hand, Länder → Länder-Reihe, übrige
-  bleibende Karten → Spielfeld, Friedhof → Ablagestapel, Gegnerhand verdeckt; getappt wird
-  übernommen; Stack-Einträge → Zone `stack_zone` (Zauber als ihre Karte, Fähigkeiten als Karte
+  bleibende Karten → Spielfeld, Friedhof → Ablagestapel, Exil → Exil-Stapel, Gegnerhand verdeckt;
+  getappt wird übernommen. Angelegte Karten (`attached_to`: Auren, Ausrüstung) liegen in der Zone
+  ihres Trägers versetzt darunter (`Zone.set_attached`), auch auf der Gegnerseite. Marken und
+  „Spielstein“ stehen als Plaketten über dem Bildfeld (`Card3D::set_badges`, Texte aus
+  `game/counters.rs`); Stack-Einträge → Zone `stack_zone` (Zauber als ihre Karte, Fähigkeiten als Karte
   ihrer Quelle, die auf der Quelle erscheint). Karten gleiten animiert an ihren Platz. **Deck:** Die Bibliothek liegt als verdeckter
   Stapel in der Deck-Zone (Anzahl = Forges `library`). Zieht Forge eine Karte, gleitet die oberste
   Deckkarte auf die Hand und wird dort aufgedeckt (beim Gegner bleibt sie verdeckt). Spielt der

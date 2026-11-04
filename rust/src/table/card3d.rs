@@ -198,6 +198,8 @@ pub struct Card3D {
     pub(crate) owner_seat: i64,
 
     labels: Option<CardLabels>,
+    /// Text der Plaketten (eine Zeile je Marke bzw. Kennzeichen).
+    badges: String,
     marker_mesh: Option<Gd<MeshInstance3D>>,
     marker_material: Option<Gd<ShaderMaterial>>,
     tap_icon: Option<Gd<MeshInstance3D>>,
@@ -260,6 +262,7 @@ impl IArea3D for Card3D {
             enchanted: None,
             owner_seat: 0,
             labels: None,
+            badges: String::new(),
             marker_mesh: None,
             marker_material: None,
             tap_icon: None,
@@ -714,6 +717,18 @@ impl Card3D {
         FaceTexts { name, name_x, cost, cost_x, kind, body, stats, stats_color }
     }
 
+    /// Plaketten über dem Bildfeld der Vorderseite (eine Zeile je Marke bzw. Kennzeichen,
+    /// z. B. „+1/+1 ×2“, „Spielstein“); leer = keine.
+    pub fn set_badges(&mut self, text: &str) {
+        if self.badges == text {
+            return;
+        }
+        self.badges = text.to_string();
+        if let Some(l) = self.labels.as_mut() {
+            l.badges.set_text(text);
+        }
+    }
+
     /// Vorderseiten-Textur (für 2D-Ansichten).
     pub fn face_tex(&self) -> Option<Gd<Texture2D>> {
         self.face_texture.clone()
@@ -753,7 +768,12 @@ impl Card3D {
             kind: card_label(visual, px(128.0, 219.0), 34, light, 0.0),
             text: card_label(visual, px(128.0, 274.0), 30, dark, 0.52),
             stats: card_label(visual, px(206.0, 333.0), 44, Color::WHITE, 0.0),
+            badges: card_label(visual, px(128.0, 130.0), 34, Color::WHITE, 0.58),
         };
+        let mut badges = labels.badges.clone();
+        badges.set_outline_size(14);
+        badges.set_outline_modulate(Color::from_rgba(0.05, 0.04, 0.03, 0.92));
+        badges.set_text(&self.badges);
         self.labels = Some(labels);
         self.refresh_labels();
     }
@@ -946,11 +966,13 @@ struct CardLabels {
     kind: Gd<Label3D>,
     text: Gd<Label3D>,
     stats: Gd<Label3D>,
+    /// Plaketten über dem Bildfeld: Marken, „Spielstein“ (siehe [`Card3D::set_badges`]).
+    badges: Gd<Label3D>,
 }
 
 impl CardLabels {
-    fn all(&mut self) -> [&mut Gd<Label3D>; 5] {
-        [&mut self.name, &mut self.cost, &mut self.kind, &mut self.text, &mut self.stats]
+    fn all(&mut self) -> [&mut Gd<Label3D>; 6] {
+        [&mut self.name, &mut self.cost, &mut self.kind, &mut self.text, &mut self.stats, &mut self.badges]
     }
 }
 

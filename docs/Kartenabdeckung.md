@@ -84,7 +84,7 @@ erhöht ggf. die Protokollversion und wird in `docs/Forge-Schnittstelle.md` besc
 | **Kosten-Anzeige** über der Karte, die bezahlt wird, plus Manapool zum Anklicken | M5 | Manapool-Anzeige vorhanden |
 | **Stack-Anzeige** mit Quelle, Text und Zielen | Antworten, Trigger | **fertig** (Zone `Stack`, Pfeile, `StackList` im HUD) |
 | **Kartenverwandlungen**: umdrehen (Rückseite/Transform), verdeckt, Spielstein erscheinen/verschwinden, Kopie | doppelseitige Karten, Morph, Token | fehlt |
-| **Angelegte Karten** unter dem Träger, Marken-Plaketten | Auren, Ausrüstung, Counter | Darstellung teilweise im alten Code, für Forge neu anbinden |
+| **Angelegte Karten** unter dem Träger, Marken-Plaketten | Auren, Ausrüstung, Counter | **fertig** (`Zone.set_attached`, `Card3D::set_badges`, `game/counters.rs`); Spieler-Marken unter dem Namen am linken Rand |
 | **Variable Zonen** (Exil, Kommandozone, beliebig viele Spielsteine, Platzmangel → Stapeln gleicher Karten mit Anzahl) | große Spielfelder, Token-Decks | Grundlayout vorhanden |
 | **Spielprotokoll** aus `forge_event` | nachvollziehen, was passiert | fehlt |
 | **Rücknahme/Abbruch**: Anfrage abbrechen, solange Forge das erlaubt (Zauber zurück auf die Hand) | Fehlklicks | fehlt |

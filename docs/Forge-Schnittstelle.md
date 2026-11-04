@@ -197,9 +197,13 @@ Forge-KI. Eine Einfachauswahl mit nur einer Option und ohne Abbrechen wird gar n
 }
 ```
 
-Karten: `id`, `name`, `type`, `tapped`, bei Kreaturen zusätzlich `power`, `toughness`.
+Karten: `id`, `name`, `type`, `tapped`, bei Kreaturen zusätzlich `power`, `toughness`; nur wenn
+zutreffend: `token: true` (Spielstein), `attached_to` (Karten-ID des Trägers bei Auren, Ausrüstung,
+Befestigungen), `counters` (Marken wie NeoForges `CardObj.counters`: Name → Anzahl, Namen =
+Forges `CounterEnumType`, z. B. `{"P1P1": 2, "LOYALTY": 4}`).
 
-Spieler zusätzlich: `mana_pool` = Menge schwebenden Manas je Farbe in der Reihenfolge W U B R G C.
+Spieler zusätzlich: `mana_pool` = Menge schwebenden Manas je Farbe in der Reihenfolge W U B R G C;
+`counters` = Spieler-Marken (CR 122.1) wie bei Karten, z. B. `{"POISON": 3, "ENERGY": 2}`.
 
 `combat` (laufender Kampf, sonst leere Listen): `attackers` = Liste `{card, target}` (`target` als
 `Target`), `blocks` = Liste `[blocker, angreifer]`.
@@ -273,6 +277,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `PayMana` | Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
+| `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |
 | `stack` | Zone `Stack` in der Tischmitte: Zauber als ihre Karte, Fähigkeiten als Karte ihrer Quelle; violette Pfeile zu den Zielen; Liste im HUD (linker Rand) mit Quelle, Art, Text; Hauptbutton orange |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
@@ -308,4 +313,8 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Seiten in der Stack-Zone, Mana Leak auf Flametongue Kavu (2 Einträge, Ziel = Zauber im Stack);
   ausgelöste Fähigkeit (Trigger von Flametongue Kavu mit Ziel) als Karte der Quelle, Priorität mit
   belegtem Stack. Optik (Liste im HUD, Pfeile) noch nicht im Fenster geprüft.
+- Exil, Marken, Spielsteine und angelegte Karten getestet mit einem Testdeck (Dragon Fodder,
+  Bonesplitter, Chandra, Torch of Defiance, Magma Spray) gegen `testdecks/gegner.dck` (Rancor):
+  Spielsteine, `LOYALTY`, Exil beider Seiten, Rancor an der Gegnerkreatur, Ausrüstung am Träger.
+  Spieler-Marken nur über den Unit-Test geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.
