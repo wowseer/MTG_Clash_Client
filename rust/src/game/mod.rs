@@ -10,7 +10,6 @@ pub mod decision_view;
 pub mod cards;
 pub mod hourglass;
 pub mod hud;
-pub mod log_view;
 pub mod mana;
 pub mod mana_view;
 pub mod phase_timeline;

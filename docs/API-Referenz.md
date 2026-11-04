@@ -134,7 +134,6 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_bridge_ready(protocol: int)` | `void` | Brücke bereit → Partie starten (bei `autostart`). |
 | `on_state(state: Dictionary)` | `void` | Neuer Spielzustand von Forge (Spielstart oder Abfrage): Tisch abgleichen. |
 | `on_forge_event(event: Dictionary)` | `void` | Forge-Ereignis: Zustand bald neu abfragen (gebündelt, siehe `refresh_interval`). |
-| `on_log_entry(entry: Dictionary)` | `void` | Neuer Eintrag im Spielprotokoll der Engine: für das HUD merken (ohne Phasen- und Mana-Einträge, siehe `log_view::HIDDEN_KINDS`). |
 | `on_decision_requested(request: Dictionary)` | `void` | Entscheidung des Spielers nötig (Protokoll v3): Zustand übernehmen, Quellkarte markieren, spielbare Karten leuchten lassen. Unbekannte Entscheidungen werden mit `Cancel` beantwortet (die Engine entscheidet dann selbst). |
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |

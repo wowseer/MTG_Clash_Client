@@ -217,6 +217,15 @@ impl Showcase {
         }
     }
 
+    /// Knopf an eine feste Stelle der Bühne setzen (lokal x/y, z. B. eine waagerechte
+    /// Knopfreihe unter der Karte); wird wie die anderen Knöpfe beim Schließen ausgeblendet.
+    pub fn add_button_at(&mut self, button: Gd<Button3D>, pos: Vector2) {
+        let mut button = button;
+        self.base_mut().add_child(&button);
+        button.set_position(Vector3::new(pos.x, pos.y, 0.05));
+        self.buttons.push(button);
+    }
+
     /// Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell
     /// in der Mitte, die Knöpfe untereinander darunter, kein Untertitel (er läge auf der Karte).
     /// Vor [method add_button] aufrufen.

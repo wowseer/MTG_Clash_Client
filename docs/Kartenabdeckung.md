@@ -86,7 +86,7 @@ erhöht ggf. die Protokollversion und wird in `docs/Forge-Schnittstelle.md` besc
 | **Kartenverwandlungen**: umdrehen (Rückseite/Transform), verdeckt, Spielstein erscheinen/verschwinden, Kopie | doppelseitige Karten, Morph, Token | **teilweise:** Umdrehen animiert, verdeckte Karten, Spielstein-Plakette; offen: Erscheinen/Vergehen-Effekte, Kopien |
 | **Angelegte Karten** unter dem Träger, Marken-Plaketten | Auren, Ausrüstung, Counter | **fertig** (`Zone.set_attached`, `Card3D::set_badges`, `game/counters.rs`); Spieler-Marken unter dem Namen am linken Rand |
 | **Variable Zonen** (Exil, Kommandozone, beliebig viele Spielsteine, Platzmangel → Stapeln gleicher Karten mit Anzahl) | große Spielfelder, Token-Decks | Grundlayout vorhanden |
-| **Spielprotokoll** aus `forge_event` | nachvollziehen, was passiert | **fertig** (Nachricht `log` aus Forges `GameLog`, `log_view.rs`) |
+| **Spielprotokoll** aus `forge_event` | nachvollziehen, was passiert | **entfernt** (Fenster oben rechts auf Wunsch des Users weg; Nachricht `log` kommt weiter von der Brücke, Anzeige als 3D-Schriftrolle geplant) |
 | **Rücknahme/Abbruch**: Anfrage abbrechen, solange Forge das erlaubt (Zauber zurück auf die Hand) | Fehlklicks | fehlt |
 | **Zeitlimits/Autopass-Einstellungen** (z. B. bis Ende des Zuges passen) | Spielfluss | fehlt |
 

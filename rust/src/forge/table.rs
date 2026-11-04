@@ -22,7 +22,6 @@ use crate::game::decision_view;
 use crate::game::card_text;
 use crate::game::counters;
 use crate::game::hud::HudView;
-use crate::game::log_view::{self, HudLogLine, HIDDEN_KINDS};
 use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
@@ -58,8 +57,6 @@ const STARTING_BUTTON_WIDTH: f32 = 4.6;
 const STARTING_BUTTON_SPACING: f32 = 1.15;
 const STARTING_CHOICE_CENTER: Vector3 = Vector3::new(0.0, 1.6, 0.9);
 /// Gemerkte bzw. im HUD gezeigte Zeilen des Spielprotokolls.
-const LOG_KEEP: usize = 200;
-const LOG_SHOWN: usize = 7;
 /// Farbe der Pfeile vom Stack-Eintrag zu seinen Zielen.
 
 /// Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, Kamera,
@@ -144,8 +141,6 @@ pub struct ForgeTable {
     /// verdeckte Zonen) temporäre Karten aus den mitgeschickten Kartendaten. Temporäre Karten
     /// (zweiter Wert true) werden nach der Antwort freigegeben.
     fan_cards: Vec<(CardId, Gd<Card3D>, bool)>,
-    /// Spielprotokoll der Engine (ältester zuerst, höchstens [LOG_KEEP] Einträge).
-    log: std::collections::VecDeque<HudLogLine>,
     /// 3D-Bedienobjekte der offenen Entscheidung (z. B. Startspieler-Knöpfe) und ihre Frage als
     /// 3D-Text; werden bei der Antwort ausgeblendet.
     choice_buttons: Vec<Gd<Button3D>>,
@@ -160,8 +155,6 @@ pub struct ForgeTable {
     /// X wählen: gewählter Wert und der Bezahlen-Knopf (zeigt den Wert).
     x_value: u32,
     x_pay_button: Option<Gd<Button3D>>,
-    /// Karte, für die X gewählt wird (hell, solange die Frage offen ist).
-    x_card: Option<Gd<Card3D>>,
     /// Bühnen-Knöpfe: Antwort je Knopf (Index = Argument von `on_stage_choice`).
     stage_choices: Vec<Choice>,
     /// Modus-Bühne: Kartenkopie je Modus (Modusnummer der Engine) und die Wahl.
@@ -226,7 +219,6 @@ impl INode for ForgeTable {
             block_plan: Vec::new(),
             combat_armed: None,
             fan_cards: Vec::new(),
-            log: std::collections::VecDeque::new(),
             choice_buttons: Vec::new(),
             choice_prompt: None,
             showcase: None,
@@ -234,7 +226,6 @@ impl INode for ForgeTable {
             hand_pick_button: None,
             x_value: 0,
             x_pay_button: None,
-            x_card: None,
             stage_choices: Vec::new(),
             mode_cards: Vec::new(),
             mode_pick: Vec::new(),
@@ -265,7 +256,6 @@ impl INode for ForgeTable {
             bridge.connect("match_started", &cb("on_state"));
             bridge.connect("state_received", &cb("on_state"));
             bridge.connect("forge_event", &cb("on_forge_event"));
-            bridge.connect("log_entry", &cb("on_log_entry"));
             bridge.connect("decision_requested", &cb("on_decision_requested"));
             bridge.connect("game_over", &cb("on_game_over"));
             bridge.connect("bridge_error", &cb("on_bridge_error"));
@@ -325,7 +315,6 @@ impl ForgeTable {
         let ok = bridge.bind_mut().start_match(decks, PackedInt32Array::from(&[LOCAL_SEAT as i32]), names, self.seed);
         if ok {
             self.winner.clear();
-            self.log.clear();
             self.match_running = true;
         }
         ok
@@ -649,7 +638,6 @@ impl ForgeTable {
         if hosted {
             // Eingebettet (NeoForge): die Partie startet der Gastgeber
             self.winner.clear();
-            self.log.clear();
             self.match_running = true;
         } else if self.autostart {
             self.start_match();
@@ -690,24 +678,6 @@ impl ForgeTable {
                 self.combat_hit(&event, target, point, 0.5);
             }
             _ => {}
-        }
-    }
-
-    /// Neuer Eintrag im Spielprotokoll der Engine: für das HUD merken (ohne Phasen- und
-    /// Mana-Einträge, siehe `log_view::HIDDEN_KINDS`).
-    #[func]
-    fn on_log_entry(&mut self, entry: VarDictionary) {
-        let kind = get_str(&entry, "kind");
-        if HIDDEN_KINDS.contains(&kind.as_str()) {
-            return;
-        }
-        let text = card_text::with_symbols(&log_view::strip_ids(&get_str(&entry, "text")));
-        if text.is_empty() {
-            return;
-        }
-        self.log.push_back(HudLogLine { text, turn_start: kind == "TURN" });
-        while self.log.len() > LOG_KEEP {
-            self.log.pop_front();
         }
     }
 
@@ -1261,63 +1231,42 @@ impl ForgeTable {
         }
     }
 
-    /// X wählen (wie im Video des Users): die Karte hell und orange leuchtend auf dem Stack,
-    /// mittig darunter eine Knopfreihe
-    /// „−5“, „−“, orange „Bezahlen X = n“, „+“, „+5“, dazu blau „Abbrechen“ (wo erlaubt) und in
-    /// der Tischmitte „Wähle einen Wert für X.“. Kein Fenster.
+    /// X wählen (wie im Video des Users): 3D-Bühne mit der Karte groß, hell und lesbar in der
+    /// Mitte (orange leuchtend), darunter eine Knopfreihe
+    /// „−5“, „−“, orange „Bezahlen X = n“, „+“, „+5“, darunter grau „Abbrechen“ (wo erlaubt);
+    /// Titel „Wähle einen Wert für X.“. Kein Fenster.
     fn show_choose_x(&mut self, req: &Request) {
         let Decision::ChooseX { max, .. } = req.decision else { return };
-        self.clear_choice_objects();
         self.x_value = 0;
-        let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
-        let Some(cam) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else { return };
-        let right = cam.get_global_transform().basis.col_a().normalized();
-        // unter der obersten Karte des Stacks (dort liegt die Karte, die gerade gewirkt wird)
-        // mittig unter der Karte, die gerade gewirkt wird (oberste Karte des Stacks)
-        let center = self.stack_zone.as_ref().map_or(Vector3::new(6.0, 1.6, 1.4), |z| z.get_global_transform() * X_ROW_LOCAL);
-        // die Karte selbst hell und orange leuchtend über dem Bezahlen-Knopf
-        if let Some(mut card) = req.source.and_then(|id| self.cards.get(&i64::from(id)).cloned()) {
-            card.bind_mut().set_bright(true);
-            card.bind_mut().flash();
-            self.x_card = Some(card);
+        let data = self.source_data(req);
+        let Some(mut showcase) = self.open_stage(tr!("Wähle einen Wert für X.", "Select a value for X."), "") else { return };
+        // die Karte groß, hell und lesbar in der Mitte
+        if let Some(data) = data {
+            let mut copy = Self::stage_card(&data, None);
+            copy.bind_mut().set_marker(CardMarker::Selected);
+            showcase.bind_mut().show_options(vec![(copy, String::new())]);
         }
-        let mut add = |button: Gd<Button3D>, offset: f32, method: &str, arg: Option<i64>| {
+        showcase.bind_mut().set_focus_layout();
+        // darunter die Knopfreihe −5 / − / Bezahlen X / + / +5, darunter Abbrechen
+        let me = self.to_gd();
+        let mut add = |button: Gd<Button3D>, pos: Vector2, method: &str, arg: Option<i64>| {
             let mut button = button;
-            parent.add_child(&button);
-            button.set_global_position(center + right * offset);
-            let mut cb = Callable::from_object_method(&self.to_gd(), method);
+            let mut cb = Callable::from_object_method(&me, method);
             if let Some(a) = arg {
                 cb = cb.bind(&[a.to_variant()]);
             }
             button.connect("pressed", &cb);
-            self.choice_buttons.push(button.clone());
+            showcase.bind_mut().add_button_at(button.clone(), pos);
             button
         };
-        for (text, delta, offset) in [("−5", -5i64, -X_OUTER), ("−", -1, -X_INNER), ("+", 1, X_INNER), ("+5", 5, X_OUTER)] {
-            add(Button3D::create_shaped(ButtonStyle::Blue, text, X_SMALL_WIDTH, COMPACT_BODY), offset, "on_x_step", Some(delta));
+        for (text, delta, x) in [("−5", -5i64, -X_OUTER), ("−", -1, -X_INNER), ("+", 1, X_INNER), ("+5", 5, X_OUTER)] {
+            add(Button3D::create_shaped(ButtonStyle::Blue, text, X_SMALL_WIDTH, COMPACT_BODY), Vector2::new(x, X_ROW_Y), "on_x_step", Some(delta));
         }
-        let pay = add(Button3D::create(ButtonStyle::Orange, &x_pay_label(0), X_PAY_WIDTH), 0.0, "on_x_pay", None);
-        self.x_pay_button = Some(pay);
+        let pay = add(Button3D::create(ButtonStyle::Orange, &x_pay_label(0), X_PAY_WIDTH), Vector2::new(0.0, X_ROW_Y), "on_x_pay", None);
         if req.cancelable {
-            let mut cancel = Button3D::create(ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), X_PAY_WIDTH * 0.8);
-            parent.add_child(&cancel);
-            cancel.set_global_position(center + Vector3::new(0.0, 0.0, X_CANCEL_BELOW));
-            let cb = Callable::from_object_method(&self.to_gd(), "on_x_cancel");
-            cancel.connect("pressed", &cb);
-            self.choice_buttons.push(cancel);
+            add(Button3D::create(ButtonStyle::Grey, tr!("Abbrechen", "Cancel"), X_PAY_WIDTH * 0.75), Vector2::new(0.0, X_CANCEL_Y), "on_x_cancel", None);
         }
-        let mut prompt = Label3D::new_alloc();
-        prompt.set_text(tr!("Wähle einen Wert für X.", "Select a value for X."));
-        prompt.set_billboard_mode(godot::classes::base_material_3d::BillboardMode::ENABLED);
-        prompt.set_font_size(96);
-        prompt.set_pixel_size(0.0045);
-        prompt.set_outline_size(16);
-        prompt.set_modulate(Color::from_rgb(0.95, 0.93, 0.88));
-        prompt.set_outline_modulate(Color::from_rgba(0.03, 0.03, 0.05, 0.9));
-        prompt.set_draw_flag(godot::classes::label_3d::DrawFlags::SHADED, false);
-        parent.add_child(&prompt);
-        prompt.set_global_position(Vector3::new(0.0, 0.6, 0.0));
-        self.choice_prompt = Some(prompt);
+        self.x_pay_button = Some(pay);
         self.refresh_x_buttons(max);
     }
 
@@ -1327,7 +1276,7 @@ impl ForgeTable {
         if let Some(mut b) = self.x_pay_button.as_ref().filter(|b| b.is_instance_valid()).cloned() {
             b.bind_mut().set_label_text(GString::from(x_pay_label(x).as_str()));
         }
-        for mut b in self.choice_buttons.iter().filter(|b| b.is_instance_valid()).cloned() {
+        for mut b in self.stage_buttons() {
             let text = b.bind().get_text().to_string();
             let can = match text.as_str() {
                 "−5" | "−" => x > 0,
@@ -1450,9 +1399,6 @@ impl ForgeTable {
 
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
     fn clear_choice_objects(&mut self) {
-        if let Some(mut c) = self.x_card.take().filter(|c| c.is_instance_valid()) {
-            c.bind_mut().set_bright(false);
-        }
         self.action_options.clear();
         self.stage_choices.clear();
         self.mode_cards.clear();
@@ -1577,7 +1523,6 @@ impl ForgeTable {
                 && self.auto_pass_turn.is_none()
                 && st.is_some_and(|s| get_int(s, "active_player") == 0),
             stack: self.hud_stack(),
-            log: self.log.iter().skip(self.log.len().saturating_sub(LOG_SHOWN)).cloned().collect(),
             pool_clickable: (0..6)
                 .map(|m| match self.pending.as_ref().map(|r| &r.decision) {
                     Some(Decision::PayMana { options, .. }) => {
@@ -3026,15 +2971,14 @@ fn x_pay_label(x: u32) -> String {
     trf!("Bezahlen  X = {x}", "Pay  X = {x}")
 }
 
-/// X-Knopfreihe: Lage unter der obersten Stack-Karte (lokal in der Stack-Zone), Abstände der
-/// Knöpfe von der Mitte (Kamera-Rechtsrichtung; so gewählt, dass zwischen den Knöpfen eine
-/// sichtbare Lücke bleibt), Breiten, Abbrechen darunter (Welt-z).
-const X_ROW_LOCAL: Vector3 = Vector3::new(0.0, 0.25, 0.68);
-const X_INNER: f32 = 2.2;
-const X_OUTER: f32 = 3.35;
-const X_SMALL_WIDTH: f32 = 1.6;
-const X_PAY_WIDTH: f32 = 3.6;
-const X_CANCEL_BELOW: f32 = 1.5;
+/// X-Bühne (Koordinaten der Bühne, Karte groß darüber): Höhe der Knopfreihe, Abstände der
+/// Knöpfe von der Mitte (mit sichtbarer Lücke), Breiten, Höhe von „Abbrechen“.
+const X_ROW_Y: f32 = -0.52;
+const X_INNER: f32 = 0.82;
+const X_OUTER: f32 = 1.22;
+const X_SMALL_WIDTH: f32 = 0.6;
+const X_PAY_WIDTH: f32 = 1.35;
+const X_CANCEL_Y: f32 = -0.84;
 
 /// Welche 3D-Bühne eine Entscheidung bekommt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

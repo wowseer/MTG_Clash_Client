@@ -367,7 +367,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |
 | `command`, `face`, `face_down`, `monarch`, `initiative`, `day`, `ring_level` | Kommandozone je Seite als Spalte (Spieler rechts unten, Gegner rechts oben); Seitenwechsel als Umdreh-Animation, verdeckte Karten mit Rückseitenmuster; Plaketten „Commander“, „Ringträger“, „Raum: …“, „↺ andere Seite“; Monarch, Initiative, Stadtsegen, Ring-Stufe unter dem Namen, Tag/Nacht neben der Rundenzahl |
-| `log` | Spielprotokoll oben rechts im HUD: die letzten 7 Einträge ohne `PHASE`/`MANA`, IDs entfernt, Rundenbeginn golden |
+| `log` | wird zurzeit nicht angezeigt (das Protokoll-Fenster oben rechts ist auf Wunsch entfernt; geplant: aufklappbare 3D-Schriftrolle) |
 | `stack` | Zone `Stack` rechts als Kartenstapel (neuester Eintrag vorn, ältere versetzt dahinter): Zauber (auch `Casting`) als ihre Karte, Fähigkeiten als Karte ihrer Quelle; Pfeile zu den Zielen in der Farbe der Quellkarte, auf Einträge darunter als Bogen; Liste im HUD (linker Rand) mit Quelle, Art, Text |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
