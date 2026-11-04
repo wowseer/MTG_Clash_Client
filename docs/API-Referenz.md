@@ -11,6 +11,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [ForgeBridge](#forgebridge) – erbt von `Node`
 - [ForgeTable](#forgetable) – erbt von `Node`
 - [CardCutout](#cardcutout) – erbt von `Control`
+- [DebugPanel](#debugpanel) – erbt von `CanvasLayer` *(nur Test-Build)*
 - [HourglassIcon](#hourglassicon) – erbt von `Control`
 - [TurnHud](#turnhud) – erbt von `CanvasLayer`
 - [ManaCost](#manacost) – erbt von `Resource`
@@ -67,6 +68,9 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `start_match(decks: PackedStringArray, remote_seats: PackedInt32Array, names: PackedStringArray, seed: int)` | `bool` | Startet eine Partie. `decks`: Pfade zu Forge-`.dck`-Dateien (`res://` erlaubt) oder Namen von Decks aus Forges Constructed-Sammlung, einer je Sitzplatz (mind. 2). `remote_seats`: Sitzplätze, die MTG Clash steuert (Rest = Forge-KI). `names`: Spielernamen (darf kürzer sein). `seed` < 0 = zufällig. |
 | `answer(request_id: int, choice: Variant)` | `bool` | Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im Format des Protokoll-Modells (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`; Aufbau siehe `docs/Forge-Schnittstelle.md`. |
 | `request_state(viewer: int)` | `bool` | Fragt den aktuellen Spielzustand ab → [signal state_received]. `viewer` = Sitzplatz, dessen Handkarten mitgeschickt werden (-1 = keiner). |
+| `debug_request_card_names()` | `bool` | Debug: alle Kartennamen anfordern → [signal debug_card_names_received]. |
+| `debug_add_card(seat: int, name: String)` | `bool` | Debug: Karte `name` neu erzeugen und Sitzplatz `seat` auf die Hand legen. Danach kommt der neue Zustand; eine offene Priorität wird neu gestellt. |
+| `debug_infinite_mana(seat: int, on: bool)` | `bool` | Debug: unendliches Mana für Sitzplatz `seat` an/aus (Pool wird bei jedem Phasenwechsel und Zauber auf 50 je Manaart aufgefüllt). |
 
 ### Signale
 
@@ -80,6 +84,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `decision_rejected(info: Dictionary)` | Die gewählte Option wurde von Forge abgelehnt (`{player, option, reason}`); es folgt eine neue Anfrage. |
 | `match_started(state: Dictionary)` | Die Partie hat begonnen; `state` = Spielzustand (siehe Protokoll). |
 | `state_received(state: Dictionary)` | Antwort auf `request_state()`. |
+| `debug_card_names_received(names: PackedStringArray)` | Antwort auf `debug_request_card_names()`: alle Kartennamen der Kartendatenbank, sortiert (Debug-Fenster). |
 | `game_over(result: Dictionary)` | Die Partie ist vorbei: `{winner, draw, reason}`. |
 | `bridge_error(code: String, message: String)` | Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed"). |
 | `bridge_stopped(exit_code: int)` | Der Java-Prozess ist beendet (`exit_code` -1 = unbekannt / von uns beendet). |
@@ -175,6 +180,32 @@ Vollbild-Hülle für HUD-Elemente: Ihre Nachfahren (mit `use_parent_material = t
 |---|---|---|
 | `set_cutout(quad: PackedVector2Array)` | `void` | Setzt die Aussparung (4 Punkte oder leer). |
 | `set_greyed(on: bool)` | `void` | Schaltet das Ausgrauen ein oder aus. |
+
+## DebugPanel
+
+*Erbt von `CanvasLayer` · Quelle: `rust/src/game/debug_panel.rs`*
+
+> Existiert nur in Test-Builds (`cargo build`), nicht in `cargo build --release`.
+
+Debug-Fenster (nur in Debug-Builds): Karten auf die Hand holen, unendliches Mana für mich und die KI. F10 blendet es ein und aus.
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `bridge` | `ForgeBridge` | Brücke zu Forge, an die die Debug-Befehle gehen. |
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `toggle()` | `void` | Fenster ein- bzw. ausblenden (F10); beim ersten Öffnen die Kartennamen anfordern. |
+| `on_card_names(names: PackedStringArray)` | `void` | Kartennamen von Forge erhalten. |
+| `on_search(text: String)` | `void` | Suchtext geändert: Treffer (Teilwort, ohne Groß-/Kleinschreibung) in die Liste. |
+| `on_add_mine()` | `void` | Ausgewählte Karte auf meine Hand. |
+| `on_add_ai()` | `void` | Ausgewählte Karte auf die Hand der KI. |
+| `on_item_activated(index: int)` | `void` | Doppelklick in der Liste: Karte auf meine Hand. |
+| `on_mana_toggled(on: bool, seat: int)` | `void` | Schalter „Unendlich Mana“ für `seat` umgelegt. |
 
 ## HourglassIcon
 

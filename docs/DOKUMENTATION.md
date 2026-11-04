@@ -216,6 +216,19 @@ getappten Ländern) setzt die automatische Bezahlung mit ein (siehe „Mana beza
 Modus erneut („2× …“), bei voller Auswahl nimmt ein Klick ihn wieder heraus. Fahrzeuge besetzen:
 Kreaturen auf dem Tisch anklicken, bis die nötige Stärke erreicht ist, dann „Fertig“.
 
+### Debug-Fenster (nur Debug-Builds)
+
+Startet man das Spiel aus dem Editor (bzw. einen Debug-Export; `OS.is_debug_build()`), legt der
+`ForgeTable` ein **Debug-Fenster** an (`DebugPanel`, `game/debug_panel.rs`). In Release-Exporten
+gibt es es nicht.
+
+| Bedienung | Wirkung |
+|---|---|
+| **F10** | Fenster ein-/ausblenden (beim ersten Öffnen lädt es alle Kartennamen von Forge) |
+| Suchfeld + Liste | Kartennamen filtern (Anfang zuerst, dann Teilwort; höchstens 200 Treffer) |
+| „Auf meine Hand“ / Doppelklick, „Auf die Hand der KI“ | Karte wird neu erzeugt und auf die Hand gelegt (`debug_add_card`); eine offene Priorität wird neu gestellt, die Karte ist sofort spielbar |
+| „Unendlich Mana: ich“ / „… KI“ | Forge füllt den Manapool bei jedem Phasenwechsel und Zauber auf 50 je Manaart auf (`debug_infinite_mana`) |
+
 ---
 
 ## 4. Regeln

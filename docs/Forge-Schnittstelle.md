@@ -201,6 +201,9 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `start_match` | `decks`: Liste von `.dck`-Pfaden oder Forge-Decknamen (mind. 2) · `remote`: Liste bool je Sitzplatz (true = von MTG Clash gesteuert) · `names`: Spielernamen · `seed` (optional) · `starting_life` (optional) · `order_combatants` (optional, bool: Forges alte Regel „Kampfteilnehmer ordnen“, Schadens-Reihenfolge vor der CR-Änderung 2024) | startet eine Partie (Constructed, 1 Spiel) |
 | `answer` | `id`: Anfrage-ID · `choice`: Antwort | beantwortet eine `request` |
 | `state` | `viewer`: Sitzplatz mit offener Hand (-1 = keiner) | Antwort `state` |
+| `debug_card_names` | – | Debug-Fenster: Antwort `debug_card_names` mit allen Kartennamen |
+| `debug_add_card` | `seat`, `name` | Debug: Karte neu erzeugen und dem Spieler auf die Hand legen |
+| `debug_infinite_mana` | `seat`, `on` | Debug: Manapool des Spielers bei jedem Phasenwechsel und Zauber auf 50 je Manaart (WUBRGC) auffüllen bzw. das abschalten |
 | `quit` | – | beendet den Prozess |
 
 ### Nachrichten (Forge → Godot, stdout)
@@ -216,10 +219,15 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `rejected` | `player`, `option` (Index in `actions` ohne `Pass`), `action`, `reason` – gewählte Aktion nicht ausführbar |
 | `state` | `state` |
 | `game_over` | `winner` (Name oder null), `draw`, `reason` |
+| `debug_card_names` | `names`: alle Kartennamen der Kartendatenbank, sortiert |
 | `chat` | `from`, `text` |
-| `error` | `code` (`init_failed`, `bad_command`, `unknown_command`, `deck_not_found`, `match_running`, `no_match`, `unknown_request`, `game_crashed`), `message` |
+| `error` | `code` (`init_failed`, `bad_command`, `unknown_command`, `deck_not_found`, `match_running`, `no_match`, `unknown_request`, `game_crashed`, `unknown_card`, `bad_seat`, `debug_failed`), `message` |
 
-Der Spiel-Thread wartet bei jeder `request`, bis die passende `answer` kommt.
+Der Spiel-Thread wartet bei jeder `request`, bis die passende `answer` kommt. **Debug-Befehle**
+(`debug_add_card`, `debug_infinite_mana`) ändern das Spiel im Spiel-Thread, während er so wartet
+(vorher nicht – solange die KI nachdenkt, warten sie). Danach schickt die Brücke `state`; eine
+offene `Priority`-Anfrage beantwortet sie selbst mit `{"type":"Refresh"}` und stellt sie neu (mit
+den neuen Karten bzw. dem neuen Mana) – die UI bekommt also eine neue `request` mit neuer `id`.
 
 **`request`** (Protokoll v3)
 

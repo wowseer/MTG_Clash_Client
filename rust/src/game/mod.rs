@@ -4,6 +4,7 @@ pub mod card_cutout;
 pub mod card_text;
 pub mod choice_panel;
 pub mod counters;
+pub mod debug_panel;
 pub mod decision_view;
 pub mod cards;
 pub mod hourglass;

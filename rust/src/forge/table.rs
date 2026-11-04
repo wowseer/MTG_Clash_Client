@@ -25,6 +25,8 @@ use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, Request, RulesEngine, Target};
 use crate::table::mana_wheel::{ManaWheel, WheelSegment};
+use crate::game::debug_panel::DebugPanel;
+use godot::classes::Os;
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
 use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY};
@@ -280,6 +282,12 @@ impl INode for ForgeTable {
             bridge.connect("decision_requested", &cb("on_decision_requested"));
             bridge.connect("game_over", &cb("on_game_over"));
             bridge.connect("bridge_error", &cb("on_bridge_error"));
+            // Debug-Fenster (F10), nur in Debug-Builds
+            if Os::singleton().is_debug_build() {
+                let mut panel = DebugPanel::new_alloc();
+                panel.set("bridge", &bridge.to_variant());
+                self.base_mut().call_deferred("add_child", &[panel.to_variant()]);
+            }
             if self.autostart && !bridge.bind().is_running() {
                 bridge.bind_mut().start_bridge();
             }

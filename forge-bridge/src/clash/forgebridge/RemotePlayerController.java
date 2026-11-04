@@ -169,6 +169,9 @@ public class RemotePlayerController extends PlayerControllerAi {
                 labels.add("Mana zurücknehmen: " + c.getName());
             }
             JsonObject action = Decisions.priority(getGame(), seat, actions, labels);
+            if (action != null && action.has("type") && "Refresh".equals(action.get("type").getAsString())) {
+                continue; // Debug-Werkzeug hat etwas geändert: neu fragen
+            }
             int choice = action == null ? 0 : indexOf(actions, action);
             if (choice <= 0) {
                 return null; // passen (oder unlesbare Antwort)

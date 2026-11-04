@@ -327,6 +327,9 @@ final class Decisions {
         JsonObject d = decision("Priority", seat);
         d.add("actions", actions);
         JsonObject c = ask(game, seat, d, "", null, null, false, labels);
+        if ("Refresh".equals(type(c))) {
+            return c; // Debug-Werkzeug: Priorität neu stellen
+        }
         if (!"Action".equals(type(c)) || !c.has("action") || !c.get("action").isJsonObject()) {
             return null;
         }

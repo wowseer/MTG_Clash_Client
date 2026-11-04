@@ -53,6 +53,19 @@ public final class ForgeBridge {
     private static PrintStream out;
     private static final Object OUT_LOCK = new Object();
     private static final Map<Integer, CompletableFuture<JsonElement>> PENDING = new ConcurrentHashMap<>();
+    /** Offene Anfragen vom Typ {@code Priority} (für {@link #debugChanged}). */
+    private static final java.util.Set<Integer> PRIORITY_IDS = ConcurrentHashMap.newKeySet();
+    /**
+     * Änderungen des Debug-Werkzeugs: laufen im Spiel-Thread, während er in {@link #request} auf
+     * eine Antwort wartet (dort ruht Forge; aus einem anderen Thread gäbe es
+     * {@code ConcurrentModificationException}).
+     */
+    private static final java.util.concurrent.ConcurrentLinkedQueue<Runnable> GAME_TASKS = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    /** {@code task} im Spiel-Thread ausführen, sobald er das nächste Mal auf eine Antwort wartet. */
+    static void runOnGameThread(Runnable task) {
+        GAME_TASKS.add(task);
+    }
     private static final AtomicInteger NEXT_ID = new AtomicInteger(1);
     private static volatile Thread gameThread;
     private static volatile Game currentGame;
@@ -157,6 +170,7 @@ public final class ForgeBridge {
         }
         currentGame = game;
         game.subscribeToEvents(new EventForwarder(game));
+        game.subscribeToEvents(new DebugTools.Refiller(game));
         game.getGameLog().addObserver(new LogForwarder(game));
         send(message("match_started"));
     }
@@ -212,6 +226,18 @@ public final class ForgeBridge {
                     send(st);
                 }
             }
+            // Debug-Fenster der UI (nur in Debug-Builds von Godot): siehe DebugTools
+            case "debug_card_names" -> DebugTools.sendCardNames();
+            case "debug_add_card" -> {
+                if (currentGame == null) {
+                    sendError("no_match", "Kein laufendes Spiel");
+                } else {
+                    DebugTools.addCardToHand(currentGame, cmd.has("seat") ? cmd.get("seat").getAsInt() : 0,
+                            cmd.has("name") ? cmd.get("name").getAsString() : "");
+                }
+            }
+            case "debug_infinite_mana" -> DebugTools.setInfiniteMana(currentGame,
+                    cmd.has("seat") ? cmd.get("seat").getAsInt() : 0, cmd.has("on") && cmd.get("on").getAsBoolean());
             case "quit" -> {
                 if (!embedded) {
                     System.exit(0);
@@ -267,6 +293,7 @@ public final class ForgeBridge {
         Game game = match.createGame();
         currentGame = game;
         game.subscribeToEvents(new EventForwarder(game));
+        game.subscribeToEvents(new DebugTools.Refiller(game));
         game.getGameLog().addObserver(new LogForwarder(game));
 
         gameThread = new Thread(() -> runGame(match, game), "forge-game");
@@ -339,6 +366,12 @@ public final class ForgeBridge {
         int id = NEXT_ID.getAndIncrement();
         CompletableFuture<JsonElement> f = new CompletableFuture<>();
         PENDING.put(id, f);
+        boolean priority = envelope.has("decision") && envelope.get("decision").isJsonObject()
+                && envelope.getAsJsonObject("decision").has("type")
+                && "Priority".equals(envelope.getAsJsonObject("decision").get("type").getAsString());
+        if (priority) {
+            PRIORITY_IDS.add(id);
+        }
         JsonObject req = message("request");
         req.addProperty("id", id);
         req.addProperty("player", player);
@@ -347,9 +380,44 @@ public final class ForgeBridge {
         }
         send(req);
         try {
-            return f.get();
+            while (true) {
+                Runnable task;
+                while ((task = GAME_TASKS.poll()) != null) {
+                    try {
+                        task.run();
+                    } catch (RuntimeException e) {
+                        sendError("debug_failed", String.valueOf(e));
+                    }
+                }
+                try {
+                    return f.get(50, java.util.concurrent.TimeUnit.MILLISECONDS);
+                } catch (java.util.concurrent.TimeoutException e) {
+                    // weiter warten, zwischendurch Debug-Aufgaben abarbeiten
+                }
+            }
         } catch (Exception e) {
             return JsonNull.INSTANCE;
+        } finally {
+            PRIORITY_IDS.remove(id);
+        }
+    }
+
+    /**
+     * Debug-Werkzeug hat den Spielzustand geändert: neuen Zustand schicken; offene
+     * Priorität mit {@code {"type":"Refresh"}} beantworten, damit sie mit den neuen Karten bzw.
+     * neuem Mana neu gestellt wird.
+     */
+    static void debugChanged(Game game) {
+        JsonObject st = message("state");
+        st.add("state", StateJson.snapshot(game, 0));
+        send(st);
+        for (Integer id : PRIORITY_IDS) {
+            CompletableFuture<JsonElement> f = PENDING.remove(id);
+            if (f != null) {
+                JsonObject refresh = new JsonObject();
+                refresh.addProperty("type", "Refresh");
+                f.complete(refresh);
+            }
         }
     }
 }

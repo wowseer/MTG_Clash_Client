@@ -174,6 +174,11 @@ impl ForgeBridge {
     #[signal]
     fn state_received(state: VarDictionary);
 
+    /// Antwort auf [method debug_request_card_names]: alle Kartennamen der Kartendatenbank,
+    /// sortiert (Debug-Fenster).
+    #[signal]
+    fn debug_card_names_received(names: PackedStringArray);
+
     /// Die Partie ist vorbei: `{winner, draw, reason}`.
     #[signal]
     fn game_over(result: VarDictionary);
@@ -437,6 +442,36 @@ impl ForgeBridge {
         d.set("viewer", viewer);
         self.send_command(d)
     }
+
+    /// Debug: alle Kartennamen anfordern → [signal debug_card_names_received].
+    #[func]
+    pub fn debug_request_card_names(&mut self) -> bool {
+        let mut d = VarDictionary::new();
+        d.set("cmd", "debug_card_names");
+        self.send_command(d)
+    }
+
+    /// Debug: Karte `name` neu erzeugen und Sitzplatz `seat` auf die Hand legen. Danach kommt
+    /// der neue Zustand; eine offene Priorität wird neu gestellt.
+    #[func]
+    pub fn debug_add_card(&mut self, seat: i64, name: GString) -> bool {
+        let mut d = VarDictionary::new();
+        d.set("cmd", "debug_add_card");
+        d.set("seat", seat);
+        d.set("name", &name);
+        self.send_command(d)
+    }
+
+    /// Debug: unendliches Mana für Sitzplatz `seat` an/aus (Pool wird bei jedem Phasenwechsel
+    /// und Zauber auf 50 je Manaart aufgefüllt).
+    #[func]
+    pub fn debug_infinite_mana(&mut self, seat: i64, on: bool) -> bool {
+        let mut d = VarDictionary::new();
+        d.set("cmd", "debug_infinite_mana");
+        d.set("seat", seat);
+        d.set("on", on);
+        self.send_command(d)
+    }
 }
 
 impl ForgeBridge {
@@ -505,6 +540,14 @@ impl ForgeBridge {
             "match_started" => self.signals().match_started().emit(&get_dict("state")),
             "state" => self.signals().state_received().emit(&get_dict("state")),
             "game_over" => self.signals().game_over().emit(&dict),
+            "debug_card_names" => {
+                let names: PackedStringArray = dict
+                    .get("names")
+                    .and_then(|v| v.try_to::<VarArray>().ok())
+                    .map(|a| a.iter_shared().map(|v| GString::from(v.to_string().as_str())).collect())
+                    .unwrap_or_default();
+                self.signals().debug_card_names_received().emit(&names);
+            }
             "error" => {
                 let s = |k: &str| dict.get(k).map(|v| v.to_string()).unwrap_or_default();
                 let (code, msg) = (s("code"), s("message"));
