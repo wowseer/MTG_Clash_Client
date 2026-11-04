@@ -1231,8 +1231,8 @@ impl ForgeTable {
         }
     }
 
-    /// X wählen (wie im Video des Users): 3D-Bühne mit der Karte groß, hell und lesbar in der
-    /// Mitte (orange leuchtend), darunter eine Knopfreihe
+    /// X wählen (wie im Video des Users): Bühne am Stack rechts (ohne Abdunkeln) mit der Karte
+    /// groß, hell und lesbar (orange leuchtend), darunter eine Knopfreihe
     /// „−5“, „−“, orange „Bezahlen X = n“, „+“, „+5“, darunter grau „Abbrechen“ (wo erlaubt);
     /// Titel „Wähle einen Wert für X.“. Kein Fenster.
     fn show_choose_x(&mut self, req: &Request) {
@@ -1240,6 +1240,11 @@ impl ForgeTable {
         self.x_value = 0;
         let data = self.source_data(req);
         let Some(mut showcase) = self.open_stage(tr!("Wähle einen Wert für X.", "Select a value for X."), "") else { return };
+        // an ihrem Platz am Stack (rechts), kleiner, ohne Abdunkeln
+        if let Some(zone) = self.stack_zone.as_ref() {
+            let at = zone.get_global_transform() * X_STAGE_LOCAL;
+            showcase.bind_mut().open_at(at, X_STAGE_SCALE, X_STAGE_LIFT);
+        }
         // die Karte groß, hell und lesbar in der Mitte
         if let Some(data) = data {
             let mut copy = Self::stage_card(&data, None);
@@ -2971,6 +2976,11 @@ fn x_pay_label(x: u32) -> String {
     trf!("Bezahlen  X = {x}", "Pay  X = {x}")
 }
 
+/// X-Bühne am Stack: Mitte (lokal in der Stack-Zone, etwas unter der obersten Karte), Größe der
+/// Bühne in der Szene und Abstand zur Kamera hin (vor den Stack-Karten).
+const X_STAGE_LOCAL: Vector3 = Vector3::new(0.0, 0.2, 0.15);
+const X_STAGE_SCALE: f32 = 2.8;
+const X_STAGE_LIFT: f32 = 2.0;
 /// X-Bühne (Koordinaten der Bühne, Karte groß darüber): Höhe der Knopfreihe, Abstände der
 /// Knöpfe von der Mitte (mit sichtbarer Lücke), Breiten, Höhe von „Abbrechen“.
 const X_ROW_Y: f32 = -0.52;

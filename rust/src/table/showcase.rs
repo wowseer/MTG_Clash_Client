@@ -130,6 +130,24 @@ impl INode3D for Showcase {
 
 #[godot_api]
 impl Showcase {
+    /// Die Bühne an einer Stelle auf dem Tisch statt vor der Kamera (z. B. am Stack), parallel
+    /// zur Bildebene, um `scale` vergrößert, ohne Abdunkelung: `point` = Weltpunkt der
+    /// Bühnenmitte, die Bühne rückt `lift` zur Kamera hin (vor die Karten dort).
+    #[func]
+    pub fn open_at(&mut self, point: Vector3, scale: f32, lift: f32) {
+        let Some(cam) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else { return };
+        let basis = cam.get_global_transform().basis.orthonormalized();
+        let toward_cam = basis.col_c();
+        self.base_mut().set_global_transform(Transform3D::new(basis.scaled(Vector3::splat(scale)), point + toward_cam * lift));
+        // ohne Abdunkelung: der Tisch bleibt sichtbar
+        self.dimmer = None;
+        if let Some(mut n) = self.base().get_node_or_null("Dimmer").and_then(|n| n.try_cast::<Node3D>().ok()) {
+            n.set_visible(false);
+        }
+        self.t = 0.0;
+        self.closing = false;
+    }
+
     /// Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene).
     #[func]
     pub fn open(&mut self) {
