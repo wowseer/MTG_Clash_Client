@@ -2980,9 +2980,10 @@ fn x_pay_label(x: u32) -> String {
     trf!("Bezahlen  X = {x}", "Pay  X = {x}")
 }
 
-/// X-Bühne am Stack: Mitte (lokal in der Stack-Zone, etwas unter der obersten Karte), Größe der
-/// Bühne in der Szene und Abstand zur Kamera hin (vor den Stack-Karten).
-const X_STAGE_LOCAL: Vector3 = Vector3::new(0.0, 0.2, 0.15);
+/// X-Bühne am Stack: Mitte (lokal in der Stack-Zone, etwas unter der obersten Karte und ein
+/// Stück nach links, damit „+5“ nicht über den rechten Bildrand ragt), Größe der Bühne in der
+/// Szene und Abstand zur Kamera hin (vor den Stack-Karten).
+const X_STAGE_LOCAL: Vector3 = Vector3::new(-0.45, 0.2, 0.15);
 const X_STAGE_SCALE: f32 = 2.8;
 const X_STAGE_LIFT: f32 = 2.0;
 /// X-Bühne (Koordinaten der Bühne, Karte groß darüber): Höhe der Knopfreihe, Abstände der
