@@ -23,7 +23,7 @@ use crate::game::counters;
 use crate::game::hud::HudView;
 use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
-use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, Request, RulesEngine, Target};
+use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, PlayerId, Request, RulesEngine, Target};
 use crate::table::mana_wheel::{ManaWheel, WheelSegment};
 use crate::table::exile_portal::{attach_exile_portal, set_exile_portal_open};
 use crate::game::debug_panel::DebugPanel;
@@ -1079,6 +1079,7 @@ impl ForgeTable {
         let mulligan = matches!(req.decision, Decision::Mulligan { .. }).then(|| req.clone());
         let hand_pick = self.hand_choice(&req.decision).is_some().then(|| req.clone());
         let choose_x = Self::number_range(&req.decision).is_some().then(|| req.clone());
+        let player_pick = Self::player_pick(&req.decision).is_some().then(|| req.clone());
         let stage_3d = Self::stage_kind(&req.decision).map(|k| (k, req.clone()));
         let library_pick = (matches!(req.decision, Decision::ChooseCards { .. })
             && self.table_pick(&req.decision).is_none()
@@ -1111,6 +1112,9 @@ impl ForgeTable {
         }
         if let Some(req) = hand_pick {
             self.show_hand_pick(&req);
+        }
+        if let Some(req) = player_pick {
+            self.show_player_pick(&req);
         }
         if let Some(req) = choose_x {
             self.show_choose_x(&req);
@@ -1402,6 +1406,77 @@ impl ForgeTable {
         prompt.set_billboard_mode(godot::classes::base_material_3d::BillboardMode::ENABLED);
         prompt.set_font_size(96);
         prompt.set_pixel_size(0.0055);
+        prompt.set_outline_size(16);
+        prompt.set_modulate(Color::from_rgb(0.98, 0.84, 0.5));
+        prompt.set_outline_modulate(Color::from_rgba(0.05, 0.03, 0.02, 0.9));
+        prompt.set_draw_flag(godot::classes::label_3d::DrawFlags::SHADED, false);
+        parent.add_child(&prompt);
+        prompt.set_position(STARTING_CHOICE_CENTER + up * ((n - 1.0) * 0.5 * STARTING_BUTTON_SPACING + 0.85));
+        self.choice_prompt = Some(prompt);
+    }
+
+    /// Spieler wählen: Zielwahl, bei der nur Spieler zur Wahl stehen und genau einer gewählt
+    /// wird (z. B. „Ziel-Spieler zieht“, „wähle einen Spieler“): `(Sitzplätze, darf leer bleiben)`.
+    fn player_pick(decision: &Decision) -> Option<(Vec<PlayerId>, bool)> {
+        let Decision::ChooseTargets { candidates, min, max, .. } = decision else { return None };
+        if *max != 1 || candidates.len() < 2 {
+            return None;
+        }
+        let seats: Vec<PlayerId> = candidates
+            .iter()
+            .map(|t| match t {
+                Target::Player(p) => Some(*p),
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        Some((seats, *min == 0))
+    }
+
+    /// Spieler wählen wie die Startspieler-Wahl, ohne Karte: über dem Tisch je Gegner ein
+    /// **oranger** Knopf mit seinem Namen (oben), darunter der **blaue** Knopf für den eigenen
+    /// Spieler („Ich selbst“); darf man keinen wählen, zuletzt grau „Keinen Spieler“. Darüber
+    /// „(Karte) Wähle einen Spieler.“. Medaillons und Pfeil funktionieren weiter; Abbrechen über den Phasen-Knopf.
+    fn show_player_pick(&mut self, req: &Request) {
+        let Some((seats, optional)) = Self::player_pick(&req.decision) else { return };
+        self.clear_choice_objects();
+        let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
+        let up = self
+            .base()
+            .get_viewport()
+            .and_then(|v| v.get_camera_3d())
+            .map_or(Vector3::UP, |c| c.get_global_transform().basis.col_b().normalized());
+        // Gegner zuerst (oben, orange), dann der eigene Spieler (blau)
+        let me = LOCAL_SEAT as PlayerId;
+        let mut rows: Vec<(ButtonStyle, String, Choice)> = seats
+            .iter()
+            .filter(|s| **s != me)
+            .map(|s| (ButtonStyle::Orange, self.seat_name(*s as usize).to_string(), Choice::Targets(vec![Target::Player(*s)])))
+            .collect();
+        if seats.contains(&me) {
+            rows.push((ButtonStyle::Blue, tr!("Ich selbst", "Myself").to_string(), Choice::Targets(vec![Target::Player(me)])));
+        }
+        if optional {
+            rows.push((ButtonStyle::Grey, tr!("Keinen Spieler", "No player").to_string(), Choice::Targets(Vec::new())));
+        }
+        let n = rows.len().max(1) as f32;
+        for (row, (style, text, choice)) in rows.into_iter().enumerate() {
+            let i = self.stage_choices.len() as i64;
+            self.stage_choices.push(choice);
+            let mut button = Button3D::create(style, &text, STARTING_BUTTON_WIDTH);
+            let offset = ((n - 1.0) * 0.5 - row as f32) * STARTING_BUTTON_SPACING;
+            parent.add_child(&button);
+            button.set_position(STARTING_CHOICE_CENTER + up * offset);
+            button.connect("pressed", &Callable::from_object_method(&self.to_gd(), "on_stage_choice").bind(&[i.to_variant()]));
+            self.choice_buttons.push(button);
+        }
+        // Forges Beschreibung ist englisch („Select target player“): eigener Text mit Quelle
+        let what = tr!("Wähle einen Spieler.", "Choose a player.");
+        let text = if req.source_name.is_empty() { what.to_string() } else { format!("({}) {what}", req.source_name) };
+        let mut prompt = Label3D::new_alloc();
+        prompt.set_text(&text);
+        prompt.set_billboard_mode(godot::classes::base_material_3d::BillboardMode::ENABLED);
+        prompt.set_font_size(96);
+        prompt.set_pixel_size(0.0045);
         prompt.set_outline_size(16);
         prompt.set_modulate(Color::from_rgb(0.98, 0.84, 0.5));
         prompt.set_outline_modulate(Color::from_rgba(0.05, 0.03, 0.02, 0.9));
