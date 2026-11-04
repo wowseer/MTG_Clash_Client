@@ -89,6 +89,10 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `notifyOfValue` (z. B. „wählt Rot“) | Nachricht `log` mit `kind: "INFORMATION"` (keine Entscheidung) | – |
 | `divideShield` (Schutzschild auf mehrere betroffene Ziele, CR 615.7) | `DivideAmount { amount: Schildmenge (höchstens Gesamtschaden), targets, min_each: 0 }` | `Damage([…])` |
 | `chooseRollToSwap`, `chooseRollSwapValue` (Würfelwurf tauschen) | `ChooseOption` | `Number` |
+| `specifyManaCombo` („n Mana in beliebiger Farbkombination“) | je Mana ein `ChooseColor` | `Color` |
+| `playSpellAbilityNoStack` | über Forges menschlichen Ablauf | – |
+| `payCostDuringRoll` (Kosten, um einen Wurf zu ändern) | `Confirm`, dann Bezahlen wie beim Wirken | `Yes`/`No` |
+| Außerhalb des Umfangs (bleiben bei der KI) | Ante, Contraptions, Planechase-Würfel, Assist (Mehrspieler), Varianten-Starthand, Sideboard, Gebote | – |
 | `chooseCardsToDelve` (CR 702.66) | `ChooseCards { reason: "Delve", options: Friedhof, min: 0, max }` | `Cards([…])` |
 | `chooseCardsForConvokeOrImprovise` (CR 702.51, 702.126, Waterbend) | `ChooseCards { reason: "Convoke" / "Improvise" / "Choose", options: ungetappte Kreaturen/Artefakte, min: 0, max }`; welches Mana jede Karte bezahlt, legt die Brücke fest (farbiges Symbol in einer Farbe der Kreatur, sonst generisch) | `Cards([…])` |
 | `orderBlockers`, `orderBlocker`, `orderAttackers` (Schadens-Reihenfolge, nur mit `order_combatants`) | `OrderTriggers { descriptions }` mit Kartennamen (wie `orderMoveToZoneList`) | `Order([…])` |
@@ -395,6 +399,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Modi mit Wiederholung (`can_repeat`) getestet mit Fiery Confluence: dreimal derselbe Modus über
   das HUD (vorher nicht beantwortbar, wenn weniger Modi verfügbar waren als zu wählen sind).
 - Schutzschild verteilen und Würfel tauschen ferngesteuert, nicht gezielt ausgelöst.
+- Farbkombination getestet mit Manamorphose (zwei Farbwahlen, danach Pool-Mana per Klick).
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

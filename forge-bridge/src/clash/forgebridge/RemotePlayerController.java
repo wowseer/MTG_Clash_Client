@@ -920,6 +920,44 @@ public class RemotePlayerController extends PlayerControllerAi {
         return i != null ? swapChoices.get(i) : super.chooseRollSwapValue(swapChoices, currentResult, power, toughness);
     }
 
+    /** Fähigkeit ohne Stack ausführen (z. B. Spezialaktionen): über Forges menschlichen Ablauf. */
+    @Override
+    public void playSpellAbilityNoStack(SpellAbility effectSA, boolean canSetupTargets) {
+        human(() -> PlaySpellAbility.playSpellAbilityNoStack(this, getPlayer(), effectSA, !canSetupTargets));
+    }
+
+    /**
+     * „n Mana in beliebiger Farbkombination“: je Mana eine Farbe wählen ({@code ChooseColor} über
+     * {@link #chooseColor}); bei {@code different} jede Farbe höchstens einmal.
+     */
+    @Override
+    public Map<Byte, Integer> specifyManaCombo(SpellAbility sa, ColorSet colorSet, int manaAmount, boolean different) {
+        Map<Byte, Integer> result = new java.util.HashMap<>();
+        ColorSet left = colorSet;
+        for (int i = 0; i < manaAmount; i++) {
+            byte chosen = chooseColor("Farbe für Mana " + (i + 1) + " von " + manaAmount, sa, left);
+            result.merge(chosen, 1, Integer::sum);
+            if (different) {
+                left = ColorSet.fromMask(left.getColor() & ~chosen);
+            }
+        }
+        return result;
+    }
+
+    /** Kosten zahlen, um einen Würfelwurf zu ändern: {@code Confirm}, dann Bezahlen wie beim Wirken. */
+    @Override
+    public boolean payCostDuringRoll(Cost cost, SpellAbility sa) {
+        if (!ComputerUtilCost.canPayCost(cost, sa, getPlayer(), true)) {
+            return false;
+        }
+        Boolean pay = Decisions.confirm(getGame(), seat, "Kosten zahlen, um den Wurf zu ändern: "
+                + cost.toSimpleString() + "?", sa, sa == null ? null : sa.getHostCard());
+        if (pay == null) {
+            return super.payCostDuringRoll(cost, sa);
+        }
+        return pay && human(() -> PlaySpellAbility.payCostDuringAbilityResolve(this, getPlayer(), cost, sa, null));
+    }
+
     /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */
     private String targetLabel(GameObject e) {
         if (e instanceof SpellAbility s) {
