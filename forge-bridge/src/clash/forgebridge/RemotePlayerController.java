@@ -143,6 +143,103 @@ public class RemotePlayerController extends PlayerControllerAi {
         }
     }
 
+    /**
+     * Tiefe des menschlichen Ablaufs ({@code PlaySpellAbility}): nur darin fragen Delve, Convoke
+     * und Improvise den Spieler. Außerhalb (z. B. Spielbarkeits-Prüfungen der KI-Logik) entscheidet
+     * die Engine, damit keine Frage ohne echtes Wirken erscheint.
+     */
+    private int humanFlow;
+
+    private <T> T human(java.util.function.Supplier<T> body) {
+        humanFlow++;
+        try {
+            return body.get();
+        } finally {
+            humanFlow--;
+        }
+    }
+
+    /**
+     * Delve (CR 702.66): Karten aus dem Friedhof exilieren, je eine verringert die generischen
+     * Kosten um 1 → {@code ChooseCards} mit Grund {@code Delve} (Kartenfächer, 0 bis Anzahl).
+     */
+    @Override
+    public CardCollectionView chooseCardsToDelve(int genericAmount, CardCollection grave) {
+        int max = Math.min(genericAmount, grave.size());
+        if (humanFlow == 0 || max <= 0) {
+            return super.chooseCardsToDelve(genericAmount, grave);
+        }
+        CardCollection r = pickCards("Delve", grave, 0, max,
+                "Delve: bis zu " + max + " Karten aus dem Friedhof exilieren (je {1} weniger)", null, false);
+        return r != null ? r : super.chooseCardsToDelve(genericAmount, grave);
+    }
+
+    /**
+     * Convoke (CR 702.51) / Improvise (CR 702.126) / Waterbend: ungetappte Kreaturen bzw.
+     * Artefakte tappen, je eine bezahlt ein Mana → {@code ChooseCards} mit Grund {@code Convoke}
+     * bzw. {@code Improvise} (auf dem Tisch anklicken). Welches Mana jede Karte bezahlt, legt die
+     * Brücke fest: zuerst ein farbiges Symbol in einer Farbe der Kreatur, sonst generisch.
+     */
+    @Override
+    public Map<Card, forge.card.mana.ManaCostShard> chooseCardsForConvokeOrImprovise(SpellAbility sa,
+            forge.card.mana.ManaCost manaCost, CardCollectionView untappedCards, boolean artifacts,
+            boolean creatures, Integer maxReduction) {
+        int generic = manaCost.getGenericCost();
+        List<forge.card.mana.ManaCostShard> colored = new ArrayList<>();
+        if (creatures) {
+            for (forge.card.mana.ManaCostShard sh : manaCost) {
+                if (sh != forge.card.mana.ManaCostShard.GENERIC && sh != forge.card.mana.ManaCostShard.X
+                        && sh != forge.card.mana.ManaCostShard.COLORED_X) {
+                    colored.add(sh);
+                }
+            }
+        }
+        int max = Math.min(untappedCards.size(), generic + colored.size());
+        if (maxReduction != null) {
+            max = Math.min(max, maxReduction);
+        }
+        if (humanFlow == 0 || max <= 0) {
+            return super.chooseCardsForConvokeOrImprovise(sa, manaCost, untappedCards, artifacts, creatures,
+                    maxReduction);
+        }
+        String reason = creatures && !artifacts ? "Convoke" : artifacts && !creatures ? "Improvise" : "Choose";
+        String what = creatures && !artifacts ? "Kreaturen" : artifacts && !creatures ? "Artefakte" : "Kreaturen/Artefakte";
+        CardCollection chosen = pickCards(reason, untappedCards, 0, max,
+                what + " tappen, um bis zu " + max + " Mana zu bezahlen (" + manaCost.getSimpleString() + ")", sa, false);
+        if (chosen == null) {
+            return super.chooseCardsForConvokeOrImprovise(sa, manaCost, untappedCards, artifacts, creatures,
+                    maxReduction);
+        }
+        Map<Card, forge.card.mana.ManaCostShard> result = new java.util.LinkedHashMap<>();
+        for (Card c : chosen) {
+            forge.card.mana.ManaCostShard pay = null;
+            if (c.isCreature()) {
+                for (forge.card.mana.ManaCostShard sh : colored) {
+                    boolean fits = false;
+                    for (byte color : forge.card.MagicColor.WUBRG) {
+                        if (c.getColor().hasAnyColor(color) && sh.canBePaidWithManaOfColor(color)) {
+                            fits = true;
+                        }
+                    }
+                    if (fits) {
+                        pay = sh;
+                        break;
+                    }
+                }
+            }
+            if (pay != null) {
+                colored.remove(pay);
+            } else if (generic > 0) {
+                pay = forge.card.mana.ManaCostShard.GENERIC;
+                generic--;
+            } else {
+                continue; // nichts mehr, was diese Karte bezahlen kann
+            }
+            result.put(c, pay);
+        }
+        return result;
+    }
+
     /** Index und Aktion der zuletzt gewählten Priority-Option (für "rejected"). */
     private int lastChoice = -1;
     private JsonObject lastAction;
@@ -165,7 +262,7 @@ public class RemotePlayerController extends PlayerControllerAi {
      */
     @Override
     public boolean playChosenSpellAbility(SpellAbility sa) {
-        boolean ok = PlaySpellAbility.playSpellAbility(this, getPlayer(), sa);
+        boolean ok = human(() -> PlaySpellAbility.playSpellAbility(this, getPlayer(), sa));
         if (!ok) {
             sendRejected(lastChoice, lastAction, "Abgebrochen oder kein gültiges Ziel");
         }
@@ -186,7 +283,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public boolean payManaCost(ManaCost toPay, CostPartMana costPartMana, SpellAbility sa, String prompt,
             ManaConversionMatrix matrix, boolean effect) {
-        return PlaySpellAbility.payManaCost(this, toPay, costPartMana, sa, getPlayer(), prompt, matrix, effect);
+        return human(() -> PlaySpellAbility.payManaCost(this, toPay, costPartMana, sa, getPlayer(), prompt, matrix, effect));
     }
 
     /**
@@ -416,7 +513,7 @@ public class RemotePlayerController extends PlayerControllerAi {
         if (pay == null) {
             return super.payCostToPreventEffect(cost, sa, alreadyPaid, allPayers);
         }
-        return pay && PlaySpellAbility.payCostDuringAbilityResolve(this, getPlayer(), cost, sa, null);
+        return pay && human(() -> PlaySpellAbility.payCostDuringAbilityResolve(this, getPlayer(), cost, sa, null));
     }
 
     /** Höchstens so viele ungültige Kampf-Erklärungen, danach entscheidet die KI. */
@@ -758,7 +855,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     public void orderAndPlaySimultaneousSa(List<SpellAbility> activePlayerSAs) {
         for (SpellAbility sa : orderSimultaneousSa(activePlayerSAs)) {
             if (sa.isTrigger() && !sa.isCopied()) {
-                PlaySpellAbility.playSpellAbility(this, getPlayer(), sa);
+                human(() -> PlaySpellAbility.playSpellAbility(this, getPlayer(), sa));
             } else {
                 List<SpellAbility> single = new ArrayList<>();
                 single.add(sa);
@@ -770,7 +867,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     /** Trigger, die ohne Stapel wirken: wie Forges menschlicher Controller (Ziele wählt der Spieler). */
     @Override
     public boolean playTrigger(Card host, WrappedAbility wrapperAbility, boolean isMandatory) {
-        return PlaySpellAbility.playSpellAbilityNoStack(this, getPlayer(), wrapperAbility, false);
+        return human(() -> PlaySpellAbility.playSpellAbilityNoStack(this, getPlayer(), wrapperAbility, false));
     }
 
     /** {@code Decision::OrderTriggers} (CR 603.3b): eigene gleichzeitige Trigger ordnen. */

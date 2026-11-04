@@ -68,6 +68,8 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `applyManaToCost` (über `payManaCost`) | `PayMana { remaining, options: [ActivateMana(karte, i), AutoPay, Cancel] }` | `Pay(ActivateMana(…))` → Quelle tappen, Mana einsetzen, erneut fragen bis bezahlt; `Pay(AutoPay)`; `Pay(Cancel)` = Wirken zurücknehmen |
 | `chooseCardsForEffect`, `chooseCardsForZoneChange`, `chooseSingleCardForZoneChange`, `chooseCardsToDiscardFrom`, `chooseCardsToDiscardToMaximumHandSize`, `choosePermanentsToSacrifice`, `choosePermanentsToDestroy`, `chooseCardsToRevealFromHand`, `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` (nur Karten) | `ChooseCards { reason, options, min, max }` (`reason`: `Choose`, `Search`, `Discard`, `DiscardToHandSize`, `Sacrifice`) | `Cards([…])` |
 | `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` mit Spielern (z. B. „Choose a player“) | `ChooseTargets { source, description, candidates, min, max }` (**Erweiterung**: NeoForge kennt keine Spielerwahl für Effekte; `source` = −1, wenn es keine Quelle gibt) | `Targets([…])` |
+| `chooseCardsToDelve` (CR 702.66) | `ChooseCards { reason: "Delve", options: Friedhof, min: 0, max }` | `Cards([…])` |
+| `chooseCardsForConvokeOrImprovise` (CR 702.51, 702.126, Waterbend) | `ChooseCards { reason: "Convoke" / "Improvise" / "Choose", options: ungetappte Kreaturen/Artefakte, min: 0, max }`; welches Mana jede Karte bezahlt, legt die Brücke fest (farbiges Symbol in einer Farbe der Kreatur, sonst generisch) | `Cards([…])` |
 | `orderBlockers`, `orderBlocker`, `orderAttackers` (Schadens-Reihenfolge, nur mit `order_combatants`) | `OrderTriggers { descriptions }` mit Kartennamen (wie `orderMoveToZoneList`) | `Order([…])` |
 | `arrangeForScry`, `arrangeForSurveil` | `Scry { cards, graveyard }` | `Arrange { top, bottom }` |
 | `orderSimultaneousSa` (eigene Trigger), `orderMoveToZoneList` | `OrderTriggers { descriptions }` | `Order([…])` (erstes zuerst) |
@@ -348,6 +350,10 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Effekt-Wahl getestet mit einem Testdeck (Sawhorn Nemesis, Goblin Bombardment, Raging Goblin):
   „Choose a player“ und „any target“ per Klick auf das Medaillon, Opfern als Kosten per Klick auf
   die Kreatur (Tisch-Modus). Reihenfolge der Blocker nicht ausgelöst (die KI blockte nie doppelt).
+- Delve, Convoke, Improvise getestet mit einem Testdeck (Stoke the Flames, Treasure Cruise,
+  Reverse Engineer, Raging Goblin, Ornithopter) gegen `gegner.dck`: Kreaturen bzw. Artefakte im
+  Tisch-Modus, Friedhofskarten im Kartenfächer; nur im echten Wirken gefragt (nicht bei
+  Spielbarkeits-Prüfungen).
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

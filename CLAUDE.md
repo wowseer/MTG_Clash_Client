@@ -87,7 +87,7 @@ Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.pla
 `ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Kosten-Auswahlen
 (`RemoteCostDecision`), `AssignCombatDamage`, `DivideAmount`, `PayUnlessCost`,
 `PayLifeForPhyrexian`, Trigger über den menschlichen Ablauf. Nächster Schritt laut Fahrplan:
-Delve, Convoke, Improvise, Erschöpfen/Rekrutieren, Kopien, `chooseNewTargetsFor`; der Zustand ist
+Erschöpfen/Rekrutieren, Kopien, `chooseNewTargetsFor`, Exil als Kosten; der Zustand ist
 vollständig.
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
@@ -118,8 +118,8 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 3. ~~`DeclareBlockers`~~ ✔ (Reihenfolge der Blocker nur mit alter Regel-Option, ferngesteuert)
 4. ~~`PayMana`~~ ✔ (offen: Pool-Mana gezielt wählen, `chooseManaFromPool`, andere Kosten wie Opfern/Abwerfen)
 5. ~~`Priority` mit `Action::Activate` per Klick, Menü bei mehreren~~ ✔
-6. ~~`ChooseCards`, `Scry`, `OrderTriggers`, `MulliganBottom`~~ ✔ (offen: Kosten-Auswahlen wie Opfern/Abwerfen als Kosten, Delve, Convoke)
-7. ~~`AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`, Kosten, Trigger-Ziele~~ ✔ (offen: Exil als Kosten, Delve, Convoke, Erschöpfen/Rekrutieren, Kopien)
+6. ~~`ChooseCards`, `Scry`, `OrderTriggers`, `MulliganBottom`, Delve, Convoke, Improvise~~ ✔
+7. ~~`AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`, Kosten, Trigger-Ziele~~ ✔ (offen: Exil als Kosten, Erschöpfen/Rekrutieren, Kopien)
 
 **Zustand, der noch fehlt:**
 - ~~Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile~~ ✔ (Zone `Stack`, Liste im HUD)
