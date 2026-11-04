@@ -5,6 +5,7 @@ pub mod fx;
 mod button_shader;
 mod shader_noise;
 pub mod card3d;
+pub mod card_inspector;
 pub mod layers;
 pub(crate) mod placeholder;
 pub mod showcase;

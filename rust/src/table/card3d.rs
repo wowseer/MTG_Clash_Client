@@ -162,7 +162,8 @@ pub struct Card3D {
     move_duration: f64,
 
     #[export_group(name = "Hover-Zoom")]
-    /// Offene Karten beim Hovern groß und lesbar anzeigen.
+    /// Offene Karten beim Hovern selbst groß und lesbar vor die Kamera holen (Standard: aus –
+    /// stattdessen zeigt der [CardInspector] eine Kopie mit Fähigkeiten und Buffs).
     #[export]
     zoom_enabled: bool,
     /// Anteil der Bildschirmhöhe, den die gezoomte Karte einnimmt.
@@ -254,7 +255,7 @@ impl IArea3D for Card3D {
             max_tilt_degrees: 10.0,
             tilt_speed: 16.0,
             move_duration: 0.35,
-            zoom_enabled: true,
+            zoom_enabled: false,
             zoom_screen_height: 0.55,
             zoom_distance: 2.0,
             zoom_margin_px: 12.0,

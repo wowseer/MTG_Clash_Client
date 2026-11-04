@@ -247,6 +247,25 @@ final class StateJson {
         if (col.hasRed()) colors.append('R');
         if (col.hasGreen()) colors.append('G');
         o.addProperty("colors", colors.toString());
+        // Schlüsselwörter mit Erinnerungstext (für die Kartenansicht beim Hovern), ohne Dubletten
+        JsonArray keywords = new JsonArray();
+        java.util.Set<String> seenKw = new java.util.HashSet<>();
+        try {
+            for (forge.game.keyword.KeywordInterface kw : c.getUnhiddenKeywords()) {
+                String title = kw.getTitle();
+                if (title == null || title.isBlank() || !seenKw.add(title)) {
+                    continue;
+                }
+                JsonObject k = new JsonObject();
+                k.addProperty("title", title);
+                String reminder = kw.getReminderText();
+                k.addProperty("reminder", reminder == null ? "" : reminder);
+                keywords.add(k);
+            }
+        } catch (RuntimeException e) {
+            // einzelne Schlüsselwörter ohne Text dürfen den Zustand nicht verhindern
+        }
+        o.add("keywords", keywords);
         // Regeltext mit den aktuellen Änderungen (wie Forges Kartendetail), sonst Oracle-Text
         String text = c.getAbilityText();
         if (text == null || text.isBlank()) {

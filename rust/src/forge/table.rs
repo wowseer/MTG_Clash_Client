@@ -30,6 +30,7 @@ use crate::game::seat::PlayerSeat;
 use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY};
 use crate::table::showcase::Showcase;
 use crate::table::card3d::{Card3D, CardMarker, LUNGE_OUT, PLAYABLE_GLOW};
+use crate::table::card_inspector::{CardInspector, InspectorEntry};
 use crate::table::fx::{mana_color, ManaFx};
 use godot::classes::Label3D;
 use crate::table::target_arrows::{ArrowColor, ArrowSpec, TargetArrows, LOOP_DISTANCE};
@@ -181,6 +182,11 @@ pub struct ForgeTable {
     known_stack: HashSet<i64>,
     /// Laufzeit (s) für die Zeitstempel oben.
     clock: f64,
+    /// Kartenansicht beim Hovern und die Karte, die sie gerade zeigt.
+    inspector: Option<Gd<CardInspector>>,
+    inspected: Option<InstanceId>,
+    /// Von Skripten erzwungene Kartenansicht (statt der Karte unter der Maus).
+    inspect_override: Option<Gd<Card3D>>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -239,6 +245,9 @@ impl INode for ForgeTable {
             lunged: HashSet::new(),
             known_stack: HashSet::new(),
             clock: 0.0,
+            inspector: None,
+            inspected: None,
+            inspect_override: None,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -273,6 +282,9 @@ impl INode for ForgeTable {
             let arrows = TargetArrows::new_alloc();
             controller.call_deferred("add_child", &[arrows.to_variant()]);
             self.arrows = Some(arrows);
+            let inspector = CardInspector::new_alloc();
+            controller.call_deferred("add_child", &[inspector.to_variant()]);
+            self.inspector = Some(inspector);
         }
     }
 
@@ -289,6 +301,7 @@ impl INode for ForgeTable {
                 }
             }
         }
+        self.update_inspector();
         self.flash_new_stack();
         self.update_combat_look();
         self.update_arrows();
@@ -539,6 +552,13 @@ impl ForgeTable {
         if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseX { .. })) {
             self.answer(Choice::Cancel);
         }
+    }
+
+    /// Kartenansicht für `card` zeigen wie beim Hovern (für Skripte und Tests; null = wieder der
+    /// Karte unter der Maus folgen).
+    #[func]
+    pub fn inspect_card(&mut self, card: Option<Gd<Card3D>>) {
+        self.inspect_override = card;
     }
 
     /// „Abbrechen“ auf der Hand-Bühne (nur wo Forge das erlaubt).
@@ -2217,6 +2237,76 @@ impl ForgeTable {
         self.mana_fx.push((fx, seat));
     }
 
+    /// Kartenansicht beim Hovern (wie `Fähigkeiten.png`): statt die Karte selbst zur Mitte zu
+    /// holen, zeigt der [CardInspector] eine helle Kopie am Bildschirmrand gegenüber der Maus,
+    /// daneben Fähigkeiten (Schlüsselwörter mit Erklärung der Engine) und Veränderungen
+    /// (Marken, Stärke/Widerstand, Schaden, angelegte Karten). Nicht beim Ziehen und Zielen und
+    /// nicht bei verdeckten Karten.
+    fn update_inspector(&mut self) {
+        let Some(controller) = self.controller.clone() else { return };
+        let Some(mut inspector) = self.inspector.as_ref().filter(|i| i.is_instance_valid()).cloned() else { return };
+        let busy = controller.bind().get_dragged_card().is_some() || controller.bind().get_aiming_card().is_some();
+        let hovered = self.inspect_override.as_ref().filter(|c| c.is_instance_valid()).cloned().or_else(|| {
+            if busy { None } else { controller.bind().get_hovered_card().filter(|c| c.is_instance_valid()) }
+        });
+        let id = hovered.as_ref().map(|c| c.instance_id());
+        if id == self.inspected {
+            return;
+        }
+        self.inspected = id;
+        let Some(card) = hovered else {
+            inspector.bind_mut().hide_card();
+            return;
+        };
+        let def = card.bind().def().clone();
+        if def.name == "?" || def.name.is_empty() {
+            inspector.bind_mut().hide_card();
+            return;
+        }
+        let data = self.forge_id(&card).and_then(|fid| self.card_data(fid));
+        let mut abilities = Vec::new();
+        let mut buffs = Vec::new();
+        if let Some(data) = data.as_ref() {
+            for k in get_array(data, "keywords").unwrap_or_default().iter_shared() {
+                let Ok(k) = k.try_to::<VarDictionary>() else { continue };
+                abilities.push(InspectorEntry { title: get_str(&k, "title"), text: get_str(&k, "reminder") });
+            }
+            if let (Some((p, t)), Some((bp, bt))) = (def.stats, def.base_stats) {
+                if (p, t) != (bp, bt) {
+                    buffs.push(InspectorEntry {
+                        title: tr!("Stärke/Widerstand", "Power/toughness").into(),
+                        text: trf!("{p}/{t} (aufgedruckt {bp}/{bt})", "{p}/{t} (printed {bp}/{bt})"),
+                    });
+                }
+            }
+            if def.damage > 0 {
+                let d = def.damage;
+                buffs.push(InspectorEntry { title: tr!("Schaden", "Damage").into(), text: d.to_string() });
+            }
+            for line in card_badges(data, &[]).lines().filter(|l| !l.is_empty()) {
+                buffs.push(InspectorEntry { title: line.to_string(), text: String::new() });
+            }
+            // angelegte Karten (Auren, Ausrüstung)
+            let fid = get_int(data, "id");
+            let players = self.state.as_ref().and_then(|s| get_array(s, "players")).unwrap_or_default();
+            for p in players.iter_shared().filter_map(|p| p.try_to::<VarDictionary>().ok()) {
+                for c in get_array(&p, "battlefield").unwrap_or_default().iter_shared().filter_map(|c| c.try_to::<VarDictionary>().ok()) {
+                    if get_int(&c, "attached_to") == fid && data.contains_key("id") {
+                        buffs.push(InspectorEntry { title: tr!("Angelegt", "Attached").into(), text: get_str(&c, "name") });
+                    }
+                }
+            }
+        }
+        // Seite gegenüber der Karte: Karte rechts im Bild → Ansicht links und umgekehrt
+        let right_side = self
+            .base()
+            .get_viewport()
+            .and_then(|v| v.get_camera_3d().map(|cam| (cam, v.get_visible_rect().size)))
+            .map(|(cam, size)| cam.unproject_position(card.get_global_position()).x < size.x * 0.5)
+            .unwrap_or(false);
+        inspector.bind_mut().show(&def, &abilities, &buffs, right_side);
+    }
+
     /// Neue Stack-Einträge: gewirkte Karte bzw. Quelle der Fähigkeit leuchtet orange auf.
     fn flash_new_stack(&mut self) {
         let items = self.stack_items();
@@ -2609,6 +2699,7 @@ impl ForgeTable {
         // Platz ein und gleitet so sichtbar aus seiner Hand.
         let keep: HashSet<i64> = wanted.iter().map(|w| w.0).collect();
         let gone: Vec<i64> = self.cards.keys().copied().filter(|k| !keep.contains(k)).collect();
+        let mut retap_zones: Vec<Gd<Zone>> = Vec::new();
         let mut from_hidden_hand: [Vec<Gd<Card3D>>; 2] = [Vec::new(), Vec::new()];
         for key in gone {
             self.signatures.remove(&key);
@@ -2686,6 +2777,12 @@ impl ForgeTable {
                 let tapped = get_bool(data, "tapped");
                 if card.bind().is_tapped() != tapped {
                     card.bind_mut().set_tapped_state(tapped);
+                    // Drehung setzt die Zone beim Anordnen: Zone neu anordnen (z. B. Länder-Reihe)
+                    if let Some(z) = card.bind().get_zone() {
+                        if !retap_zones.contains(&z) {
+                            retap_zones.push(z);
+                        }
+                    }
                 }
             }
             if card.bind().is_dragging() {
@@ -2704,6 +2801,11 @@ impl ForgeTable {
             } else if zone.bind().is_free_placement() {
                 // Zurückgesetzter Drop auf freier Fläche: neu anordnen
                 zone.bind_mut().layout();
+            }
+        }
+        for mut z in retap_zones {
+            if z.is_instance_valid() {
+                z.bind_mut().layout();
             }
         }
         for card in from_hidden_hand.into_iter().flatten() {

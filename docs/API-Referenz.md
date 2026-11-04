@@ -23,6 +23,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [Arena](#arena) – erbt von `Node3D`
 - [Button3D](#button3d) – erbt von `Area3D`
 - [Card3D](#card3d) – erbt von `Area3D`
+- [CardInspector](#cardinspector) – erbt von `Node3D`
 - [ManaFx](#manafx) – erbt von `Node3D`
 - [Showcase](#showcase) – erbt von `Node3D`
 - [Slider3D](#slider3d) – erbt von `Area3D`
@@ -122,6 +123,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_x_step(delta: int)` | `void` | X-Knöpfe: Wert um `delta` ändern (−5, −1, +1, +5), begrenzt auf 0 … Maximum. |
 | `on_x_pay()` | `void` | „Bezahlen X = n“: Wert an Forge. |
 | `on_x_cancel()` | `void` | „Abbrechen“ beim X wählen: Wirken zurücknehmen. |
+| `inspect_card(card: Card3D)` | `void` | Kartenansicht für `card` zeigen wie beim Hovern (für Skripte und Tests; null = wieder der Karte unter der Maus folgen). |
 | `on_hand_pick_cancel()` | `void` | „Abbrechen“ auf der Hand-Bühne (nur wo Forge das erlaubt). |
 | `on_mulligan_pressed(keep: bool)` | `void` | Ein Mulligan-Knopf wurde gedrückt: `keep` = Starthand behalten, sonst Mulligan. |
 | `on_starting_player_pressed(index: int)` | `void` | Ein Startspieler-Knopf wurde gedrückt (`index` = Eintrag in `players` der Entscheidung `ChooseStartingPlayer`). |
@@ -453,7 +455,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `max_tilt_degrees` | `float` | Maximale Neigung bei Mouseover (Grad). |
 | `tilt_speed` | `float` | Glättung von Tilt/Zoom (größer = schneller). |
 | `move_duration` | `float` | Dauer der Gleit-Animation zu einem Slot (Sekunden). |
-| `zoom_enabled` | `bool` | Offene Karten beim Hovern groß und lesbar anzeigen. |
+| `zoom_enabled` | `bool` | Offene Karten beim Hovern selbst groß und lesbar vor die Kamera holen (Standard: aus – stattdessen zeigt der `CardInspector` eine Kopie mit Fähigkeiten und Buffs). |
 | `zoom_screen_height` | `float` | Anteil der Bildschirmhöhe, den die gezoomte Karte einnimmt. |
 | `zoom_distance` | `float` | Abstand der gezoomten Karte zur Kamera (liegt damit vor allem anderen). |
 | `zoom_margin_px` | `float` | Rand zum Bildschirmrand in Pixeln. |
@@ -492,6 +494,19 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (schräg, ausgegraut, Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
 | `is_tapped()` | `bool` | Ist die Karte getappt (leicht schräg, ausgegraut, Tapp-Symbol)? |
 | `get_zone()` | `Zone` | Die Zone, in der die Karte aktuell liegt (None während des Ziehens). |
+
+## CardInspector
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/card_inspector.rs`*
+
+Kartenansicht beim Hovern: große, helle Kopie der Karte am Bildschirmrand und daneben eine Tafel mit Fähigkeiten und Buffs. `hide()` blendet sie aus.
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `hide_card()` | `void` | Ansicht ausblenden. |
+| `is_showing()` | `bool` | Wird gerade eine Karte gezeigt? |
 
 ## ManaFx
 

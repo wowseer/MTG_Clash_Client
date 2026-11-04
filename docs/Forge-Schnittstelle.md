@@ -259,7 +259,7 @@ Forge-KI. Eine Einfachauswahl mit nur einer Option und ohne Abbrechen wird gar n
 }
 ```
 
-Karten: `id`, `name`, `type`, `tapped`, `cost`, `colors` (Farben als `WUBRG`-Buchstaben, leer =
+Karten: `id`, `name`, `type`, `tapped`, `cost`, `keywords` (Liste `{title, reminder}`: Schlüsselwörter mit Erinnerungstext der Engine, für die Kartenansicht), `colors` (Farben als `WUBRG`-Buchstaben, leer =
 farblos), `text` (Regeltext mit aktuellen Änderungen, Symbole in `{…}`-Schreibweise); bei Kreaturen
 zusätzlich `power`, `toughness` (aktuell) und `base_power`, `base_toughness` (aufgedruckt), bei
 Planeswalkern `loyalty`, bei Schlachten `defense` (im Spiel die aktuellen Marken, sonst aufgedruckt),
