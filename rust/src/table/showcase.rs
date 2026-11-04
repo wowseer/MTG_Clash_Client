@@ -81,6 +81,8 @@ const FOCUS_CENTER: Vector3 = Vector3::new(0.0, 0.3, 0.0);
 const FOCUS_BUTTON_TOP: f32 = -0.5;
 const FOCUS_STEP: f32 = 0.3;
 const FOCUS_BUTTON_WIDTH: f32 = 1.3;
+/// Abstand der Titelmitte über der Oberkante der großen Karte (Fokus-Anordnung).
+const FOCUS_TITLE_GAP: f32 = 0.2;
 
 /// Bühne vor der Kamera: Abdunkelung, Kartenfächer ([Zone]), Titel und [Button3D]-Knöpfe.
 /// [method open] stellt sie vor die aktuelle Kamera, [method show_cards] holt Karten herein,
@@ -320,7 +322,8 @@ impl Showcase {
     }
 
     /// Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell
-    /// in der Mitte, die Knöpfe untereinander darunter, kein Untertitel (er läge auf der Karte).
+    /// in der Mitte, die Knöpfe untereinander darunter, der Titel direkt über der Karte, kein
+    /// Untertitel (er läge auf der Karte).
     /// Vor [method add_button] aufrufen.
     #[func]
     pub fn set_focus_layout(&mut self) {
@@ -334,6 +337,10 @@ impl Showcase {
         }
         if let Some(l) = self.subtitle.as_mut() {
             l.set_visible(false);
+        }
+        // Titel über die große Karte rücken (sonst läge er hinter ihr)
+        if let Some(l) = self.title.as_mut() {
+            l.set_position(Vector3::new(0.0, FOCUS_CENTER.y + CARD_HEIGHT * FOCUS_SCALE * 0.5 + FOCUS_TITLE_GAP, 0.05));
         }
     }
 

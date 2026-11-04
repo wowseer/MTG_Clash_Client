@@ -163,7 +163,8 @@ pub struct ForgeTable {
     /// „Fertig“-Knopf.
     hand_pick: Vec<CardId>,
     hand_pick_button: Option<Gd<Button3D>>,
-    /// X wählen: gewählter Wert und der Bezahlen-Knopf (zeigt den Wert).
+    /// Zahlen-Bühne (X wählen, Zahl wählen): gewählter Wert und der Bestätigen-Knopf (zeigt
+    /// den Wert).
     x_value: u32,
     x_pay_button: Option<Gd<Button3D>>,
     /// Bühnen-Knöpfe: Antwort je Knopf (Index = Argument von `on_stage_choice`).
@@ -843,24 +844,24 @@ impl ForgeTable {
     /// X-Knöpfe: Wert um `delta` ändern (−5, −1, +1, +5), begrenzt auf 0 … Maximum.
     #[func]
     fn on_x_step(&mut self, delta: i64) {
-        let Some(Decision::ChooseX { max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
-        self.x_value = (i64::from(self.x_value) + delta).clamp(0, i64::from(max)) as u32;
-        self.refresh_x_buttons(max);
+        let Some((min, max, _)) = self.pending.as_ref().and_then(|r| Self::number_range(&r.decision)) else { return };
+        self.x_value = (i64::from(self.x_value) + delta).clamp(i64::from(min), i64::from(max)) as u32;
+        self.refresh_x_buttons();
     }
 
-    /// „Bezahlen X = n“: Wert an Forge.
+    /// „Bezahlen X = n“ bzw. „Bestätigen: n“: Wert an Forge.
     #[func]
     fn on_x_pay(&mut self) {
-        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseX { .. })) {
+        if self.pending.as_ref().and_then(|r| Self::number_range(&r.decision)).is_some() {
             let x = self.x_value;
             self.answer(Choice::Number(x));
         }
     }
 
-    /// „Abbrechen“ beim X wählen: Wirken zurücknehmen.
+    /// „Abbrechen“ auf der Zahlen-Bühne: Wirken zurücknehmen (nur wo Forge es erlaubt).
     #[func]
     fn on_x_cancel(&mut self) {
-        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseX { .. })) {
+        if self.pending.as_ref().is_some_and(|r| r.cancelable && Self::number_range(&r.decision).is_some()) {
             self.answer(Choice::Cancel);
         }
     }
@@ -1077,7 +1078,7 @@ impl ForgeTable {
         let starting = matches!(req.decision, Decision::ChooseStartingPlayer { .. }).then(|| req.clone());
         let mulligan = matches!(req.decision, Decision::Mulligan { .. }).then(|| req.clone());
         let hand_pick = self.hand_choice(&req.decision).is_some().then(|| req.clone());
-        let choose_x = matches!(req.decision, Decision::ChooseX { .. }).then(|| req.clone());
+        let choose_x = Self::number_range(&req.decision).is_some().then(|| req.clone());
         let stage_3d = Self::stage_kind(&req.decision).map(|k| (k, req.clone()));
         let library_pick = (matches!(req.decision, Decision::ChooseCards { .. })
             && self.table_pick(&req.decision).is_none()
@@ -1951,23 +1952,53 @@ impl ForgeTable {
         }
     }
 
-    /// X wählen (wie im Video des Users): Bühne am Stack rechts (ohne Abdunkeln) mit der Karte
-    /// groß, hell und lesbar (orange leuchtend), darunter eine Knopfreihe
-    /// „−5“, „−“, orange „Bezahlen X = n“, „+“, „+5“, darunter grau „Abbrechen“ (wo erlaubt);
-    /// Titel „Wähle einen Wert für X.“. Kein Fenster.
-    fn show_choose_x(&mut self, req: &Request) {
-        let Decision::ChooseX { max, .. } = req.decision else { return };
-        self.x_value = 0;
-        let data = self.source_data(req);
-        let Some(mut showcase) = self.open_stage(tr!("Wähle einen Wert für X.", "Select a value for X."), "") else { return };
-        // an ihrem Platz am Stack (rechts), kleiner, ohne Abdunkeln
-        if let Some(zone) = self.stack_zone.as_ref() {
-            let at = zone.get_global_transform() * X_STAGE_LOCAL;
-            showcase.bind_mut().open_at(at, X_STAGE_SCALE, X_STAGE_LIFT);
+    /// Zahlen-Frage der Engine: `(kleinster, größter Wert, X-Kosten?)` für `ChooseX` (X-Kosten,
+    /// CR 107.3) und `ChooseNumber` (z. B. „wie viele Marken“, „um wie viel verringern“).
+    fn number_range(decision: &Decision) -> Option<(u32, u32, bool)> {
+        match decision {
+            Decision::ChooseX { max, .. } => Some((0, *max, true)),
+            Decision::ChooseNumber { min, max, .. } => Some((*min, (*max).max(*min), false)),
+            _ => None,
         }
-        // die leuchtende Originalkarte auf dem Stack dahinter ausblenden, bis die Bühne weg ist
-        if let Some(card) = req.source.and_then(|id| self.cards.get(&i64::from(id)).cloned()) {
-            showcase.bind_mut().hide_while_open(card);
+    }
+
+    /// Zahlen-Bühne für X-Kosten und jede andere Zahlen-Frage (wie im Video des Users zu X):
+    /// die Karte groß, hell und lesbar (orange leuchtend), darunter die Knopfreihe
+    /// „−5“, „−“, orange „Bezahlen X = n“ (bzw. „Bestätigen: n“), „+“, „+5“, darunter grau
+    /// „Abbrechen“ (wo erlaubt). „−“/„+“ sind nur aktiv, wo sich der Wert ändern kann; der Start
+    /// ist der kleinste erlaubte Wert. Liegt die Karte auf dem Stack (sie wird gerade gewirkt),
+    /// steht die Bühne dort ohne Abdunkeln; sonst vor der Kamera wie „Kicker“ (Tisch abgedunkelt).
+    /// Titel: „Wähle einen Wert für X.“ bzw. der Fragetext der Engine. Kein Fenster.
+    fn show_choose_x(&mut self, req: &Request) {
+        let Some((min, max, is_x)) = Self::number_range(&req.decision) else { return };
+        self.x_value = min;
+        let data = self.source_data(req);
+        // eigener Fragetext der Karte (z. B. „How much life?“) bleibt, das allgemeine „Choose a
+        // number“ der Engine wird übersetzt und nennt den Bereich
+        let prompt = match &req.decision {
+            Decision::ChooseNumber { prompt, .. } if !prompt.is_empty() => prompt.clone(),
+            _ => req.prompt.clone(),
+        };
+        let title = if is_x {
+            tr!("Wähle einen Wert für X.", "Select a value for X.").to_string()
+        } else if prompt.is_empty() || prompt.to_lowercase().contains("choose a number") {
+            trf!("Wähle eine Zahl von {min} bis {max}.", "Choose a number from {min} to {max}.")
+        } else {
+            prompt
+        };
+        let Some(mut showcase) = self.open_stage(&title, "") else { return };
+        let source = req.source.and_then(|id| self.cards.get(&i64::from(id)).cloned());
+        let on_stack = source.as_ref().zip(self.stack_zone.as_ref()).is_some_and(|(c, z)| c.bind().get_zone().as_ref() == Some(z));
+        if on_stack {
+            // an ihrem Platz am Stack (rechts), kleiner, ohne Abdunkeln
+            if let Some(zone) = self.stack_zone.as_ref() {
+                let at = zone.get_global_transform() * X_STAGE_LOCAL;
+                showcase.bind_mut().open_at(at, X_STAGE_SCALE, X_STAGE_LIFT);
+            }
+            // die leuchtende Originalkarte auf dem Stack dahinter ausblenden, bis die Bühne weg ist
+            if let Some(card) = source {
+                showcase.bind_mut().hide_while_open(card);
+            }
         }
         // die Karte groß, hell und lesbar in der Mitte
         if let Some(data) = data {
@@ -1976,7 +2007,7 @@ impl ForgeTable {
             showcase.bind_mut().show_options(vec![(copy, String::new())]);
         }
         showcase.bind_mut().set_focus_layout();
-        // darunter die Knopfreihe −5 / − / Bezahlen X / + / +5, darunter Abbrechen
+        // darunter die Knopfreihe −5 / − / Bestätigen / + / +5, darunter Abbrechen
         let me = self.to_gd();
         let mut add = |button: Gd<Button3D>, pos: Vector2, method: &str, arg: Option<i64>| {
             let mut button = button;
@@ -1991,24 +2022,25 @@ impl ForgeTable {
         for (text, delta, x) in [("−5", -5i64, -X_OUTER), ("−", -1, -X_INNER), ("+", 1, X_INNER), ("+5", 5, X_OUTER)] {
             add(Button3D::create_shaped(ButtonStyle::Blue, text, X_SMALL_WIDTH, COMPACT_BODY), Vector2::new(x, X_ROW_Y), "on_x_step", Some(delta));
         }
-        let pay = add(Button3D::create(ButtonStyle::Orange, &x_pay_label(0), X_PAY_WIDTH), Vector2::new(0.0, X_ROW_Y), "on_x_pay", None);
+        let pay = add(Button3D::create(ButtonStyle::Orange, &number_label(min, is_x), X_PAY_WIDTH), Vector2::new(0.0, X_ROW_Y), "on_x_pay", None);
         if req.cancelable {
             add(Button3D::create(ButtonStyle::Grey, tr!("Abbrechen", "Cancel"), X_PAY_WIDTH * 0.75), Vector2::new(0.0, X_CANCEL_Y), "on_x_cancel", None);
         }
         self.x_pay_button = Some(pay);
-        self.refresh_x_buttons(max);
+        self.refresh_x_buttons();
     }
 
-    /// Bezahlen-Knopf zeigt den Wert; „−“ bzw. „+“ nur, wo sich der Wert ändern kann.
-    fn refresh_x_buttons(&mut self, max: u32) {
+    /// Bestätigen-Knopf zeigt den Wert; „−“ bzw. „+“ nur, wo sich der Wert ändern kann.
+    fn refresh_x_buttons(&mut self) {
+        let Some((min, max, is_x)) = self.pending.as_ref().and_then(|r| Self::number_range(&r.decision)) else { return };
         let x = self.x_value;
         if let Some(mut b) = self.x_pay_button.as_ref().filter(|b| b.is_instance_valid()).cloned() {
-            b.bind_mut().set_label_text(GString::from(x_pay_label(x).as_str()));
+            b.bind_mut().set_label_text(GString::from(number_label(x, is_x).as_str()));
         }
         for mut b in self.stage_buttons() {
             let text = b.bind().get_text().to_string();
             let can = match text.as_str() {
-                "−5" | "−" => x > 0,
+                "−5" | "−" => x > min,
                 "+" | "+5" => x < max,
                 _ => true,
             };
@@ -2189,7 +2221,7 @@ impl ForgeTable {
             .pending
             .as_ref()
             .and_then(|req| self.table_pick_choice(req));
-        let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().filter(|r| Self::stage_kind(&r.decision).is_none() && self.wheel.is_none()).and_then(|req| {
+        let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().filter(|r| Self::stage_kind(&r.decision).is_none() && self.wheel.is_none() && Self::number_range(&r.decision).is_none()).and_then(|req| {
             // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
             let name_of = |t: Target| match t {
                 Target::Player(p) => self.seat_name(p as usize).to_string(),
@@ -2235,7 +2267,7 @@ impl ForgeTable {
             label.clone()
         } else if my_priority {
             tr!("Passen  »", "Pass  »").to_string()
-        } else if choice.is_some() || self.wheel.is_some() {
+        } else if choice.is_some() || self.wheel.is_some() || self.pending.as_ref().is_some_and(|r| Self::number_range(&r.decision).is_some()) {
             tr!("Auswahl treffen …", "Make a choice …").to_string()
         } else if !self.winner.is_empty() {
             tr!("Spielende", "Game over").to_string()
@@ -3693,8 +3725,13 @@ fn action_caption(action: Action, label: &str) -> String {
 }
 
 /// Beschriftung des Bezahlen-Knopfs beim X wählen.
-fn x_pay_label(x: u32) -> String {
-    trf!("Bezahlen  X = {x}", "Pay  X = {x}")
+/// Beschriftung des Bestätigen-Knopfs der Zahlen-Bühne: „Bezahlen X = n“ bzw. „Bestätigen: n“.
+fn number_label(x: u32, is_x: bool) -> String {
+    if is_x {
+        trf!("Bezahlen  X = {x}", "Pay  X = {x}")
+    } else {
+        trf!("Bestätigen:  {x}", "Confirm:  {x}")
+    }
 }
 
 /// X-Bühne am Stack: Mitte (lokal in der Stack-Zone, etwas unter der obersten Karte und ein

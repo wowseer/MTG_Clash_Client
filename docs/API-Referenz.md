@@ -131,8 +131,8 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_option_toggle(index: int)` | `void` | Optionale Kosten mit mehreren Möglichkeiten: Option `index` an/aus. |
 | `on_options_done()` | `void` | Optionale Kosten mit mehreren Möglichkeiten: „Fertig“ – eingeschaltete Optionen an Forge. |
 | `on_x_step(delta: int)` | `void` | X-Knöpfe: Wert um `delta` ändern (−5, −1, +1, +5), begrenzt auf 0 … Maximum. |
-| `on_x_pay()` | `void` | „Bezahlen X = n“: Wert an Forge. |
-| `on_x_cancel()` | `void` | „Abbrechen“ beim X wählen: Wirken zurücknehmen. |
+| `on_x_pay()` | `void` | „Bezahlen X = n“ bzw. „Bestätigen: n“: Wert an Forge. |
+| `on_x_cancel()` | `void` | „Abbrechen“ auf der Zahlen-Bühne: Wirken zurücknehmen (nur wo Forge es erlaubt). |
 | `on_scry_done()` | `void` | Hellsicht/Überwachen: „Fertig“ – Karten im Feld „oben“ (die rechte Karte zuoberst) und „unten“ bzw. Friedhof an Forge. |
 | `on_order_done()` | `void` | Reihenfolge-Bühne: „Fertig“ – vergebene Reihenfolge an Forge. |
 | `on_order_reset()` | `void` | Reihenfolge-Bühne: alle Nummern löschen. |
@@ -592,7 +592,7 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 | `open_at(point: Vector3, scale: float, lift: float)` | `void` | Die Bühne an einer Stelle auf dem Tisch statt vor der Kamera (z. B. am Stack), parallel zur Bildebene, um `scale` vergrößert, ohne Abdunkelung: `point` = Weltpunkt der Bühnenmitte, die Bühne rückt `lift` zur Kamera hin (vor die Karten dort). |
 | `open()` | `void` | Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene). |
 | `set_texts(title: String, subtitle: String, note: String)` | `void` | Titel, Untertitel und Hinweis setzen (leer = ausblenden). |
-| `set_focus_layout()` | `void` | Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell in der Mitte, die Knöpfe untereinander darunter, kein Untertitel (er läge auf der Karte). Vor `add_button()` aufrufen. |
+| `set_focus_layout()` | `void` | Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell in der Mitte, die Knöpfe untereinander darunter, der Titel direkt über der Karte, kein Untertitel (er läge auf der Karte). Vor `add_button()` aufrufen. |
 | `static focus_button_width()` | `float` | Breite eines Knopfes in der Fokus-Anordnung (Welteinheiten). |
 | `enable_scroll()` | `void` | Fächer nebeneinander statt überlappend legen; passt er nicht ganz ins Bild, erscheint unter ihm ein `Slider3D`, mit dem man ihn nach links und rechts schiebt (Start: Mitte). |
 | `enable_scroll_with(step: float, radius: float)` | `void` | Wie `enable_scroll()`, mit eigenem Kartenabstand `step` (kleiner als eine Kartenbreite = überlappend) und Bogenradius `radius` (klein = stärker gebogen). |
