@@ -12,6 +12,7 @@
 //! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
 //!   belegtem Stack orange
 //! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
+//! - linker Bildrand, Mitte: Stack-Liste ([`StackList`]) mit Quelle, Art und Text jedes Eintrags
 //! - ganz oben, mittig: große Vorschau der Karte, die gerade gezogen wird; das Gegner-Medaillon
 //!   liegt dann durchsichtig darüber
 //!
@@ -37,6 +38,7 @@ use super::seat_badge::SeatBadge;
 use super::card_preview;
 use super::card_fan::{CardFan, HudFan};
 use super::choice_panel::ChoicePanel;
+use super::stack_view::{HudStackEntry, StackList};
 pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
 use crate::table::table_controller::TableController;
@@ -109,6 +111,8 @@ pub struct TurnHud {
     choice: Option<ChoicePanel>,
     /// Kartenfächer (Karten wählen / anordnen) in der Bildmitte.
     fan: Option<CardFan>,
+    /// Stack-Liste am linken Bildrand.
+    stack: Option<StackList>,
 
     base: Base<CanvasLayer>,
 }
@@ -140,6 +144,7 @@ impl ICanvasLayer for TurnHud {
             root: None,
             choice: None,
             fan: None,
+            stack: None,
             base,
         }
     }
@@ -305,6 +310,7 @@ impl TurnHud {
 
         self.choice = Some(ChoicePanel::new(&mut root));
         self.fan = Some(CardFan::new(&mut root));
+        self.stack = Some(StackList::new(&mut root));
         // Medaillon-Klicks (Spieler als Ziel) an den ForgeTable melden
         for (seat, badge) in [(0i64, &me_badge), (1, &opp_badge)] {
             let cb = Callable::from_object_method(&self.to_gd(), "on_badge_clicked").bind(&[seat.to_variant()]);
@@ -491,6 +497,9 @@ impl TurnHud {
         if let Some(fan) = self.fan.as_mut() {
             fan.show(view.fan.as_ref(), &hud);
         }
+        if let Some(stack) = self.stack.as_mut() {
+            stack.show(&view.stack);
+        }
     }
 }
 
@@ -511,6 +520,8 @@ pub struct HudView {
     pub button_text: GString,
     /// Stack belegt → Button orange.
     pub stack_busy: bool,
+    /// Stack-Liste, oberster Eintrag zuerst (leer = ausgeblendet).
+    pub stack: Vec<HudStackEntry>,
     /// Manapool des Spielers (je [ManaType] eine Menge; leer = keine Anzeige).
     pub player_pool: PackedInt64Array,
     pub choice: Option<HudChoice>,

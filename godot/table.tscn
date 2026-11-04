@@ -145,6 +145,13 @@ cards_draggable = false
 face_up = false
 transform = Transform3D(-1.4, 0, 0, 0, 1.352, 0.362, 0, 0.362, -1.352, 0, 1, -6.4)
 
+[node name="Stack" type="Zone" parent="."]
+kind = 4
+size = Vector3(3, 0.3, 1.4)
+accepts_drops = false
+cards_draggable = false
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 0, 0.45, 0)
+
 [node name="TurnHud" type="TurnHud" parent="." node_paths=PackedStringArray("forge_table", "player_hero_anchor", "opponent_hero_anchor", "player_mana_anchor")]
 forge_table = NodePath("../ForgeTable")
 player_hero_anchor = NodePath("../Player/HeroAnchor")
@@ -153,8 +160,9 @@ player_mana_anchor = NodePath("../Player/ManaAnchor")
 
 [node name="ForgeBridge" type="ForgeBridge" parent="."]
 
-[node name="ForgeTable" type="ForgeTable" parent="." node_paths=PackedStringArray("bridge", "controller", "player_seat", "opponent_seat")]
+[node name="ForgeTable" type="ForgeTable" parent="." node_paths=PackedStringArray("bridge", "controller", "player_seat", "opponent_seat", "stack_zone")]
 bridge = NodePath("../ForgeBridge")
 controller = NodePath("..")
 player_seat = NodePath("../Player")
 opponent_seat = NodePath("../Opponent")
+stack_zone = NodePath("../Stack")

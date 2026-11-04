@@ -204,6 +204,23 @@ Spieler zusätzlich: `mana_pool` = Menge schwebenden Manas je Farbe in der Reihe
 `combat` (laufender Kampf, sonst leere Listen): `attackers` = Liste `{card, target}` (`target` als
 `Target`), `blocks` = Liste `[blocker, angreifer]`.
 
+`stack` (CR 405, wie NeoForges `GameState.stack`): Liste der Einträge, **unterster zuerst, oberster
+zuletzt**. Je Eintrag `id` (Forges Stack-ID), `kind` (`Spell` / `Ability` / `Trigger`), `source`
+(Karten-ID der Quelle), `controller` (Sitzplatz), `text` (Forges Stack-Beschreibung),
+`targets` (Ziele je Fähigkeit der Sub-Ability-Kette: Liste von Listen von `Target`) und bei Zaubern
+`card` (Kartendaten der Karte in der Stack-Zone, wie in den Spielerzonen). Ein Zauber als Ziel
+(z. B. Gegenzauber) erscheint als `{"card": id}` seiner Karte; eine Fähigkeit als Ziel als Karte
+ihrer Quelle (NeoForges `Target` kennt keine Stack-Einträge).
+
+```json
+"stack": [
+  { "id": 28, "kind": "Spell", "source": 52, "controller": 0, "targets": [[]],
+    "text": "Flametongue Kavu - Creature 4 / 2", "card": { "id": 52, "name": "Flametongue Kavu", … } },
+  { "id": 31, "kind": "Spell", "source": 92, "controller": 1, "targets": [[{"card": 52}]],
+    "text": "Mana Leak (92) - Counter Flametongue Kavu (52) unless its controller pays {3}.", "card": { … } }
+]
+```
+
 Phasen (`phase`): Forges `PhaseType`-Namen, z. B. `UNTAP`, `UPKEEP`, `DRAW`, `MAIN1`,
 `COMBAT_BEGIN`, `COMBAT_DECLARE_ATTACKERS`, `COMBAT_DECLARE_BLOCKERS`, `COMBAT_DAMAGE`,
 `COMBAT_END`, `MAIN2`, `END_OF_TURN`, `CLEANUP`.
@@ -256,6 +273,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `PayMana` | Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
+| `stack` | Zone `Stack` in der Tischmitte: Zauber als ihre Karte, Fähigkeiten als Karte ihrer Quelle; violette Pfeile zu den Zielen; Liste im HUD (linker Rand) mit Quelle, Art, Text; Hauptbutton orange |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
 ## Stand und nächste Schritte
@@ -285,6 +303,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   (2 Karten abwerfen als Kosten), Flametongue Kavu (Trigger-Ziel); Kampfschaden-Verteilung mit
   künstlicher Anfrage (Vorbelegung 2/3/1 bei Trampeln, Summenprüfung).
 - Noch nicht ferngesteuert: Exil als Kosten, Delve, Convoke, Sonderkosten,
-  ausgelöster Fähigkeiten; Ziele werden noch als Liste gewählt, nicht per Klick auf dem Tisch;
-  Stack und Manapool werden im Forge-Spiel noch nicht angezeigt.
+  ausgelöster Fähigkeiten.
+- Stack getestet mit `testdecks/kosten.dck` gegen `testdecks/gegner_counter.dck`: Zauber beider
+  Seiten in der Stack-Zone, Mana Leak auf Flametongue Kavu (2 Einträge, Ziel = Zauber im Stack);
+  ausgelöste Fähigkeit (Trigger von Flametongue Kavu mit Ziel) als Karte der Quelle, Priorität mit
+  belegtem Stack. Optik (Liste im HUD, Pfeile) noch nicht im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

@@ -90,6 +90,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `controller` | `TableController` | Tischsteuerung (Drag-and-Drop, Kamera). Sie kennt keine Regeln; dieser Knoten prüft die Züge über Forge. |
 | `player_seat` | `PlayerSeat` | Sitzplatz des Spielers (unten) = Forge-Sitzplatz 0. |
 | `opponent_seat` | `PlayerSeat` | Sitzplatz des Gegners (oben) = Forge-Sitzplatz 1. |
+| `stack_zone` | `Zone` | Stack-Zone (Art 4) in der Tischmitte: Zauber liegen dort als ihre Karte, aktivierte und ausgelöste Fähigkeiten als Karte ihrer Quelle; der oberste Eintrag liegt rechts oben. Pfeile zeigen die Ziele jedes Eintrags. Leer = Stack nur in der Liste im HUD. |
 | `player_deck` | `String` | Deck des Spielers: Forge-`.dck`-Datei (`res://` erlaubt) oder Forge-Deckname. |
 | `opponent_deck` | `String` | Deck des Gegners: Forge-`.dck`-Datei (`res://` erlaubt) oder Forge-Deckname. |
 | `seed` | `int` | Zufallsstartwert der Partie (< 0 = zufällig). |

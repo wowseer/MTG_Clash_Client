@@ -11,6 +11,7 @@ import forge.game.combat.Combat;
 import forge.game.phase.PhaseHandler;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
+import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.zone.ZoneType;
 
 /** Wandelt Forge-Spielzustand in JSON für den Client um. */
@@ -55,7 +56,52 @@ final class StateJson {
         }
         s.add("players", players);
         s.add("combat", combat(game));
+        s.add("stack", stack(game));
         return s;
+    }
+
+    /**
+     * Stack (CR 405) wie NeoForges {@code GameState.stack}: unterster Eintrag zuerst, oberster
+     * zuletzt. Je Eintrag {@code id}, {@code kind} ({@code Spell} / {@code Ability} /
+     * {@code Trigger}), {@code source} (Karten-ID der Quelle), {@code controller} (Sitzplatz),
+     * {@code text} (Forges Stack-Beschreibung), {@code targets} (Ziele je Fähigkeit der
+     * Sub-Ability-Kette als Liste von Listen) und bei Zaubern {@code card} (Kartendaten der Karte
+     * in der Stack-Zone). Ziele, die Zauber auf dem Stack sind, erscheinen als deren Karte.
+     */
+    static JsonArray stack(Game game) {
+        java.util.List<SpellAbilityStackInstance> items = new java.util.ArrayList<>();
+        game.getStack().reverseIterator().forEachRemaining(items::add);
+        JsonArray arr = new JsonArray();
+        for (SpellAbilityStackInstance si : items) {
+            JsonObject o = new JsonObject();
+            o.addProperty("id", si.getId());
+            o.addProperty("kind", si.isSpell() ? "Spell" : si.isTrigger() ? "Trigger" : "Ability");
+            Card src = si.getSourceCard();
+            o.addProperty("source", src == null ? -1 : src.getId());
+            Player who = si.getActivatingPlayer();
+            o.addProperty("controller", who == null ? -1 : indexOf(game, who));
+            o.addProperty("text", si.getStackDescription());
+            if (si.isSpell() && src != null) {
+                o.add("card", card(src));
+            }
+            JsonArray targets = new JsonArray();
+            for (SpellAbility sa = si.getSpellAbility(); sa != null; sa = sa.getSubAbility()) {
+                JsonArray ts = new JsonArray();
+                if (sa.getTargets() != null) {
+                    for (Object t : sa.getTargets()) {
+                        if (t instanceof GameEntity e) {
+                            ts.add(Decisions.targetJson(game, e));
+                        } else if (t instanceof SpellAbility tsa && tsa.getHostCard() != null) {
+                            ts.add(Decisions.targetJson(game, tsa.getHostCard()));
+                        }
+                    }
+                }
+                targets.add(ts);
+            }
+            o.add("targets", targets);
+            arr.add(o);
+        }
+        return arr;
     }
 
     /**

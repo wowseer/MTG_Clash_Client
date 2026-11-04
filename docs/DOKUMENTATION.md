@@ -48,6 +48,7 @@ Table (TableController)          Wurzel: Maus-Eingabe, Drag-and-Drop, Kamera-Fok
 │   └── Hand (Zone)              Handkarten (Fächer, nah an der Kamera am unteren Bildrand)
 ├── Opponent (PlayerSeat)        Gegner oben (Forge-KI, Sitzplatz 1), gleicher Aufbau, um 180°
 │                                gedreht; Hand am oberen Bildrand, Medaillon direkt darunter
+├── Stack (Zone)                 Stack in der Tischmitte (Art 4, schwebt leicht über dem Brett)
 ├── TurnHud (TurnHud)            Bildschirm-Anzeige, liest vom ForgeTable
 ├── ForgeBridge (ForgeBridge)    Java-Prozess mit Forge
 └── ForgeTable (ForgeTable)      gleicht den Tisch mit Forge ab, setzt Spielzüge um
@@ -111,6 +112,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | unten rechts, über dem Button | `PhaseTimeline`: Zeitstrahl der Phasen mit drei Stationen – (1) ein Kreis für Enttappen, Auffrischung, Ziehen und Hauptphase 1, der mit jedem dieser Schritte größer wird; (2) ein Punkt „Kampf“, dessen drei Schritte (Angreifer, Blocker, Schaden) erst beim Kampf aufklappen; (3) ein Kreis für Hauptphase 2 und Ende. Symbole: Enttappen = Kreispfeil, Auffrischung = Sonne, Ziehen = Karte mit Plus, Hauptphasen = aufgefächerte Karten, Ende = Mondsichel, Kampf = gekreuzte Schwerter (Angreifer = Schwert, Blocker = Schild, Schaden = Flamme). Die aktuelle Station leuchtet. Forges `PhaseType` wird darauf abgebildet (`forge/table.rs`, `phase_index`) |
 | Bildmitte | nur bei Spielende: „Spielende – X gewinnt!“ |
 | unter der eigenen Länder-Reihe | Manapool als runde Symbole (`ManaPoolView`, `mana_view.rs`), aus Forges `mana_pool` (schwebendes Mana, z. B. aus Ritualen) |
+| linker Bildrand, Mitte | Stack-Liste (`StackList`, `stack_view.rs`): je Eintrag „Quelle · Art“ (Zauber, aktivierte bzw. ausgelöste Fähigkeit) und Forges Beschreibung mit Zielen; oberster Eintrag oben und golden, Rahmen in der Farbe der kontrollierenden Seite. Leerer Stack = ausgeblendet |
 | linker Bildrand, oben / unten | Gegner (oben links) bzw. Spieler (unten links): Rundenzahl mit Sanduhr-Symbol (`HourglassIcon`, `hourglass.rs`), darunter der Spielername; der Name der Seite am Zug ist golden |
 | Bildschirmmitte | Auswahlfenster (`ChoicePanel`, `choice_panel.rs`) für alle allgemeinen Forge-Entscheidungen: eine Option, mehrere Optionen, Ja/Nein, Zahl; Suchfeld bei langen Listen (höchstens 40 Knöpfe, z. B. bei allen Kartennamen); welche Engine-Entscheidung welches Fenster ergibt, steht in `decision_view.rs` (Bedienung siehe Abschnitt 3) |
 | ganz oben, mittig | große Vorschau der Karte, die gerade aus der Hand gezogen wird (`card_preview.rs`); das Gegner-Medaillon liegt dann durchsichtig darüber |
@@ -157,6 +159,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | **Ziele ausgelöster Fähigkeiten** | Eigene Trigger mit Ziel (z. B. „Wenn … ins Spiel kommt, fügt einer Kreatur 4 Schaden zu“) fragen das Ziel wie beim Wirken (Klick auf Karte/Medaillon) |
 | **Angreifen** (Angriffsschritt) | Kreaturen, die angreifen können, leuchten. Klick = angreifen (roter Pfeil zum Gegner, rote Markierung), erneuter Klick = nicht angreifen. Gibt es mehrere Angriffsziele (z. B. Planeswalker), danach Klick auf das gewünschte Ziel (Karte bzw. golden pulsierendes Medaillon) = der zuletzt gewählte Angreifer greift es an. Bestätigen mit „Angreifen (n)“ bzw. „Nicht angreifen“ im Fenster am rechten Rand. Ungültige Angriffe (z. B. eine Kreatur muss angreifen) werden mit Hinweis erneut gefragt |
 | **Blocken** (Blockschritt) | Eigene Kreaturen, die blocken können, leuchten. Klick auf eine davon (goldene Markierung), dann Klick auf einen Angreifer = blocken (blauer Pfeil, blaue Markierung; ein blasser Pfeil zeigt vorher auf den Angreifer unter der Maus). Klick auf einen Blocker = Block aufheben. Mehrere Blocker auf denselben Angreifer sind möglich. Bestätigen mit „Blocken (n)“ bzw. „Nicht blocken“; ungültige Blocks werden mit Forges Begründung erneut gefragt |
+| **Stack** | Zauber, die gewirkt werden, gleiten in die Stack-Zone in der Tischmitte; aktivierte und ausgelöste Fähigkeiten erscheinen dort als Karte ihrer Quelle. Der oberste Eintrag liegt rechts oben. Violette Pfeile zeigen die Ziele jedes Eintrags (auch auf andere Zauber im Stack, z. B. Gegenzauber). Die Liste am linken Bildrand nennt Quelle, Art und Text. Bei belegtem Stack ist der Hauptbutton orange |
 | Kampf der KI | Angriffe der KI erscheinen als rote Pfeile (Angreifer → Ziel), Blocks als blaue Pfeile, solange der Kampf läuft |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
 
@@ -171,8 +174,7 @@ leuchten, wenn sie möglich sind, und werden per Klick aktiviert.
 Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Exil als Kosten, Delve,
 Convoke, Sonderkosten (ganze Hand abwerfen, zufällig, Fahrzeuge besetzen), Erschöpfen/Rekrutieren,
 Reihenfolge der Blocker, Kopien von Zaubern. Ziele werden noch aus einer
-Liste gewählt, nicht per Klick auf dem Tisch. Stack und Manapool
-werden noch nicht angezeigt.
+Liste gewählt, nicht per Klick auf dem Tisch.
 
 ---
 
@@ -206,7 +208,8 @@ vor `~/Games/Forge` verwendet.
 - Baut bei jedem neuen Forge-Zustand den Tisch ab: Für jede Forge-Karte eine `Card3D` (Bild aus
   Name, Typ, Kosten, Stärke/Widerstand); Hand → Hand, Länder → Länder-Reihe, übrige
   bleibende Karten → Spielfeld, Friedhof → Ablagestapel, Gegnerhand verdeckt; getappt wird
-  übernommen. Karten gleiten animiert an ihren Platz. **Deck:** Die Bibliothek liegt als verdeckter
+  übernommen; Stack-Einträge → Zone `stack_zone` (Zauber als ihre Karte, Fähigkeiten als Karte
+  ihrer Quelle, die auf der Quelle erscheint). Karten gleiten animiert an ihren Platz. **Deck:** Die Bibliothek liegt als verdeckter
   Stapel in der Deck-Zone (Anzahl = Forges `library`). Zieht Forge eine Karte, gleitet die oberste
   Deckkarte auf die Hand und wird dort aufgedeckt (beim Gegner bleibt sie verdeckt). Spielt der
   Gegner eine Karte aus, gleitet sie aus seiner verdeckten Hand auf den Tisch. Während Forge Ereignisse

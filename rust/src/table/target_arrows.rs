@@ -110,22 +110,34 @@ impl TargetArrows {
     /// Ersetzt alle Pfeile durch `arrows` und baut das Mesh neu.
     pub fn set_arrows(&mut self, arrows: &[ArrowSpec]) {
         self.mesh.clear_surfaces();
-        if arrows.is_empty() {
-            return;
-        }
         let table_y = self.base().get_global_position().y;
         let inv = self.base().get_global_transform().affine_inverse();
+        // Zu kurze Pfeile (z. B. Fähigkeit, die noch auf ihrer Quelle liegt) entfallen; ohne
+        // einen einzigen Pfeil keine Fläche anlegen (Godot meldet sonst einen Fehler).
+        let ends: Vec<(Vector3, Vector3, Color)> = arrows
+            .iter()
+            .map(|a| {
+                let from = Vector3::new(a.from.x, table_y + END_LIFT, a.from.z);
+                let to = Vector3::new(a.to.x, table_y + END_LIFT, a.to.z);
+                (inv * from, inv * to, a.color)
+            })
+            .filter(|(from, to, _)| (*to - *from).length() >= MIN_LENGTH)
+            .collect();
+        if ends.is_empty() {
+            return;
+        }
         self.mesh.surface_begin(PrimitiveType::TRIANGLES);
-        for a in arrows {
-            let from = Vector3::new(a.from.x, table_y + END_LIFT, a.from.z);
-            let to = Vector3::new(a.to.x, table_y + END_LIFT, a.to.z);
-            build_arrow(&mut self.mesh, inv * from, inv * to, a.color);
+        for (from, to, color) in ends {
+            build_arrow(&mut self.mesh, from, to, color);
         }
         self.mesh.surface_end();
     }
 }
 
 /// Punkt der Bézier-Kurve (Bogen über dem Tisch, Höhe wächst mit der Länge).
+/// Kürzeste Pfeillänge; kürzere Pfeile werden nicht gezeichnet.
+const MIN_LENGTH: f32 = 0.15;
+
 fn curve(from: Vector3, to: Vector3, t: f32) -> Vector3 {
     let len = (to - from).length();
     let mid = (from + to) * 0.5 + Vector3::UP * (0.25 + 0.18 * len);
@@ -134,9 +146,6 @@ fn curve(from: Vector3, to: Vector3, t: f32) -> Vector3 {
 }
 
 fn build_arrow(mesh: &mut Gd<ImmediateMesh>, from: Vector3, to: Vector3, color: Color) {
-    if (to - from).length() < 0.15 {
-        return;
-    }
     // Kurve abtasten, Bogenlänge aufsummieren
     let pts: Vec<Vector3> = (0..=SEGMENTS).map(|i| curve(from, to, i as f32 / SEGMENTS as f32)).collect();
     let mut dist = vec![0.0f32];

@@ -20,6 +20,7 @@ use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::card_fan::{FanMode, HudFan};
 use crate::game::decision_view;
 use crate::game::hud::HudView;
+use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::mana::{Cost, ManaType};
@@ -33,6 +34,11 @@ use crate::table::zone::Zone;
 
 /// Forge-Sitzplatz des Spielers (unten).
 const LOCAL_SEAT: i64 = 0;
+/// Schlüssel der Karten für Fähigkeiten auf dem Stack: `ABILITY_KEY_BASE - Stack-ID`
+/// (verdeckte Gegner-Handkarten liegen zwischen −1 und dieser Grenze).
+const ABILITY_KEY_BASE: i64 = -1_000_000;
+/// Farbe der Pfeile vom Stack-Eintrag zu seinen Zielen.
+const STACK_ARROW: Color = Color::from_rgb(0.72, 0.5, 1.0);
 
 /// Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, Kamera,
 /// Drag-and-Drop und HUD sind dieselben wie im normalen Spiel, nur die Regeln kommen von Forge
@@ -64,6 +70,11 @@ pub struct ForgeTable {
     /// Sitzplatz des Gegners (oben) = Forge-Sitzplatz 1.
     #[export]
     opponent_seat: Option<Gd<PlayerSeat>>,
+    /// Stack-Zone (Art 4) in der Tischmitte: Zauber liegen dort als ihre Karte, aktivierte und
+    /// ausgelöste Fähigkeiten als Karte ihrer Quelle; der oberste Eintrag liegt rechts oben.
+    /// Pfeile zeigen die Ziele jedes Eintrags. Leer = Stack nur in der Liste im HUD.
+    #[export]
+    stack_zone: Option<Gd<Zone>>,
     /// Deck des Spielers: Forge-`.dck`-Datei (`res://` erlaubt) oder Forge-Deckname.
     #[export]
     player_deck: GString,
@@ -130,6 +141,7 @@ impl INode for ForgeTable {
             controller: None,
             player_seat: None,
             opponent_seat: None,
+            stack_zone: None,
             player_deck: "res://../forge-bridge/testdecks/spieler.dck".into(),
             opponent_deck: "res://../forge-bridge/testdecks/gegner.dck".into(),
             seed: -1,
@@ -555,7 +567,8 @@ impl ForgeTable {
             winner: self.winner.clone(),
             button_enabled: my_priority,
             button_text: button_text.into(),
-            stack_busy: false,
+            stack_busy: !self.stack_items().is_empty(),
+            stack: self.hud_stack(),
             player_pool: player(0)
                 .and_then(|p| get_array(&p, "mana_pool"))
                 .map(|a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).collect())
@@ -565,6 +578,32 @@ impl ForgeTable {
             targetable_seats: seat_state(false),
             selected_seats: seat_state(true),
         }
+    }
+
+    /// Stack-Liste für das HUD, oberster Eintrag zuerst.
+    fn hud_stack(&self) -> Vec<HudStackEntry> {
+        self.stack_items()
+            .iter()
+            .rev()
+            .map(|item| {
+                let source = get_int(item, "source");
+                let name = self
+                    .card_data(source)
+                    .map(|c| get_str(&c, "name"))
+                    .or_else(|| item.get("card").and_then(|v| v.try_to::<VarDictionary>().ok()).map(|c| get_str(&c, "name")))
+                    .unwrap_or_default();
+                let kind = match get_str(item, "kind").as_str() {
+                    "Spell" => tr!("Zauber", "Spell"),
+                    "Trigger" => tr!("Ausgelöste Fähigkeit", "Triggered ability"),
+                    _ => tr!("Aktivierte Fähigkeit", "Activated ability"),
+                };
+                HudStackEntry {
+                    title: format!("{name} · {kind}"),
+                    text: get_str(item, "text"),
+                    seat: get_int(item, "controller"),
+                }
+            })
+            .collect()
     }
 
     fn seat_name(&self, seat: usize) -> GString {
@@ -991,11 +1030,75 @@ impl ForgeTable {
         arrows
     }
 
+    /// Pfeile vom Stack-Eintrag (seiner Karte in der Stack-Zone) zu allen seinen Zielen.
+    fn stack_arrows(&self) -> Vec<ArrowSpec> {
+        let mut arrows = Vec::new();
+        for item in self.stack_items() {
+            let key = item
+                .get("card")
+                .and_then(|v| v.try_to::<VarDictionary>().ok())
+                .map_or(ABILITY_KEY_BASE - get_int(&item, "id"), |c| get_int(&c, "id"));
+            let Some(from) = self.cards.get(&key).filter(|c| c.is_instance_valid()).map(|c| c.get_global_position()) else {
+                continue;
+            };
+            for t in stack_targets(&item) {
+                if let Some(to) = self.target_position(t) {
+                    let dir = (to - from).normalized_or_zero();
+                    arrows.push(ArrowSpec { from: from + dir * 0.3, to, color: STACK_ARROW });
+                }
+            }
+        }
+        arrows
+    }
+
+    /// Einträge des Stacks aus dem Zustand (unterster zuerst, oberster zuletzt).
+    fn stack_items(&self) -> Vec<VarDictionary> {
+        self.state
+            .as_ref()
+            .and_then(|s| get_array(s, "stack"))
+            .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Kartendaten der Quelle eines Stack-Eintrags (aus allen offenen Zonen; `None` = unbekannt).
+    fn card_data(&self, id: i64) -> Option<VarDictionary> {
+        let players = self.state.as_ref().and_then(|s| get_array(s, "players")).unwrap_or_default();
+        players.iter_shared().filter_map(|p| p.try_to::<VarDictionary>().ok()).find_map(|p| {
+            ["battlefield", "graveyard", "exile", "hand"].iter().find_map(|zone| {
+                get_array(&p, zone)?
+                    .iter_shared()
+                    .filter_map(|c| c.try_to::<VarDictionary>().ok())
+                    .find(|c| get_int(c, "id") == id)
+            })
+        })
+    }
+
+    /// Kartendaten für die Karte einer Fähigkeit auf dem Stack: Name und Typ der Quelle, keine
+    /// Kosten, dazu `source` und `text` des Eintrags.
+    fn ability_card(&self, item: &VarDictionary) -> VarDictionary {
+        let source = get_int(item, "source");
+        let mut d = VarDictionary::new();
+        match self.card_data(source) {
+            Some(src) => {
+                d.set("name", get_str(&src, "name"));
+                d.set("type", get_str(&src, "type"));
+            }
+            None => {
+                let name = self.cards.get(&source).filter(|c| c.is_instance_valid()).map(|c| c.bind().card_name().to_string());
+                d.set("name", name.unwrap_or_else(|| tr!("Fähigkeit", "Ability").to_string()));
+            }
+        }
+        d.set("source", source);
+        d.set("text", get_str(item, "text"));
+        d
+    }
+
     /// Pfeile der Zielwahl: Quelle → gewählte Ziele (gold), Quelle → gültiges Ziel unter dem
     /// Mauszeiger (blasser, Vorschau).
     fn update_arrows(&mut self) {
         let Some(mut layer) = self.arrows.clone() else { return };
         let mut specs = self.combat_arrows();
+        specs.extend(self.stack_arrows());
         if let Some(req) = self.pending.as_ref() {
             if let Decision::ChooseTargets { candidates, .. } = &req.decision {
                 let from = req
@@ -1067,6 +1170,19 @@ impl ForgeTable {
             }
         }
 
+        // Stack (CR 405): Zauber als ihre Karte, Fähigkeiten als Karte ihrer Quelle;
+        // unterster Eintrag zuerst, damit der oberste in der Zone oben liegt
+        if let Some(stack_zone) = self.stack_zone.clone() {
+            for item in self.stack_items() {
+                let seat = get_int(&item, "controller").clamp(0, 1) as usize;
+                let card = match item.get("card").and_then(|v| v.try_to::<VarDictionary>().ok()) {
+                    Some(c) => (get_int(&c, "id"), c),
+                    None => (ABILITY_KEY_BASE - get_int(&item, "id"), self.ability_card(&item)),
+                };
+                wanted.push((card.0, Some(card.1), stack_zone.clone(), seat));
+            }
+        }
+
         // Nicht mehr sichtbare Karten entfernen (Bibliothek, Exil …). Verdeckte Gegner-Handkarten
         // werden aufgehoben: Taucht beim Gegner eine neue Karte auf (ausgespielt), nimmt sie deren
         // Platz ein und gleitet so sichtbar aus seiner Hand.
@@ -1076,7 +1192,7 @@ impl ForgeTable {
         for key in gone {
             self.signatures.remove(&key);
             let Some(card) = self.cards.remove(&key) else { continue };
-            if key < 0 {
+            if is_hidden_hand_key(key) {
                 let seat = card.bind().owner_seat.clamp(0, 1) as usize;
                 from_hidden_hand[seat].push(card);
             } else {
@@ -1100,11 +1216,21 @@ impl ForgeTable {
                 Some(c) => c.clone(),
                 None => {
                     let to_hand = self.zones(seat).hand.as_ref() == Some(&zone);
-                    // Neue Handkarte: oberste Deckkarte ziehen; sonst aus der verdeckten Hand
-                    // (Gegner spielt aus); sonst neu über dem Deck erzeugen (z. B. Spielsteine)
-                    let c = if to_hand { self.deck_cards[seat].pop() } else { None }
-                        .or_else(|| from_hidden_hand[seat].pop())
-                        .unwrap_or_else(|| self.spawn_card(seat));
+                    // Neue Handkarte: oberste Deckkarte ziehen; Fähigkeit auf dem Stack: auf
+                    // ihrer Quelle erscheinen; sonst aus der verdeckten Hand (Gegner spielt aus);
+                    // sonst neu über dem Deck erzeugen (z. B. Spielsteine)
+                    let c = if key <= ABILITY_KEY_BASE {
+                        let mut c = self.spawn_card(seat);
+                        let source = data.as_ref().map(|d| get_int(d, "source")).and_then(|s| self.cards.get(&s));
+                        if let Some(src) = source.filter(|s| s.is_instance_valid()) {
+                            c.bind_mut().snap_to(src.get_global_transform());
+                        }
+                        c
+                    } else {
+                        if to_hand { self.deck_cards[seat].pop() } else { None }
+                            .or_else(|| from_hidden_hand[seat].pop())
+                            .unwrap_or_else(|| self.spawn_card(seat))
+                    };
                     self.cards.insert(key, c.clone());
                     c
                 }
@@ -1113,7 +1239,8 @@ impl ForgeTable {
             if let Some(data) = &data {
                 // Werte nur bei Änderung neu setzen (Kartenbild wird dabei neu gezeichnet)
                 let sig = format!(
-                    "{}|{}|{}|{}|{}",
+                    "{}|{}|{}|{}|{}|{}",
+                    get_str(data, "text"),
                     get_str(data, "name"),
                     get_str(data, "type"),
                     get_str(data, "cost"),
@@ -1248,6 +1375,25 @@ fn phase_index(phase: &str) -> i64 {
         "END_OF_TURN" | "CLEANUP" => 8,
         _ => -1,
     }
+}
+
+/// Schlüssel einer verdeckten Gegner-Handkarte (nicht: Fähigkeit auf dem Stack)?
+fn is_hidden_hand_key(key: i64) -> bool {
+    key < 0 && key > ABILITY_KEY_BASE
+}
+
+/// Alle Ziele eines Stack-Eintrags (`targets` = Liste je Fähigkeit der Kette), ohne Doppelte.
+fn stack_targets(item: &VarDictionary) -> Vec<Target> {
+    let mut out = Vec::new();
+    for part in get_array(item, "targets").unwrap_or_default().iter_shared() {
+        let Ok(part) = part.try_to::<VarArray>() else { continue };
+        for t in part.iter_shared().filter_map(|t| Target::from_var(&t)) {
+            if !out.contains(&t) {
+                out.push(t);
+            }
+        }
+    }
+    out
 }
 
 fn is_land(card: &VarDictionary) -> bool {
