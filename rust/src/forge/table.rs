@@ -28,9 +28,10 @@ use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
-use crate::table::button3d::Button3D;
+use crate::table::button3d::{Button3D, ButtonStyle};
+use crate::table::showcase::Showcase;
 use crate::table::card3d::{Card3D, CardMarker, SELECT_GLOW};
-use godot::classes::{Label3D, Texture2D};
+use godot::classes::Label3D;
 use crate::table::target_arrows::{ArrowSpec, TargetArrows};
 use crate::table::placeholder;
 use crate::table::table_controller::TableController;
@@ -140,6 +141,8 @@ pub struct ForgeTable {
     /// 3D-Text; werden bei der Antwort ausgeblendet.
     choice_buttons: Vec<Gd<Button3D>>,
     choice_prompt: Option<Gd<Label3D>>,
+    /// Bühne vor der Kamera (z. B. Starthand beim Mulligan); schließt mit der Antwort.
+    showcase: Option<Gd<Showcase>>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -181,6 +184,7 @@ impl INode for ForgeTable {
             log: std::collections::VecDeque::new(),
             choice_buttons: Vec::new(),
             choice_prompt: None,
+            showcase: None,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -337,6 +341,14 @@ impl ForgeTable {
         }
     }
 
+    /// Ein Mulligan-Knopf wurde gedrückt: `keep` = Starthand behalten, sonst Mulligan.
+    #[func]
+    fn on_mulligan_pressed(&mut self, keep: bool) {
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::Mulligan { .. })) {
+            self.answer(if keep { Choice::Keep } else { Choice::Mulligan });
+        }
+    }
+
     /// Ein Startspieler-Knopf wurde gedrückt (`index` = Eintrag in `players` der Entscheidung
     /// `ChooseStartingPlayer`).
     #[func]
@@ -476,9 +488,13 @@ impl ForgeTable {
         self.block_plan.clear();
         self.combat_armed = None;
         let starting = matches!(req.decision, Decision::ChooseStartingPlayer { .. }).then(|| req.clone());
+        let mulligan = matches!(req.decision, Decision::Mulligan { .. }).then(|| req.clone());
         self.pending = Some(req);
         if let Some(req) = starting {
             self.show_starting_player(&req);
+        }
+        if let Some(req) = mulligan {
+            self.show_mulligan(&req);
         }
         self.update_glow();
     }
@@ -585,7 +601,6 @@ impl ForgeTable {
         let Decision::ChooseStartingPlayer { players, player } = &req.decision else { return };
         self.clear_choice_objects();
         let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
-        let tex = |name: &str| try_load::<Texture2D>(&format!("res://assets/buttons/{name}.png")).ok();
         // Bildschirm-Hochrichtung in der Welt (Kamera schaut schräg auf den Tisch)
         let up = self
             .base()
@@ -599,10 +614,10 @@ impl ForgeTable {
         for (row, i) in order.into_iter().enumerate() {
             let seat = &players[i];
             let own = seat == player;
-            let (face, glow) = if own { ("button_orange_face", "button_orange_glow") } else { ("button_blue_face", "button_blue_glow") };
+            let style = if own { ButtonStyle::Orange } else { ButtonStyle::Blue };
             let name = Some(req.label(i)).filter(|l| !l.is_empty()).unwrap_or_else(|| self.seat_name(*seat as usize).to_string());
             let text = if own { tr!("Ich beginne", "I go first").to_string() } else { trf!("{name} beginnt", "{name} goes first") };
-            let mut button = Button3D::create(tex(face), tex(glow), &text, STARTING_BUTTON_WIDTH);
+            let mut button = Button3D::create(style, &text, STARTING_BUTTON_WIDTH);
             let offset = ((n - 1.0) * 0.5 - row as f32) * STARTING_BUTTON_SPACING;
             parent.add_child(&button);
             button.set_position(STARTING_CHOICE_CENTER + up * offset);
@@ -624,8 +639,70 @@ impl ForgeTable {
         self.choice_prompt = Some(prompt);
     }
 
+    /// Mulligan (CR 103.5) in 3D: die Starthand groß auf der Bühne vor der Kamera (Tisch
+    /// abgedunkelt), darüber wer beginnt und die Frage, darunter „Mulligan“ (blau, links) und
+    /// „Behalten“ (orange, rechts), ggf. der Hinweis, wie viele Karten danach unter die Bibliothek
+    /// gehen.
+    fn show_mulligan(&mut self, req: &Request) {
+        let Decision::Mulligan { mulligans_taken, .. } = &req.decision else { return };
+        let taken = *mulligans_taken;
+        self.clear_choice_objects();
+        let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
+        let mut showcase = Showcase::new_alloc();
+        parent.add_child(&showcase);
+        showcase.bind_mut().open();
+
+        let starter = self.state.as_ref().map_or(-1, |s| get_int(s, "active_player"));
+        let title = match starter {
+            s if s == LOCAL_SEAT => tr!("Du beginnst", "You go first").to_string(),
+            s if s >= 0 => {
+                let name = self.seat_name(s as usize);
+                trf!("{name} beginnt", "{name} goes first")
+            }
+            _ => tr!("Starthand", "Opening hand").to_string(),
+        };
+        let subtitle = if taken == 0 {
+            tr!("Starthand behalten oder Mulligan?", "Keep your opening hand or mulligan?").to_string()
+        } else {
+            trf!("Mulligan {taken}: behalten oder noch einmal?", "Mulligan {taken}: keep or mulligan again?")
+        };
+        let note = if taken == 0 {
+            String::new()
+        } else {
+            trf!(
+                "Beim Behalten legst du {taken} Karte(n) unter deine Bibliothek.",
+                "If you keep, you put {taken} card(s) on the bottom of your library."
+            )
+        };
+        showcase.bind_mut().set_texts(GString::from(title.as_str()), GString::from(subtitle.as_str()), GString::from(note.as_str()));
+
+        let hand: Vec<Gd<Card3D>> = self
+            .zones(LOCAL_SEAT as usize)
+            .hand
+            .map(|h| h.bind().get_cards().iter_shared().collect())
+            .unwrap_or_default();
+        showcase.bind_mut().show_cards(&hand);
+
+        let width = Showcase::button_width();
+        for (style, text, keep) in [
+            (ButtonStyle::Blue, tr!("Mulligan", "Mulligan"), false),
+            (ButtonStyle::Orange, tr!("Behalten", "Keep"), true),
+        ] {
+            let mut button = Button3D::create(style, text, width);
+            let cb = Callable::from_object_method(&self.to_gd(), "on_mulligan_pressed").bind(&[keep.to_variant()]);
+            button.connect("pressed", &cb);
+            showcase.bind_mut().add_button(button);
+        }
+        self.showcase = Some(showcase);
+    }
+
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
     fn clear_choice_objects(&mut self) {
+        if let Some(mut s) = self.showcase.take() {
+            if s.is_instance_valid() {
+                s.bind_mut().close();
+            }
+        }
         for mut b in self.choice_buttons.drain(..) {
             if b.is_instance_valid() {
                 b.bind_mut().dismiss();
@@ -1551,6 +1628,10 @@ impl ForgeTable {
                 continue;
             }
             let current = card.bind().get_zone();
+            // Karten auf der Bühne (z. B. Starthand beim Mulligan) bleiben dort, bis sie schließt
+            if self.showcase.as_ref().is_some_and(|s| s.is_instance_valid() && s.bind().holds(card.clone())) {
+                continue;
+            }
             if current.as_ref() != Some(&zone) {
                 if let Some(mut old) = current {
                     old.bind_mut().remove_card(card.clone());

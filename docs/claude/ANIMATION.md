@@ -47,7 +47,9 @@ Spiel nie auf.
 | Phasenwechsel | 0,25 s | Cubic-Out | Zeitstrahl (vorhanden) |
 | Auswahlfenster / Kartenfächer öffnen | 0,20 s | Cubic-Out | Hintergrund abdunkeln 0,15 s |
 | 3D-Knopf erscheinen / verschwinden | 0,20 s / 0,15 s | Cubic-Out / linear | wächst aus der Mitte (`Button3D`, `APPEAR_TIME`, `DISMISS_TIME`) |
-| 3D-Knopf Hover / Klick | exponentiell (≈0,12 s) / 0,12 s | – / Sinus | +5 % Größe, Leuchten heller; Klick drückt 7 % ein; Leuchten pulsiert mit 0,6 Hz |
+| 3D-Knopf Hover / Klick | exponentiell (≈0,12 s) / 0,12 s | – / Sinus | +5 % Größe, Leuchten +45 %; Klick drückt 7 % ein |
+| 3D-Knopf Oberfläche | 4 s Schleife | – | Shader nach den Blender-Treibern: Rauschen kreist in z/w, Leuchten 0,85 + 0,15·sin(2φ); Zeitversatz je Knopf zufällig |
+| Bühne (Showcase) öffnen / schließen | 0,15 s | linear | Abdunkeln und Texte ein-/ausblenden; Karten gleiten mit `move_duration` herein und zurück |
 | Kamera Fokus / Übersicht | exponentiell, `smoothing` | – | vorhanden (`TableCamera`) |
 
 Faustregel: Routine ≤ 0,3 s, wichtige Ereignisse 0,3–0,6 s, nie über 0,8 s ohne Grund.

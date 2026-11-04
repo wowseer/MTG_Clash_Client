@@ -23,6 +23,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [Arena](#arena) – erbt von `Node3D`
 - [Button3D](#button3d) – erbt von `Area3D`
 - [Card3D](#card3d) – erbt von `Area3D`
+- [Showcase](#showcase) – erbt von `Node3D`
 - [TableCamera](#tablecamera) – erbt von `Camera3D`
 - [TableController](#tablecontroller) – erbt von `Node3D`
 - [TargetArrows](#targetarrows) – erbt von `Node3D`
@@ -108,6 +109,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
 | `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
+| `on_mulligan_pressed(keep: bool)` | `void` | Ein Mulligan-Knopf wurde gedrückt: `keep` = Starthand behalten, sonst Mulligan. |
 | `on_starting_player_pressed(index: int)` | `void` | Ein Startspieler-Knopf wurde gedrückt (`index` = Eintrag in `players` der Entscheidung `ChooseStartingPlayer`). |
 | `player_clicked(seat: int)` | `void` | Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt. |
 | `submit_fan(first: PackedInt64Array, second: PackedInt64Array)` | `void` | Antwort aus dem Kartenfächer: `first` = gewählte Karten (`ChooseCards`, `MulliganBottom`) bzw. Karten oben auf der Bibliothek (`Scry`, von oben nach unten), `second` = Karten unter die Bibliothek bzw. in den Friedhof. |
@@ -390,14 +392,13 @@ Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in 
 
 *Erbt von `Area3D` · Quelle: `rust/src/table/button3d.rs`*
 
-Anklickbarer Knopf in der 3D-Szene: Knopfbild (`face_texture`) mit Leuchten dahinter (`glow_texture`) und Beschriftung (`text`). Wird vom `TableController` per Raycast angeklickt (Kollisions-Layer 3) und meldet das mit [signal pressed]. Richtet sich auf Wunsch zur Kamera aus (`face_camera`).
+Anklickbarer Knopf in der 3D-Szene: bewegte Oberfläche und Leuchten im Farbstil `style` (Nachbau der Blender-Materialien) mit Beschriftung (`text`). Wird vom `TableController` per Raycast angeklickt (Kollisions-Layer 3) und meldet das mit [signal pressed]. Richtet sich auf Wunsch zur Kamera aus (`face_camera`).
 
 ### Eigenschaften
 
 | Name | Typ | Beschreibung |
 |---|---|---|
-| `face_texture` | `Texture2D` | Bild des Knopfes (transparenter Hintergrund). |
-| `glow_texture` | `Texture2D` | Bild des Leuchtens hinter dem Knopf (gleicher Bildausschnitt wie der Knopf). |
+| `style` | `ButtonStyle` | Farbstil: 0 = Orange (Feuer), 1 = Blau (Wolken). |
 | `text` | `String` | Beschriftung auf dem Knopf. |
 | `width` | `float` | Breite der Bildfläche in Welteinheiten (Höhe folgt aus dem Seitenverhältnis). |
 | `face_camera` | `bool` | Knopf immer parallel zur Bildebene der Kamera ausrichten. |
@@ -466,6 +467,22 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (schräg, ausgegraut, Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
 | `is_tapped()` | `bool` | Ist die Karte getappt (leicht schräg, ausgegraut, Tapp-Symbol)? |
 | `get_zone()` | `Zone` | Die Zone, in der die Karte aktuell liegt (None während des Ziehens). |
+
+## Showcase
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/showcase.rs`*
+
+Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`-Knöpfe. `open()` stellt sie vor die aktuelle Kamera, `show_cards()` holt Karten herein, `close()` gibt sie an ihre Zonen zurück und blendet aus.
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `open()` | `void` | Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene). |
+| `set_texts(title: String, subtitle: String, note: String)` | `void` | Titel, Untertitel und Hinweis setzen (leer = ausblenden). |
+| `static button_width()` | `float` | Breite eines Knopfes in dieser Bühne (Welteinheiten). |
+| `holds(card: Card3D)` | `bool` | Liegt `card` gerade in der Bühne? |
+| `close()` | `void` | Karten zurückgeben, Knöpfe ausblenden, abdunkeln aufheben und danach freigeben. |
 
 ## TableCamera
 

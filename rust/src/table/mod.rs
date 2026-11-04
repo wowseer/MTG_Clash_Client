@@ -1,9 +1,11 @@
 //! 3D-Spieltisch: Karten, Zonen, Kamera und Drag-and-Drop.
 
 pub mod button3d;
+mod button_shader;
 pub mod card3d;
 pub mod layers;
 pub(crate) mod placeholder;
+pub mod showcase;
 pub mod target_arrows;
 pub mod table_camera;
 pub mod table_controller;

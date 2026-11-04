@@ -19,11 +19,8 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(Target) -> String) -> Option<H
         texts.into_iter().map(|text| ChoiceOption { text, color: None }).collect()
     };
     let (default_title, mode, options): (String, ChoiceMode, Vec<ChoiceOption>) = match &req.decision {
-        Decision::Mulligan { .. } => (
-            tr!("Starthand behalten?", "Keep your opening hand?").into(),
-            ChoiceMode::Confirm,
-            plain(vec![tr!("Behalten", "Keep").into(), tr!("Mulligan", "Mulligan").into()]),
-        ),
+        // Mulligan: Bühne mit 3D-Knöpfen auf dem Tisch (ForgeTable::show_mulligan)
+        Decision::Mulligan { .. } => return None,
         Decision::ChooseModes { modes, min, max, .. } => (
             tr!("Modus wählen", "Choose a mode").into(),
             single_or_multi(*min, *max),
