@@ -42,6 +42,11 @@ const LOCAL_SEAT: i64 = 0;
 /// Schlüssel der Karten für Fähigkeiten auf dem Stack: `ABILITY_KEY_BASE - Stack-ID`
 /// (verdeckte Gegner-Handkarten liegen zwischen −1 und dieser Grenze).
 const ABILITY_KEY_BASE: i64 = -1_000_000;
+/// Beschriftung des Fertig-Knopfes beim Unter-die-Bibliothek-Legen.
+fn bottom_label(n: u32, count: u32) -> String {
+    trf!("Fertig ({n}/{count})", "Done ({n}/{count})")
+}
+
 /// Startspieler-Knöpfe: Breite, Abstand untereinander (in Bildschirm-Hochrichtung) und Mitte der
 /// Knopfspalte (über der Tischmitte, zum Spieler hin).
 const STARTING_BUTTON_WIDTH: f32 = 4.6;
@@ -143,6 +148,8 @@ pub struct ForgeTable {
     choice_prompt: Option<Gd<Label3D>>,
     /// Bühne vor der Kamera (z. B. Starthand beim Mulligan); schließt mit der Antwort.
     showcase: Option<Gd<Showcase>>,
+    /// Karten, die nach einem Mulligan unter die Bibliothek sollen (Klick-Reihenfolge).
+    bottom_pick: Vec<CardId>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -185,6 +192,7 @@ impl INode for ForgeTable {
             choice_buttons: Vec::new(),
             choice_prompt: None,
             showcase: None,
+            bottom_pick: Vec::new(),
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -341,6 +349,23 @@ impl ForgeTable {
         }
     }
 
+    /// „Fertig“ bei `MulliganBottom`: gewählte Karten an die Engine.
+    #[func]
+    fn on_bottom_done(&mut self) {
+        let Some(Decision::MulliganBottom { count, hand, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else {
+            return;
+        };
+        if self.bottom_pick.len() == count as usize {
+            for id in &hand {
+                if let Some(mut c) = self.cards.get(&i64::from(*id)).cloned() {
+                    c.bind_mut().set_marker(CardMarker::None);
+                }
+            }
+            let pick = std::mem::take(&mut self.bottom_pick);
+            self.answer(Choice::Cards(pick));
+        }
+    }
+
     /// Ein Mulligan-Knopf wurde gedrückt: `keep` = Starthand behalten, sonst Mulligan.
     #[func]
     fn on_mulligan_pressed(&mut self, keep: bool) {
@@ -489,12 +514,16 @@ impl ForgeTable {
         self.combat_armed = None;
         let starting = matches!(req.decision, Decision::ChooseStartingPlayer { .. }).then(|| req.clone());
         let mulligan = matches!(req.decision, Decision::Mulligan { .. }).then(|| req.clone());
+        let bottom = matches!(req.decision, Decision::MulliganBottom { .. }).then(|| req.clone());
         self.pending = Some(req);
         if let Some(req) = starting {
             self.show_starting_player(&req);
         }
         if let Some(req) = mulligan {
             self.show_mulligan(&req);
+        }
+        if let Some(req) = bottom {
+            self.show_mulligan_bottom(&req);
         }
         self.update_glow();
     }
@@ -526,6 +555,9 @@ impl ForgeTable {
     fn on_card_clicked(&mut self, card: Gd<Card3D>) {
         let Some(id) = self.forge_id(&card) else { return };
         let Ok(card_id) = u32::try_from(id) else { return };
+        if self.bottom_click(card_id) {
+            return;
+        }
         if self.combat_click(card_id) {
             self.update_glow();
             return;
@@ -644,16 +676,16 @@ impl ForgeTable {
     /// „Behalten“ (orange, rechts), ggf. der Hinweis, wie viele Karten danach unter die Bibliothek
     /// gehen.
     fn show_mulligan(&mut self, req: &Request) {
-        let Decision::Mulligan { mulligans_taken, .. } = &req.decision else { return };
+        let Decision::Mulligan { mulligans_taken, first_player, .. } = &req.decision else { return };
         let taken = *mulligans_taken;
+        let first = first_player.map_or(-1, i64::from);
         self.clear_choice_objects();
         let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
         let mut showcase = Showcase::new_alloc();
         parent.add_child(&showcase);
         showcase.bind_mut().open();
 
-        let starter = self.state.as_ref().map_or(-1, |s| get_int(s, "active_player"));
-        let title = match starter {
+        let title = match first {
             s if s == LOCAL_SEAT => tr!("Du beginnst", "You go first").to_string(),
             s if s >= 0 => {
                 let name = self.seat_name(s as usize);
@@ -666,14 +698,13 @@ impl ForgeTable {
         } else {
             trf!("Mulligan {taken}: behalten oder noch einmal?", "Mulligan {taken}: keep or mulligan again?")
         };
-        let note = if taken == 0 {
-            String::new()
-        } else {
-            trf!(
-                "Beim Behalten legst du {taken} Karte(n) unter deine Bibliothek.",
-                "If you keep, you put {taken} card(s) on the bottom of your library."
-            )
-        };
+        // London-Mulligan (Forge): neue 7 Karten, sofort danach so viele unter die Bibliothek,
+        // wie man schon Mulligans genommen hat
+        let next = taken + 1;
+        let note = trf!(
+            "Mulligan: 7 neue Karten, danach {next} unter die Bibliothek.",
+            "Mulligan: draw 7 new cards, then put {next} on the bottom of your library."
+        );
         showcase.bind_mut().set_texts(GString::from(title.as_str()), GString::from(subtitle.as_str()), GString::from(note.as_str()));
 
         let hand: Vec<Gd<Card3D>> = self
@@ -694,6 +725,70 @@ impl ForgeTable {
             showcase.bind_mut().add_button(button);
         }
         self.showcase = Some(showcase);
+    }
+
+    /// Nach einem Mulligan Karten unter die Bibliothek legen (London-Mulligan) in 3D: die Hand
+    /// auf der Bühne, Klick auf eine Karte markiert sie (golden), orange „Fertig (n/N)“ ist erst
+    /// bei der richtigen Anzahl aktiv.
+    fn show_mulligan_bottom(&mut self, req: &Request) {
+        let Decision::MulliganBottom { hand, count, .. } = &req.decision else { return };
+        let count = *count;
+        self.clear_choice_objects();
+        self.bottom_pick.clear();
+        let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
+        let mut showcase = Showcase::new_alloc();
+        parent.add_child(&showcase);
+        showcase.bind_mut().open();
+        let title = trf!("{count} Karte(n) unter die Bibliothek", "Put {count} card(s) on the bottom");
+        let subtitle = tr!(
+            "Klicke die Karten an, die unter deine Bibliothek kommen.",
+            "Click the cards to put on the bottom of your library."
+        );
+        showcase.bind_mut().set_texts(GString::from(title.as_str()), GString::from(subtitle), GString::new());
+        let cards: Vec<Gd<Card3D>> = hand.iter().filter_map(|id| self.cards.get(&i64::from(*id)).cloned()).collect();
+        showcase.bind_mut().show_cards(&cards);
+        let mut button = Button3D::create(ButtonStyle::Orange, &bottom_label(0, count), Showcase::button_width() * 1.2);
+        button.bind_mut().set_enabled(count == 0);
+        let cb = Callable::from_object_method(&self.to_gd(), "on_bottom_done");
+        button.connect("pressed", &cb);
+        showcase.bind_mut().add_button(button);
+        self.showcase = Some(showcase);
+    }
+
+    /// Klick auf eine Karte bei `MulliganBottom`: markieren bzw. Markierung aufheben, Knopf
+    /// aktualisieren. true = behandelt.
+    fn bottom_click(&mut self, card: CardId) -> bool {
+        let Some(Decision::MulliganBottom { hand, count, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else {
+            return false;
+        };
+        if !hand.contains(&card) {
+            return true;
+        }
+        if let Some(pos) = self.bottom_pick.iter().position(|c| *c == card) {
+            self.bottom_pick.remove(pos);
+        } else if self.bottom_pick.len() < count as usize {
+            self.bottom_pick.push(card);
+        } else if count == 1 {
+            self.bottom_pick = vec![card];
+        }
+        for id in &hand {
+            if let Some(mut c) = self.cards.get(&i64::from(*id)).cloned() {
+                let marker = if self.bottom_pick.contains(id) { CardMarker::Selected } else { CardMarker::None };
+                c.bind_mut().set_marker(marker);
+            }
+        }
+        let n = self.bottom_pick.len() as u32;
+        if let Some(mut b) = self.showcase_button() {
+            b.bind_mut().set_label_text(GString::from(bottom_label(n, count).as_str()));
+            b.bind_mut().set_enabled(n == count);
+        }
+        true
+    }
+
+    /// Erster Knopf der offenen Bühne.
+    fn showcase_button(&self) -> Option<Gd<Button3D>> {
+        let s = self.showcase.as_ref()?;
+        s.get_children().iter_shared().find_map(|c| c.try_cast::<Button3D>().ok())
     }
 
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
@@ -1169,8 +1264,8 @@ impl ForgeTable {
     fn fan_ids(decision: &Decision) -> Vec<CardId> {
         match decision {
             Decision::ChooseCards { options, .. } => options.clone(),
-            Decision::MulliganBottom { hand, .. } => hand.clone(),
             Decision::Scry { cards, .. } => cards.clone(),
+            // MulliganBottom: auf der 3D-Bühne (show_mulligan_bottom)
             _ => Vec::new(),
         }
     }

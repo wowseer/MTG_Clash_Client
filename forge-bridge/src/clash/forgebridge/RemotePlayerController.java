@@ -1446,7 +1446,8 @@ public class RemotePlayerController extends PlayerControllerAi {
     /** {@code Decision::Mulligan}: {@code Keep} = behalten, {@code Mulligan} = neu ziehen. */
     @Override
     public boolean mulliganKeepHand(Player firstPlayer, int cardsToReturn) {
-        Boolean keep = Decisions.mulligan(getGame(), seat, cardsToReturn);
+        Boolean keep = Decisions.mulligan(getGame(), seat, cardsToReturn,
+                firstPlayer == null ? -1 : StateJson.indexOf(getGame(), firstPlayer));
         return keep == null || keep;
     }
 

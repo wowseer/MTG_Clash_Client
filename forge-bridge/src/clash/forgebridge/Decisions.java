@@ -169,9 +169,11 @@ final class Decisions {
     // ------------------------------------------------------------------ Entscheidungen des Protokoll-Modells
 
     /** {@code Mulligan}: true = behalten ({@code Keep}), false = Mulligan, null = unlesbar. */
-    static Boolean mulligan(Game game, int seat, int mulligansTaken) {
+    static Boolean mulligan(Game game, int seat, int mulligansTaken, int firstPlayer) {
         JsonObject d = decision("Mulligan", seat);
         d.addProperty("mulligans_taken", mulligansTaken);
+        // Erweiterung: wer die Partie beginnt (CR 103.1), für die Anzeige
+        d.addProperty("first_player", firstPlayer);
         JsonObject c = ask(game, seat, d, "Starthand behalten?", null, null, false, null);
         return switch (type(c)) {
             case "Keep" -> true;

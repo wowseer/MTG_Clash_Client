@@ -102,7 +102,8 @@ pub enum Decision {
     /// Modi eines modalen Zaubers (Index, Text).
     ChooseModes { player: PlayerId, modes: Vec<(usize, String)>, min: u32, max: u32, can_repeat: bool },
     /// London-Mulligan: behalten oder neu ziehen.
-    Mulligan { player: PlayerId, mulligans_taken: u32 },
+    /// `first_player` (**Erweiterung**): wer die Partie beginnt (CR 103.1), nur zur Anzeige.
+    Mulligan { player: PlayerId, mulligans_taken: u32, first_player: Option<PlayerId> },
     /// Nach dem Behalten `count` Karten unter die Bibliothek legen.
     MulliganBottom { player: PlayerId, hand: Vec<CardId>, count: u32 },
     Priority { player: PlayerId, actions: Vec<Action> },
@@ -448,7 +449,11 @@ impl Decision {
                 max: o.u32("max"),
                 can_repeat: o.bool("can_repeat"),
             },
-            "Mulligan" => Decision::Mulligan { player, mulligans_taken: o.u32("mulligans_taken") },
+            "Mulligan" => Decision::Mulligan {
+                player,
+                mulligans_taken: o.u32("mulligans_taken"),
+                first_player: o.get("first_player").and_then(|v| v.try_to::<i64>().ok()).filter(|p| *p >= 0).map(|p| p as PlayerId),
+            },
             "MulliganBottom" => Decision::MulliganBottom { player, hand: o.ids("hand"), count: o.u32("count") },
             "Priority" => Decision::Priority {
                 player,

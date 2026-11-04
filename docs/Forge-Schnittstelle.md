@@ -76,7 +76,7 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 | Forge-Methode(n) | `Decision` | Antwort (`Choice`) |
 |---|---|---|
 | `chooseSpellAbilityToPlay` | `Priority { actions }` | `Action(…)`; `Pass` |
-| `mulliganKeepHand` | `Mulligan { mulligans_taken }` | `Keep` / `Mulligan` |
+| `mulliganKeepHand` | `Mulligan { mulligans_taken, first_player }` | `Keep` / `Mulligan` |
 | `chooseModeForAbility` | `ChooseModes { modes, min, max, can_repeat }` | `Modes([…])` |
 | `chooseTargetsFor` (über `setupTargets`) | `ChooseTargets { source, description, candidates, min, max }` | `Targets([…])` / `Cancel` |
 | `announceRequirements` (X ab 0) | `ChooseX { max }` | `Number(n)` / `Cancel` |
@@ -180,6 +180,7 @@ Diese Teile gibt es im Vorbild (`decision.rs` aus forge-rules-rs) (noch) nicht:
 | `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
 | `ChooseCards` mit `reason: "Reveal"` und `max: 0` | Anzeige aufgedeckter Karten; im Basismodell fehlt ein `Decision::Reveal { cards }` bzw. Ereignis |
 | `Decision::ChooseStartingPlayer { player, players }` → `Choice::Number(index)` | wer beginnt die Partie (CR 103.1); `players` = Sitzplätze, `labels` = Spielernamen. Die UI zeigt dafür 3D-Knöpfe statt eines Fensters |
+| `Decision::Mulligan` + Feld `first_player` | Sitzplatz des Startspielers (−1 = noch unbekannt), damit die Mulligan-Bühne „Du beginnst“ / „X beginnt“ zeigen kann; das Basismodell kennt nur `mulligans_taken` |
 | `ChooseTargets` auch für Spieler-/Kartenwahl durch Effekte (`chooseSingleEntityForEffect` mit Spielern) | Das Basismodell hat dafür keine Entscheidung; die UI behandelt sie wie Ziele (Klick auf Medaillon/Karte) |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
 | Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) und Kartendaten (`cards`: Liste wie im `state`) der Karten, um die es geht – auch aus verdeckten Zonen, z. B. bei `ChooseCards` mit `Search` |
@@ -345,7 +346,8 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `Priority` | Karten mit einer Aktion leuchten; Handkarte auf den Tisch ziehen → `PlayLand`/`Cast`; Klick auf eine Karte außerhalb der Hand → ihre `Activate`-Aktion (mehrere: Menü „Fähigkeit wählen“, nur UI); Hauptbutton / Leertaste → `Action::Pass` |
 | `ChooseTargets` | gültige Karten leuchten, wählbare Spieler-Medaillons pulsieren golden; Klick wählt (Signal `ForgeTable.choice_option_clicked` → Auswahlfenster am rechten Rand); gewählte Ziele golden markiert, Pfeile Quelle → Ziel (`TargetArrows`) |
 | `ChooseCards` mit Karten, die alle offen auf dem Tisch liegen (Spielfeld, Länder-Reihe, Kommandozone, Stack) | Tisch-Modus: Karten leuchten, Klick wählt (gold), Fenster am rechten Rand mit Kartennamen und „Fertig“ → `Cards` |
-| `ChooseCards` / `MulliganBottom` / `Scry` | Kartenfächer-Overlay (`card_fan.rs`): Karten groß (Tischkarten bzw. temporäre Karten aus `cards`), Klick wählt bzw. wechselt die Reihe; „Fertig“ → `ForgeTable.submit_fan` → `Cards` / `Arrange` |
+| `Mulligan` / `MulliganBottom` | 3D-Bühne (`Showcase`): Hand groß vor der Kamera, `Button3D` „Mulligan“/„Behalten“ → `Mulligan` / `Keep`; bei `MulliganBottom` Karten anklicken, „Fertig (n/N)“ → `Cards` |
+| `ChooseCards` / `Scry` | Kartenfächer-Overlay (`card_fan.rs`): Karten groß (Tischkarten bzw. temporäre Karten aus `cards`), Klick wählt bzw. wechselt die Reihe; „Fertig“ → `ForgeTable.submit_fan` → `Cards` / `Arrange` |
 | `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
 | `AssignCombatDamage` / `DivideAmount` | Auswahlfenster „Verteilen“: Zahlenfeld je Empfänger, vorbelegt, Summenanzeige, „OK“ nur bei richtiger Summe → `Damage` |
 | `PayUnlessCost` / `PayLifeForPhyrexian` | Ja/Nein-Fenster („Zahlen“ / „Nicht zahlen“, „2 Leben zahlen“ / „Mit Mana zahlen“) |

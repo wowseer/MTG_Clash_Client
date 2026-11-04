@@ -96,8 +96,9 @@ pub struct Button3D {
     /// Knopf immer parallel zur Bildebene der Kamera ausrichten.
     #[export]
     face_camera: bool,
-    /// Anklickbar? (Ausgegraut, wenn nicht.)
+    /// Anklickbar? (Ausgegraut und ohne Klickwirkung, wenn nicht.)
     #[export]
+    #[var(pub)]
     enabled: bool,
 
     material: Option<Gd<ShaderMaterial>>,
