@@ -88,8 +88,7 @@ Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.pla
 (`RemoteCostDecision`), `AssignCombatDamage`, `DivideAmount`, `PayUnlessCost`,
 `PayLifeForPhyrexian`, Trigger über den menschlichen Ablauf. Nächster Schritt laut Fahrplan:
 offene Spieler-Entscheidungen aus dem Fahrplan (Ziele von `chooseSingleEntityForEffect` /
-`chooseEntitiesForEffect`, Delve, Convoke, Blocker-Reihenfolge …); Zustand vollständig bis auf
-Kommandozone und doppelseitige Karten.
+`chooseEntitiesForEffect`, Delve, Convoke, Blocker-Reihenfolge …); der Zustand ist vollständig.
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
@@ -104,6 +103,7 @@ Angezeigt:
 - [x] Phase, Leben, Runde, Spieler am Zug, Spielende
 - [x] Stack: Zauber und Fähigkeiten in der Tischmitte, Ziele als violette Pfeile, Liste im HUD
 - [x] Spielprotokoll oben rechts
+- [x] Kommandozone, Monarch/Initiative/Stadtsegen/Ring, Tag/Nacht, doppelseitige Karten (Umdreh-Animation), verdeckte Karten
 - [x] Kartenbild aus Engine-Daten: Regeltext mit Symbolen, Typzeile, Farben, Stärke/Widerstand, Loyalität, Verteidigung
 - [x] Exil-Stapel, Marken- und Spielstein-Plaketten, angelegte Karten unter dem Träger, Spieler-Marken
 
@@ -126,7 +126,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 - ~~Exil, Marken (Counter), angelegte Karten (Auren, Ausrüstung), Spielsteine~~ ✔
 - ~~Regeltext auf dem Kartenbild; Kartenmodell verschlankt~~ ✔ (`CardDef::from_state`, `card_text.rs`)
 - ~~Spielprotokoll~~ ✔ (Nachricht `log` aus Forges `GameLog`, oben rechts im HUD)
-- Kommandozone (Embleme, Commander, Dungeons, Ring), doppelseitige/verdeckte Karten
+- ~~Kommandozone (Embleme, Commander, Dungeons, Ring), doppelseitige/verdeckte Karten~~ ✔
 
 **Später:** Deckauswahl, mehr als 2 Spieler (Commander), Formate, Umzug der UI nach NeoForge.
 

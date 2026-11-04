@@ -51,6 +51,9 @@ fn circle(img: &mut Gd<Image>, cx: i32, cy: i32, r: i32, color: Color) {
 /// Kostensymbolen, Bildfeld, Typzeile, Textfeld und (bei Kreaturen) Wertefeld.
 /// Texte kommen per Label3D dazu.
 pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
+    if def.face_down {
+        return face_down_face(def);
+    }
     let base = def.frame_color();
     let frame = base * 0.85;
     let dark = base.darkened(0.6);
@@ -163,8 +166,26 @@ fn emblem(img: &mut Gd<Image>, kind: CardKind, c: Color) {
     }
 }
 
+/// Vorderseite einer verdeckten Karte (CR 708): Rückseitenmuster, Titelleiste und – bei
+/// Kreaturen – Wertefeld für die Werte der verdeckten Seite (meist 2/2).
+fn face_down_face(def: &CardDef) -> Gd<Texture2D> {
+    let mut img = back_image();
+    let dark = Color::from_rgb(0.08, 0.08, 0.12);
+    img.fill_rect(rect(20, 20, W - 40, 32), dark); // Titel
+    img.fill_rect(rect(20, 208, W - 40, 22), dark); // Typzeile
+    if def.stats.is_some() {
+        img.fill_rect(rect(W - 82, 318, 64, 32), Color::from_rgb(0.12, 0.08, 0.06));
+        img.fill_rect(rect(W - 80, 320, 60, 28), dark);
+    }
+    finish(img)
+}
+
 /// Gemeinsame Rückseite.
 pub fn card_back() -> Gd<Texture2D> {
+    finish(back_image())
+}
+
+fn back_image() -> Gd<Image> {
     let mut img = Image::create_empty(W, H, false, Format::RGBA8).expect("Image");
     img.fill(Color::from_rgb(0.08, 0.08, 0.1));
     let colors = [
@@ -178,5 +199,5 @@ pub fn card_back() -> Gd<Texture2D> {
         let m = 10 + k as i32 * 18;
         img.fill_rect(rect(m, m, W - 2 * m, H - 2 * m), *c);
     }
-    finish(img)
+    img
 }

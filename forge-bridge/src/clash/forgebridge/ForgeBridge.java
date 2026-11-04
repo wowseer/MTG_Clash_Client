@@ -123,7 +123,7 @@ public final class ForgeBridge {
                     sendError("no_match", "Kein laufendes Spiel");
                 } else {
                     JsonObject st = message("state");
-                    st.add("state", StateJson.snapshot(g, cmd.has("viewer") ? cmd.get("viewer").getAsInt() : -1));
+                    st.add("state", StateJson.snapshotFromOtherThread(g, cmd.has("viewer") ? cmd.get("viewer").getAsInt() : -1));
                     send(st);
                 }
             }

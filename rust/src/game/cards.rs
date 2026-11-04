@@ -79,6 +79,10 @@ pub struct CardDef {
     pub defense: Option<i32>,
     /// Erlittener Schaden in diesem Zug.
     pub damage: i32,
+    /// Verdeckt (Morph, Manifest …, CR 708): Bild mit Rückseitenmuster, Werte der verdeckten Seite.
+    pub face_down: bool,
+    /// Angezeigte Seite doppelseitiger Karten (0 = Vorderseite, 1 = Rückseite / umgedreht).
+    pub face: u8,
     /// Nur Länder: Manafarbe für Rahmen und Spalte der Länder-Reihe (aus dem Grundlandtyp bzw.
     /// der einzigen Farbe; sonst farblos).
     pub produces: ManaType,
@@ -91,8 +95,8 @@ impl CardDef {
     }
 
     /// Liest die Kartendaten des Protokolls: `name`, `type`, `cost`, `colors`, `text`, `power`,
-    /// `toughness`, `base_power`, `base_toughness`, `loyalty`, `defense`, `damage` (fehlende
-    /// Felder = leer).
+    /// `toughness`, `base_power`, `base_toughness`, `loyalty`, `defense`, `damage`, `face_down`,
+    /// `face` (fehlende Felder = leer).
     pub fn from_state(card: &VarDictionary) -> Self {
         let s = |k: &str| card.get(k).filter(|v| !v.is_nil()).map(|v| v.to_string()).unwrap_or_default();
         let i = |k: &str| card.get(k).and_then(|v| v.try_to::<i64>().ok()).map(|v| v as i32);
@@ -117,8 +121,15 @@ impl CardDef {
             ManaType::Colorless
         };
         let stats = pair("power", "toughness");
+        let face_down = card.get("face_down").and_then(|v| v.try_to::<bool>().ok()).unwrap_or(false);
+        let name = match s("name") {
+            n if n.is_empty() && face_down => tr!("Verdeckt", "Face-down").to_string(),
+            n => n,
+        };
         Self {
-            name: s("name"),
+            name,
+            face_down,
+            face: i("face").unwrap_or(0).clamp(0, 1) as u8,
             kind,
             cost: parse_cost(&s("cost")),
             colors,

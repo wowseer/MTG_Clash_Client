@@ -506,6 +506,7 @@ struct SeatZones {
     battlefield: Option<Gd<Zone>>,
     discard: Option<Gd<Zone>>,
     exile: Option<Gd<Zone>>,
+    command: Option<Gd<Zone>>,
     resources: Option<Gd<Zone>>,
 }
 
@@ -592,7 +593,8 @@ impl ForgeTable {
             active_seat: st.map_or(-1, |s| get_int(s, "active_player")),
             names: [self.seat_name(0), self.seat_name(1)],
             lives: [life(0), life(1)],
-            counters: [0, 1].map(|seat| player(seat).map(|p| counters::player_counters(&counter_list(&p))).unwrap_or_default()),
+            counters: [0, 1].map(|seat| self.seat_flags(seat, player(seat).as_ref())),
+            day: st.and_then(|s| s.get("day")).and_then(|v| v.try_to::<bool>().ok()),
             turn: st.map_or(0, |s| get_int(s, "turn")),
             winner: self.winner.clone(),
             button_enabled: my_priority,
@@ -637,6 +639,33 @@ impl ForgeTable {
             .collect()
     }
 
+    /// Zeile unter dem Spielernamen: Monarch, Initiative, Stadtsegen, Ring-Stufe und Marken.
+    fn seat_flags(&self, seat: usize, player: Option<&VarDictionary>) -> String {
+        let st = self.state.as_ref();
+        let game_flag = |key: &str| st.is_some_and(|s| s.get(key).and_then(|v| v.try_to::<i64>().ok()) == Some(seat as i64));
+        let mut parts: Vec<String> = Vec::new();
+        if game_flag("monarch") {
+            parts.push(tr!("♛ Monarch", "♛ Monarch").to_string());
+        }
+        if game_flag("initiative") {
+            parts.push(tr!("Initiative", "Initiative").to_string());
+        }
+        if let Some(p) = player {
+            if get_bool(p, "blessing") {
+                parts.push(tr!("Stadtsegen", "City's blessing").to_string());
+            }
+            let ring = get_int(p, "ring_level");
+            if ring > 0 {
+                parts.push(trf!("Ring {ring}", "Ring {ring}"));
+            }
+            let counters = counters::player_counters(&counter_list(p));
+            if !counters.is_empty() {
+                parts.push(counters);
+            }
+        }
+        parts.join(" · ")
+    }
+
     fn seat_name(&self, seat: usize) -> GString {
         let s = if seat == 0 { &self.player_seat } else { &self.opponent_seat };
         s.as_ref()
@@ -655,10 +684,11 @@ impl ForgeTable {
                     battlefield: s.battlefield.clone(),
                     discard: s.discard.clone(),
                     exile: s.exile.clone(),
+                    command: s.command.clone(),
                     resources: s.resource_zone.clone(),
                 }
             }
-            None => SeatZones { hand: None, deck: None, battlefield: None, discard: None, exile: None, resources: None },
+            None => SeatZones { hand: None, deck: None, battlefield: None, discard: None, exile: None, command: None, resources: None },
         }
     }
 
@@ -1195,7 +1225,7 @@ impl ForgeTable {
                     wanted.push((get_int(&c, "id"), Some(c), zone, seat));
                 }
             }
-            for (key, zone) in [("graveyard", &z.discard), ("exile", &z.exile)] {
+            for (key, zone) in [("graveyard", &z.discard), ("exile", &z.exile), ("command", &z.command)] {
                 if let Some(zone) = zone {
                     for c in list(key) {
                         wanted.push((get_int(&c, "id"), Some(c), zone.clone(), seat));
@@ -1260,6 +1290,8 @@ impl ForgeTable {
             self.sync_deck(seat, get_int(p, "library").max(0) as usize + drawn);
         }
 
+        // Ringträger (CR 701.52) aller Spieler, für die Plaketten
+        let ring_bearers: Vec<i64> = players.iter().map(|p| get_int(p, "ring_bearer")).filter(|id| *id > 0).collect();
         for (key, data, mut zone, seat) in wanted {
             let card = match self.cards.get(&key) {
                 Some(c) => c.clone(),
@@ -1292,16 +1324,23 @@ impl ForgeTable {
                 let def = CardDef::from_state(data);
                 let sig = format!("{def:?}");
                 if self.signatures.get(&key) != Some(&sig) {
-                    let frame = |d: &CardDef| (d.kind, d.cost, d.produces, d.colors.clone());
+                    let frame = |d: &CardDef| (d.kind, d.cost, d.produces, d.colors.clone(), d.face_down, d.face);
+                    let known = self.signatures.contains_key(&key);
                     let mut c = card.bind_mut();
-                    if self.signatures.get(&key).is_none() || frame(c.def()) != frame(&def) {
-                        c.set_face_texture(Some(placeholder::card_face(&def)));
+                    // Seitenwechsel (Transformieren, Umdrehen, Aufdecken; CR 711, 708.8): animiert
+                    let turned = known && (c.def().face != def.face || c.def().face_down != def.face_down);
+                    if turned {
+                        c.flip_to(&def, placeholder::card_face(&def));
+                    } else {
+                        if !known || frame(c.def()) != frame(&def) {
+                            c.set_face_texture(Some(placeholder::card_face(&def)));
+                        }
+                        c.apply_def(&def);
                     }
-                    c.apply_def(&def);
                     drop(c);
                     self.signatures.insert(key, sig);
                 }
-                card.bind_mut().set_badges(&counters::card_badges(get_bool(data, "token"), &counter_list(data)));
+                card.bind_mut().set_badges(&card_badges(data, &ring_bearers));
                 let tapped = get_bool(data, "tapped");
                 if card.bind().is_tapped() != tapped {
                     card.bind_mut().set_tapped_state(tapped);
@@ -1429,6 +1468,29 @@ fn phase_index(phase: &str) -> i64 {
         "END_OF_TURN" | "CLEANUP" => 8,
         _ => -1,
     }
+}
+
+/// Plaketten einer Karte: Spielstein, Commander, Ringträger, Dungeon-Raum, andere Seite, Marken.
+fn card_badges(data: &VarDictionary, ring_bearers: &[i64]) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    if get_bool(data, "commander") {
+        lines.push(tr!("Commander", "Commander").to_string());
+    }
+    if ring_bearers.contains(&get_int(data, "id")) {
+        lines.push(tr!("Ringträger", "Ring-bearer").to_string());
+    }
+    let room = get_str(data, "room");
+    if !room.is_empty() {
+        lines.push(trf!("Raum: {room}", "Room: {room}"));
+    }
+    if let Some(other) = data.get("other_face").and_then(|v| v.try_to::<VarDictionary>().ok()) {
+        lines.push(format!("↺ {}", get_str(&other, "name")));
+    }
+    let rest = counters::card_badges(get_bool(data, "token"), &counter_list(data));
+    if !rest.is_empty() {
+        lines.push(rest);
+    }
+    lines.join("\n")
 }
 
 /// Schlüssel einer verdeckten Gegner-Handkarte (nicht: Fähigkeit auf dem Stack)?

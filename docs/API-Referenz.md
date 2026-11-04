@@ -288,6 +288,7 @@ Ein Sitzplatz am Tisch (Mensch oder KI) mit seinen Zonen, Lebenspunkten und dem 
 | `battlefield` | `Zone` | Zone des Spielfelds (Kreaturen, Helden, Artefakte, Verzauberungen, Ausrüstung, Auren). |
 | `discard` | `Zone` | Zone des Friedhofs (Ablagestapel). |
 | `exile` | `Zone` | Zone des Exils (CR 406): offener Stapel neben dem Friedhof. |
+| `command` | `Zone` | Kommandozone (CR 408): Commander, Embleme, Dungeons, „The Ring“ als Spalte. |
 | `resource_zone` | `Zone` | Reihe für ausgespielte Ressourcen-Karten. |
 | `mana_pool` | `ManaPool` | Manapool dieses Spielers. |
 | `life` | `int` | Aktuelle Lebenspunkte (≤ 0 = Partie verloren). |

@@ -58,6 +58,9 @@ pub const ABILITY_GLOW: Color = Color::from_rgb(1.0, 0.75, 0.28);
 /// Helligkeit des Leuchtens „kann handeln“ und der Markierungen (Angreifer/Blocker/Auswahl);
 /// höhere Stärke = heller und etwas breiterer Schein.
 const READY_STRENGTH: f32 = 0.7;
+/// Doppelseitige Karte umdrehen (ANIMATION.md): Dauer, Anheben in der Mitte (Cubic-In-Out).
+const FLIP_DURATION: f32 = 0.35;
+const FLIP_LIFT: f32 = 0.25;
 const MARK_STRENGTH: f32 = 1.5;
 /// Farbe, mit der getappte Karten (und Kreaturen, die angegriffen haben) ausgegraut werden.
 const TAPPED_TINT: Color = Color::from_rgb(0.52, 0.52, 0.55);
@@ -159,6 +162,9 @@ pub struct Card3D {
     ready_glow: Option<Color>,
     /// Hat in diesem Zug angegriffen (ausgegraut, bis sie enttappt wird).
     attacked: bool,
+    /// Laufendes Umdrehen: vergangene Zeit und die neue Seite (Kartendaten, Bild), die bei
+    /// halber Drehung übernommen wird.
+    flip: Option<(f32, Option<(CardDef, Gd<Texture2D>)>)>,
     /// Besitzer (0 = Spieler, 1 = Gegner): auf dessen Friedhof geht die Karte.
     #[var]
     pub(crate) owner_seat: i64,
@@ -208,6 +214,7 @@ impl IArea3D for Card3D {
             marker: CardMarker::None,
             ready_glow: None,
             attacked: false,
+            flip: None,
             owner_seat: 0,
             labels: None,
             badges: String::new(),
@@ -288,9 +295,14 @@ impl IArea3D for Card3D {
         }
 
         let w = 1.0 - (-self.tilt_speed * delta as f32).exp();
+        let flip = self.advance_flip(delta as f32);
         let visual = self.visual.as_mut().unwrap();
         let next = visual.get_transform().interpolate_with(&target, w);
-        visual.set_transform(next);
+        match flip {
+            // Umdrehen: Drehung um die Längsachse (lokal z) und Anheben direkt setzen
+            Some(xf) => visual.set_transform(target * xf),
+            None => visual.set_transform(next),
+        }
     }
 }
 
@@ -481,6 +493,42 @@ impl Card3D {
 
     pub fn kind(&self) -> CardKind {
         self.card_kind
+    }
+
+    /// Dreht die Karte animiert auf eine andere Seite um (doppelseitige Karten, CR 711): bei
+    /// halber Drehung werden `def` und `face` übernommen. Ohne Szene (noch nicht bereit) sofort.
+    pub fn flip_to(&mut self, def: &CardDef, face: Gd<Texture2D>) {
+        if self.visual.is_none() {
+            self.set_face_texture(Some(face));
+            self.apply_def(def);
+            return;
+        }
+        // Läuft schon ein Umdrehen, wird nur die Zielseite ersetzt
+        let elapsed = self.flip.as_ref().map_or(0.0, |f| f.0);
+        self.flip = Some((elapsed, Some((def.clone(), face))));
+    }
+
+    /// Schreitet das Umdrehen fort; liefert die Zusatz-Transformation des Kartenbilds (None =
+    /// kein Umdrehen). Erste Hälfte: 0° → 90°; dann Seitenwechsel; zweite Hälfte −90° → 0°.
+    fn advance_flip(&mut self, delta: f32) -> Option<Transform3D> {
+        let (t, _) = self.flip.as_mut()?;
+        *t += delta;
+        let p = (*t / FLIP_DURATION).min(1.0);
+        // Cubic-In-Out
+        let e = if p < 0.5 { 4.0 * p * p * p } else { 1.0 - (-2.0 * p + 2.0).powi(3) * 0.5 };
+        if e >= 0.5 {
+            if let Some((def, face)) = self.flip.as_mut().and_then(|f| f.1.take()) {
+                self.set_face_texture(Some(face));
+                self.apply_def(&def);
+            }
+        }
+        if p >= 1.0 {
+            self.flip = None;
+            return Some(Transform3D::IDENTITY);
+        }
+        let angle = if e < 0.5 { std::f32::consts::PI * e } else { std::f32::consts::PI * (e - 1.0) };
+        let lift = (std::f32::consts::PI * p).sin() * FLIP_LIFT;
+        Some(Transform3D::new(Basis::from_axis_angle(Vector3::BACK, angle), Vector3::new(0.0, lift, 0.0)))
     }
 
     /// Aktuelle Kartendaten des Bildes.

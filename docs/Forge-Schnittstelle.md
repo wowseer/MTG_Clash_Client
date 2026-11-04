@@ -203,11 +203,23 @@ farblos), `text` (Regeltext mit aktuellen Änderungen, Symbole in `{…}`-Schrei
 zusätzlich `power`, `toughness` (aktuell) und `base_power`, `base_toughness` (aufgedruckt), bei
 Planeswalkern `loyalty`, bei Schlachten `defense` (im Spiel die aktuellen Marken, sonst aufgedruckt),
 `damage` (nur > 0, erlittener Schaden); nur wenn zutreffend: `token: true` (Spielstein), `attached_to` (Karten-ID des Trägers bei Auren, Ausrüstung,
-Befestigungen), `counters` (Marken wie NeoForges `CardObj.counters`: Name → Anzahl, Namen =
+Befestigungen), `commander: true`, `emblem: true`, `room` (aktueller Raum eines Dungeons),
+`face_down: true` (verdeckt, CR 708: Name leer, Werte der verdeckten Seite), `face` (bei
+doppelseitigen, modalen und Flip-Karten: 0 = Vorderseite, 1 = Rückseite/umgedreht) mit
+`other_face` `{name, type}` (nur offen), `counters` (Marken wie NeoForges `CardObj.counters`: Name → Anzahl, Namen =
 Forges `CounterEnumType`, z. B. `{"P1P1": 2, "LOYALTY": 4}`).
 
 Spieler zusätzlich: `mana_pool` = Menge schwebenden Manas je Farbe in der Reihenfolge W U B R G C;
-`counters` = Spieler-Marken (CR 122.1) wie bei Karten, z. B. `{"POISON": 3, "ENERGY": 2}`.
+`counters` = Spieler-Marken (CR 122.1) wie bei Karten, z. B. `{"POISON": 3, "ENERGY": 2}`;
+`command` = Karten der Kommandozone (CR 408: Commander, Embleme, Dungeons, „The Ring“, „The
+Monarch“/„The Initiative“ und andere Effekt-Karten); `blessing` (Stadtsegen), `ring_level` (wie oft
+der Ring in Versuchung geführt hat), `ring_bearer` (Karten-ID, falls vorhanden).
+
+Spiel zusätzlich: `monarch` / `initiative` = Sitzplatz (−1 = niemand), `day` = true (Tag) / false
+(Nacht), fehlt solange weder Tag noch Nacht ist (CR 726).
+
+Die Abfrage `state` liest Forges Daten aus einem anderen Thread als dem Spiel; ändert Forge
+gleichzeitig etwas (`ConcurrentModificationException`), liest die Brücke bis zu zehnmal neu.
 
 `combat` (laufender Kampf, sonst leere Listen): `attackers` = Liste `{card, target}` (`target` als
 `Target`), `blocks` = Liste `[blocker, angreifer]`.
@@ -282,6 +294,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |
+| `command`, `face`, `face_down`, `monarch`, `initiative`, `day`, `ring_level` | Kommandozone je Seite als Spalte (Spieler rechts unten, Gegner rechts oben); Seitenwechsel als Umdreh-Animation, verdeckte Karten mit Rückseitenmuster; Plaketten „Commander“, „Ringträger“, „Raum: …“, „↺ andere Seite“; Monarch, Initiative, Stadtsegen, Ring-Stufe unter dem Namen, Tag/Nacht neben der Rundenzahl |
 | `log` | Spielprotokoll oben rechts im HUD: die letzten 7 Einträge ohne `PHASE`/`MANA`, IDs entfernt, Rundenbeginn golden |
 | `stack` | Zone `Stack` in der Tischmitte: Zauber als ihre Karte, Fähigkeiten als Karte ihrer Quelle; violette Pfeile zu den Zielen; Liste im HUD (linker Rand) mit Quelle, Art, Text; Hauptbutton orange |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
@@ -325,6 +338,10 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Kartenbild aus den Kartendaten getestet (headless und Fenster-Nahaufnahme): Regeltext, Symbole
   (↷, Ⓡ, ①), Typzeilen, Planeswalker-Loyalität (auf der Hand aufgedruckt, im Spiel aktuell),
   Schriftanpassung bei langem Text (Chandra, Bonesplitter).
+- Kommandozone, Seiten und Kennzeichen getestet mit einem Testdeck (Brutal Cathar, Soul Summons,
+  Seasoned Dungeoneer, Palace Jailer, Call of the Ring) gegen `gegner.dck`: The Ring, The Monarch,
+  The Initiative, Undercity mit Raum, Effekt von Palace Jailer in der Kommandozone; Manifest
+  (verdeckt 2/2); Tag/Nacht und Transformieren Brutal Cathar ↔ Moonrage Brute.
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

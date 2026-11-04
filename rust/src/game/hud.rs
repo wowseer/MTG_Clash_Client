@@ -452,7 +452,11 @@ impl TurnHud {
             }
         }
         // Linker Bildrand: Name (golden = am Zug) und Rundenzahl neben der Sanduhr
-        let turn = view.turn.to_string();
+        let turn = match view.day {
+            Some(true) => format!("{} ☀ {}", view.turn, tr!("Tag", "Day")),
+            Some(false) => format!("{} ☾ {}", view.turn, tr!("Nacht", "Night")),
+            None => view.turn.to_string(),
+        };
         for (seat, name, turn_label) in [
             (1usize, self.opponent_name.as_mut(), self.opponent_turn.as_mut()),
             (0, self.player_name.as_mut(), self.player_turn.as_mut()),
@@ -527,8 +531,11 @@ pub struct HudView {
     pub active_seat: i64,
     pub names: [GString; 2],
     pub lives: [i64; 2],
-    /// Spieler-Marken je Sitzplatz als Text (Gift, Energie …; leer = keine), unter dem Namen.
+    /// Kennzeichen und Marken je Sitzplatz als Text (Monarch, Initiative, Gift …; leer = keine),
+    /// unter dem Namen.
     pub counters: [String; 2],
+    /// Tag (true) oder Nacht (false), CR 726; None = noch keins von beiden.
+    pub day: Option<bool>,
     pub turn: i64,
     /// Name des Siegers; leer = Partie läuft.
     pub winner: String,

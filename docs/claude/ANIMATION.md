@@ -42,7 +42,7 @@ Spiel nie auf.
 | Kampfschaden | 0,30 s Stoß + 0,2 s zurück | Expo-Out / Quad-In | Zahl springt aus dem Ziel, Treffer-Blitz |
 | Kreatur stirbt | 0,50 s | Quad-In | entsättigen, zerfallen, dann zum Friedhof |
 | Spielstein entsteht / vergeht | 0,30 s | Back-Out / Quad-In | aus Licht aufbauen / in Partikel zerfallen |
-| Doppelseitige Karte umdrehen | 0,35 s | Cubic-In-Out | 180°-Drehung um die Längsachse, Mitte kurz anheben |
+| Doppelseitige Karte umdrehen | 0,35 s | Cubic-In-Out | 180°-Drehung um die Längsachse, Mitte 0,25 anheben; umgesetzt: `Card3D::flip_to` (`FLIP_DURATION`, `FLIP_LIFT`), auch beim Aufdecken verdeckter Karten |
 | Lebenspunkte ändern | 0,6 s | – | Edelstein blitzt (schon vorhanden), Zahl zählt hoch/runter |
 | Phasenwechsel | 0,25 s | Cubic-Out | Zeitstrahl (vorhanden) |
 | Auswahlfenster / Kartenfächer öffnen | 0,20 s | Cubic-Out | Hintergrund abdunkeln 0,15 s |

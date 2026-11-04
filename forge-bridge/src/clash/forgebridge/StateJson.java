@@ -54,13 +54,55 @@ final class StateJson {
             po.add("battlefield", cards(p, ZoneType.Battlefield));
             po.add("graveyard", cards(p, ZoneType.Graveyard));
             po.add("exile", cards(p, ZoneType.Exile));
+            // Kommandozone (CR 408): Commander, Embleme, Dungeons, „The Ring“ u. a.
+            po.add("command", cards(p, ZoneType.Command));
+            // Spieler-Kennzeichen: Stadtsegen (CR 702.131), Versuchungen durch den Ring (CR 701.52)
+            po.addProperty("blessing", p.hasBlessing());
+            po.addProperty("ring_level", p.getNumRingTemptedYou());
+            Card bearer = p.getRingBearer();
+            if (bearer != null) {
+                po.addProperty("ring_bearer", bearer.getId());
+            }
             players.add(po);
             i++;
         }
         s.add("players", players);
+        // Monarch (CR 724), Initiative (CR 725), Tag/Nacht (CR 726; null = noch keins)
+        Player monarch = game.getMonarch();
+        s.addProperty("monarch", monarch == null ? -1 : indexOf(game, monarch));
+        Player initiative = game.getHasInitiative();
+        s.addProperty("initiative", initiative == null ? -1 : indexOf(game, initiative));
+        Boolean day = game.getDayTime();
+        if (day != null) {
+            s.addProperty("day", day.booleanValue());
+        }
         s.add("combat", combat(game));
         s.add("stack", stack(game));
         return s;
+    }
+
+    /**
+     * Wie {@link #snapshot}, aber für Abfragen außerhalb des Spiel-Threads (Befehl {@code state}):
+     * Ändert der Spiel-Thread gleichzeitig Forges Listen (z. B. Marken), wirft Forge eine
+     * {@link java.util.ConcurrentModificationException}; dann kurz warten und neu lesen.
+     */
+    static JsonObject snapshotFromOtherThread(Game game, int viewer) {
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return snapshot(game, viewer);
+            } catch (java.util.ConcurrentModificationException | IndexOutOfBoundsException
+                     | NullPointerException e) {
+                if (attempt >= 9) {
+                    throw e;
+                }
+                try {
+                    Thread.sleep(5);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
     }
 
     /**
@@ -189,6 +231,31 @@ final class StateJson {
         o.addProperty("text", text == null ? "" : text.trim());
         if (c.isToken()) {
             o.addProperty("token", true);
+        }
+        if (c.isCommander()) {
+            o.addProperty("commander", true);
+        }
+        if (c.isEmblem()) {
+            o.addProperty("emblem", true);
+        }
+        String room = c.getCurrentRoom();
+        if (room != null && !room.isEmpty()) {
+            o.addProperty("room", room);
+        }
+        // Verdeckt (Morph, Manifest …, CR 708): Forge liefert dann die Werte der verdeckten Seite
+        if (c.isFaceDown()) {
+            o.addProperty("face_down", true);
+        }
+        // Doppelseitige / Flip-Karten (CR 711, 712): angezeigte Seite und die andere Seite
+        if (c.isDoubleFaced() || c.isFlipped() || c.isModal()) {
+            o.addProperty("face", c.isBackSide() || c.isFlipped() ? 1 : 0);
+            forge.game.card.CardState other = c.getAlternateState();
+            if (other != null && !c.isFaceDown()) {
+                JsonObject oo = new JsonObject();
+                oo.addProperty("name", other.getName());
+                oo.addProperty("type", String.valueOf(other.getType()));
+                o.add("other_face", oo);
+            }
         }
         Card host = c.getAttachedTo();
         if (host != null) {
