@@ -23,6 +23,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [Arena](#arena) – erbt von `Node3D`
 - [Button3D](#button3d) – erbt von `Area3D`
 - [Card3D](#card3d) – erbt von `Area3D`
+- [ManaFx](#manafx) – erbt von `Node3D`
 - [Showcase](#showcase) – erbt von `Node3D`
 - [TableCamera](#tablecamera) – erbt von `Camera3D`
 - [TableController](#tablecontroller) – erbt von `Node3D`
@@ -471,10 +472,27 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `snap_to(target: Transform3D)` | `void` | Setzt die Karte sofort ohne Animation. |
 | `stop_motion()` | `void` | Bricht eine laufende Gleit-Animation ab. |
 | `set_ready_glow(on: bool)` | `void` | Dezenter goldener Rand „diese Karte kann eine Fähigkeit aktivieren“ an/aus (für Skripte; Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang. |
+| `flash()` | `void` | Rahmen leuchtet kurz hell und orange auf (etwas wurde aktiviert: gespielt, Fähigkeit, Mana-Einschlag, Angriff …), danach zurück zum normalen Leuchten. |
+| `set_attacking(attacking: bool)` | `void` | Angreifer im Kampf: Karte rückt etwas zum Gegner vor und trägt die rote Angriffsspitze an der Oberkante (`false` = zurück an ihren Platz). |
+| `is_attacking()` | `bool` | Ist die Karte als Angreifer markiert (vorgerückt, mit Angriffsspitze)? |
+| `lunge(target: Vector3, reach: float, delay: float)` | `void` | Schlag im Kampf: die Karte holt zum Weltpunkt `target` aus (Anteil `reach` des Wegs, angehoben), trifft nach [`LUNGE_OUT`] Sekunden und kehrt zurück; Start nach `delay`. |
 | `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (rot), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
 | `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (schräg, ausgegraut, Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
 | `is_tapped()` | `bool` | Ist die Karte getappt (leicht schräg, ausgegraut, Tapp-Symbol)? |
 | `get_zone()` | `Zone` | Die Zone, in der die Karte aktuell liegt (None während des Ziehens). |
+
+## ManaFx
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/fx.rs`*
+
+Mana-Effekt (Land → Karte) bzw. nur Einschlag. Gibt sich nach Frame 80 selbst frei.
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `set_target(target: Node3D)` | `void` | Ziel nachträglich setzen (z. B. sobald die Karte auf dem Stack liegt). |
+| `has_target()` | `bool` | Hat der Effekt schon ein Ziel? |
 
 ## Showcase
 

@@ -40,6 +40,10 @@ Spiel nie auf.
 | Tappen / Enttappen | 0,18 s | Quad-Out | Drehung um 90° bzw. projekteigene Neigung |
 | Angriff erklären | 0,25 s | Back-Out | Karte rückt 0,3 nach vorn, Pfeil wächst aus der Karte |
 | Pfeil erscheinen | 0,33 s (Blender: Frame 1 → 9 bei 24 fps) | weich (smoothstep) | wächst vom Start zum Ziel (`TargetArrows`, `GROW_TIME`); selbst gezogene Pfeile wachsen nicht |
+| Mana bezahlen (`ManaFx`) | 80 Frames à 30 fps (2,7 s) | wie Blender (`mana_glow_generator.py`) | Land blitzt (F6), Komet startet (F14, `t^1,7`), Einschlag (F30), Ausklingen bis F80; Größe `UNIT` 0,5 je Blender-Einheit |
+| Rahmen-Glow aufleuchten (`Card3D::flash`) | 1,6 s | weich | Verstärkung 1 → 4,6 (0,07 s) → 2,7 → 1,7 → 1, solange orange |
+| Angreifer rückt vor | exponentiell (Faktor 10/s) | – | 0,22 nach vorn, Angriffsspitze sichtbar |
+| Schlag im Kampf (`Card3D::lunge`) | 0,22 s hin / 0,38 s zurück | quadratisch / Cubic-Out | bis 85 % (Spieler) bzw. 50 % (Kreatur) des Wegs, angehoben 0,6; Einschlag rot beim Treffer |
 | Pfeil-Bogen auf dem Stack | wächst wie jeder Pfeil (0,33 s) | weich | Ziel liegt unter der Quelle (näher als `LOOP_DISTANCE`): Bogen steigt aus der vorderen Karte auf (Scheitel 1,6) und landet auf dem sichtbaren Rand der Karte dahinter |
 | „Wähle eins“ | Bühne wie Mulligan (0,20 s auf / 0,15 s zu) | Cubic-Out | Kartenkopien gleiten aus der Fächermitte in den Fächer |
 | Pfeil biegen | Feder 140 / Dämpfung 15 | leicht unterdämpft | Querbewegung eines Endes biegt den Pfeil (höchstens 0,3 der Länge), danach schwingt er gerade zurück |

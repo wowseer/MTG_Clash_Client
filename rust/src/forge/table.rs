@@ -10,7 +10,7 @@
 //!
 //! Sitzplatz 0 (Forge) = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Forge-KI).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use godot::prelude::*;
 
@@ -30,7 +30,8 @@ use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
 use crate::table::button3d::{Button3D, ButtonStyle};
 use crate::table::showcase::Showcase;
-use crate::table::card3d::{Card3D, CardMarker, BLOCK_GLOW};
+use crate::table::card3d::{Card3D, CardMarker, LUNGE_OUT, PLAYABLE_GLOW};
+use crate::table::fx::{mana_color, ManaFx};
 use godot::classes::Label3D;
 use crate::table::target_arrows::{ArrowColor, ArrowSpec, TargetArrows, LOOP_DISTANCE};
 use crate::table::placeholder;
@@ -158,6 +159,16 @@ pub struct ForgeTable {
     drawn_arrows: HashSet<u64>,
     /// „Wähle eins“: Kartenkopien auf der Bühne und die Aktion, für die sie stehen.
     action_options: Vec<(Gd<Card3D>, Action)>,
+    /// Zuletzt getappte Karten (Forge-ID, Zeitpunkt in s) – Quelle des nächsten Manas.
+    recent_taps: VecDeque<(i64, f64)>,
+    /// Laufende Mana-Effekte, die noch ein Ziel (Karte auf dem Stack) bekommen können, mit Sitz.
+    mana_fx: Vec<(Gd<ManaFx>, i64)>,
+    /// Schläge im Kampf, die schon gespielt wurden (Runde, Phase, Quelle).
+    lunged: HashSet<(i64, String, i64)>,
+    /// Stack-Einträge des letzten Zustands (neue leuchten beim Aktivieren auf).
+    known_stack: HashSet<i64>,
+    /// Laufzeit (s) für die Zeitstempel oben.
+    clock: f64,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -205,6 +216,11 @@ impl INode for ForgeTable {
             auto_pass_turn: None,
             drawn_arrows: HashSet::new(),
             action_options: Vec::new(),
+            recent_taps: VecDeque::new(),
+            mana_fx: Vec::new(),
+            lunged: HashSet::new(),
+            known_stack: HashSet::new(),
+            clock: 0.0,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -244,6 +260,20 @@ impl INode for ForgeTable {
     }
 
     fn process(&mut self, delta: f64) {
+        self.clock += delta;
+        // Mana-Effekte ohne Ziel: sobald eine Karte auf dem Stack liegt, fliegt das Mana dorthin
+        self.mana_fx.retain(|(fx, _)| fx.is_instance_valid());
+        for i in 0..self.mana_fx.len() {
+            let (fx, seat) = self.mana_fx[i].clone();
+            if !fx.bind().has_target() {
+                if let Some(top) = self.stack_top_card_of(seat) {
+                    let mut fx = fx;
+                    fx.bind_mut().set_target(Some(top));
+                }
+            }
+        }
+        self.flash_new_stack();
+        self.update_combat_look();
         self.update_arrows();
         self.since_refresh += delta;
         if self.dirty && self.match_running && self.since_refresh >= self.refresh_interval {
@@ -526,8 +556,33 @@ impl ForgeTable {
 
     /// Forge-Ereignis: Zustand bald neu abfragen (gebündelt, siehe [member refresh_interval]).
     #[func]
-    fn on_forge_event(&mut self, _event: VarDictionary) {
+    fn on_forge_event(&mut self, event: VarDictionary) {
         self.dirty = true;
+        match get_str(&event, "event").as_str() {
+            // Land/Quelle getappt: leuchtet orange auf, ist Quelle des nächsten Manas
+            "GameEventCardTapped" if event.get("tapped").is_some_and(|v| v.booleanize()) => {
+                let id = get_int(&event, "card");
+                if let Some(mut c) = self.cards.get(&id).cloned() {
+                    c.bind_mut().flash();
+                }
+                self.recent_taps.push_back((id, self.clock));
+                while self.recent_taps.len() > 16 {
+                    self.recent_taps.pop_front();
+                }
+            }
+            "GameEventManaPool" if get_str(&event, "mode") == "Added" => self.spawn_mana_fx(&event),
+            "GameEventPlayerDamaged" if event.get("combat").is_some_and(|v| v.booleanize()) => {
+                let seat = get_int(&event, "player");
+                let point = u8::try_from(seat).ok().and_then(|s| self.hero_anchor(s));
+                self.combat_hit(&event, None, point, 0.85);
+            }
+            "GameEventCardDamaged" if get_str(&event, "phase").starts_with("COMBAT") => {
+                let target = self.cards.get(&get_int(&event, "card")).cloned();
+                let point = target.as_ref().map(|c| c.get_global_position());
+                self.combat_hit(&event, target, point, 0.5);
+            }
+            _ => {}
+        }
     }
 
     /// Neuer Eintrag im Spielprotokoll der Engine: für das HUD merken (ohne Phasen- und
@@ -690,13 +745,17 @@ impl ForgeTable {
         let Some(id) = self.forge_id(&card).and_then(|i| u32::try_from(i).ok()) else { return };
         let target = self.aim_target(target);
         let Some((kind, valid)) = self.aim_kind(id) else { return };
-        let target = target.filter(|t| valid.contains(t));
+        let mut target = target.filter(|t| valid.contains(t));
+        // nur ein Angriffsziel: Ziehen heißt einfach angreifen
+        if kind == AimKind::Attack && valid.len() == 1 && target.is_none() {
+            target = valid.first().copied();
+        }
         match kind {
             AimKind::Attack => {
                 self.attack_plan.retain(|(c, _)| *c != id);
                 if let Some(t) = target {
                     self.attack_plan.push((id, t));
-                    self.drawn_arrows.insert(arrow_key(ArrowColor::Red as u64, i64::from(id), t));
+                    self.drawn_arrows.insert(arrow_key(ArrowColor::Orange as u64, i64::from(id), t));
                 }
                 self.combat_armed = None;
             }
@@ -1213,7 +1272,7 @@ impl ForgeTable {
                 let mut c = copy.bind_mut();
                 c.set_face_texture(Some(placeholder::card_face(&def)));
                 c.apply_def(&def);
-                c.set_ready_color(Some(BLOCK_GLOW));
+                c.set_ready_color(Some(PLAYABLE_GLOW));
             }
             cards.push((copy.clone(), action_caption(action, &label)));
             self.action_options.push((copy, action));
@@ -1657,11 +1716,14 @@ impl ForgeTable {
             }
         };
         match self.pending.as_ref().map(|r| &r.decision) {
-            Some(Decision::DeclareAttackers { .. }) => {
+            // Pfeil nur, wenn es mehr als ein Angriffsziel gibt (Planeswalker, Schlacht): dann zeigt
+            // er, wen der Angreifer angreift. Sonst reicht die Kampfansicht (Karte rückt vor).
+            Some(Decision::DeclareAttackers { defenders, .. }) if defenders.len() > 1 => {
                 for (c, t) in &self.attack_plan {
-                    push(*c, *t, ArrowColor::Red, 1.0);
+                    push(*c, *t, ArrowColor::Orange, 1.0);
                 }
             }
+            Some(Decision::DeclareAttackers { .. }) => {}
             Some(Decision::DeclareBlockers { attackers, .. }) => {
                 for (b, a) in &self.block_plan {
                     push(*b, Target::Card(*a), ArrowColor::Blue, 1.0);
@@ -1687,8 +1749,9 @@ impl ForgeTable {
                         let Ok(a) = a.try_to::<VarDictionary>() else { continue };
                         let attacker = u32::try_from(get_int(&a, "card")).ok();
                         let target = a.get("target").and_then(|t| Target::from_var(&t));
-                        if let (Some(c), Some(t)) = (attacker, target) {
-                            push(c, t, ArrowColor::Red, 1.0);
+                        // Angriff auf einen Spieler: Kampfansicht genügt; auf Planeswalker/Schlacht: Pfeil
+                        if let (Some(c), Some(t @ Target::Card(_))) = (attacker, target) {
+                            push(c, t, ArrowColor::Orange, 1.0);
                         }
                     }
                     for pair in get_array(&combat, "blocks").unwrap_or_default().iter_shared() {
@@ -1702,6 +1765,105 @@ impl ForgeTable {
             }
         }
         arrows
+    }
+
+    /// Mana-Effekt (Assets „Mana Glow Effekte“): vom zuletzt getappten Land zur Karte, die gerade
+    /// bezahlt wird (oberste Karte auf dem Stack, sonst zum Medaillon des Spielers), in der Farbe
+    /// des erzeugten Manas.
+    fn spawn_mana_fx(&mut self, event: &VarDictionary) {
+        let Some((id, at)) = self.recent_taps.pop_back() else { return };
+        if self.clock - at > 1.5 {
+            return;
+        }
+        let Some(source) = self.cards.get(&id).filter(|c| c.is_instance_valid()).cloned() else { return };
+        let colors = get_str(event, "colors");
+        let letter = colors.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "C".into());
+        let seat = get_int(event, "player");
+        // gleichzeitig getappte Länder starten leicht versetzt
+        let delay = 0.08 * self.mana_fx.iter().filter(|(fx, _)| fx.is_instance_valid()).count().min(6) as f32;
+        let target = self.stack_top_card_of(seat);
+        let fallback = u8::try_from(seat).ok().and_then(|s| self.hero_node(s));
+        let fx = ManaFx::mana(source.upcast(), target, fallback, mana_color(&letter), delay);
+        if let Some(mut parent) = self.controller.clone() {
+            parent.add_child(&fx);
+        }
+        self.mana_fx.push((fx, seat));
+    }
+
+    /// Neue Stack-Einträge: gewirkte Karte bzw. Quelle der Fähigkeit leuchtet orange auf.
+    fn flash_new_stack(&mut self) {
+        let items = self.stack_items();
+        let ids: HashSet<i64> = items.iter().map(|i| get_int(i, "id")).collect();
+        if ids == self.known_stack {
+            return;
+        }
+        for item in items.iter().filter(|i| !self.known_stack.contains(&get_int(i, "id"))) {
+            let card_key = item
+                .get("card")
+                .and_then(|v| v.try_to::<VarDictionary>().ok())
+                .map_or(ABILITY_KEY_BASE - get_int(item, "id"), |c| get_int(&c, "id"));
+            let source = get_int(item, "source");
+            for key in [card_key, source] {
+                if let Some(mut c) = self.cards.get(&key).filter(|c| c.is_instance_valid()).cloned() {
+                    c.bind_mut().flash();
+                }
+            }
+        }
+        self.known_stack = ids;
+    }
+
+    /// Kampfansicht: geplante (eigene Erklärung) und erklärte Angreifer (Zustand `combat`) rücken
+    /// vor und tragen die Angriffsspitze; alle anderen nicht.
+    fn update_combat_look(&mut self) {
+        let mut attacking: HashSet<i64> = self.attack_plan.iter().map(|(c, _)| i64::from(*c)).collect();
+        if let Some(combat) = self.state.as_ref().and_then(|s| s.get("combat")).and_then(|v| v.try_to::<VarDictionary>().ok()) {
+            for a in get_array(&combat, "attackers").unwrap_or_default().iter_shared() {
+                if let Ok(a) = a.try_to::<VarDictionary>() {
+                    attacking.insert(get_int(&a, "card"));
+                }
+            }
+        }
+        for (id, card) in self.cards.iter_mut() {
+            let on = attacking.contains(id);
+            if card.bind().is_attacking() != on {
+                card.bind_mut().set_attacking(on);
+            }
+        }
+    }
+
+    /// Oberste Karte auf dem Stack, die Sitzplatz `seat` kontrolliert (wird gerade gewirkt bzw.
+    /// zuletzt gewirkt / aktiviert).
+    fn stack_top_card_of(&self, seat: i64) -> Option<Gd<Node3D>> {
+        self.stack_items().iter().rev().find(|item| get_int(item, "controller") == seat).and_then(|item| {
+            let key = item
+                .get("card")
+                .and_then(|v| v.try_to::<VarDictionary>().ok())
+                .map_or(ABILITY_KEY_BASE - get_int(item, "id"), |c| get_int(&c, "id"));
+            self.cards.get(&key).filter(|c| c.is_instance_valid()).map(|c| c.clone().upcast())
+        })
+    }
+
+    /// Medaillon-Anker eines Sitzplatzes als Knoten.
+    fn hero_node(&self, seat: u8) -> Option<Gd<Node3D>> {
+        let seat = if seat == 0 { self.player_seat.as_ref() } else { self.opponent_seat.as_ref() }?;
+        seat.get_node_or_null("HeroAnchor").and_then(|n| n.try_cast::<Node3D>().ok())
+    }
+
+    /// Kampfschaden: die Quelle schlägt zum Ziel (Spieler-Medaillon bzw. Kreatur/Planeswalker),
+    /// beim Treffer roter Einschlag (Assets „Mana Glow Effekte“, Farbe Rot). Je Quelle und
+    /// Schadensschritt einmal.
+    fn combat_hit(&mut self, event: &VarDictionary, target: Option<Gd<Card3D>>, point: Option<Vector3>, reach: f32) {
+        let source = get_int(event, "source");
+        let key = (get_int(event, "turn"), get_str(event, "phase"), source);
+        if !self.lunged.insert(key) {
+            return;
+        }
+        let (Some(mut card), Some(point)) = (self.cards.get(&source).cloned(), point) else { return };
+        card.bind_mut().lunge(point, reach, 0.0);
+        let fx = ManaFx::impact(target.map(|t| t.upcast()), point, mana_color("R"), LUNGE_OUT);
+        if let Some(mut parent) = self.controller.clone() {
+            parent.add_child(&fx);
+        }
     }
 
     /// Pfeilfarbe einer Karte aus der Farbpalette des Pfeil-Assets: einfarbig = ihre Farbe,
@@ -1771,6 +1933,9 @@ impl ForgeTable {
         let card = controller.bind().get_aiming_card().or(target_source)?;
         let id = u32::try_from(self.forge_id(&card)?).ok()?;
         let (kind, valid) = self.aim_kind(id)?;
+        if kind == AimKind::Attack && valid.len() <= 1 {
+            return None; // nur ein Angriffsziel: kein Pfeil, die Karte rückt beim Loslassen vor
+        }
         let hovered = controller.bind().get_hovered_card().filter(|h| *h != card);
         let target = self.aim_target(hovered).filter(|t| valid.contains(t));
         let (to, alpha) = match target.and_then(|t| self.target_position(t)) {
@@ -1778,7 +1943,7 @@ impl ForgeTable {
             None => (controller.bind().get_aim_point(), 0.7),
         };
         let color = match kind {
-            AimKind::Attack => ArrowColor::Red,
+            AimKind::Attack => ArrowColor::Orange,
             AimKind::Block => ArrowColor::Blue,
             AimKind::Target => self.arrow_color_of(i64::from(id)),
         };

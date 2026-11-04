@@ -47,21 +47,26 @@ pub const CARD_WIDTH: f32 = 0.63;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
 
-/// Farben des Lichtsaums – dezent = „kann“, kräftig = Markierung:
-/// Rot = kann angreifen / greift an, Blau = möglicher Blocker / blockt,
-/// Gold = kann eine Fähigkeit aktivieren / ausgewählt (wählt ein Ziel).
-pub const ATTACK_GLOW: Color = Color::from_rgb(1.0, 0.22, 0.15);
-pub const BLOCK_GLOW: Color = Color::from_rgb(0.3, 0.65, 1.0);
-pub const SELECT_GLOW: Color = Color::from_rgb(1.0, 0.85, 0.35);
-/// Gold: Karte kann eine Fähigkeit aktivieren (Held, Artefakt mit Tapp-Fähigkeit, Ausrüstung).
-pub const ABILITY_GLOW: Color = Color::from_rgb(1.0, 0.75, 0.28);
-/// Helligkeit des Leuchtens „kann handeln“ und der Markierungen (Angreifer/Blocker/Auswahl);
-/// höhere Stärke = heller und etwas breiterer Schein.
-const READY_STRENGTH: f32 = 0.7;
+/// Farben des Kartenrahmens (Rahmen-Glow aus `Assets/Mana Glow Effekte`, linear wie in Blender):
+/// **Blau** = Standard, die Karte ist spielbar bzw. wählbar; **Orange** = aktiviert (wird gezogen
+/// oder gespielt, Fähigkeit aktiviert, als Angreifer/Blocker/Ziel gewählt, Land für Mana getappt).
+pub const PLAYABLE_GLOW: Color = Color::from_rgb(0.02, 0.28, 1.0);
+pub const ACTIVE_GLOW: Color = Color::from_rgb(1.0, 0.22, 0.0);
+/// Helligkeit des Rahmens: spielbar (ruhig) bzw. aktiviert (kräftiger).
+const READY_STRENGTH: f32 = 1.0;
+/// Aufleuchten beim Aktivieren ([`Card3D::flash`]; Blender: Einschlag Frame 30 → 80):
+/// Verstärkung über die Zeit (Sekunden, Faktor), danach orange bis zum Ende.
+const FLASH_KEYS: [(f32, f32); 5] = [(0.0, 1.0), (0.07, 4.6), (0.27, 2.7), (0.67, 1.7), (1.6, 1.0)];
+/// Angreifer: rückt so weit nach vorn (zum Gegner, lokal −Z).
+const ADVANCE: f32 = 0.22;
+/// Schlag im Kampf: Ausholen zum Ziel, Rückweg (Sekunden), Anheben in der Mitte.
+pub const LUNGE_OUT: f32 = 0.22;
+const LUNGE_BACK: f32 = 0.38;
+const LUNGE_LIFT: f32 = 0.6;
 /// Doppelseitige Karte umdrehen (ANIMATION.md): Dauer, Anheben in der Mitte (Cubic-In-Out).
 const FLIP_DURATION: f32 = 0.35;
 const FLIP_LIFT: f32 = 0.25;
-const MARK_STRENGTH: f32 = 1.5;
+const MARK_STRENGTH: f32 = 1.45;
 /// Farbe, mit der getappte Karten (und Kreaturen, die angegriffen haben) ausgegraut werden.
 const TAPPED_TINT: Color = Color::from_rgb(0.52, 0.52, 0.55);
 /// Kantenlänge des Tapp-Symbols auf der Karte (Einheiten; Karte = 0,63 breit).
@@ -69,14 +74,42 @@ const TAP_ICON_SIZE: f32 = 0.34;
 /// Wie weit die Aura über den Kartenrand hinausragt (Einheiten).
 const GLOW_MARGIN: f32 = 0.16;
 
-/// Aura-Shader: schmaler, heller Rand direkt an der Kartenkante mit weichem, kurzem Schein
-/// nach außen und ruhigem „Atmen“ – wie ein Lichtsaum unter der Karte. Additiv, ohne Licht;
-/// `strength` skaliert Helligkeit und Breite (dezent = Karte kann handeln, kräftig = Angreifer/Blocker).
+/// Größe der Angriffsspitze (Breite, Höhe) über der Oberkante der Karte.
+const BANNER_SIZE: Vector2 = Vector2::new(0.36, 0.15);
+
+/// Angriffsspitze: Fünfeck als Dach (unten breit, oben Spitze), rot mit hellem Rand und Schein.
+const BANNER_SHADER: &str = r#"
+shader_type spatial;
+render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;
+float sd_roof(vec2 p) {
+    // p: x −1…1, y 0 (unten) … 1 (Spitze)
+    float side = abs(p.x) - 0.92;
+    float roof = (p.y - 0.45) + abs(p.x) * 0.55 - 0.5;
+    float bottom = -p.y + 0.02;
+    return max(max(side, roof), bottom);
+}
+void fragment() {
+    vec2 p = vec2(UV.x * 2.0 - 1.0, 1.0 - UV.y);
+    float d = sd_roof(p);
+    float fill = 1.0 - smoothstep(-0.01, 0.02, d);
+    float rim = 1.0 - smoothstep(0.0, 0.06, abs(d + 0.05));
+    float glow = exp(-max(d, 0.0) / 0.08) * 0.6;
+    vec3 col = mix(vec3(0.75, 0.08, 0.04), vec3(1.0, 0.55, 0.3), rim * fill);
+    ALBEDO = col;
+    ALPHA = clamp(fill + glow * (1.0 - fill), 0.0, 1.0);
+}
+"#;
+
+/// Rahmen-Glow (Nachbau von „Rahmen_Kern“ und „Rahmen_Schein“ der Mana-Glow-Assets): dünne,
+/// fast weiße Kernlinie genau an der Kartenkante (Blender: Bevel 0,035 bei Karte 2,5 breit), darum
+/// ein breiter Schein (Bevel 0,14) und ein weicher Halo als Ersatz für Blenders Bloom. Additiv,
+/// unbeleuchtet. `strength` = Kern, `schein` = Schein; ruhiges Pulsieren wie das Idle der Datei.
 const GLOW_SHADER: &str = r#"
 shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
-uniform vec4 glow_color : source_color = vec4(1.0, 0.5, 0.12, 1.0);
+uniform vec3 glow_color = vec3(0.02, 0.28, 1.0);
 uniform float strength = 1.0;
+uniform float schein = 0.3;
 uniform vec2 quad_size;
 uniform vec2 card_half;
 
@@ -87,15 +120,15 @@ float sd_round_rect(vec2 p, vec2 b, float r) {
 
 void fragment() {
     vec2 p = (UV - 0.5) * quad_size;
-    float d = sd_round_rect(p, card_half, 0.03);
-    float halo = exp(-max(d, 0.0) / (0.05 + 0.03 * strength)) * 0.6;
-    float rim = smoothstep(0.022, 0.0, abs(d - 0.006));
-    float breathe = 0.88 + 0.12 * sin(TIME * 2.2);
-    // Vor dem Rand der Fläche weich auf 0 auslaufen (keine sichtbare Rechteckkante)
+    float edge = sd_round_rect(p, card_half, 0.038);
+    float core = 1.0 - smoothstep(0.004, 0.012, abs(edge - 0.004));
+    float sch = exp(-pow(abs(edge - 0.013) / 0.035, 2.0));
+    float halo = exp(-max(edge, 0.0) / 0.06) * 0.45;
+    float pulse = 0.85 + 0.15 * sin(TIME * 5.0);
     float margin = quad_size.x * 0.5 - card_half.x;
-    float a = (halo + rim * 0.75) * strength * breathe * smoothstep(-0.01, 0.0, d) * smoothstep(margin, margin * 0.45, d);
-    ALBEDO = mix(glow_color.rgb, vec3(1.0), rim * 0.35);
-    ALPHA = clamp(a, 0.0, 1.0);
+    float fade = smoothstep(margin, margin * 0.55, max(edge, 0.0));
+    vec3 col = mix(glow_color, vec3(1.0), core * 0.35);
+    ALBEDO = col * (core * strength * 1.4 + (sch + halo) * schein * strength) * pulse * fade;
 }
 "#;
 
@@ -160,6 +193,15 @@ pub struct Card3D {
     marker: CardMarker,
     /// Dezentes Leuchten in dieser Farbe: Karte kann gerade handeln (None = aus).
     ready_glow: Option<Color>,
+    /// Aufleuchten seit (Sekunden; `None` = keins): Rahmen kurz hell und orange.
+    flash_t: Option<f32>,
+    /// Angreifer im Kampf: rückt vor und trägt die Angriffsspitze.
+    advanced: bool,
+    advance_amount: f32,
+    attack_banner: Option<Gd<MeshInstance3D>>,
+    /// Schlag zum Ziel (Welt), Zeit, Reichweite (Anteil des Wegs), Verzögerung.
+    lunge: Option<(Vector3, f32, f32, f32)>,
+    lunge_applied: Vector3,
     /// Hat in diesem Zug angegriffen (ausgegraut, bis sie enttappt wird).
     attacked: bool,
     /// Laufendes Umdrehen: vergangene Zeit und die neue Seite (Kartendaten, Bild), die bei
@@ -213,6 +255,12 @@ impl IArea3D for Card3D {
             tapped: false,
             marker: CardMarker::None,
             ready_glow: None,
+            flash_t: None,
+            advanced: false,
+            advance_amount: 0.0,
+            attack_banner: None,
+            lunge: None,
+            lunge_applied: Vector3::ZERO,
             attacked: false,
             flip: None,
             owner_seat: 0,
@@ -294,15 +342,36 @@ impl IArea3D for Card3D {
             }
         }
 
-        let w = 1.0 - (-self.tilt_speed * delta as f32).exp();
-        let flip = self.advance_flip(delta as f32);
+        let dt = delta as f32;
+        // Aufleuchten abklingen lassen
+        if let Some(t) = self.flash_t.as_mut() {
+            *t += dt;
+            if *t > FLASH_KEYS[FLASH_KEYS.len() - 1].0 {
+                self.flash_t = None;
+            }
+            self.apply_glow();
+        }
+        // Angreifer rückt vor (nicht beim Ziehen/Zoomen)
+        let adv_goal = if self.advanced && !self.dragging && !zoomed { 1.0 } else { 0.0 };
+        self.advance_amount += (adv_goal - self.advance_amount) * (1.0 - (-10.0 * dt).exp());
+        let mut target = target;
+        target.origin.z -= ADVANCE * self.advance_amount;
+        let lunge = self.lunge_offset(dt);
+
+        let w = 1.0 - (-self.tilt_speed * dt).exp();
+        let flip = self.advance_flip(dt);
+        let applied = self.lunge_applied;
         let visual = self.visual.as_mut().unwrap();
-        let next = visual.get_transform().interpolate_with(&target, w);
+        let mut current = visual.get_transform();
+        current.origin -= applied;
+        let mut next = current.interpolate_with(&target, w);
+        next.origin += lunge;
         match flip {
             // Umdrehen: Drehung um die Längsachse (lokal z) und Anheben direkt setzen
             Some(xf) => visual.set_transform(target * xf),
             None => visual.set_transform(next),
         }
+        self.lunge_applied = lunge;
     }
 }
 
@@ -382,6 +451,7 @@ impl Card3D {
     #[func]
     pub fn set_dragging(&mut self, dragging: bool) {
         self.dragging = dragging;
+        self.apply_glow();
         if dragging {
             self.hovered = false;
             self.stop_motion();
@@ -439,7 +509,38 @@ impl Card3D {
     /// Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang.
     #[func]
     pub fn set_ready_glow(&mut self, on: bool) {
-        self.set_ready_color(on.then_some(ABILITY_GLOW));
+        self.set_ready_color(on.then_some(PLAYABLE_GLOW));
+    }
+
+    /// Rahmen leuchtet kurz hell und orange auf (etwas wurde aktiviert: gespielt, Fähigkeit,
+    /// Mana-Einschlag, Angriff …), danach zurück zum normalen Leuchten.
+    #[func]
+    pub fn flash(&mut self) {
+        self.flash_t = Some(0.0);
+        self.apply_glow();
+    }
+
+    /// Angreifer im Kampf: Karte rückt etwas zum Gegner vor und trägt die rote Angriffsspitze
+    /// an der Oberkante (`false` = zurück an ihren Platz).
+    #[func]
+    pub fn set_attacking(&mut self, attacking: bool) {
+        self.advanced = attacking;
+        if let Some(b) = self.attack_banner.as_mut() {
+            b.set_visible(attacking);
+        }
+    }
+
+    /// Ist die Karte als Angreifer markiert (vorgerückt, mit Angriffsspitze)?
+    #[func]
+    pub fn is_attacking(&self) -> bool {
+        self.advanced
+    }
+
+    /// Schlag im Kampf: die Karte holt zum Weltpunkt `target` aus (Anteil `reach` des Wegs,
+    /// angehoben), trifft nach [`LUNGE_OUT`] Sekunden und kehrt zurück; Start nach `delay`.
+    #[func]
+    pub fn lunge(&mut self, target: Vector3, reach: f32, delay: f32) {
+        self.lunge = Some((target, 0.0, reach, delay));
     }
 
     /// Aura um die Karte setzen: 0 = keine, 1 = Angreifer (rot), 2 = Blocker (blau),
@@ -585,18 +686,46 @@ impl Card3D {
         self.apply_glow();
     }
 
+    /// Versatz des Schlags im Kampf (lokal) für dieses Frame.
+    fn lunge_offset(&mut self, dt: f32) -> Vector3 {
+        let Some((target, t, reach, delay)) = self.lunge.as_mut() else { return Vector3::ZERO };
+        if *delay > 0.0 {
+            *delay -= dt;
+            return Vector3::ZERO;
+        }
+        *t += dt;
+        let k = if *t < LUNGE_OUT {
+            let u = *t / LUNGE_OUT;
+            u * u // Ausholen beschleunigt
+        } else if *t < LUNGE_OUT + LUNGE_BACK {
+            let u = (*t - LUNGE_OUT) / LUNGE_BACK;
+            1.0 - (1.0 - (1.0 - u).powi(3)) // zurück, weich auslaufend
+        } else {
+            self.lunge = None;
+            return Vector3::ZERO;
+        };
+        let (target, reach) = (*target, *reach);
+        let xf = self.base().get_global_transform();
+        let local = xf.affine_inverse() * target;
+        let mut off = local * (reach * k);
+        off.y += LUNGE_LIFT * (std::f32::consts::PI * k).sin() / xf.basis.col_a().length().max(0.01);
+        off
+    }
+
     fn apply_glow(&mut self) {
-        let glow = match self.marker {
-            CardMarker::Attacking => Some((ATTACK_GLOW, MARK_STRENGTH)),
-            CardMarker::Blocking => Some((BLOCK_GLOW, MARK_STRENGTH)),
-            CardMarker::Selected => Some((SELECT_GLOW, MARK_STRENGTH)),
-            CardMarker::None => self.ready_glow.map(|c| (c, READY_STRENGTH)),
+        let flash = self.flash_t.map(|t| flash_gain(t));
+        let active = self.marker != CardMarker::None || self.dragging || flash.is_some();
+        let glow = if active {
+            Some((ACTIVE_GLOW, MARK_STRENGTH * flash.unwrap_or(1.0)))
+        } else {
+            self.ready_glow.map(|c| (c, READY_STRENGTH))
         };
         if let (Some(mesh), Some(mat)) = (self.marker_mesh.as_mut(), self.marker_material.as_mut()) {
             mesh.set_visible(glow.is_some());
             if let Some((c, strength)) = glow {
-                mat.set_shader_parameter("glow_color", &c.to_variant());
+                mat.set_shader_parameter("glow_color", &Vector3::new(c.r, c.g, c.b).to_variant());
                 mat.set_shader_parameter("strength", &strength.to_variant());
+                mat.set_shader_parameter("schein", &(if active { 0.45f32 } else { 0.32 }).to_variant());
             }
         }
     }
@@ -837,6 +966,23 @@ impl Card3D {
         self.marker_mesh = Some(marker);
         self.marker_material = Some(marker_mat);
 
+        // Angriffsspitze: rote Dachform über der Oberkante (zeigt zum Ziel), nur bei Angreifern
+        let mut banner_shader = Shader::new_gd();
+        banner_shader.set_code(BANNER_SHADER);
+        let mut banner_mat = ShaderMaterial::new_gd();
+        banner_mat.set_shader(&banner_shader);
+        let mut banner_mesh = PlaneMesh::new_gd();
+        banner_mesh.set_size(BANNER_SIZE);
+        banner_mesh.set_material(&banner_mat);
+        let mut banner = MeshInstance3D::new_alloc();
+        banner.set_name("AttackBanner");
+        banner.set_mesh(&banner_mesh);
+        banner.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+        banner.set_position(Vector3::new(0.0, CARD_THICKNESS, -CARD_HEIGHT * 0.5 - BANNER_SIZE.y * 0.5 + 0.02));
+        banner.set_visible(self.advanced);
+        visual.add_child(&banner);
+        self.attack_banner = Some(banner);
+
         // Tapp-Symbol: knapp über der Vorderseite, mittig im Bildfeld, nur wenn getappt sichtbar
         let mut icon_mat = StandardMaterial3D::new_gd();
         icon_mat.set_shading_mode(ShadingMode::UNSHADED);
@@ -949,4 +1095,16 @@ pub struct FaceTexts {
     pub body: String,
     pub stats: String,
     pub stats_color: Color,
+}
+
+/// Verstärkung des Aufleuchtens `t` Sekunden nach [`Card3D::flash`].
+fn flash_gain(t: f32) -> f32 {
+    for w in FLASH_KEYS.windows(2) {
+        let ((t0, v0), (t1, v1)) = (w[0], w[1]);
+        if t <= t1 {
+            let u = ((t - t0) / (t1 - t0)).clamp(0.0, 1.0);
+            return v0 + (v1 - v0) * u * u * (3.0 - 2.0 * u);
+        }
+    }
+    1.0
 }

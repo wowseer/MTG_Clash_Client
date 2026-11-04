@@ -9,7 +9,15 @@ import forge.game.event.GameEvent;
 /**
  * Leitet jedes Forge-{@link GameEvent} als {"type":"event"} an den Client weiter:
  * "event" = Klassenname (z. B. GameEventCardChangeZone), "text" = Forges Beschreibung,
- * dazu Runde und Phase.
+ * dazu Runde und Phase. Für Effekte der UI zusätzlich strukturierte Felder:
+ * <ul>
+ * <li>{@code GameEventCardTapped}: {@code card}, {@code tapped}</li>
+ * <li>{@code GameEventManaPool}: {@code player} (Sitzplatz), {@code mode} (Added/Removed/…),
+ * {@code colors} (Buchstaben WUBRGC)</li>
+ * <li>{@code GameEventCardDamaged}: {@code card}, {@code source}, {@code amount}</li>
+ * <li>{@code GameEventPlayerDamaged}: {@code player} (Sitzplatz), {@code source}, {@code amount},
+ * {@code combat}</li>
+ * </ul>
  */
 final class EventForwarder {
     private final Game game;
@@ -26,10 +34,51 @@ final class EventForwarder {
         var ph = game.getPhaseHandler();
         m.addProperty("turn", ph.getTurn());
         m.addProperty("phase", ph.getPhase() == null ? null : ph.getPhase().name());
+        addDetails(m, ev);
         ForgeBridge.send(m);
         // Eingebettet startet der Gastgeber die Partie, also meldet sie hier ihr Ende
         if (ForgeBridge.isEmbedded() && ev instanceof forge.game.event.GameEventGameOutcome) {
             ForgeBridge.sendGameOver(game);
         }
+    }
+
+    /** Strukturierte Felder für die Ereignisse, auf die die UI mit Effekten reagiert. */
+    private void addDetails(JsonObject m, GameEvent ev) {
+        if (ev instanceof forge.game.event.GameEventCardTapped e && e.card() != null) {
+            m.addProperty("card", e.card().getId());
+            m.addProperty("tapped", e.tapped());
+        } else if (ev instanceof forge.game.event.GameEventManaPool e) {
+            m.addProperty("player", seat(e.player()));
+            m.addProperty("mode", String.valueOf(e.mode()));
+            StringBuilder colors = new StringBuilder();
+            if (e.colors() != null) {
+                for (forge.card.MagicColor.Color c : e.colors()) {
+                    colors.append(c == forge.card.MagicColor.Color.COLORLESS ? "C" : c.getShortName());
+                }
+            }
+            m.addProperty("colors", colors.toString());
+        } else if (ev instanceof forge.game.event.GameEventCardDamaged e) {
+            m.addProperty("card", e.card() == null ? -1 : e.card().getId());
+            m.addProperty("source", e.source() == null ? -1 : e.source().getId());
+            m.addProperty("amount", e.amount());
+        } else if (ev instanceof forge.game.event.GameEventPlayerDamaged e) {
+            m.addProperty("player", seat(e.target()));
+            m.addProperty("source", e.source() == null ? -1 : e.source().getId());
+            m.addProperty("amount", e.amount());
+            m.addProperty("combat", e.combat());
+        }
+    }
+
+    /** Sitzplatz eines Spielers aus seiner Ansicht (-1 = unbekannt). */
+    private int seat(forge.game.player.PlayerView view) {
+        if (view == null) {
+            return -1;
+        }
+        for (forge.game.player.Player p : game.getPlayers()) {
+            if (p.getView() == view || p.getId() == view.getId()) {
+                return StateJson.indexOf(game, p);
+            }
+        }
+        return -1;
     }
 }
