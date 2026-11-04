@@ -87,8 +87,7 @@ Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.pla
 `ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Kosten-Auswahlen
 (`RemoteCostDecision`), `AssignCombatDamage`, `DivideAmount`, `PayUnlessCost`,
 `PayLifeForPhyrexian`, Trigger über den menschlichen Ablauf. Nächster Schritt laut Fahrplan:
-Erschöpfen/Rekrutieren, Kopien, `chooseNewTargetsFor`, Exil als Kosten; der Zustand ist
-vollständig.
+Erschöpfen/Rekrutieren, Kopien, `chooseNewTargetsFor`; der Zustand ist vollständig.
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
@@ -119,7 +118,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 4. ~~`PayMana`~~ ✔ (offen: Pool-Mana gezielt wählen, `chooseManaFromPool`, andere Kosten wie Opfern/Abwerfen)
 5. ~~`Priority` mit `Action::Activate` per Klick, Menü bei mehreren~~ ✔
 6. ~~`ChooseCards`, `Scry`, `OrderTriggers`, `MulliganBottom`, Delve, Convoke, Improvise~~ ✔
-7. ~~`AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`, Kosten, Trigger-Ziele~~ ✔ (offen: Exil als Kosten, Erschöpfen/Rekrutieren, Kopien)
+7. ~~`AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`, Kosten, Trigger-Ziele~~ ✔ (offen: Erschöpfen/Rekrutieren, Kopien)
 
 **Zustand, der noch fehlt:**
 - ~~Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile~~ ✔ (Zone `Stack`, Liste im HUD)

@@ -74,7 +74,7 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `arrangeForScry`, `arrangeForSurveil` | `Scry { cards, graveyard }` | `Arrange { top, bottom }` |
 | `orderSimultaneousSa` (eigene Trigger), `orderMoveToZoneList` | `OrderTriggers { descriptions }` | `Order([…])` (erstes zuerst) |
 | `tuckCardsViaMulligan` | `MulliganBottom { hand, count }` | `Cards([…])` |
-| Kosten: Opfern, Abwerfen, Tappen, Zurückgeben (`getCostDecisionMaker` → `RemoteCostDecision`) | `ChooseCards { reason: SacrificeCost / DiscardCost / TapCost / ReturnCost }` | `Cards([…])` |
+| Kosten: Opfern, Abwerfen, Tappen, Zurückgeben, Exilieren (`getCostDecisionMaker` → `RemoteCostDecision`) | `ChooseCards { reason: SacrificeCost / DiscardCost / TapCost / ReturnCost / ExileCost }`; Exil-Sonderfälle (Karte selbst, alle, oberste Friedhofskarten, Mindest-Manawert, Bibliothek, „aus demselben Friedhof“) entscheidet die Engine | `Cards([…])` |
 | `assignCombatDamage` | `AssignCombatDamage { attacker, amount, blockers, lethal, trample_to }` | `Damage([je Blocker…, Trampel])` |
 | `chooseTargetsFor` bei „DividedAsYouChoose“ | `DivideAmount { source, amount, targets, min_each }` (**Erweiterung**) | `Damage([…])` |
 | `payCostToPreventEffect` | `PayUnlessCost { cost }` (nur wenn bezahlbar) | `Yes` / `No` |
@@ -354,6 +354,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Reverse Engineer, Raging Goblin, Ornithopter) gegen `gegner.dck`: Kreaturen bzw. Artefakte im
   Tisch-Modus, Friedhofskarten im Kartenfächer; nur im echten Wirken gefragt (nicht bei
   Spielbarkeits-Prüfungen).
+- Exil als Kosten getestet mit Grim Lavamancer (zwei Karten aus dem eigenen Friedhof, Kartenfächer).
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

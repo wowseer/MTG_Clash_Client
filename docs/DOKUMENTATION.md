@@ -155,7 +155,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | **Kartenfächer** (Karten wählen) | Muss man Karten wählen – abwerfen, opfern, Bibliothek durchsuchen, Karten für einen Effekt, nach einem Mulligan Karten unter die Bibliothek –, erscheinen sie groß in der Bildmitte (Tisch abgedunkelt, auch Karten aus der Bibliothek). Klick wählt bzw. wählt ab (goldener Rahmen), „Fertig (n/…)“ ist erst bei gültiger Anzahl aktiv. Viele Karten: kleiner und scrollbar |
 | **Hellsicht / Überwachen** | Kartenfächer mit zwei Reihen „Oben auf die Bibliothek“ und „Unter die Bibliothek“ bzw. „In den Friedhof“. Klick legt eine Karte ans Ende der anderen Reihe; die Reihenfolge oben gilt von oben nach unten. „Fertig“ |
 | **Reihenfolge wählen** | Gleichzeitige eigene Trigger (bzw. Karten, die gleichzeitig in eine Zone wechseln): im Auswahlfenster in der gewünschten Reihenfolge anklicken (Knöpfe zeigen „1.“, „2.“ …), erneuter Klick nimmt eine Karte heraus; dann „Fertig“ |
-| **Kosten wählen** | Muss als Kosten eine Karte geopfert, abgeworfen, getappt oder auf die Hand zurückgegeben werden (z. B. „Opfere eine Kreatur:“), erscheint der Kartenfächer mit allen passenden Karten. Gibt es genau so viele passende Karten wie nötig, wird nicht gefragt |
+| **Kosten wählen** | Muss als Kosten eine Karte geopfert, abgeworfen, getappt, exiliert oder auf die Hand zurückgegeben werden (z. B. „Opfere eine Kreatur:“), erscheint der Kartenfächer mit allen passenden Karten. Gibt es genau so viele passende Karten wie nötig, wird nicht gefragt |
 | **Phyrexianisches Mana** | Vor dem Bezahlen je Symbol die Frage „mit 2 Leben bezahlen?“ („2 Leben zahlen“ / „Mit Mana zahlen“) |
 | **„…, es sei denn, du zahlst“** | Kann man die Kosten bezahlen, fragt das Spiel „Zahlen“ / „Nicht zahlen“; bezahlt wird wie beim Wirken (Mana über das Bezahl-Fenster). Kann man nicht zahlen, wird nicht gefragt |
 | **Schaden verteilen** | Bei Zaubern wie „… beliebig auf ein oder zwei Ziele aufgeteilt“ und bei Kampfschaden gegen mehrere Blocker bzw. mit Trampeln: Fenster mit einem Zahlenfeld je Ziel, vorbelegt (Kampf: tödlicher Schaden der Reihe nach, Rest aufs Trampel-Ziel), Anzeige „Verteilt: n / gesamt“; „OK“ erst, wenn die Summe stimmt. Beim Wirken bekommt jedes Ziel mindestens 1 |
@@ -186,7 +186,7 @@ der Zauber braucht: optionale Kosten (z. B. Kicker), Modus, X-Wert und das **Zie
 Karte oder Medaillon, siehe oben). Aktivierte Fähigkeiten bleibender Karten (z. B. Ausrüsten)
 leuchten, wenn sie möglich sind, und werden per Klick aktiviert.
 
-Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Exil als Kosten,
+Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich):
 Sonderkosten (ganze Hand abwerfen, zufällig, Fahrzeuge besetzen), Erschöpfen/Rekrutieren,
 Reihenfolge der Blocker, Kopien von Zaubern. Ziele werden noch aus einer
 Liste gewählt, nicht per Klick auf dem Tisch.

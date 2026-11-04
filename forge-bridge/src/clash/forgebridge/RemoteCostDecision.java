@@ -7,7 +7,9 @@ import forge.ai.AiCostDecision;
 import forge.game.card.Card;
 import forge.game.card.CardCollection;
 import forge.game.card.CardLists;
+import forge.game.card.CardPredicates;
 import forge.game.cost.CostDiscard;
+import forge.game.cost.CostExile;
 import forge.game.cost.CostReturn;
 import forge.game.cost.CostSacrifice;
 import forge.game.cost.CostTapType;
@@ -18,9 +20,9 @@ import forge.game.zone.ZoneType;
 
 /**
  * Kosten-Entscheider für den ferngesteuerten Spieler: Karten, die als <em>Kosten</em> geopfert,
- * abgeworfen, getappt oder auf die Hand zurückgegeben werden, wählt der Spieler selbst
+ * abgeworfen, getappt, auf die Hand zurückgegeben oder exiliert werden, wählt der Spieler selbst
  * ({@code Decision::ChooseCards} mit Grund {@code SacrificeCost}, {@code DiscardCost},
- * {@code TapCost}, {@code ReturnCost}).
+ * {@code TapCost}, {@code ReturnCost}, {@code ExileCost}).
  *
  * <p>Alles andere – Mana (geht ohnehin über {@code payManaCost} an den Spieler), Leben, Marken,
  * Sonderfälle wie „Hand abwerfen“, „zufällig“, Fahrzeuge (Gesamtstärke), „Karte selbst“ – bleibt
@@ -87,6 +89,29 @@ final class RemoteCostDecision extends AiCostDecision {
         CardCollection valid = CardLists.filter(valid(ZoneType.Battlefield, type),
                 card -> card.canTap() && (cost.canTapSource || card != source));
         PaymentDecision d = ask("TapCost", valid, c, "Kosten: " + c + " Karte(n) tappen");
+        return d != null ? d : super.visit(cost);
+    }
+
+    /**
+     * Exil als Kosten (z. B. „Exile a card from your graveyard“). Sonderfälle bleiben bei der KI:
+     * die Karte selbst, „alle“, oberste Friedhofskarten, Mindest-Manawert, aus der Bibliothek
+     * und „aus demselben Friedhof“ (mehrere Spieler).
+     */
+    @Override
+    public PaymentDecision visit(CostExile cost) {
+        String type = cost.getType();
+        boolean libraryOnly = cost.getFrom().size() == 1 && cost.getFrom().get(0) == ZoneType.Library;
+        if (cost.payCostFromSource() || type.equals("All") || type.contains("FromTopGrave")
+                || type.contains("+withTotalCMCGE") || libraryOnly || cost.zoneRestriction == 0) {
+            return super.visit(cost);
+        }
+        int c = cost.getAbilityAmount(ability);
+        CardCollection pool = new CardCollection(cost.zoneRestriction == 1
+                ? player.getCardsIn(cost.getFrom()) : player.getGame().getCardsIn(cost.getFrom()));
+        CardCollection valid = CardLists.filter(
+                CardLists.getValidCards(pool, type.split(";"), player, source, ability),
+                CardPredicates.canExiledBy(ability, isEffect()));
+        PaymentDecision d = ask("ExileCost", valid, c, "Kosten: " + c + " Karte(n) exilieren");
         return d != null ? d : super.visit(cost);
     }
 
