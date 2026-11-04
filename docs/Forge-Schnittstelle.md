@@ -148,6 +148,7 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `pong` | `nonce` |
 | `match_started` | `state` |
 | `event` | `event` (Forge-Klassenname, z. B. `GameEventCardChangeZone`, `GameEventTurnPhase`), `text`, `turn`, `phase` |
+| `log` | neuer Eintrag im Spielprotokoll (Forges `GameLog`, chronologisch): `kind` (`GameLogEntryType`, z. B. `TURN`, `LAND`, `STACK_ADD`, `STACK_RESOLVE`, `ZONE_CHANGE`, `DAMAGE`, `LIFE`, `COMBAT`, `PHASE`, `MANA`, `MULLIGAN`), `text` (englisch, Objekte als „Name (id)“), `card` (Karten-ID der Quelle, falls bekannt), `turn`. Godot-Signal `ForgeBridge.log_entry` |
 | `request` | `id`, `player`, `decision` (NeoForge-`Decision`), `prompt`, `source` `{id, name}`, `ability`, `cancelable`, `labels`, `state` – siehe unten |
 | `rejected` | `player`, `option` (Index in `actions` ohne `Pass`), `action`, `reason` – gewählte Aktion nicht ausführbar |
 | `state` | `state` |
@@ -281,6 +282,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |
+| `log` | Spielprotokoll oben rechts im HUD: die letzten 7 Einträge ohne `PHASE`/`MANA`, IDs entfernt, Rundenbeginn golden |
 | `stack` | Zone `Stack` in der Tischmitte: Zauber als ihre Karte, Fähigkeiten als Karte ihrer Quelle; violette Pfeile zu den Zielen; Liste im HUD (linker Rand) mit Quelle, Art, Text; Hauptbutton orange |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
@@ -323,4 +325,6 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Kartenbild aus den Kartendaten getestet (headless und Fenster-Nahaufnahme): Regeltext, Symbole
   (↷, Ⓡ, ①), Typzeilen, Planeswalker-Loyalität (auf der Hand aufgedruckt, im Spiel aktuell),
   Schriftanpassung bei langem Text (Chandra, Bonesplitter).
+- Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
+  Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

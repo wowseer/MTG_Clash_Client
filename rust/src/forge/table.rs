@@ -22,6 +22,7 @@ use crate::game::decision_view;
 use crate::game::card_text;
 use crate::game::counters;
 use crate::game::hud::HudView;
+use crate::game::log_view::{self, HudLogLine, HIDDEN_KINDS};
 use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
@@ -38,6 +39,9 @@ const LOCAL_SEAT: i64 = 0;
 /// Schlüssel der Karten für Fähigkeiten auf dem Stack: `ABILITY_KEY_BASE - Stack-ID`
 /// (verdeckte Gegner-Handkarten liegen zwischen −1 und dieser Grenze).
 const ABILITY_KEY_BASE: i64 = -1_000_000;
+/// Gemerkte bzw. im HUD gezeigte Zeilen des Spielprotokolls.
+const LOG_KEEP: usize = 200;
+const LOG_SHOWN: usize = 7;
 /// Farbe der Pfeile vom Stack-Eintrag zu seinen Zielen.
 const STACK_ARROW: Color = Color::from_rgb(0.72, 0.5, 1.0);
 
@@ -123,6 +127,8 @@ pub struct ForgeTable {
     /// verdeckte Zonen) temporäre Karten aus den mitgeschickten Kartendaten. Temporäre Karten
     /// (zweiter Wert true) werden nach der Antwort freigegeben.
     fan_cards: Vec<(CardId, Gd<Card3D>, bool)>,
+    /// Spielprotokoll der Engine (ältester zuerst, höchstens [LOG_KEEP] Einträge).
+    log: std::collections::VecDeque<HudLogLine>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -161,6 +167,7 @@ impl INode for ForgeTable {
             block_plan: Vec::new(),
             combat_armed: None,
             fan_cards: Vec::new(),
+            log: std::collections::VecDeque::new(),
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -178,6 +185,7 @@ impl INode for ForgeTable {
             bridge.connect("match_started", &cb("on_state"));
             bridge.connect("state_received", &cb("on_state"));
             bridge.connect("forge_event", &cb("on_forge_event"));
+            bridge.connect("log_entry", &cb("on_log_entry"));
             bridge.connect("decision_requested", &cb("on_decision_requested"));
             bridge.connect("game_over", &cb("on_game_over"));
             bridge.connect("bridge_error", &cb("on_bridge_error"));
@@ -222,6 +230,7 @@ impl ForgeTable {
         let ok = bridge.bind_mut().start_match(decks, PackedInt32Array::from(&[LOCAL_SEAT as i32]), names, self.seed);
         if ok {
             self.winner.clear();
+            self.log.clear();
             self.match_running = true;
         }
         ok
@@ -360,6 +369,24 @@ impl ForgeTable {
     #[func]
     fn on_forge_event(&mut self, _event: VarDictionary) {
         self.dirty = true;
+    }
+
+    /// Neuer Eintrag im Spielprotokoll der Engine: für das HUD merken (ohne Phasen- und
+    /// Mana-Einträge, siehe `log_view::HIDDEN_KINDS`).
+    #[func]
+    fn on_log_entry(&mut self, entry: VarDictionary) {
+        let kind = get_str(&entry, "kind");
+        if HIDDEN_KINDS.contains(&kind.as_str()) {
+            return;
+        }
+        let text = card_text::with_symbols(&log_view::strip_ids(&get_str(&entry, "text")));
+        if text.is_empty() {
+            return;
+        }
+        self.log.push_back(HudLogLine { text, turn_start: kind == "TURN" });
+        while self.log.len() > LOG_KEEP {
+            self.log.pop_front();
+        }
     }
 
     /// Entscheidung des Spielers nötig (Protokoll v3): Zustand übernehmen, Quellkarte markieren,
@@ -572,6 +599,7 @@ impl ForgeTable {
             button_text: button_text.into(),
             stack_busy: !self.stack_items().is_empty(),
             stack: self.hud_stack(),
+            log: self.log.iter().skip(self.log.len().saturating_sub(LOG_SHOWN)).cloned().collect(),
             player_pool: player(0)
                 .and_then(|p| get_array(&p, "mana_pool"))
                 .map(|a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).collect())

@@ -69,7 +69,7 @@ table.tscn  ─────────────▶  TableController  Hover, 
 | `rust/src/game/` | Anzeige-Bausteine: HUD, Medaillons, Phasen-Zeitstrahl, Mana-Typen, Kartendaten für das Kartenbild |
 | `rust/src/rules/` | Engine-Grenze: NeoForge-Modell (`Decision`, `Choice` …), `Request`, `RulesEngine` |
 | `rust/src/game/decision_view.rs` | `Decision` → Auswahlfenster → `Choice` (engine-neutral) |
-| `forge-bridge/src/clash/forgebridge/` | `RemotePlayerController` (Forge-Aufrufe), `Decisions` (→ NeoForge-`Decision`, Antwort-`Choice` lesen), `StateJson` (Zustand → JSON), `ForgeBridge` (Befehle, Partie, Anfragen) |
+| `forge-bridge/src/clash/forgebridge/` | `RemotePlayerController` (Forge-Aufrufe), `Decisions` (→ NeoForge-`Decision`, Antwort-`Choice` lesen), `StateJson` (Zustand → JSON), `LogForwarder` (Spielprotokoll), `ForgeBridge` (Befehle, Partie, Anfragen) |
 | `forge-bridge/forge/` | lokale Kopie von Forge (Jar + `res/`), **nicht im Git** (GPL, Kartendaten von WotC) |
 | `docs/Forge-Schnittstelle.md` | Protokoll (Befehle, Nachrichten, `state`-Aufbau). **Bei jeder Protokolländerung pflegen** |
 
@@ -87,7 +87,9 @@ Automatik). Gespielt wird über Forges menschlichen Ablauf `PlaySpellAbility.pla
 `ChooseCards`, `MulliganBottom`, `Scry`; `OrderTriggers` im Auswahlfenster. Kosten-Auswahlen
 (`RemoteCostDecision`), `AssignCombatDamage`, `DivideAmount`, `PayUnlessCost`,
 `PayLifeForPhyrexian`, Trigger über den menschlichen Ablauf. Nächster Schritt laut Fahrplan:
-Spielprotokoll aus `forge_event`; Stack, Exil, Marken, angelegte Karten, Spielsteine, Regeltext ✔.
+offene Spieler-Entscheidungen aus dem Fahrplan (Ziele von `chooseSingleEntityForEffect` /
+`chooseEntitiesForEffect`, Delve, Convoke, Blocker-Reihenfolge …); Zustand vollständig bis auf
+Kommandozone und doppelseitige Karten.
 
 Ferngesteuert, also vom Spieler in der UI entschieden:
 - [x] Priorität: Karte oder Fähigkeit spielen bzw. passen (`chooseSpellAbilityToPlay`): Karte aus der Hand auf den Tisch ziehen, Button/Leertaste = passen
@@ -101,6 +103,7 @@ Angezeigt:
 - [x] Bibliothek als Deck-Stapel; Ziehen gleitet animiert vom Deck auf die Hand
 - [x] Phase, Leben, Runde, Spieler am Zug, Spielende
 - [x] Stack: Zauber und Fähigkeiten in der Tischmitte, Ziele als violette Pfeile, Liste im HUD
+- [x] Spielprotokoll oben rechts
 - [x] Kartenbild aus Engine-Daten: Regeltext mit Symbolen, Typzeile, Farben, Stärke/Widerstand, Loyalität, Verteidigung
 - [x] Exil-Stapel, Marken- und Spielstein-Plaketten, angelegte Karten unter dem Träger, Spieler-Marken
 
@@ -122,7 +125,8 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 - ~~Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile~~ ✔ (Zone `Stack`, Liste im HUD)
 - ~~Exil, Marken (Counter), angelegte Karten (Auren, Ausrüstung), Spielsteine~~ ✔
 - ~~Regeltext auf dem Kartenbild; Kartenmodell verschlankt~~ ✔ (`CardDef::from_state`, `card_text.rs`)
-- Spielprotokoll aus `forge_event`
+- ~~Spielprotokoll~~ ✔ (Nachricht `log` aus Forges `GameLog`, oben rechts im HUD)
+- Kommandozone (Embleme, Commander, Dungeons, Ring), doppelseitige/verdeckte Karten
 
 **Später:** Deckauswahl, mehr als 2 Spieler (Commander), Formate, Umzug der UI nach NeoForge.
 

@@ -12,6 +12,7 @@
 //! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
 //!   belegtem Stack orange
 //! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
+//! - oben rechts: Spielprotokoll ([`GameLogList`]), die letzten Einträge der Engine
 //! - linker Bildrand, Mitte: Stack-Liste ([`StackList`]) mit Quelle, Art und Text jedes Eintrags
 //! - ganz oben, mittig: große Vorschau der Karte, die gerade gezogen wird; das Gegner-Medaillon
 //!   liegt dann durchsichtig darüber
@@ -38,6 +39,7 @@ use super::seat_badge::SeatBadge;
 use super::card_preview;
 use super::card_fan::{CardFan, HudFan};
 use super::choice_panel::ChoicePanel;
+use super::log_view::{GameLogList, HudLogLine};
 use super::stack_view::{HudStackEntry, StackList};
 pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
@@ -113,6 +115,8 @@ pub struct TurnHud {
     fan: Option<CardFan>,
     /// Stack-Liste am linken Bildrand.
     stack: Option<StackList>,
+    /// Spielprotokoll oben rechts.
+    log: Option<GameLogList>,
 
     base: Base<CanvasLayer>,
 }
@@ -145,6 +149,7 @@ impl ICanvasLayer for TurnHud {
             choice: None,
             fan: None,
             stack: None,
+            log: None,
             base,
         }
     }
@@ -311,6 +316,7 @@ impl TurnHud {
         self.choice = Some(ChoicePanel::new(&mut root));
         self.fan = Some(CardFan::new(&mut root));
         self.stack = Some(StackList::new(&mut root));
+        self.log = Some(GameLogList::new(&mut root));
         // Medaillon-Klicks (Spieler als Ziel) an den ForgeTable melden
         for (seat, badge) in [(0i64, &me_badge), (1, &opp_badge)] {
             let cb = Callable::from_object_method(&self.to_gd(), "on_badge_clicked").bind(&[seat.to_variant()]);
@@ -505,6 +511,9 @@ impl TurnHud {
         if let Some(stack) = self.stack.as_mut() {
             stack.show(&view.stack);
         }
+        if let Some(log) = self.log.as_mut() {
+            log.show(&view.log);
+        }
     }
 }
 
@@ -529,6 +538,8 @@ pub struct HudView {
     pub stack_busy: bool,
     /// Stack-Liste, oberster Eintrag zuerst (leer = ausgeblendet).
     pub stack: Vec<HudStackEntry>,
+    /// Letzte Zeilen des Spielprotokolls, ältester zuerst (leer = ausgeblendet).
+    pub log: Vec<HudLogLine>,
     /// Manapool des Spielers (je [ManaType] eine Menge; leer = keine Anzeige).
     pub player_pool: PackedInt64Array,
     pub choice: Option<HudChoice>,

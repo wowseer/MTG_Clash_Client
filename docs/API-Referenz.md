@@ -68,6 +68,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `bridge_ready(protocol: int)` | Die Brücke ist gestartet und Forge geladen; `protocol` = Protokollversion. |
 | `message_received(message: Dictionary)` | Jede empfangene Nachricht (vor den speziellen Signalen), z. B. für eigene Auswertung. |
 | `forge_event(event: Dictionary)` | Ein Forge-Spielereignis: `{event, text, turn, phase}` (`event` = Forge-Klassenname, z. B. "GameEventCardChangeZone"). |
+| `log_entry(entry: Dictionary)` | Neuer Eintrag im Spielprotokoll der Engine: `{kind, text, card, turn}` (`kind` z. B. "ZONE_CHANGE", "DAMAGE", "STACK_ADD", "TURN"; `card` = Karten-ID der Quelle, falls bekannt). |
 | `decision_requested(request: Dictionary)` | Ein ferngesteuerter Spieler muss entscheiden (Protokoll v3): `{id, player, decision, prompt, source, ability, cancelable, labels, state}`; `decision` ist eine NeoForge-`Decision` (z. B. `{"type": "Priority", "actions": […]}`). Antwort mit `answer()` und einer NeoForge-`Choice`. Aufbau siehe `docs/Forge-Schnittstelle.md`. |
 | `decision_rejected(info: Dictionary)` | Die gewählte Option wurde von Forge abgelehnt (`{player, option, reason}`); es folgt eine neue Anfrage. |
 | `match_started(state: Dictionary)` | Die Partie hat begonnen; `state` = Spielzustand (siehe Protokoll). |
@@ -113,6 +114,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_bridge_ready(protocol: int)` | `void` | Brücke bereit → Partie starten (bei `autostart`). |
 | `on_state(state: Dictionary)` | `void` | Neuer Spielzustand von Forge (Spielstart oder Abfrage): Tisch abgleichen. |
 | `on_forge_event(event: Dictionary)` | `void` | Forge-Ereignis: Zustand bald neu abfragen (gebündelt, siehe `refresh_interval`). |
+| `on_log_entry(entry: Dictionary)` | `void` | Neuer Eintrag im Spielprotokoll der Engine: für das HUD merken (ohne Phasen- und Mana-Einträge, siehe `log_view::HIDDEN_KINDS`). |
 | `on_decision_requested(request: Dictionary)` | `void` | Entscheidung des Spielers nötig (Protokoll v3): Zustand übernehmen, Quellkarte markieren, spielbare Karten leuchten lassen. Unbekannte Entscheidungen werden mit `Cancel` beantwortet (die Engine entscheidet dann selbst). |
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |

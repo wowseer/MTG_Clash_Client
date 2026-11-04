@@ -141,6 +141,11 @@ impl ForgeBridge {
     #[signal]
     fn forge_event(event: VarDictionary);
 
+    /// Neuer Eintrag im Spielprotokoll der Engine: `{kind, text, card, turn}` (`kind` z. B.
+    /// "ZONE_CHANGE", "DAMAGE", "STACK_ADD", "TURN"; `card` = Karten-ID der Quelle, falls bekannt).
+    #[signal]
+    fn log_entry(entry: VarDictionary);
+
     /// Ein ferngesteuerter Spieler muss entscheiden (Protokoll v3): `{id, player, decision, prompt,
     /// source, ability, cancelable, labels, state}`; `decision` ist eine NeoForge-`Decision`
     /// (z. B. `{"type": "Priority", "actions": […]}`). Antwort mit [method answer] und einer
@@ -428,6 +433,7 @@ impl ForgeBridge {
                 self.signals().bridge_ready().emit(protocol);
             }
             "event" => self.signals().forge_event().emit(&dict),
+            "log" => self.signals().log_entry().emit(&dict),
             "request" => self.signals().decision_requested().emit(&dict),
             "rejected" => self.signals().decision_rejected().emit(&dict),
             "match_started" => self.signals().match_started().emit(&get_dict("state")),

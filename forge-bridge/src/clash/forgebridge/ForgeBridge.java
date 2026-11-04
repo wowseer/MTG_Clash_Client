@@ -174,6 +174,7 @@ public final class ForgeBridge {
         Game game = match.createGame();
         currentGame = game;
         game.subscribeToEvents(new EventForwarder(game));
+        game.getGameLog().addObserver(new LogForwarder(game));
 
         gameThread = new Thread(() -> runGame(match, game), "forge-game");
         gameThread.setDaemon(true);
