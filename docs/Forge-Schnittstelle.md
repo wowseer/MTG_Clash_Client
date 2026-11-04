@@ -68,6 +68,10 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `applyManaToCost` (über `payManaCost`) | `PayMana { remaining, options: [ActivateMana(karte, i), AutoPay, Cancel] }` | `Pay(ActivateMana(…))` → Quelle tappen, Mana einsetzen, erneut fragen bis bezahlt; `Pay(AutoPay)`; `Pay(Cancel)` = Wirken zurücknehmen |
 | `chooseCardsForEffect`, `chooseCardsForZoneChange`, `chooseSingleCardForZoneChange`, `chooseCardsToDiscardFrom`, `chooseCardsToDiscardToMaximumHandSize`, `choosePermanentsToSacrifice`, `choosePermanentsToDestroy`, `chooseCardsToRevealFromHand`, `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` (nur Karten) | `ChooseCards { reason, options, min, max }` (`reason`: `Choose`, `Search`, `Discard`, `DiscardToHandSize`, `Sacrifice`) | `Cards([…])` |
 | `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` mit Spielern (z. B. „Choose a player“) | `ChooseTargets { source, description, candidates, min, max }` (**Erweiterung**: NeoForge kennt keine Spielerwahl für Effekte; `source` = −1, wenn es keine Quelle gibt) | `Targets([…])` |
+| `chooseNewTargetsFor` (Umleiten, Kopien mit „you may choose new targets“) | bei optionaler Änderung zuerst `Confirm` („Neue Ziele wählen für …?“), dann `ChooseTargets` (mit Forges Zusatzfilter) | `Yes`/`No`, `Targets([…])` |
+| `exertAttackers`, `enlistAttackers` (CR 701.43, 702.154) | `ChooseCards { reason: "Choose", options: Angreifer, min: 0 }` (Tisch-Modus) | `Cards([…])` |
+| `chooseSingleSpellForEffect` / `chooseSpellAbilitiesForEffect` | `ChooseOption` / `ChooseOptions` mit „Karte: Text“ | `Number` / `Modes` |
+| `orderAndPlaySimultaneousSa` mit Kopien | Kopie auf den Stack wie Forges menschlicher Controller; neue Ziele über `chooseNewTargetsFor` | – |
 | `chooseCardsToDelve` (CR 702.66) | `ChooseCards { reason: "Delve", options: Friedhof, min: 0, max }` | `Cards([…])` |
 | `chooseCardsForConvokeOrImprovise` (CR 702.51, 702.126, Waterbend) | `ChooseCards { reason: "Convoke" / "Improvise" / "Choose", options: ungetappte Kreaturen/Artefakte, min: 0, max }`; welches Mana jede Karte bezahlt, legt die Brücke fest (farbiges Symbol in einer Farbe der Kreatur, sonst generisch) | `Cards([…])` |
 | `orderBlockers`, `orderBlocker`, `orderAttackers` (Schadens-Reihenfolge, nur mit `order_combatants`) | `OrderTriggers { descriptions }` mit Kartennamen (wie `orderMoveToZoneList`) | `Order([…])` |
@@ -126,6 +130,7 @@ damit die UI unverändert mit NeoForge läuft:
 | `Decision::ChooseOptions { player, prompt, options, min, max }` → `Choice::Modes(indizes)` | allgemeine Mehrfachauswahl |
 | `Decision::ChooseNumber { player, prompt, min, max }` → `Choice::Number(n)` | Zahl mit Untergrenze ≠ 0 bzw. außerhalb von X |
 | `Decision::DivideAmount { player, source, amount, targets, min_each }` → `Choice::Damage(mengen)` | Menge beim Wirken auf die gewählten Ziele verteilen (CR 601.2d) |
+| Ziele auf dem Stack in `ChooseTargets` | als `{"card": id}` der Quelle des Zaubers bzw. der Fähigkeit (NeoForges `Target` hat keine Stack-Einträge; nachziehen: `Target::Stack(id)`) |
 | `ChooseTargets` auch für Spieler-/Kartenwahl durch Effekte (`chooseSingleEntityForEffect` mit Spielern) | NeoForge hat dafür keine Entscheidung; die UI behandelt sie wie Ziele (Klick auf Medaillon/Karte) |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
 | Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) und Kartendaten (`cards`: Liste wie im `state`) der Karten, um die es geht – auch aus verdeckten Zonen, z. B. bei `ChooseCards` mit `Search` |
@@ -355,6 +360,10 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Tisch-Modus, Friedhofskarten im Kartenfächer; nur im echten Wirken gefragt (nicht bei
   Spielbarkeits-Prüfungen).
 - Exil als Kosten getestet mit Grim Lavamancer (zwei Karten aus dem eigenen Friedhof, Kartenfächer).
+- Ziele auf dem Stack sind jetzt die Zauber/Fähigkeiten selbst (vorher die Karte, wodurch
+  Kopieren nicht griff); in `ChooseTargets` erscheinen sie als Karte ihrer Quelle. Getestet mit
+  Reverberate auf Shock: Kopie, „Neue Ziele wählen?“, neue Zielwahl. Erschöpfen (Ahn-Crop Crasher)
+  und Rekrutieren (Yavimaya Steelcrusher) im Tisch-Modus getestet.
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

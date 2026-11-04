@@ -206,13 +206,13 @@ final class Decisions {
      * ({@code {"card": id}}) oder Spieler ({@code {"player": sitz}}).
      */
     static List<Integer> targets(Game game, int seat, SpellAbility sa, String description,
-            List<GameEntity> candidates, List<String> labels, int min, int max) {
+            List<? extends forge.game.GameObject> candidates, List<String> labels, int min, int max) {
         JsonObject d = decision("ChooseTargets", seat);
         Card src = sa == null ? null : sa.getHostCard();
         d.addProperty("source", src == null ? -1 : src.getId());
         d.addProperty("description", withName(description, src));
         JsonArray arr = new JsonArray();
-        for (GameEntity e : candidates) {
+        for (forge.game.GameObject e : candidates) {
             arr.add(targetJson(game, e));
         }
         d.add("candidates", arr);
@@ -233,9 +233,16 @@ final class Decisions {
         return valid(chosen, candidates.size(), min, max, false) ? chosen : null;
     }
 
-    static JsonObject targetJson(Game game, GameEntity e) {
+    /**
+     * Ziel als NeoForge-{@code Target}: Karte {@code {"card": id}}, Spieler {@code {"player": sitz}};
+     * ein Zauber bzw. eine Fähigkeit auf dem Stack als Karte ihrer Quelle (NeoForges {@code Target}
+     * kennt keine Stack-Einträge).
+     */
+    static JsonObject targetJson(Game game, forge.game.GameObject e) {
         JsonObject t = new JsonObject();
-        if (e instanceof Card c) {
+        if (e instanceof SpellAbility s && s.getHostCard() != null) {
+            t.addProperty("card", s.getHostCard().getId());
+        } else if (e instanceof Card c) {
             t.addProperty("card", c.getId());
         } else if (e instanceof Player p) {
             t.addProperty("player", game.getPlayers().indexOf(p));

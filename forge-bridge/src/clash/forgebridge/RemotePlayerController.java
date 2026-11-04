@@ -22,6 +22,9 @@ import forge.ai.ComputerUtilMana;
 import forge.ai.PlayerControllerAi;
 import forge.game.Game;
 import forge.game.GameEntity;
+import forge.game.spellability.TargetChoices;
+import forge.game.spellability.SpellAbilityStackInstance;
+import forge.game.GameObject;
 import forge.game.card.Card;
 import forge.game.card.CardState;
 import forge.game.card.CardCollection;
@@ -382,14 +385,14 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public boolean chooseTargetsFor(SpellAbility cur) {
         cur.resetTargets();
-        List<GameEntity> candidates = new ArrayList<>(cur.getTargetRestrictions().getAllCandidates(cur));
+        List<GameObject> candidates = targetCandidates(cur, null);
         int min = cur.getMinTargets();
         int max = Math.min(cur.getMaxTargets(), candidates.size());
         if (candidates.isEmpty()) {
             return min == 0;
         }
         List<String> labels = new ArrayList<>();
-        for (GameEntity e : candidates) {
+        for (GameObject e : candidates) {
             labels.add(targetLabel(e));
         }
         String prompt = cur.getTargetRestrictions().getVTSelection();
@@ -399,7 +402,7 @@ public class RemotePlayerController extends PlayerControllerAi {
             return false;
         }
         for (int i : chosen) {
-            GameEntity e = candidates.get(i);
+            GameObject e = candidates.get(i);
             if (!cur.canTarget(e)) {
                 return false;
             }
@@ -414,7 +417,10 @@ public class RemotePlayerController extends PlayerControllerAi {
             List<GameEntity> picked = new ArrayList<>();
             List<String> pickedLabels = new ArrayList<>();
             for (int i : chosen) {
-                picked.add(candidates.get(i));
+                if (!(candidates.get(i) instanceof GameEntity ge)) {
+                    return false; // Verteilen nur auf Karten/Spieler
+                }
+                picked.add(ge);
                 pickedLabels.add(labels.get(i));
             }
             if (picked.size() == 1) {
@@ -432,8 +438,149 @@ public class RemotePlayerController extends PlayerControllerAi {
         return true;
     }
 
+    /**
+     * Neue Ziele (Umleiten, Kopien; CR 115.7, 707.10c): wie {@link #chooseTargetsFor}, nur unter
+     * Kandidaten, die {@code filter} erfüllen; {@code optional} = vorher fragen, ob die Ziele
+     * geändert werden. Ändert die Ziele von {@code ability} und liefert sie; {@code null} = keine
+     * Änderung (alte Ziele bleiben).
+     */
+    @Override
+    public TargetChoices chooseNewTargetsFor(SpellAbility ability, java.util.function.Predicate<GameObject> filter,
+            boolean optional) {
+        if (ability.getTargetRestrictions() == null) {
+            return null;
+        }
+        Card host = ability.getHostCard();
+        if (optional) {
+            Boolean yes = Decisions.confirm(g(), seat,
+                    "Neue Ziele wählen für " + (host == null ? "die Kopie" : host.getName()) + "?", ability, host);
+            if (yes == null || !yes) {
+                return null;
+            }
+        }
+        TargetChoices old = ability.getTargets();
+        ability.resetTargets();
+        List<GameObject> candidates = targetCandidates(ability, filter);
+        int min = ability.getMinTargets();
+        int max = Math.min(ability.getMaxTargets(), candidates.size());
+        if (candidates.isEmpty() || max < min) {
+            ability.setTargets(old);
+            return null;
+        }
+        List<String> labels = new ArrayList<>();
+        candidates.forEach(e -> labels.add(targetLabel(e)));
+        List<Integer> chosen = Decisions.targets(g(), seat, ability, "Neue Ziele wählen", candidates, labels, min, max);
+        if (chosen == null) {
+            ability.setTargets(old);
+            return null;
+        }
+        for (int i : chosen) {
+            GameObject e = candidates.get(i);
+            if (!ability.canTarget(e)) {
+                ability.setTargets(old);
+                return null;
+            }
+            ability.getTargets().add(e);
+        }
+        if (!ability.isTargetNumberValid()) {
+            ability.setTargets(old);
+            return null;
+        }
+        return ability.getTargets();
+    }
+
+    /** Erschöpfen (Exert, CR 701.43): welche Angreifer erschöpft werden (auf dem Tisch anklicken). */
+    @Override
+    public List<Card> exertAttackers(List<Card> attackers) {
+        CardCollection r = attackers.isEmpty() ? null : pickCards("Choose", new CardCollection(attackers), 0,
+                attackers.size(), "Erschöpfen (Exert): Angreifer wählen, die erschöpft werden", null, false);
+        return r != null ? new ArrayList<>(r) : super.exertAttackers(attackers);
+    }
+
+    /** Rekrutieren (Enlist, CR 702.154): welche Angreifer rekrutieren (auf dem Tisch anklicken). */
+    @Override
+    public List<Card> enlistAttackers(List<Card> attackers) {
+        CardCollection r = attackers.isEmpty() ? null : pickCards("Choose", new CardCollection(attackers), 0,
+                attackers.size(), "Rekrutieren (Enlist): Angreifer wählen, die rekrutieren", null, false);
+        return r != null ? new ArrayList<>(r) : super.enlistAttackers(attackers);
+    }
+
+    /** Einen Zauber bzw. eine Fähigkeit für einen Effekt wählen ({@code ChooseOption}). */
+    @Override
+    public SpellAbility chooseSingleSpellForEffect(List<SpellAbility> spells, SpellAbility sa, String title,
+            Map<String, Object> params) {
+        if (spells.size() <= 1) {
+            return super.chooseSingleSpellForEffect(spells, sa, title, params);
+        }
+        List<Decisions.Opt> opts = new ArrayList<>();
+        spells.forEach(s -> opts.add(new Decisions.Opt(spellLabel(s), null)));
+        Integer i = Decisions.option(getGame(), seat, title, sa, null, opts, false);
+        return i != null ? spells.get(i) : super.chooseSingleSpellForEffect(spells, sa, title, params);
+    }
+
+    /** Mehrere Zauber bzw. Fähigkeiten für einen Effekt wählen ({@code ChooseOptions}). */
+    @Override
+    public List<SpellAbility> chooseSpellAbilitiesForEffect(List<SpellAbility> spells, SpellAbility sa, String title,
+            int num, Map<String, Object> params) {
+        int n = Math.min(num, spells.size());
+        if (n <= 0) {
+            return super.chooseSpellAbilitiesForEffect(spells, sa, title, num, params);
+        }
+        List<Decisions.Opt> opts = new ArrayList<>();
+        spells.forEach(s -> opts.add(new Decisions.Opt(spellLabel(s), null)));
+        List<Integer> chosen = Decisions.options(getGame(), seat, title, sa, null, opts, n, n, false);
+        if (chosen == null) {
+            return super.chooseSpellAbilitiesForEffect(spells, sa, title, num, params);
+        }
+        List<SpellAbility> result = new ArrayList<>();
+        chosen.forEach(i -> result.add(spells.get(i)));
+        return result;
+    }
+
+    private static String spellLabel(SpellAbility s) {
+        Card host = s.getHostCard();
+        String text = s.getStackDescription();
+        if (text == null || text.isBlank()) {
+            text = s.toUnsuppressedString();
+        }
+        return host == null ? text : host.getName() + ": " + text;
+    }
+
+    /**
+     * Mögliche Ziele von {@code sa}: Spieler und Karten wie Forges {@code getAllCandidates}; zielt
+     * die Fähigkeit auf den Stack (Gegenzauber, Kopieren, Umleiten), stattdessen die Zauber und
+     * Fähigkeiten auf dem Stack selbst (wie Forges menschliche Zielwahl). {@code filter} = optionale
+     * Zusatzbedingung (z. B. beim Umleiten).
+     */
+    private List<GameObject> targetCandidates(SpellAbility sa, java.util.function.Predicate<GameObject> filter) {
+        List<GameObject> out = new ArrayList<>();
+        boolean stack = sa.getTargetRestrictions().getZone().contains(ZoneType.Stack);
+        for (GameEntity e : sa.getTargetRestrictions().getAllCandidates(sa)) {
+            if (stack && e instanceof Card c && c.isInZone(ZoneType.Stack)) {
+                continue; // dafür unten der Zauber selbst
+            }
+            if (filter == null || filter.test(e)) {
+                out.add(e);
+            }
+        }
+        if (stack) {
+            for (SpellAbilityStackInstance si : getGame().getStack()) {
+                SpellAbility s = si.getSpellAbility();
+                if (s != sa && s.getRootAbility() != sa.getRootAbility() && sa.canTarget(s)
+                        && (filter == null || filter.test(s))) {
+                    out.add(s);
+                }
+            }
+        }
+        return out;
+    }
+
     /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */
-    private String targetLabel(GameEntity e) {
+    private String targetLabel(GameObject e) {
+        if (e instanceof SpellAbility s) {
+            Card host = s.getHostCard();
+            return (host == null ? "?" : host.getName()) + (s.isSpell() ? " (Zauber)" : " (Fähigkeit)");
+        }
         if (e instanceof Card c) {
             String owner = c.getController() == getPlayer() ? "deine" : c.getController().getName();
             return c.getName() + " (" + owner + ")";
@@ -849,13 +996,28 @@ public class RemotePlayerController extends PlayerControllerAi {
      * Eigene ausgelöste Fähigkeiten auf den Stapel legen wie Forges menschlicher Controller:
      * Reihenfolge ({@link #orderSimultaneousSa}), dann je Trigger
      * {@code PlaySpellAbility.playSpellAbility} – Modi, Ziele ({@code ChooseTargets}) und Kosten
-     * wählt dabei der Spieler. Kopien (z. B. von Zaubern) laufen wie bisher über die KI-Logik.
+     * wählt dabei der Spieler. Kopien kommen auf den Stack; neue Ziele (falls erlaubt) fragt
+     * {@link #chooseNewTargetsFor}.
      */
     @Override
     public void orderAndPlaySimultaneousSa(List<SpellAbility> activePlayerSAs) {
         for (SpellAbility sa : orderSimultaneousSa(activePlayerSAs)) {
             if (sa.isTrigger() && !sa.isCopied()) {
                 human(() -> PlaySpellAbility.playSpellAbility(this, getPlayer(), sa));
+            } else if (sa.isCopied()) {
+                // Kopie (CR 707.10): wie Forges menschlicher Controller auf den Stack legen; darf
+                // der Spieler neue Ziele wählen, fragt setupNewTargets → chooseNewTargetsFor
+                if (sa.isSpell()) {
+                    if (!sa.getHostCard().isInZone(ZoneType.Stack)) {
+                        sa.setHostCard(getGame().getAction().moveToStack(sa.getHostCard(), sa));
+                    } else {
+                        getGame().getStackZone().add(sa.getHostCard());
+                    }
+                }
+                if (sa.isMayChooseNewTargets()) {
+                    sa.setupNewTargets(getPlayer());
+                }
+                getGame().getStack().add(sa);
             } else {
                 List<SpellAbility> single = new ArrayList<>();
                 single.add(sa);

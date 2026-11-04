@@ -160,6 +160,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | **„…, es sei denn, du zahlst“** | Kann man die Kosten bezahlen, fragt das Spiel „Zahlen“ / „Nicht zahlen“; bezahlt wird wie beim Wirken (Mana über das Bezahl-Fenster). Kann man nicht zahlen, wird nicht gefragt |
 | **Schaden verteilen** | Bei Zaubern wie „… beliebig auf ein oder zwei Ziele aufgeteilt“ und bei Kampfschaden gegen mehrere Blocker bzw. mit Trampeln: Fenster mit einem Zahlenfeld je Ziel, vorbelegt (Kampf: tödlicher Schaden der Reihe nach, Rest aufs Trampel-Ziel), Anzeige „Verteilt: n / gesamt“; „OK“ erst, wenn die Summe stimmt. Beim Wirken bekommt jedes Ziel mindestens 1 |
 | **Ziele ausgelöster Fähigkeiten** | Eigene Trigger mit Ziel (z. B. „Wenn … ins Spiel kommt, fügt einer Kreatur 4 Schaden zu“) fragen das Ziel wie beim Wirken (Klick auf Karte/Medaillon) |
+| **Kopien, Umleiten, Erschöpfen, Rekrutieren** | Kopiert ein Effekt einen Zauber und erlaubt neue Ziele (z. B. Reverberate), fragt das Spiel „Neue Ziele wählen für …?“; bei „Ja“ wie beim Wirken Ziel anklicken. Gegenzauber und Kopiereffekte zielen auf den Zauber im Stack (Karte in der Tischmitte anklicken). Beim Angriff fragt das Spiel nach Angreifern, die erschöpft (Exert) bzw. rekrutiert (Enlist) werden sollen: auf dem Tisch anklicken, „Fertig“ |
 | **Convoke, Improvise, Delve** | Beim Wirken solcher Zauber fragt das Spiel vor dem Bezahlen: ungetappte Kreaturen (Convoke) bzw. Artefakte (Improvise) leuchten auf dem Tisch, jede gewählte bezahlt ein Mana (passende Farbe zuerst); bei Delve erscheinen die Friedhofskarten im Kartenfächer, jede exilierte Karte spart {1}. „Fertig“ mit 0 Karten = normal bezahlen |
 | **Karten auf dem Tisch wählen** | Muss man Karten wählen, die alle offen auf dem Tisch liegen (z. B. eine Kreatur als Kosten opfern, „wähle eine bleibende Karte“), leuchten sie direkt auf dem Tisch: Klick wählt (goldene Markierung). Das Fenster am rechten Rand zeigt die Namen als Ausweichweg und „Fertig“ bei mehreren. Muss man einen Spieler wählen („Choose a player“), pulsieren die Medaillons wie bei Zielen |
 | **Angreifen** (Angriffsschritt) | Kreaturen, die angreifen können, leuchten. Klick = angreifen (roter Pfeil zum Gegner, rote Markierung), erneuter Klick = nicht angreifen. Gibt es mehrere Angriffsziele (z. B. Planeswalker), danach Klick auf das gewünschte Ziel (Karte bzw. golden pulsierendes Medaillon) = der zuletzt gewählte Angreifer greift es an. Bestätigen mit „Angreifen (n)“ bzw. „Nicht angreifen“ im Fenster am rechten Rand. Ungültige Angriffe (z. B. eine Kreatur muss angreifen) werden mit Hinweis erneut gefragt |
@@ -187,9 +188,7 @@ Karte oder Medaillon, siehe oben). Aktivierte Fähigkeiten bleibender Karten (z.
 leuchten, wenn sie möglich sind, und werden per Klick aktiviert.
 
 Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich):
-Sonderkosten (ganze Hand abwerfen, zufällig, Fahrzeuge besetzen), Erschöpfen/Rekrutieren,
-Reihenfolge der Blocker, Kopien von Zaubern. Ziele werden noch aus einer
-Liste gewählt, nicht per Klick auf dem Tisch.
+Sonderkosten (ganze Hand abwerfen, zufällig, Fahrzeuge besetzen).
 
 ---
 
