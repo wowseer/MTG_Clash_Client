@@ -160,6 +160,8 @@ pub struct ForgeTable {
     /// X wählen: gewählter Wert und der Bezahlen-Knopf (zeigt den Wert).
     x_value: u32,
     x_pay_button: Option<Gd<Button3D>>,
+    /// Karte, für die X gewählt wird (hell, solange die Frage offen ist).
+    x_card: Option<Gd<Card3D>>,
     /// Bühnen-Knöpfe: Antwort je Knopf (Index = Argument von `on_stage_choice`).
     stage_choices: Vec<Choice>,
     /// Modus-Bühne: Kartenkopie je Modus (Modusnummer der Engine) und die Wahl.
@@ -232,6 +234,7 @@ impl INode for ForgeTable {
             hand_pick_button: None,
             x_value: 0,
             x_pay_button: None,
+            x_card: None,
             stage_choices: Vec::new(),
             mode_cards: Vec::new(),
             mode_pick: Vec::new(),
@@ -1258,7 +1261,8 @@ impl ForgeTable {
         }
     }
 
-    /// X wählen (wie im Video des Users): unter der Karte auf dem Stack eine Knopfreihe
+    /// X wählen (wie im Video des Users): die Karte hell und orange leuchtend auf dem Stack,
+    /// mittig darunter eine Knopfreihe
     /// „−5“, „−“, orange „Bezahlen X = n“, „+“, „+5“, dazu blau „Abbrechen“ (wo erlaubt) und in
     /// der Tischmitte „Wähle einen Wert für X.“. Kein Fenster.
     fn show_choose_x(&mut self, req: &Request) {
@@ -1269,8 +1273,14 @@ impl ForgeTable {
         let Some(cam) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else { return };
         let right = cam.get_global_transform().basis.col_a().normalized();
         // unter der obersten Karte des Stacks (dort liegt die Karte, die gerade gewirkt wird)
-        let center = self.stack_zone.as_ref().map_or(Vector3::new(6.0, 1.6, 1.4), |z| z.get_global_transform() * X_ROW_LOCAL)
-            + right * X_ROW_SHIFT;
+        // mittig unter der Karte, die gerade gewirkt wird (oberste Karte des Stacks)
+        let center = self.stack_zone.as_ref().map_or(Vector3::new(6.0, 1.6, 1.4), |z| z.get_global_transform() * X_ROW_LOCAL);
+        // die Karte selbst hell und orange leuchtend über dem Bezahlen-Knopf
+        if let Some(mut card) = req.source.and_then(|id| self.cards.get(&i64::from(id)).cloned()) {
+            card.bind_mut().set_bright(true);
+            card.bind_mut().flash();
+            self.x_card = Some(card);
+        }
         let mut add = |button: Gd<Button3D>, offset: f32, method: &str, arg: Option<i64>| {
             let mut button = button;
             parent.add_child(&button);
@@ -1440,6 +1450,9 @@ impl ForgeTable {
 
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
     fn clear_choice_objects(&mut self) {
+        if let Some(mut c) = self.x_card.take().filter(|c| c.is_instance_valid()) {
+            c.bind_mut().set_bright(false);
+        }
         self.action_options.clear();
         self.stage_choices.clear();
         self.mode_cards.clear();
@@ -3017,9 +3030,6 @@ fn x_pay_label(x: u32) -> String {
 /// Knöpfe von der Mitte (Kamera-Rechtsrichtung; so gewählt, dass zwischen den Knöpfen eine
 /// sichtbare Lücke bleibt), Breiten, Abbrechen darunter (Welt-z).
 const X_ROW_LOCAL: Vector3 = Vector3::new(0.0, 0.25, 0.68);
-/// Reihe gegenüber der Stack-Mitte nach links verschoben (Kamera-Rechtsrichtung), damit die
-/// äußeren Knöpfe nicht über den Bildrand ragen.
-const X_ROW_SHIFT: f32 = -1.6;
 const X_INNER: f32 = 2.2;
 const X_OUTER: f32 = 3.35;
 const X_SMALL_WIDTH: f32 = 1.6;

@@ -192,7 +192,7 @@ kind = 4
 size = Vector3(1.2, 0.3, 1.4)
 accepts_drops = false
 cards_draggable = false
-transform = Transform3D(3, 0, 0, 0, 2.898, -0.776, 0, 0.776, 2.898, 7.2, 1.6, -0.6)
+transform = Transform3D(3, 0, 0, 0, 2.898, -0.776, 0, 0.776, 2.898, 6.0, 1.6, -0.6)
 
 [node name="TurnHud" type="TurnHud" parent="." node_paths=PackedStringArray("forge_table", "player_hero_anchor", "opponent_hero_anchor", "player_mana_anchor")]
 forge_table = NodePath("../ForgeTable")
