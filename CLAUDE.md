@@ -137,7 +137,9 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 - ~~Spielprotokoll~~ ✔ (Nachricht `log` aus Forges `GameLog`, oben rechts im HUD)
 - ~~Kommandozone (Embleme, Commander, Dungeons, Ring), doppelseitige/verdeckte Karten~~ ✔
 
-**Als Nächstes:** Integration in NeoForge (siehe Ziel); danach mehr als 2 Spieler (Commander).
+**Als Nächstes:** reine 3D-Oberfläche – alle 2D-Fenster und HUD-Anzeigen in die 3D-Szene holen.
+Liste aller Interface-Aktionen zum Abhaken: `docs/UI-Aktionen.xlsx` (Spalte „Erledigt“).
+NeoForge-Integration steht (siehe Ziel); danach mehr als 2 Spieler (Commander).
 Deckauswahl und Formate übernimmt NeoForge.
 
 ## Quellcode von Forge und NeoForge
