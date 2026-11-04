@@ -38,9 +38,6 @@ pub enum ChoiceMode {
     /// `mins[i]`, vorbelegt mit `initial`); Antwort: Array der Mengen. „Fertig“ nur, wenn die
     /// Summe stimmt.
     Distribute { total: i64, mins: Vec<i64>, initial: Vec<i64> },
-    /// Keine Optionen, nur ein Knopf mit `label` (die Auswahl passiert auf dem Tisch, z. B.
-    /// Angreifer/Blocker); Antwort `true`.
-    Done { label: String },
 }
 
 /// Eine wählbare Option: Text und optional eine Farbe für den Knopf.
@@ -279,7 +276,6 @@ impl ChoicePanel {
                 })
             }
             ChoiceMode::Number { .. } => self.spin.as_ref().map(|s| (s.get_value().round() as i64).to_variant()),
-            ChoiceMode::Done { .. } => Some(true.to_variant()),
             ChoiceMode::Distribute { total, .. } => {
                 let values: Vec<i64> = self.spins.iter().map(|s| s.get_value().round() as i64).collect();
                 (values.iter().sum::<i64>() == *total).then(|| values.into_iter().map(|v| v.to_variant()).collect::<VarArray>().to_variant())
@@ -371,7 +367,6 @@ impl ChoicePanel {
                 self.body.add_child(&hint);
                 self.spin = Some(spin);
             }
-            ChoiceMode::Done { .. } => {}
             ChoiceMode::Distribute { total, mins, initial } => {
                 let mut grid = GridContainer::new_alloc();
                 grid.set_columns(2);
@@ -402,7 +397,7 @@ impl ChoicePanel {
         // Untere Zeile: Fertig/OK und Abbrechen
         let needs_done = matches!(
             choice.mode,
-            ChoiceMode::Multi { .. } | ChoiceMode::Number { .. } | ChoiceMode::Done { .. } | ChoiceMode::Distribute { .. }
+            ChoiceMode::Multi { .. } | ChoiceMode::Number { .. } | ChoiceMode::Distribute { .. }
         );
         if needs_done || choice.cancelable {
             let mut row = HBoxContainer::new_alloc();
@@ -410,10 +405,7 @@ impl ChoicePanel {
             row.set_alignment(godot::classes::box_container::AlignmentMode::END);
             if needs_done {
                 let mut done = super::hud::styled_button(16);
-                match &choice.mode {
-                    ChoiceMode::Done { label } => done.set_text(label),
-                    _ => done.set_text(tr!("OK", "OK")),
-                }
+                done.set_text(tr!("OK", "OK"));
                 done.set_custom_minimum_size(Vector2::new(140.0, 38.0));
                 done.connect("pressed", &method("on_choice_done"));
                 row.add_child(&done);

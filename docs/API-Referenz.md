@@ -124,6 +124,8 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_x_pay()` | `void` | „Bezahlen X = n“: Wert an Forge. |
 | `on_x_cancel()` | `void` | „Abbrechen“ beim X wählen: Wirken zurücknehmen. |
 | `on_scry_done()` | `void` | Hellsicht/Überwachen: „Fertig“ – Karten im Feld „oben“ (die rechte Karte zuoberst) und „unten“ bzw. Friedhof an Forge. |
+| `on_order_done()` | `void` | Reihenfolge-Bühne: „Fertig“ – vergebene Reihenfolge an Forge. |
+| `on_order_reset()` | `void` | Reihenfolge-Bühne: alle Nummern löschen. |
 | `on_pick_done(decline: bool)` | `void` | Kartenwahl auf der Bühne: „Fertig“ (mehrere Karten) bzw. „Ablehnen“ (keine). |
 | `inspect_card(card: Card3D)` | `void` | Kartenansicht für `card` zeigen wie beim Hovern (für Skripte und Tests; null = wieder der Karte unter der Maus folgen). |
 | `on_hand_pick_cancel()` | `void` | „Abbrechen“ auf der Hand-Bühne (nur wo Forge das erlaubt). |

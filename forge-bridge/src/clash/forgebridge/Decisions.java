@@ -575,6 +575,13 @@ final class Decisions {
         JsonArray arr = new JsonArray();
         descriptions.forEach(arr::add);
         d.add("descriptions", arr);
+        // Erweiterung: Quellkarte je Eintrag (Trigger-Quelle bzw. die Karte selbst), damit die UI
+        // die Einträge als Karten zeigen kann; -1 = keine
+        if (cardInfo != null && cardInfo.size() == descriptions.size()) {
+            JsonArray src = new JsonArray();
+            cardInfo.forEach(c -> src.add(c == null ? -1 : c.getId()));
+            d.add("sources", src);
+        }
         JsonElement raw = askRaw(game, seat, d, prompt, null, null, false, null, cardInfo);
         List<Integer> order = raw != null && raw.isJsonObject() ? intList(raw.getAsJsonObject(), "Order", "order") : null;
         return valid(order, descriptions.size(), descriptions.size(), descriptions.size(), false) ? order : null;

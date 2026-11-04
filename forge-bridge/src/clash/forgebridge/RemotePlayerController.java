@@ -144,12 +144,25 @@ public class RemotePlayerController extends PlayerControllerAi {
                 actions.add(a);
                 labels.add(mana.labels.get(i));
             }
+            // vorab getapptes, noch ungenutztes Mana: Quelle wieder enttappen (Undo-Stapel der Engine)
+            List<Card> undoable = undoableManaSources();
+            for (Card c : undoable) {
+                JsonObject a = new JsonObject();
+                a.addProperty("type", "UndoMana");
+                a.addProperty("card", c.getId());
+                actions.add(a);
+                labels.add("Mana zurücknehmen: " + c.getName());
+            }
             JsonObject action = Decisions.priority(getGame(), seat, actions, labels);
             int choice = action == null ? 0 : indexOf(actions, action);
             if (choice <= 0) {
                 return null; // passen (oder unlesbare Antwort)
             }
             choice -= 1;
+            if (choice >= options.size() + mana.sources.size()) {
+                undoMana(undoable.get(choice - options.size() - mana.sources.size()));
+                continue;
+            }
             if (choice >= options.size()) {
                 activateMana(mana.sources.get(choice - options.size()), false);
                 continue;
@@ -352,6 +365,35 @@ public class RemotePlayerController extends PlayerControllerAi {
             SpellAbility ma = mana.sources.get(Integer.parseInt(pick));
             if (activateMana(ma, effect)) {
                 me.getManaPool().payManaFromAbility(sa, toPay, ma);
+            }
+        }
+    }
+
+    /**
+     * Karten, deren Manafähigkeit gerade rückgängig gemacht werden kann (CR 605: Mana vorab
+     * getappt und noch ungenutzt im Pool; Forges Undo-Stapel des Stacks).
+     */
+    private List<Card> undoableManaSources() {
+        Player me = getPlayer();
+        List<Card> result = new ArrayList<>();
+        if (!getGame().getStack().canUndo(me)) {
+            return result;
+        }
+        for (Card c : me.getCardsIn(ZoneType.Battlefield)) {
+            if (getGame().getStack().filterUndoStackByHost(c).iterator().hasNext()) {
+                result.add(c);
+            }
+        }
+        return result;
+    }
+
+    /** Manafähigkeiten von {@code card} rückgängig machen: enttappen, Mana aus dem Pool nehmen. */
+    private void undoMana(Card card) {
+        List<SpellAbility> list = new ArrayList<>();
+        getGame().getStack().filterUndoStackByHost(card).forEach(list::add);
+        for (SpellAbility sa : list) {
+            if (sa.undo()) {
+                getGame().getStack().clearUndoStack(sa);
             }
         }
     }
@@ -1455,9 +1497,13 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public List<SpellAbility> orderSimultaneousSa(List<SpellAbility> activePlayerSAs) {
         List<String> texts = new ArrayList<>();
-        activePlayerSAs.forEach(sa -> texts.add(sa.getHostCard().getName() + ": " + sa.toUnsuppressedString()));
+        List<Card> hosts = new ArrayList<>();
+        activePlayerSAs.forEach(sa -> {
+            texts.add(sa.getHostCard().getName() + ": " + sa.toUnsuppressedString());
+            hosts.add(sa.getHostCard());
+        });
         List<Integer> order = Decisions.order(getGame(), seat, texts,
-                "Reihenfolge der Fähigkeiten auf dem Stack (erste kommt zuerst darauf)", null);
+                "Reihenfolge der Fähigkeiten auf dem Stack (erste kommt zuerst darauf)", hosts);
         if (order == null) {
             return super.orderSimultaneousSa(activePlayerSAs);
         }

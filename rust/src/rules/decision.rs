@@ -55,6 +55,9 @@ pub enum Action {
     /// das Mana schwebt danach im Manapool. Karte + Index der Manafähigkeit (wie bei
     /// [`PayAction::ActivateMana`]).
     ActivateMana(CardId, usize),
+    /// Erweiterung: vorab getapptes, noch ungenutztes Mana zurücknehmen – die Quelle wird wieder
+    /// enttappt, das Mana verlässt den Pool (Forges Undo für Manafähigkeiten).
+    UndoMana(CardId),
 }
 
 /// Option beim Bezahlen von Manakosten.
@@ -138,7 +141,8 @@ pub enum Decision {
         trample_to: Option<Target>,
     },
     ChooseCards { player: PlayerId, reason: CardChoiceReason, options: Vec<CardId>, min: u32, max: u32 },
-    OrderTriggers { player: PlayerId, descriptions: Vec<String> },
+    /// `sources` (Erweiterung): Quellkarte je Eintrag (`None` = keine), für die Anzeige als Karten.
+    OrderTriggers { player: PlayerId, descriptions: Vec<String>, sources: Vec<Option<CardId>> },
     Scry { player: PlayerId, cards: Vec<CardId>, graveyard: bool },
     PayUnlessCost { player: PlayerId, cost: String },
     OptionalTrigger { player: PlayerId, description: String },
@@ -343,6 +347,7 @@ impl Action {
             "CastFaceDown" => Action::CastFaceDown(card),
             "TurnFaceUp" => Action::TurnFaceUp(card),
             "ActivateMana" => Action::ActivateMana(card, index),
+            "UndoMana" => Action::UndoMana(card),
             _ => return None,
         })
     }
@@ -360,6 +365,7 @@ impl Action {
             Action::CastFaceDown(c) => ("CastFaceDown", Some(c), None),
             Action::TurnFaceUp(c) => ("TurnFaceUp", Some(c), None),
             Action::ActivateMana(c, i) => ("ActivateMana", Some(c), Some(i)),
+            Action::UndoMana(c) => ("UndoMana", Some(c), None),
         };
         d.set("type", name);
         if let Some(c) = card {
@@ -383,7 +389,8 @@ impl Action {
             | Action::CastWithAltCost(c, _)
             | Action::CastFaceDown(c)
             | Action::TurnFaceUp(c)
-            | Action::ActivateMana(c, _) => Some(c),
+            | Action::ActivateMana(c, _)
+            | Action::UndoMana(c) => Some(c),
         }
     }
 }
@@ -509,7 +516,11 @@ impl Decision {
                 min: o.u32("min"),
                 max: o.u32("max"),
             },
-            "OrderTriggers" => Decision::OrderTriggers { player, descriptions: o.strings("descriptions") },
+            "OrderTriggers" => Decision::OrderTriggers {
+                player,
+                descriptions: o.strings("descriptions"),
+                sources: o.arr("sources").iter().map(|v| v.try_to::<i64>().ok().filter(|i| *i >= 0).map(|i| i as CardId)).collect(),
+            },
             "Scry" => Decision::Scry { player, cards: o.ids("cards"), graveyard: o.bool("graveyard") },
             "PayUnlessCost" => Decision::PayUnlessCost { player, cost: o.str("cost") },
             "OptionalTrigger" => Decision::OptionalTrigger { player, description: o.str("description") },

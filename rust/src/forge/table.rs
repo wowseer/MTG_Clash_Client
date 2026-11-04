@@ -163,9 +163,9 @@ pub struct ForgeTable {
     pick_cards: Vec<(Gd<Card3D>, CardId)>,
     scry_zones: Option<(Gd<Zone>, Gd<Zone>)>,
     pick_chosen: Vec<CardId>,
-    /// Laufende Mana-Zahlung wird von Hand bezahlt: Beim ersten `PayMana` lag schon Mana im Pool
-    /// (vorher getappt). Bleibt gesetzt, bis eine andere Entscheidung kommt.
-    manual_pay: bool,
+    /// Reihenfolge-Bühne: Kartenkopie je Eintrag (Index) und die vergebene Reihenfolge.
+    order_cards: Vec<(Gd<Card3D>, usize)>,
+    order_pick: Vec<usize>,
     /// „Sofort beenden“: in dieser Runde automatisch passen (Runde laut Zustand; `None` = aus).
     auto_pass_turn: Option<i64>,
     /// Pfeile, die der Spieler selbst gezogen hat (wachsen nicht noch einmal).
@@ -238,7 +238,8 @@ impl INode for ForgeTable {
             pick_cards: Vec::new(),
             scry_zones: None,
             pick_chosen: Vec::new(),
-            manual_pay: false,
+            order_cards: Vec::new(),
+            order_pick: Vec::new(),
             auto_pass_turn: None,
             drawn_arrows: HashSet::new(),
             action_options: Vec::new(),
@@ -570,6 +571,23 @@ impl ForgeTable {
         self.answer(Choice::Arrange { top: top_ids, bottom: bottom_ids });
     }
 
+    /// Reihenfolge-Bühne: „Fertig“ – vergebene Reihenfolge an Forge.
+    #[func]
+    fn on_order_done(&mut self) {
+        let Some(Decision::OrderTriggers { descriptions, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        if self.order_pick.len() == descriptions.len() {
+            let order = std::mem::take(&mut self.order_pick);
+            self.answer(Choice::Order(order));
+        }
+    }
+
+    /// Reihenfolge-Bühne: alle Nummern löschen.
+    #[func]
+    fn on_order_reset(&mut self) {
+        self.order_pick.clear();
+        self.refresh_order_cards();
+    }
+
     /// Kartenwahl auf der Bühne: „Fertig“ (mehrere Karten) bzw. „Ablehnen“ (keine).
     #[func]
     fn on_pick_done(&mut self, decline: bool) {
@@ -783,6 +801,7 @@ impl ForgeTable {
                 StageKind::Binary => self.show_binary(&req),
                 StageKind::OptionalCost => self.show_optional_cost(&req),
                 StageKind::Scry => self.show_scry(&req),
+                StageKind::Order => self.show_order(&req),
             }
         }
         if let Some(req) = library_pick {
@@ -820,6 +839,10 @@ impl ForgeTable {
             if self.scry_zones.is_none() {
                 self.library_click(id);
             }
+            return;
+        }
+        if let Some(i) = self.order_cards.iter().find(|(c, _)| *c == card).map(|(_, i)| *i) {
+            self.order_click(i);
             return;
         }
         if let Some(mode) = self.mode_cards.iter().find(|(c, _)| *c == card).map(|(_, m)| *m) {
@@ -1081,6 +1104,7 @@ impl ForgeTable {
             Decision::ChooseOption { options, .. } if options.len() == 2 => Some(StageKind::Binary),
             Decision::ChooseOptions { purpose, .. } if purpose == "OptionalCost" => Some(StageKind::OptionalCost),
             Decision::Scry { .. } => Some(StageKind::Scry),
+            Decision::OrderTriggers { .. } => Some(StageKind::Order),
             _ => None,
         }
     }
@@ -1301,6 +1325,88 @@ impl ForgeTable {
                 (copy, *id)
             })
             .collect()
+    }
+
+    /// Reihenfolge festlegen (CR 603.3b: eigene gleichzeitige Trigger; auch Karten beim
+    /// Zonenwechsel, Kosten) wie die Kartenwahl-Bühne: je Eintrag eine Karte nebeneinander
+    /// (Trigger: Kopie der Quelle mit dem Text dieser Fähigkeit), Klick vergibt die nächste Nummer
+    /// (1, 2, …; groß auf der Karte, orange), erneuter Klick nimmt sie zurück. „Fertig“, sobald
+    /// alle nummeriert sind; „Zurücksetzen“ löscht alle Nummern.
+    fn show_order(&mut self, req: &Request) {
+        let Decision::OrderTriggers { descriptions, sources, .. } = &req.decision else { return };
+        let title = tr!("Reihenfolge festlegen", "Choose the order");
+        let sub = if req.prompt.is_empty() { tr!("Klicke die Karten der Reihe nach an.", "Click the cards in order.").to_string() } else { req.prompt.clone() };
+        let Some(mut showcase) = self.open_stage(title, &sub) else { return };
+        let mut copies = Vec::new();
+        for (i, desc) in descriptions.iter().enumerate() {
+            let src = sources.get(i).copied().flatten();
+            let data = src.and_then(|id| {
+                req.cards.iter().find(|c| get_int(c, "id") == i64::from(id)).cloned().or_else(|| self.card_data(i64::from(id)))
+            });
+            let mut copy = match data {
+                Some(d) => {
+                    let name = get_str(&d, "name");
+                    // Trigger: „Quelle: Fähigkeitstext“ → nur der Fähigkeitstext auf der Karte
+                    let text = desc.strip_prefix(&format!("{name}: ")).map(str::to_string);
+                    Self::stage_card(&d, text.as_deref())
+                }
+                None => {
+                    let mut def = CardDef::named(desc);
+                    def.text = desc.clone();
+                    let mut c = Card3D::new_alloc();
+                    {
+                        let mut b = c.bind_mut();
+                        b.set_face_texture(Some(placeholder::card_face(&def)));
+                        b.apply_def(&def);
+                    }
+                    c
+                }
+            };
+            copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+            copies.push(copy.clone());
+            self.order_cards.push((copy, i));
+        }
+        let fan = showcase.bind().fan_zone();
+        if let Some(zone) = fan {
+            showcase.bind_mut().add_owned_cards(zone, copies);
+        }
+        showcase.bind_mut().enable_scroll();
+        let me = self.to_gd();
+        let mut reset = Button3D::create(ButtonStyle::Blue, tr!("Zurücksetzen", "Reset"), Showcase::button_width());
+        reset.connect("pressed", &Callable::from_object_method(&me, "on_order_reset"));
+        showcase.bind_mut().add_button(reset);
+        let n = descriptions.len() as u32;
+        let mut done = Button3D::create(ButtonStyle::Orange, &pick_label(0, n, n), Showcase::button_width() * 1.2);
+        done.bind_mut().set_enabled(false);
+        done.connect("pressed", &Callable::from_object_method(&me, "on_order_done"));
+        showcase.bind_mut().add_button(done);
+    }
+
+    /// Klick auf eine Karte der Reihenfolge-Bühne: nächste Nummer vergeben bzw. zurücknehmen.
+    fn order_click(&mut self, index: usize) {
+        if let Some(pos) = self.order_pick.iter().position(|i| *i == index) {
+            self.order_pick.remove(pos);
+        } else {
+            self.order_pick.push(index);
+        }
+        self.refresh_order_cards();
+    }
+
+    /// Nummern auf den Karten (groß, orange markiert) und „Fertig (n/N)“ aktualisieren.
+    fn refresh_order_cards(&mut self) {
+        let Some(Decision::OrderTriggers { descriptions, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        for (card, i) in self.order_cards.iter_mut() {
+            let pos = self.order_pick.iter().position(|p| p == i);
+            card.bind_mut().set_marker(if pos.is_some() { CardMarker::Selected } else { CardMarker::None });
+            card.bind_mut().set_badges(&pos.map_or(String::new(), |p| (p + 1).to_string()));
+        }
+        let (n, total) = (self.order_pick.len() as u32, descriptions.len() as u32);
+        for mut b in self.stage_buttons() {
+            if b.bind().get_text().to_string().starts_with(tr!("Fertig", "Done")) {
+                b.bind_mut().set_label_text(GString::from(pick_label(n, total, total).as_str()));
+                b.bind_mut().set_enabled(n == total);
+            }
+        }
     }
 
     /// Hellsicht / Überwachen (CR 701.18, 701.25) wie im Video des Users: Titel und Anleitung,
@@ -1608,6 +1714,8 @@ impl ForgeTable {
         self.pick_cards.clear();
         self.scry_zones = None;
         self.pick_chosen.clear();
+        self.order_cards.clear();
+        self.order_pick.clear();
         if let Some(mut s) = self.showcase.take() {
             if s.is_instance_valid() {
                 s.bind_mut().close();
@@ -1652,7 +1760,7 @@ impl ForgeTable {
         let combat_choice = self
             .pending
             .as_ref()
-            .and_then(|req| self.pay_choice(req).or_else(|| self.table_pick_choice(req)));
+            .and_then(|req| self.table_pick_choice(req));
         let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().filter(|r| Self::stage_kind(&r.decision).is_none()).and_then(|req| {
             // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
             let name_of = |t: Target| match t {
@@ -1855,7 +1963,7 @@ impl ForgeTable {
         actions
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.card() == Some(card) && !matches!(a, Action::ActivateMana(..)))
+            .filter(|(_, a)| a.card() == Some(card) && !matches!(a, Action::ActivateMana(..) | Action::UndoMana(..)))
             .map(|(i, a)| (*a, req.label(i)))
             .collect()
     }
@@ -1929,7 +2037,7 @@ impl ForgeTable {
         let (glow, chosen): (HashSet<i64>, HashSet<i64>) = match self.pending.as_ref().map(|r| &r.decision) {
             Some(Decision::Priority { actions, .. }) => {
                 // Manafähigkeiten (Vorab-Tappen) leuchten nicht, sonst glühte jedes Land
-                let playable = actions.iter().filter(|a| !matches!(a, Action::ActivateMana(..)));
+                let playable = actions.iter().filter(|a| !matches!(a, Action::ActivateMana(..) | Action::UndoMana(..)));
                 (playable.filter_map(|a| a.card()).map(i64::from).collect(), HashSet::new())
             }
             Some(Decision::ChooseTargets { candidates, .. }) => {
@@ -2078,26 +2186,6 @@ impl ForgeTable {
             return true;
         }
         false
-    }
-
-    /// Fenster am rechten Rand beim Bezahlen von Hand (offene Kosten, „Automatisch bezahlen“).
-    fn pay_choice(&self, req: &Request) -> Option<HudChoice> {
-        let Decision::PayMana { remaining, .. } = &req.decision else { return None };
-        Some(HudChoice {
-            key: req.id,
-            title: trf!("Mana bezahlen: {remaining}", "Pay mana: {remaining}"),
-            detail: tr!(
-                "Klick auf ein leuchtendes Land bzw. eine Manaquelle = Mana erzeugen und einsetzen; Klick auf golden umrandetes Mana im Manapool = schwebendes Mana einsetzen.",
-                "Click a glowing land or mana source to tap it for mana; click gold-ringed mana in your mana pool to spend floating mana."
-            )
-            .into(),
-            mode: ChoiceMode::Done { label: tr!("Automatisch bezahlen", "Auto pay").into() },
-            options: Vec::new(),
-            cancelable: true,
-            side: true,
-            numbered: false,
-            repeat: false,
-        })
     }
 
     /// Kampf und Zielwahl: Text des Phasen-Knopfs (bestätigt den Plan bzw. die Ziele auf dem
@@ -2593,20 +2681,10 @@ impl ForgeTable {
         arrows
     }
 
-    /// Soll diese Entscheidung sofort automatisch bezahlt werden? Ja bei `PayMana`, wenn der Pool
-    /// des Spielers leer ist (nichts vorher getappt). Liegt Mana im Pool, bezahlt der Spieler die
-    /// ganze Zahlung von Hand (Pool-Mana und Quellen anklicken); merkt sich das in `manual_pay`.
+    /// Mana wird immer automatisch bezahlt (auch mit vorab getapptem Mana im Pool, das Forge dabei
+    /// zuerst verwendet) – es gibt kein Fenster zum Bezahlen von Hand.
     fn auto_pay(&mut self, decision: &Decision) -> bool {
-        let Decision::PayMana { player, options, .. } = decision else {
-            self.manual_pay = false;
-            return false;
-        };
-        if self.manual_pay || !options.contains(&PayAction::AutoPay) {
-            return false;
-        }
-        let floating = self.pool_total(*player as usize);
-        self.manual_pay = floating > 0;
-        floating == 0
+        matches!(decision, Decision::PayMana { options, .. } if options.contains(&PayAction::AutoPay))
     }
 
     /// Antwort für „Sofort beenden“ auf die offene Entscheidung (`None` = selbst entscheiden).
@@ -2624,17 +2702,6 @@ impl ForgeTable {
             Some(Decision::DeclareAttackers { .. }) => Some(Choice::Attackers(Vec::new())),
             _ => None,
         }
-    }
-
-    /// Menge an schwebendem Mana im Pool eines Sitzplatzes (aus dem Zustand).
-    fn pool_total(&self, seat: usize) -> i64 {
-        self.state
-            .as_ref()
-            .and_then(|s| get_array(s, "players"))
-            .and_then(|a| a.get(seat))
-            .and_then(|v| v.try_to::<VarDictionary>().ok())
-            .and_then(|p| get_array(&p, "mana_pool"))
-            .map_or(0, |a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).sum())
     }
 
     /// Einträge des Stacks aus dem Zustand (unterster zuerst, oberster zuletzt).
@@ -3206,6 +3273,8 @@ enum StageKind {
     OptionalCost,
     /// Hellsicht/Überwachen: Kasten mit „UNTEN“/„OBEN“, Karten dorthin ziehen.
     Scry,
+    /// Reihenfolge (Trigger, Karten): Karten nebeneinander, Klick vergibt 1, 2, …
+    Order,
 }
 
 /// Hellsicht-Bühne: Mitte und Größe des Kastens (Bühnen-Koordinaten).

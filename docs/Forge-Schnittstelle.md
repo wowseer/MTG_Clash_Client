@@ -75,7 +75,7 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 
 | Forge-Methode(n) | `Decision` | Antwort (`Choice`) |
 |---|---|---|
-| `chooseSpellAbilityToPlay` | `Priority { actions }` (zusätzlich `ActivateMana(karte, i)` je Manafähigkeit, sobald es etwas zu spielen gibt) | `Action(…)`; `Pass`; `Action(ActivateMana)` → Fähigkeit sofort ausführen (Mana in den Pool), erneut fragen |
+| `chooseSpellAbilityToPlay` | `Priority { actions }` (zusätzlich `ActivateMana(karte, i)` je Manafähigkeit, sobald es etwas zu spielen gibt, und `UndoMana(karte)` je Karte, deren Manafähigkeit Forge noch zurücknehmen kann) | `Action(…)`; `Pass`; `Action(ActivateMana)` → Fähigkeit sofort ausführen (Mana in den Pool), erneut fragen; `Action(UndoMana)` → `MagicStack.filterUndoStackByHost` + `sa.undo()` (Karte enttappt, Mana aus dem Pool), erneut fragen |
 | `mulliganKeepHand` | `Mulligan { mulligans_taken, first_player }` | `Keep` / `Mulligan` |
 | `chooseModeForAbility` | `ChooseModes { modes, min, max, can_repeat }` | `Modes([…])` |
 | `chooseTargetsFor` (über `setupTargets`) | `ChooseTargets { source, description, candidates, min, max }` | `Targets([…])` / `Cancel` |
@@ -122,7 +122,7 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 | `chooseCardsForConvokeOrImprovise` (CR 702.51, 702.126, Waterbend) | `ChooseCards { reason: "Convoke" / "Improvise" / "Choose", options: ungetappte Kreaturen/Artefakte, min: 0, max }`; welches Mana jede Karte bezahlt, legt die Brücke fest (farbiges Symbol in einer Farbe der Kreatur, sonst generisch) | `Cards([…])` |
 | `orderBlockers`, `orderBlocker`, `orderAttackers` (Schadens-Reihenfolge, nur mit `order_combatants`) | `OrderTriggers { descriptions }` mit Kartennamen (wie `orderMoveToZoneList`) | `Order([…])` |
 | `arrangeForScry`, `arrangeForSurveil` | `Scry { cards, graveyard }` | `Arrange { top, bottom }` |
-| `orderSimultaneousSa` (eigene Trigger), `orderMoveToZoneList` | `OrderTriggers { descriptions }` | `Order([…])` (erstes zuerst) |
+| `orderSimultaneousSa` (eigene Trigger), `orderMoveToZoneList` | `OrderTriggers { descriptions, sources }` (`sources` = Karten-ID der Quelle je Eintrag, −1 = keine) | `Order([…])` (erstes zuerst) |
 | `tuckCardsViaMulligan` | `MulliganBottom { hand, count }` | `Cards([…])` |
 | Kosten: Opfern, Abwerfen, Tappen, Zurückgeben, Exilieren (`getCostDecisionMaker` → `RemoteCostDecision`) | `ChooseCards { reason: SacrificeCost / DiscardCost / TapCost / ReturnCost / ExileCost }`; Exil-Sonderfälle (Karte selbst, alle, oberste Friedhofskarten, Mindest-Manawert, Bibliothek, „aus demselben Friedhof“) entscheidet die Engine; Fahrzeuge besetzen (Crew, Gesamtstärke ≥ N) als `TapCost` mit `min: 1`, zu wenig Stärke → erneut fragen | `Cards([…])` |
 | `assignCombatDamage` | `AssignCombatDamage { attacker, amount, blockers, lethal, trample_to }` | `Damage([je Blocker…, Trampel])` |
@@ -177,6 +177,8 @@ Diese Teile gibt es im Vorbild (`decision.rs` aus forge-rules-rs) (noch) nicht:
 | `Decision::DivideAmount { player, source, amount, targets, min_each }` → `Choice::Damage(mengen)` | Menge beim Wirken auf die gewählten Ziele verteilen (CR 601.2d) |
 | Ziele auf dem Stack in `ChooseTargets` | als `{"card": id}` der Quelle des Zaubers bzw. der Fähigkeit (das Basismodell (`Target`) hat keine Stack-Einträge; nachziehen: `Target::Stack(id)`) |
 | `ChooseOption` für Mana aus dem Pool (`chooseManaFromPool`) | im Basismodell fehlt `PayAction::UsePool(Farbe)` |
+| `Action::UndoMana { card }` in `Priority.actions` | vorab aktivierte Manafähigkeit der Karte zurücknehmen, solange ihr Mana noch nicht ausgegeben ist (Forges Rückgängig-Stapel für Manafähigkeiten); das Basismodell kennt kein Rückgängig |
+| `OrderTriggers.sources` | Karten-ID der Quelle je Eintrag (−1 = keine), damit die UI Kartenkopien statt Texten zeigt |
 | `Action::ActivateMana { card, index }` in `Priority.actions` | Manafähigkeit mit Priorität aktivieren (CR 605.3a), z. B. Länder vorab tappen; `index` wie bei `PayAction::ActivateMana`. Das Basismodell kennt Manafähigkeiten nur beim Bezahlen |
 | `ChooseOptions.purpose` (`"OptionalCost"` bei `chooseOptionalCosts`) | wofür die Mehrfachwahl ist, damit die UI optionale Kosten (Kicker …) als eigene Bühne zeigt; sonst leer |
 | `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
@@ -360,10 +362,10 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `ChooseOptions` mit `purpose` `OptionalCost` | 3D-Bühne: Karte groß, orange „Kicker – {R}“ → `Modes([0])`, grau „Normal“ → `Modes([])` |
 | `Scry` | 3D-Bühne: Kasten mit „UNTEN“/„FRIEDHOF“ und „OBEN“, Karten ziehen → `Arrange { top, bottom }` (rechte Karte zuoberst) |
 | `ChooseCards` (nicht Hand, nicht Tisch) | 3D-Bühne mit Kartenfächer und Schieberegler; Klick → `Cards([id])` bei einer Karte, sonst Auswahl + „Fertig“; „Ablehnen“ → `Cards([])` |
-| `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
+| `OrderTriggers` | 3D-Bühne „Reihenfolge festlegen“: je Eintrag eine Karte (Kopie der Quelle aus `sources`, Text = Beschreibung), Klick vergibt 1, 2, …, erneuter Klick nimmt zurück; „Fertig“ → `Order` |
 | `AssignCombatDamage` / `DivideAmount` | Auswahlfenster „Verteilen“: Zahlenfeld je Empfänger, vorbelegt, Summenanzeige, „OK“ nur bei richtiger Summe → `Damage` |
 | `PayUnlessCost` / `PayLifeForPhyrexian` | Ja/Nein-Fenster („Zahlen“ / „Nicht zahlen“, „2 Leben zahlen“ / „Mit Mana zahlen“) |
-| `PayMana` | Ist der Pool beim ersten `PayMana` einer Zahlung leer, antwortet `ForgeTable` sofort `Pay(AutoPay)` (kein Fenster). Sonst (vorher getappt) bezahlt der Spieler die ganze Zahlung von Hand: Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); einsetzbares Pool-Mana golden umrandet, Klick = `Pay(UsePool)`; Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
+| `PayMana` | `ForgeTable` antwortet immer sofort `Pay(AutoPay)` (kein Fenster; vorab getapptes Mana im Pool setzt Forge mit ein). Vorab getappte Länder mit unverbrauchtem Mana: Klick bei Priorität → `Action(UndoMana)`; Manapool-Anzeige aus `mana_pool` |
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten blau, gewählte orange; Angreifer rücken vor (Angriffsspitze), Angriffspfeile (orange) nur bei mehr als einem Angriffsziel; Pfeil ziehen (Kreatur → Spieler/Planeswalker bzw. Blocker → Angreifer; `TableController.aim_released`) oder Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), der Phasen-Knopf unten rechts („Angreifen (n) »“ / „Blocken (n) »“) sendet den Plan (`ForgeTable.pass_priority`); „Sofort beenden“ (`ForgeTable.end_turn`) antwortet bis Rundenende selbst `Pass` bzw. `Attackers([])`; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |
