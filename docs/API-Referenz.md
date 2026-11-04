@@ -25,6 +25,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [Card3D](#card3d) – erbt von `Area3D`
 - [CardInspector](#cardinspector) – erbt von `Node3D`
 - [ManaFx](#manafx) – erbt von `Node3D`
+- [ManaWheel](#manawheel) – erbt von `Node3D`
 - [Showcase](#showcase) – erbt von `Node3D`
 - [Slider3D](#slider3d) – erbt von `Area3D`
 - [TableCamera](#tablecamera) – erbt von `Camera3D`
@@ -111,6 +112,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
 | `cancel_cast()` | `void` | Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört. |
+| `on_wheel_picked(index: int)` | `void` | Segment `index` des Farbrads angeklickt: die zugehörige Antwort an Forge. |
 | `end_turn()` | `void` | Knopf „»»“ (Sofort beenden, nur im eigenen Zug): bis zum Ende dieser Runde automatisch passen; es wird ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die UI weiter. Legt ein anderer Spieler etwas auf den Stack, endet das automatische Passen, damit man antworten kann. |
 | `is_ending_turn()` | `bool` | Ist „Sofort beenden“ gerade aktiv? |
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
@@ -522,6 +524,27 @@ Mana-Effekt (Land → Karte) bzw. nur Einschlag. Gibt sich nach Frame 80 selbst 
 |---|---|---|
 | `set_target(target: Node3D)` | `void` | Ziel nachträglich setzen (z. B. sobald die Karte auf dem Stack liegt). |
 | `has_target()` | `bool` | Hat der Effekt schon ein Ziel? |
+
+## ManaWheel
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/mana_wheel.rs`*
+
+Farbrad vor der Kamera an einer Bildschirmstelle: Segmente (Farbe + Manasymbol), Kartenbild in der Mitte, Hinweis darüber. Signal [signal picked] beim Klick auf ein Segment.
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `update_pointer(world: Vector3)` | `void` | Trefferpunkt des Mausstrahls (Welt) auf dem Rad: das Segment darunter wird hervorgehoben (außerhalb des Rings bzw. über der Mittelscheibe keins). |
+| `set_hovered(hovered: bool)` | `void` | Maus verlässt das Rad bzw. betritt es (ohne Trefferpunkt). |
+| `activate()` | `void` | Klick: liegt die Maus auf einem Segment, wird [signal picked] mit seiner Nummer gesendet. |
+| `close()` | `void` | Rad schließen (0,15 s ausblenden und schrumpfen), danach freigeben; nicht mehr bedienbar. |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `picked(index: int)` | Ein Segment wurde angeklickt: `index` = Nummer des Segments (Reihenfolge wie übergeben). |
 
 ## Showcase
 

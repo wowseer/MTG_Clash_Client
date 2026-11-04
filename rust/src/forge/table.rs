@@ -23,7 +23,8 @@ use crate::game::counters;
 use crate::game::hud::HudView;
 use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
-use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
+use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, Request, RulesEngine, Target};
+use crate::table::mana_wheel::{ManaWheel, WheelSegment};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
 use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY};
@@ -144,6 +145,9 @@ pub struct ForgeTable {
     /// ✕-Knopf an der Karte, die gerade gewirkt bzw. deren Fähigkeit aktiviert wird (Wirken
     /// abbrechen, siehe [`Self::cast_cancel`]).
     cancel_badge: Option<Gd<Button3D>>,
+    /// Offenes Farbrad: Rad, Antwort je Segment, freiwillig (Manafähigkeit eines Landes mit
+    /// Priorität – schließen ohne Antwort möglich) oder Antwort auf eine Frage der Engine.
+    wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
     /// Bühne vor der Kamera (z. B. Starthand beim Mulligan); schließt mit der Antwort.
     showcase: Option<Gd<Showcase>>,
     /// Karten, die nach einem Mulligan unter die Bibliothek sollen (Klick-Reihenfolge).
@@ -230,6 +234,7 @@ impl INode for ForgeTable {
             choice_buttons: Vec::new(),
             choice_prompt: None,
             cancel_badge: None,
+            wheel: None,
             showcase: None,
             hand_pick: Vec::new(),
             hand_pick_button: None,
@@ -379,10 +384,133 @@ impl ForgeTable {
     /// Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört.
     #[func]
     pub fn cancel_cast(&mut self) {
+        if self.wheel.as_ref().is_some_and(|(_, _, v)| *v) {
+            self.close_wheel();
+            return;
+        }
         if self.stage_covers() {
             return; // die Bühne hat ihre eigenen Knöpfe
         }
         if let Some(c) = self.cast_cancel() {
+            self.answer(c);
+        }
+    }
+
+    /// Farbrad für eine Frage der Engine, wenn sie eine Manafarbe verlangt: `ChooseColor`
+    /// (z. B. „ein Mana beliebiger Farbe“, CR 106.1) oder `ChooseType` nur mit Grundland-Typen
+    /// (CR 305.6: Ebene → Weiß, Insel → Blau, Sumpf → Schwarz, Gebirge → Rot, Wald → Grün).
+    /// Je Segment Manabuchstabe und Antwort, Reihenfolge WUBRG.
+    fn wheel_entries(decision: &Decision) -> Option<Vec<(char, Choice)>> {
+        let mut entries: Vec<(char, Choice)> = match decision {
+            Decision::ChooseColor { options, .. } if !options.is_empty() => options
+                .iter()
+                .map(|c| {
+                    let letter = match c {
+                        ManaColor::White => 'W',
+                        ManaColor::Blue => 'U',
+                        ManaColor::Black => 'B',
+                        ManaColor::Red => 'R',
+                        ManaColor::Green => 'G',
+                    };
+                    (letter, Choice::Color(*c))
+                })
+                .collect(),
+            Decision::ChooseType { options, .. } if !options.is_empty() => options
+                .iter()
+                .enumerate()
+                .map(|(i, t)| {
+                    let letter = match t.as_str() {
+                        "Plains" => 'W',
+                        "Island" => 'U',
+                        "Swamp" => 'B',
+                        "Mountain" => 'R',
+                        "Forest" => 'G',
+                        _ => return None,
+                    };
+                    Some((letter, Choice::Number(i as u32)))
+                })
+                .collect::<Option<Vec<_>>>()?,
+            _ => return None,
+        };
+        entries.sort_by_key(|(l, _)| WHEEL_ORDER.find(*l).unwrap_or(9));
+        Some(entries)
+    }
+
+    /// Farbrad für Manafähigkeiten einer Karte: jede Fähigkeit erzeugt genau eine Manaart
+    /// (Text nach dem Doppelpunkt, z. B. „{T}: Add {G}.“), alle verschieden; sonst `None`.
+    fn mana_wheel_entries(mine: &[(Choice, String)]) -> Option<Vec<(char, Choice)>> {
+        let mana = |c: &Choice| matches!(c, Choice::Action(Action::ActivateMana(..)) | Choice::Pay(PayAction::ActivateMana(..)));
+        if mine.len() < 2 || !mine.iter().all(|(c, _)| mana(c)) {
+            return None;
+        }
+        let mut entries = Vec::new();
+        for (choice, label) in mine {
+            let effect = label.rsplit(':').next().unwrap_or(label);
+            let mut letters: Vec<char> = effect
+                .split('{')
+                .skip(1)
+                .filter_map(|s| s.split('}').next())
+                .filter_map(|sym| (sym.len() == 1).then(|| sym.chars().next()).flatten())
+                .filter(|c| WHEEL_ORDER.contains(*c))
+                .collect();
+            letters.dedup();
+            if letters.len() != 1 || entries.iter().any(|(l, _)| *l == letters[0]) {
+                return None;
+            }
+            entries.push((letters[0], choice.clone()));
+        }
+        entries.sort_by_key(|(l, _)| WHEEL_ORDER.find(*l).unwrap_or(9));
+        Some(entries)
+    }
+
+    /// Hinweis über dem Farbrad: „(Quelle) Wähle eine Farbe.“ bzw. „… einen Grundland-Typ.“
+    fn wheel_prompt(req: &Request, decision: &Decision) -> String {
+        let what = match decision {
+            Decision::ChooseType { .. } => tr!("Wähle einen Grundland-Typ.", "Choose a basic land type."),
+            _ => tr!("Wähle eine Farbe.", "Choose a color."),
+        };
+        if req.source_name.is_empty() { what.to_string() } else { format!("({}) {what}", req.source_name) }
+    }
+
+    /// Farbrad öffnen (an der Bildschirmstelle der Karte `source`, sonst in der Bildmitte, mit
+    /// ihrem Bild in der Mitte). `voluntary` = ohne offene Frage (schließen ohne Antwort).
+    fn open_wheel(&mut self, entries: Vec<(char, Choice)>, source: Option<CardId>, prompt: &str, voluntary: bool) {
+        self.close_wheel();
+        let Some(mut parent) = self.controller.clone() else { return };
+        let card = source.and_then(|id| self.cards.get(&i64::from(id))).filter(|c| c.is_instance_valid()).cloned();
+        let viewport = self.base().get_viewport();
+        let screen = viewport.as_ref().map_or(Vector2::new(1280.0, 720.0), |v| v.get_visible_rect().size);
+        // Mitte der Karte, wie sie gerade auf dem Bildschirm erscheint (auch angehoben)
+        let anchor = card
+            .as_ref()
+            .and_then(|c| {
+                let quad = c.bind().screen_quad();
+                (quad.len() == 4).then(|| quad.as_slice().iter().fold(Vector2::ZERO, |a, p| a + *p) * 0.25)
+            })
+            .unwrap_or(screen * 0.5);
+        let art = card.as_ref().and_then(|c| c.get("face_texture").try_to::<Gd<godot::classes::Texture2D>>().ok());
+        let segments = entries.iter().filter_map(|(l, _)| WheelSegment::for_letter(*l)).collect();
+        let mut wheel = ManaWheel::create(segments, anchor, card.clone(), art, prompt);
+        wheel.connect("picked", &Callable::from_object_method(&self.to_gd(), "on_wheel_picked"));
+        parent.add_child(&wheel);
+        self.wheel = Some((wheel, entries.into_iter().map(|(_, c)| c).collect(), voluntary));
+    }
+
+    /// Farbrad schließen (ohne Antwort).
+    fn close_wheel(&mut self) {
+        if let Some((mut w, _, _)) = self.wheel.take() {
+            if w.is_instance_valid() {
+                w.bind_mut().close();
+            }
+        }
+    }
+
+    /// Segment `index` des Farbrads angeklickt: die zugehörige Antwort an Forge.
+    #[func]
+    fn on_wheel_picked(&mut self, index: i64) {
+        let choice = self.wheel.as_ref().and_then(|(_, c, _)| c.get(usize::try_from(index).ok()?).cloned());
+        self.close_wheel();
+        if let Some(c) = choice {
             self.answer(c);
         }
     }
@@ -887,6 +1015,12 @@ impl ForgeTable {
         if let Some(req) = library_pick {
             self.show_library_pick(&req);
         }
+        if let Some(req) = self.pending.clone() {
+            if let Some(entries) = Self::wheel_entries(&req.decision) {
+                let prompt = Self::wheel_prompt(&req, &req.decision);
+                self.open_wheel(entries, req.source, &prompt, false);
+            }
+        }
         self.show_cancel_badge();
         self.update_glow();
     }
@@ -916,6 +1050,10 @@ impl ForgeTable {
     /// das Fähigkeiten-Menü.
     #[func]
     fn on_card_clicked(&mut self, card: Gd<Card3D>) {
+        // freiwilliges Farbrad offen: Klick daneben schließt es
+        if self.wheel.as_ref().is_some_and(|(_, _, v)| *v) {
+            self.close_wheel();
+        }
         if let Some(id) = self.pick_cards.iter().find(|(c, _)| *c == card).map(|(_, id)| *id) {
             if self.scry_zones.is_none() {
                 self.library_click(id);
@@ -973,6 +1111,14 @@ impl ForgeTable {
             0 => {}
             1 => self.answer(mine[0].0.clone()),
             // mehrere Fähigkeiten: „Wähle eins“ auf der 3D-Bühne (Manafähigkeiten: Menü)
+            // mehrere Manafähigkeiten mit je einer Farbe: Farbrad an der Karte
+            _ if Self::mana_wheel_entries(&mine).is_some() => {
+                let entries = Self::mana_wheel_entries(&mine).unwrap_or_default();
+                let name = card.bind().card_name().to_string();
+                let prompt = format!("({name}) {}", tr!("Wähle das Mana.", "Choose the mana."));
+                let voluntary = !matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::PayMana { .. }));
+                self.open_wheel(entries, Some(card_id), &prompt, voluntary);
+            }
             _ if all_actions => self.show_action_choice(card_id),
             _ => self.menu = Some(mine.into_iter().unzip()),
         }
@@ -1875,6 +2021,7 @@ impl ForgeTable {
         if let Some(mut b) = self.cancel_badge.take().filter(|b| b.is_instance_valid()) {
             b.bind_mut().dismiss();
         }
+        self.close_wheel();
     }
 
     /// Anzeige für das HUD.
@@ -1905,7 +2052,7 @@ impl ForgeTable {
             .pending
             .as_ref()
             .and_then(|req| self.table_pick_choice(req));
-        let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().filter(|r| Self::stage_kind(&r.decision).is_none()).and_then(|req| {
+        let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().filter(|r| Self::stage_kind(&r.decision).is_none() && self.wheel.is_none()).and_then(|req| {
             // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
             let name_of = |t: Target| match t {
                 Target::Player(p) => self.seat_name(p as usize).to_string(),
@@ -1951,7 +2098,7 @@ impl ForgeTable {
             label.clone()
         } else if my_priority {
             tr!("Passen  »", "Pass  »").to_string()
-        } else if choice.is_some() {
+        } else if choice.is_some() || self.wheel.is_some() {
             tr!("Auswahl treffen …", "Make a choice …").to_string()
         } else if !self.winner.is_empty() {
             tr!("Spielende", "Game over").to_string()
@@ -3452,6 +3599,8 @@ const SCRY_SPLIT_X: f32 = -0.2;
 const SCRY_STEP: f32 = 0.42;
 /// Kartenwahl-Bühne (Cover-Flow): Kartenabstand (überlappend), Kartengröße, Lage von „Ablehnen“.
 const LIB_STEP: f32 = 0.3;
+/// Reihenfolge der Segmente im Farbrad (im Uhrzeigersinn ab oben; farblos zuletzt).
+const WHEEL_ORDER: &str = "WUBRGC";
 /// ✕-Knopf „Wirken abbrechen“ an der Karte: Breite und Abstand vor der Karte (Welteinheiten).
 const CANCEL_BADGE_WIDTH: f32 = 1.6;
 const CANCEL_BADGE_LIFT: f32 = 0.15;

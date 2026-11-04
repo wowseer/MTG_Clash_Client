@@ -24,6 +24,7 @@ use godot::prelude::*;
 use super::card3d::Card3D;
 use super::button3d::Button3D;
 use super::slider3d::Slider3D;
+use super::mana_wheel::ManaWheel;
 use super::layers::{CARD_LAYER, CONTROL_LAYER, ZONE_LAYER};
 use super::table_camera::TableCamera;
 use super::zone::Zone;
@@ -81,6 +82,9 @@ pub struct TableController {
     /// Schieberegler unter der Maus bzw. der gerade gezogen wird.
     hovered_slider: Option<Gd<Slider3D>>,
     slider_drag: Option<Gd<Slider3D>>,
+    /// Farbrad unter der Maus bzw. gedrückt (Klick beim Loslassen, wenn noch darauf).
+    hovered_wheel: Option<Gd<ManaWheel>>,
+    wheel_press: Option<Gd<ManaWheel>>,
     /// Zielen: von dieser Karte (nicht verschiebbar, z. B. auf dem Spielfeld) wird ein Pfeil
     /// gezogen. `aim_point` = Mauspunkt auf der Tischebene (immer aktuell).
     aim: Option<Gd<Card3D>>,
@@ -104,6 +108,8 @@ impl INode3D for TableController {
             hovered_control: None,
             control_press: None,
             hovered_slider: None,
+            hovered_wheel: None,
+            wheel_press: None,
             slider_drag: None,
             aim: None,
             aim_point: Vector3::ZERO,
@@ -336,6 +342,17 @@ impl TableController {
             }
             self.hovered_slider = slider.clone();
         }
+        // Farbrad: die Trefferfläche ist ein Kind des Rads; Trefferpunkt wählt das Segment
+        let wheel = control_hit.as_ref().and_then(|h| h.collider.clone().try_cast::<Node>().ok()?.get_parent()?.try_cast::<ManaWheel>().ok());
+        if wheel != self.hovered_wheel {
+            if let Some(mut old) = self.hovered_wheel.take().filter(|w| w.is_instance_valid()) {
+                old.bind_mut().set_hovered(false);
+            }
+            self.hovered_wheel = wheel.clone();
+        }
+        if let (Some(mut w), Some(h)) = (wheel.clone(), control_hit.as_ref()) {
+            w.bind_mut().update_pointer(h.position);
+        }
         let control = control_hit.and_then(|h| h.collider.try_cast::<Button3D>().ok());
         if control != self.hovered_control {
             if let Some(mut old) = self.hovered_control.take() {
@@ -348,7 +365,7 @@ impl TableController {
             }
             self.hovered_control = control.clone();
         }
-        let hit = if over_gui || control.is_some() || slider.is_some() {
+        let hit = if over_gui || control.is_some() || slider.is_some() || wheel.is_some() {
             None
         } else {
             self.raycast(origin, dir, CARD_LAYER).and_then(|h| {
@@ -394,6 +411,10 @@ impl TableController {
         }
         if let Some(control) = self.hovered_control.as_ref().filter(|c| c.is_instance_valid()).cloned() {
             self.control_press = Some(control);
+            return;
+        }
+        if let Some(wheel) = self.hovered_wheel.as_ref().filter(|w| w.is_instance_valid()).cloned() {
+            self.wheel_press = Some(wheel);
             return;
         }
         let Some(card) = self.hovered.clone() else {
@@ -478,6 +499,12 @@ impl TableController {
         if let Some(mut control) = self.control_press.take() {
             if control.is_instance_valid() && self.hovered_control.as_ref() == Some(&control) {
                 control.bind_mut().activate();
+            }
+            return;
+        }
+        if let Some(mut wheel) = self.wheel_press.take() {
+            if wheel.is_instance_valid() && self.hovered_wheel.as_ref() == Some(&wheel) {
+                wheel.bind_mut().activate();
             }
             return;
         }
