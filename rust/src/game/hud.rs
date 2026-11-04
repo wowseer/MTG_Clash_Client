@@ -1,6 +1,6 @@
 //! TurnHud: Bildschirm-Overlay für den Rundenablauf.
 //!
-//! - unten rechts über dem Button: Zeitstrahl der Phasen ([`PhaseTimeline`])
+//! - unten rechts über dem Phasen-Knopf: Zeitstrahl der Phasen ([`PhaseTimeline`])
 //! - Bildmitte: nur die Meldung zum Spielende (keine Hinweistexte)
 //! - Medaillon ([`SeatBadge`]) mit Leben (ohne Text daneben): folgt je einem 3D-Ankerpunkt
 //!   (Spieler: direkt über der Hand, Gegner: direkt unter dessen Hand); ohne Anker oben links
@@ -9,8 +9,9 @@
 //!   Manapool als runde Symbole ([`ManaPoolView`])
 //! - linker Bildrand: Spielername, darüber die Rundenzahl mit Sanduhr ([`HourglassIcon`]) –
 //!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
-//! - unten rechts: großer Button „Nächste Phase“ / „Passen“ (auch Leertaste); blau, bei
-//!   belegtem Stack orange
+//! - unten rechts: Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen (n)“ /
+//!   „Blocken (n)“) und darunter klein „Sofort beenden »»“ – beide als orange animierte
+//!   [`Button3D`] in der 3D-Szene, an die Bildschirmstelle geheftet
 //! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
 //! - oben rechts: Spielprotokoll ([`GameLogList`]), die letzten Einträge der Engine
 //! - linker Bildrand, Mitte: Stack-Liste ([`StackList`]) mit Quelle, Art und Text jedes Eintrags
@@ -18,7 +19,7 @@
 //!   liegt dann durchsichtig darüber
 //!
 //! Das HUD liest den Zustand jedes Frame vom [`ForgeTable`] (keine Signal-Kopplung nötig).
-//! Alle Flächen lassen Mausklicks durch, nur der Button fängt sie ab.
+//! Alle 2D-Flächen lassen Mausklicks durch; die 3D-Knöpfe klickt der `TableController` an.
 
 use godot::classes::control::{GrowDirection, MouseFilter};
 use godot::classes::text_server::AutowrapMode;
@@ -43,6 +44,7 @@ use super::log_view::{GameLogList, HudLogLine};
 use super::stack_view::{HudStackEntry, StackList};
 pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
+use crate::table::button3d::{Button3D, ButtonStyle};
 use crate::table::table_controller::TableController;
 
 const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
@@ -51,9 +53,14 @@ const DIM: Color = Color::from_rgba(0.93, 0.87, 0.74, 0.45);
 /// Seitenfarben (passen zu den Bannern der Arena).
 const PLAYER_ACCENT: Color = Color::from_rgb(0.25, 0.55, 0.95);
 const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
-/// Hauptbutton: blau (Phase beenden) bzw. orange (Priorität abgeben, Stack belegt).
-const BUTTON_BLUE: Color = Color::from_rgb(0.16, 0.36, 0.78);
-const BUTTON_ORANGE: Color = Color::from_rgb(0.85, 0.42, 0.1);
+/// Phasen-Knopf und „Sofort beenden“ ([Button3D], unten rechts): Breite der Knopf-Fläche in
+/// Pixeln, Rand zum Bildschirm und Abstand zwischen den Knöpfen.
+const MAIN_FACE_PX: f32 = 300.0;
+const END_FACE_PX: f32 = 190.0;
+const BUTTON_MARGIN: f32 = 14.0;
+const BUTTON_GAP_PX: f32 = 8.0;
+/// Abstand des Phasen-Zeitstrahls über dem Phasen-Knopf.
+const TIMELINE_GAP: f32 = 10.0;
 /// Vorschau der gezogenen Karte: Abstand zum oberen Bildrand und Zeichenebene (z-Index).
 const PREVIEW_TOP: f32 = 8.0;
 const PREVIEW_Z: i32 = 50;
@@ -61,8 +68,9 @@ const PREVIEW_Z: i32 = 50;
 /// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte,
 /// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
 /// sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr
-/// ([HourglassIcon]; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste;
-/// blau, bei belegtem Stack orange) und ein Auswahlfenster (z. B. Mulligan).
+/// ([HourglassIcon]; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf
+/// „Angreifen (n)“ / „Blocken (n)“) und darunter „Sofort beenden »»“ (beide orange animierte [Button3D]) und ein
+/// Auswahlfenster (z. B. Mulligan).
 /// Liest den Zustand jedes Frame vom [ForgeTable] (Spiel mit der Forge-Regel-Engine).
 #[derive(GodotClass)]
 #[class(base=CanvasLayer)]
@@ -100,11 +108,13 @@ pub struct TurnHud {
     /// Masken über den Medaillon-Zeilen (Gegner, Spieler): sparen die gehoverte/gezogene Karte aus.
     opponent_mask: Option<Gd<CardCutout>>,
     player_mask: Option<Gd<CardCutout>>,
-    /// Farbe, mit der der Hauptbutton zuletzt gestaltet wurde (nur bei Wechsel neu setzen).
-    button_color: Option<Color>,
     /// Meldung „Spielende – X gewinnt!“ in der Bildmitte (sonst leer).
     game_over_label: Option<Gd<Label>>,
-    button: Option<Gd<Button>>,
+    /// Phasen-Knopf („Passen“, „Angreifen (n)“ …) und „Sofort beenden“ als [Button3D].
+    button: Option<Gd<Button3D>>,
+    end_turn_button: Option<Gd<Button3D>>,
+    /// Hinweis der Engine über dem Phasen-Zeitstrahl (z. B. ungültiger Angriff).
+    button_hint: Option<Gd<Label>>,
     /// Große Vorschau der gerade gezogenen Karte im oberen Bildbereich (Karte + Anzeige).
     drag_preview: Option<(InstanceId, Gd<godot::classes::PanelContainer>)>,
     /// Elternknoten für die Vorschau (Vollbild-Root des HUD).
@@ -141,9 +151,10 @@ impl ICanvasLayer for TurnHud {
             player_hero_anchor: None,
             opponent_hero_anchor: None,
             player_mana_anchor: None,
-            button_color: None,
             game_over_label: None,
             button: None,
+            end_turn_button: None,
+            button_hint: None,
             drag_preview: None,
             root: None,
             choice: None,
@@ -254,11 +265,20 @@ impl TurnHud {
         self.submit(Variant::nil());
     }
 
-    /// Button „Passen“ bzw. Leertaste: ruft [method ForgeTable.pass_priority] auf.
+    /// Phasen-Knopf bzw. Leertaste: ruft [method ForgeTable.pass_priority] auf (passen bzw. im
+    /// Kampf Angreifer/Blocker bestätigen).
     #[func]
     fn on_next_pressed(&mut self) {
         if let Some(ft) = self.forge_table.as_mut() {
             ft.bind_mut().pass_priority();
+        }
+    }
+
+    /// Knopf „Sofort beenden“: ruft [method ForgeTable.end_turn] auf.
+    #[func]
+    fn on_end_turn_pressed(&mut self) {
+        if let Some(ft) = self.forge_table.as_mut() {
+            ft.bind_mut().end_turn();
         }
     }
 }
@@ -277,10 +297,22 @@ impl TurnHud {
         root.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
         root.set_mouse_filter(MouseFilter::IGNORE);
 
-        // Zeitstrahl der Phasen unten rechts, direkt über dem Button (56 px hoch, 14 px Rand)
+        // Unten rechts übereinander: Zeitstrahl der Phasen, Phasen-Knopf, „Sofort beenden“
+        let end_h = Button3D::face_height_for_face(END_FACE_PX);
+        let main_h = Button3D::face_height_for_face(MAIN_FACE_PX);
+        let end_y = -BUTTON_MARGIN - end_h * 0.5;
+        let main_y = -BUTTON_MARGIN - end_h - BUTTON_GAP_PX - main_h * 0.5;
+        let main_top = -BUTTON_MARGIN - end_h - BUTTON_GAP_PX - main_h;
         let mut timeline = PhaseTimeline::new_alloc();
-        place(&mut timeline, (1.0, 1.0), (-14.0, -76.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
+        place(&mut timeline, (1.0, 1.0), (-BUTTON_MARGIN, main_top - TIMELINE_GAP), GrowDirection::BEGIN, GrowDirection::BEGIN);
         root.add_child(&timeline);
+        let mut button_hint = label(15, GOLD);
+        button_hint.set_horizontal_alignment(godot::global::HorizontalAlignment::RIGHT);
+        button_hint.set_autowrap_mode(AutowrapMode::WORD_SMART);
+        button_hint.set_custom_minimum_size(Vector2::new(360.0, 0.0));
+        button_hint.add_theme_constant_override("outline_size", 5);
+        place(&mut button_hint, (1.0, 1.0), (-BUTTON_MARGIN, main_top - TIMELINE_GAP - 66.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
+        root.add_child(&button_hint);
 
         // Bildmitte: nur die Meldung zum Spielende
         let mut hint = label(26, GOLD);
@@ -314,14 +346,27 @@ impl TurnHud {
         me_mask.clone().add_child(&mana);
         self.player_mana = Some(mana);
 
-        // Nur der Button unten rechts (Deck und Ablage bleiben sichtbar)
-        let mut button = styled_button(20);
-        button.set_text(tr!("Nächste Phase  »", "Next phase  »"));
-        button.set_custom_minimum_size(Vector2::new(270.0, 56.0));
-        let callable = Callable::from_object_method(&self.to_gd(), "on_next_pressed");
-        button.connect("pressed", &callable);
-        place(&mut button, (1.0, 1.0), (-14.0, -14.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
-        root.add_child(&button);
+        // Knöpfe als animierte 3D-Knöpfe (orange), an die Bildschirmstelle geheftet
+        let mut button = Button3D::create(ButtonStyle::Orange, &tr!("Passen  »", "Pass  »"), 1.0);
+        button.set_name("PhaseButton");
+        button.bind_mut().pin_to_screen(
+            Vector2::new(1.0, 1.0),
+            Vector2::new(-BUTTON_MARGIN - MAIN_FACE_PX * 0.5, main_y),
+            Button3D::image_width_for_face(MAIN_FACE_PX),
+        );
+        let cb = Callable::from_object_method(&self.to_gd(), "on_next_pressed");
+        button.connect("pressed", &cb);
+        self.base_mut().add_child(&button);
+        let mut end_turn = Button3D::create(ButtonStyle::Orange, &tr!("Sofort beenden  »»", "End now  »»"), 1.0);
+        end_turn.set_name("EndTurnButton");
+        end_turn.bind_mut().pin_to_screen(
+            Vector2::new(1.0, 1.0),
+            Vector2::new(-BUTTON_MARGIN - END_FACE_PX * 0.5, end_y),
+            Button3D::image_width_for_face(END_FACE_PX),
+        );
+        let cb = Callable::from_object_method(&self.to_gd(), "on_end_turn_pressed");
+        end_turn.connect("pressed", &cb);
+        self.base_mut().add_child(&end_turn);
 
         self.choice = Some(ChoicePanel::new(&mut root));
         self.fan = Some(CardFan::new(&mut root));
@@ -353,6 +398,8 @@ impl TurnHud {
         self.player_mask = Some(me_mask);
         self.game_over_label = Some(hint);
         self.button = Some(button);
+        self.end_turn_button = Some(end_turn);
+        self.button_hint = Some(button_hint);
     }
 
     /// Setzt die Medaillon-Zeilen an ihre 3D-Anker (Medaillon mittig über/unter dem Ankerpunkt)
@@ -497,14 +544,19 @@ impl TurnHud {
             };
             l.set_text(&text);
         }
+        for b in [self.button.as_mut(), self.end_turn_button.as_mut()].into_iter().flatten() {
+            b.set_visible(!view.stage_open);
+        }
         if let Some(b) = self.button.as_mut() {
-            b.set_disabled(!view.button_enabled);
-            b.set_text(&view.button_text);
-            let color = if view.stack_busy { BUTTON_ORANGE } else { BUTTON_BLUE };
-            if self.button_color != Some(color) {
-                paint_main_button(b, color);
-                self.button_color = Some(color);
-            }
+            let mut b = b.bind_mut();
+            b.set_enabled(view.button_enabled);
+            b.set_label_text(view.button_text.clone());
+        }
+        if let Some(b) = self.end_turn_button.as_mut() {
+            b.bind_mut().set_enabled(view.end_turn_enabled);
+        }
+        if let Some(l) = self.button_hint.as_mut() {
+            l.set_text(&view.button_hint);
         }
 
         // Auswahlfenster (Mulligan, Optionen, Ja/Nein, Zahlen, Ziele …); die aktuelle Auswahl
@@ -552,8 +604,12 @@ pub struct HudView {
     pub winner: String,
     pub button_enabled: bool,
     pub button_text: GString,
-    /// Stack belegt → Button orange.
-    pub stack_busy: bool,
+    /// Hinweis der Engine unter dem Phasen-Knopf (z. B. ungültiger Angriff; leer = keiner).
+    pub button_hint: String,
+    /// Knopf „Sofort beenden“ anklickbar (Partie läuft, nicht schon aktiv).
+    pub end_turn_enabled: bool,
+    /// Eine 3D-Bühne (Startspieler, Mulligan) ist offen: Knöpfe unten rechts ausblenden.
+    pub stage_open: bool,
     /// Stack-Liste, oberster Eintrag zuerst (leer = ausgeblendet).
     pub stack: Vec<HudStackEntry>,
     /// Letzte Zeilen des Spielprotokolls, ältester zuerst (leer = ausgeblendet).
@@ -588,29 +644,6 @@ pub(super) fn styled_button(font_size: i32) -> Gd<Button> {
         button.add_theme_stylebox_override(state, &style(bg, 6.0));
     }
     button
-}
-
-/// Großer, pillenförmiger Hauptbutton in der Farbe `color` (heller Rand, Schatten, Hover heller).
-fn paint_main_button(button: &mut Gd<Button>, color: Color) {
-    let light = color.lerp(Color::WHITE, 0.45);
-    for (state, bg, border) in [
-        ("normal", color, light),
-        ("hover", color.lerp(Color::WHITE, 0.15), Color::WHITE),
-        ("pressed", color.darkened(0.25), light),
-        ("disabled", Color::from_rgba(0.12, 0.13, 0.16, 0.8), Color::from_rgba(0.4, 0.42, 0.48, 0.8)),
-    ] {
-        let mut s = style(bg, 28.0);
-        s.set_border_color(border);
-        s.set_border_width_all(3);
-        s.set_shadow_color(Color::from_rgba(color.r, color.g, color.b, if state == "disabled" { 0.0 } else { 0.45 }));
-        s.set_shadow_size(10);
-        button.add_theme_stylebox_override(state, &s);
-    }
-    button.add_theme_color_override("font_color", Color::WHITE);
-    button.add_theme_color_override("font_hover_color", Color::WHITE);
-    button.add_theme_color_override("font_pressed_color", Color::WHITE);
-    button.add_theme_color_override("font_outline_color", Color::from_rgba(0.0, 0.0, 0.0, 0.6));
-    button.add_theme_constant_override("outline_size", 4);
 }
 
 /// Rundenzahl mit Sanduhr und darunter der Spielername, am linken Bildrand verankert

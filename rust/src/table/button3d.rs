@@ -76,6 +76,17 @@ const APPEAR_TIME: f32 = 0.20;
 const DISMISS_TIME: f32 = 0.15;
 const HOVER_SPEED: f32 = 25.0;
 const PRESS_TIME: f32 = 0.12;
+/// Abstand vor der Kamera für Knöpfe, die an einer Bildschirmstelle stehen (vor allen Karten).
+const SCREEN_DEPTH: f32 = 1.2;
+
+/// Bildschirmstelle eines angehefteten Knopfes: Mitte = `anchor` × Fenstergröße + `offset`
+/// (Pixel), Breite der Bildfläche in Pixeln.
+#[derive(Clone, Copy, Debug)]
+struct ScreenPin {
+    anchor: Vector2,
+    offset: Vector2,
+    width_px: f32,
+}
 
 /// Anklickbarer Knopf in der 3D-Szene: bewegte Oberfläche und Leuchten im Farbstil
 /// [member style] (Nachbau der Blender-Materialien) mit Beschriftung ([member text]). Wird vom [TableController] per
@@ -111,6 +122,7 @@ pub struct Button3D {
     appear: f32,
     dismissing: Option<f32>,
     press: Option<f32>,
+    screen_pin: Option<ScreenPin>,
 
     base: Base<Area3D>,
 }
@@ -132,6 +144,7 @@ impl IArea3D for Button3D {
             appear: 0.0,
             dismissing: None,
             press: None,
+            screen_pin: None,
             base,
         }
     }
@@ -143,7 +156,9 @@ impl IArea3D for Button3D {
     fn process(&mut self, delta: f64) {
         let dt = delta as f32;
         self.appear += dt;
-        if self.face_camera {
+        if let Some(pin) = self.screen_pin {
+            self.follow_screen(pin);
+        } else if self.face_camera {
             if let Some(cam) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) {
                 let basis = cam.get_global_transform().basis;
                 let mut xf = self.base().get_global_transform();
@@ -227,9 +242,32 @@ impl Button3D {
         }
     }
 
-    /// Beschriftung ändern.
+    /// Knopf an eine Bildschirmstelle heften (wie ein HUD-Element, aber in der 3D-Szene): Mitte
+    /// = `anchor` × Fenstergröße + `offset` (Pixel, z. B. `anchor` (1, 1) = unten rechts),
+    /// `width_px` = Breite der Bildfläche in Pixeln. Er steht dann jedes Frame kurz vor der
+    /// Kamera, parallel zur Bildebene, vor allen Karten.
+    #[func]
+    pub fn pin_to_screen(&mut self, anchor: Vector2, offset: Vector2, width_px: f32) {
+        self.screen_pin = Some(ScreenPin { anchor, offset, width_px });
+    }
+
+    /// Breite der Bildfläche in Pixeln, die zu einer Knopf-Fläche (ohne Leuchten) von `face_px`
+    /// Pixeln gehört.
+    pub fn image_width_for_face(face_px: f32) -> f32 {
+        face_px / FACE_FRACTION.x
+    }
+
+    /// Höhe der Knopf-Fläche (ohne Leuchten) in Pixeln bei `face_px` Pixeln Breite.
+    pub fn face_height_for_face(face_px: f32) -> f32 {
+        face_px / FACE_FRACTION.x / IMAGE_ASPECT * FACE_FRACTION.y
+    }
+
+    /// Beschriftung ändern (ohne Wirkung, wenn sie gleich bleibt).
     #[func]
     pub fn set_label_text(&mut self, text: GString) {
+        if self.text == text && self.label.is_some() {
+            return;
+        }
         self.text = text.clone();
         if let Some(l) = self.label.as_mut() {
             l.set_text(&text);
@@ -249,6 +287,20 @@ impl Button3D {
             m.width = width;
         }
         b
+    }
+
+    /// Angeheftet: vor die Kamera an die Bildschirmstelle setzen, Größe in Pixeln halten.
+    fn follow_screen(&mut self, pin: ScreenPin) {
+        let Some(viewport) = self.base().get_viewport() else { return };
+        let Some(cam) = viewport.get_camera_3d() else { return };
+        let size = viewport.get_visible_rect().size;
+        let point = pin.anchor * size + pin.offset;
+        let origin = cam.project_position(point, SCREEN_DEPTH);
+        // Welteinheiten je Pixel in dieser Tiefe (senkrechter Blickwinkel)
+        let per_px = 2.0 * SCREEN_DEPTH * (cam.get_fov().to_radians() * 0.5).tan() / size.y.max(1.0);
+        let scale = pin.width_px * per_px / self.width.max(0.001);
+        let basis = cam.get_global_transform().basis.orthonormalized().scaled(Vector3::splat(scale));
+        self.base_mut().set_global_transform(Transform3D::new(basis, origin));
     }
 
     fn build(&mut self) {

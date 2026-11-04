@@ -153,6 +153,8 @@ pub struct ForgeTable {
     /// Laufende Mana-Zahlung wird von Hand bezahlt: Beim ersten `PayMana` lag schon Mana im Pool
     /// (vorher getappt). Bleibt gesetzt, bis eine andere Entscheidung kommt.
     manual_pay: bool,
+    /// „Sofort beenden“: in dieser Runde automatisch passen (Runde laut Zustand; `None` = aus).
+    auto_pass_turn: Option<i64>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -197,6 +199,7 @@ impl INode for ForgeTable {
             showcase: None,
             bottom_pick: Vec::new(),
             manual_pay: false,
+            auto_pass_turn: None,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -269,9 +272,38 @@ impl ForgeTable {
     /// `Action::Pass`.
     #[func]
     pub fn pass_priority(&mut self) {
-        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::Priority { .. })) {
-            self.answer(Choice::Action(Action::Pass));
+        match self.pending.as_ref().map(|r| &r.decision) {
+            Some(Decision::Priority { .. }) => self.answer(Choice::Action(Action::Pass)),
+            // Kampf: der Phasen-Knopf bestätigt den Plan, der auf dem Tisch gebaut wurde
+            Some(Decision::DeclareAttackers { .. }) => {
+                let plan = self.attack_plan.clone();
+                self.answer(Choice::Attackers(plan));
+            }
+            Some(Decision::DeclareBlockers { .. }) => {
+                let plan = self.block_plan.clone();
+                self.answer(Choice::Blocks(plan));
+            }
+            _ => {}
         }
+    }
+
+    /// Knopf „Sofort beenden“: bis zum Ende dieser Runde automatisch passen; im eigenen Zug wird
+    /// ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die
+    /// UI weiter. Legt ein anderer Spieler etwas auf den Stack, endet das automatische Passen,
+    /// damit man antworten kann.
+    #[func]
+    pub fn end_turn(&mut self) {
+        let turn = self.state.as_ref().map_or(0, |s| get_int(s, "turn"));
+        self.auto_pass_turn = Some(turn);
+        if let Some(choice) = self.auto_pass_choice() {
+            self.answer(choice);
+        }
+    }
+
+    /// Ist „Sofort beenden“ gerade aktiv?
+    #[func]
+    pub fn is_ending_turn(&self) -> bool {
+        self.auto_pass_turn.is_some()
     }
 
     /// Eine Option wurde auf dem Tisch gewählt (Klick auf ein gültiges Ziel – Karte oder
@@ -523,6 +555,10 @@ impl ForgeTable {
         self.pending = Some(req);
         if auto_pay {
             self.answer(Choice::Pay(PayAction::AutoPay));
+            return;
+        }
+        if let Some(choice) = self.auto_pass_choice() {
+            self.answer(choice);
             return;
         }
         if let Some(req) = starting {
@@ -846,7 +882,7 @@ impl ForgeTable {
         let combat_choice = self
             .pending
             .as_ref()
-            .and_then(|req| self.combat_choice(req).or_else(|| self.table_pick_choice(req)));
+            .and_then(|req| self.pay_choice(req).or_else(|| self.table_pick_choice(req)));
         let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().and_then(|req| {
             // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
             let name_of = |t: Target| match t {
@@ -888,16 +924,19 @@ impl ForgeTable {
             }
             out
         };
-        let button_text = if my_priority {
-            tr!("Passen  »", "Pass  »")
+        let combat = self.combat_button();
+        let button_text = if let Some((label, _)) = combat.as_ref() {
+            label.clone()
+        } else if my_priority {
+            tr!("Passen  »", "Pass  »").to_string()
         } else if choice.is_some() {
-            tr!("Auswahl treffen …", "Make a choice …")
+            tr!("Auswahl treffen …", "Make a choice …").to_string()
         } else if !self.winner.is_empty() {
-            tr!("Spielende", "Game over")
+            tr!("Spielende", "Game over").to_string()
         } else if self.match_running {
-            tr!("Gegner ist am Zug …", "Opponent is acting …")
+            tr!("Gegner ist am Zug …", "Opponent is acting …").to_string()
         } else {
-            tr!("Warte auf Forge …", "Waiting for Forge …")
+            tr!("Warte auf Forge …", "Waiting for Forge …").to_string()
         };
         HudView {
             phase_titles: Phase::ORDER.iter().map(|p| GString::from(p.title())).collect(),
@@ -909,9 +948,11 @@ impl ForgeTable {
             day: st.and_then(|s| s.get("day")).and_then(|v| v.try_to::<bool>().ok()),
             turn: st.map_or(0, |s| get_int(s, "turn")),
             winner: self.winner.clone(),
-            button_enabled: my_priority,
-            button_text: button_text.into(),
-            stack_busy: !self.stack_items().is_empty(),
+            button_enabled: my_priority || combat.is_some(),
+            button_text: button_text.as_str().into(),
+            button_hint: combat.map(|(_, hint)| hint).unwrap_or_default(),
+            stage_open: self.showcase.is_some() || !self.choice_buttons.is_empty(),
+            end_turn_enabled: self.match_running && self.winner.is_empty() && self.auto_pass_turn.is_none(),
             stack: self.hud_stack(),
             log: self.log.iter().skip(self.log.len().saturating_sub(LOG_SHOWN)).cloned().collect(),
             pool_clickable: (0..6)
@@ -1210,65 +1251,49 @@ impl ForgeTable {
         false
     }
 
-    /// Auswahlfenster für den Kampf: Erklärung und Bestätigungsknopf (die Auswahl passiert auf
-    /// dem Tisch).
-    fn combat_choice(&self, req: &Request) -> Option<HudChoice> {
-        let (title, detail, label) = match &req.decision {
-            Decision::DeclareAttackers { defenders, .. } => {
+    /// Fenster am rechten Rand beim Bezahlen von Hand (offene Kosten, „Automatisch bezahlen“).
+    fn pay_choice(&self, req: &Request) -> Option<HudChoice> {
+        let Decision::PayMana { remaining, .. } = &req.decision else { return None };
+        Some(HudChoice {
+            key: req.id,
+            title: trf!("Mana bezahlen: {remaining}", "Pay mana: {remaining}"),
+            detail: tr!(
+                "Klick auf ein leuchtendes Land bzw. eine Manaquelle = Mana erzeugen und einsetzen; Klick auf golden umrandetes Mana im Manapool = schwebendes Mana einsetzen.",
+                "Click a glowing land or mana source to tap it for mana; click gold-ringed mana in your mana pool to spend floating mana."
+            )
+            .into(),
+            mode: ChoiceMode::Done { label: tr!("Automatisch bezahlen", "Auto pay").into() },
+            options: Vec::new(),
+            cancelable: true,
+            side: true,
+            numbered: false,
+            repeat: false,
+        })
+    }
+
+    /// Kampf: Text des Phasen-Knopfs (bestätigt den Plan auf dem Tisch) und Hinweis der Engine
+    /// (z. B. nach ungültiger Erklärung; leer = keiner). `None` = kein Kampf offen.
+    fn combat_button(&self) -> Option<(String, String)> {
+        let req = self.pending.as_ref()?;
+        let (label, standard) = match &req.decision {
+            Decision::DeclareAttackers { .. } => {
                 let n = self.attack_plan.len();
-                let retarget = if defenders.len() > 1 {
-                    tr!(" Danach Klick auf ein anderes Ziel (Spieler, Planeswalker) = dieser Angreifer greift es an.", " Then click another target (player, planeswalker) to attack it instead.")
-                } else {
-                    ""
-                };
                 (
-                    tr!("Angreifer wählen", "Declare attackers").to_string(),
-                    format!(
-                        "{}{}",
-                        tr!("Klick auf eine leuchtende Kreatur = angreifen, erneut = nicht angreifen.", "Click a glowing creature to attack, again to cancel."),
-                        retarget
-                    ),
-                    if n == 0 { tr!("Nicht angreifen", "No attack").to_string() } else { trf!("Angreifen ({n})", "Attack ({n})") },
+                    if n == 0 { tr!("Nicht angreifen  »", "No attack  »").to_string() } else { trf!("Angreifen ({n})  »", "Attack ({n})  »") },
+                    "Angreifer wählen",
                 )
-            }
-            Decision::PayMana { remaining, .. } => {
-                return Some(HudChoice {
-                    key: req.id,
-                    title: trf!("Mana bezahlen: {remaining}", "Pay mana: {remaining}"),
-                    detail: tr!(
-                        "Klick auf ein leuchtendes Land bzw. eine Manaquelle = Mana erzeugen und einsetzen; Klick auf golden umrandetes Mana im Manapool = schwebendes Mana einsetzen.",
-                        "Click a glowing land or mana source to tap it for mana; click gold-ringed mana in your mana pool to spend floating mana."
-                    )
-                    .into(),
-                    mode: ChoiceMode::Done { label: tr!("Automatisch bezahlen", "Auto pay").into() },
-                    options: Vec::new(),
-                    cancelable: true,
-                    side: true,
-                    numbered: false,
-                    repeat: false,
-                });
             }
             Decision::DeclareBlockers { .. } => {
                 let n = self.block_plan.len();
                 (
-                    tr!("Blocker wählen", "Declare blockers").to_string(),
-                    tr!(
-                        "Klick auf eigene Kreatur, dann auf einen Angreifer = blocken. Klick auf einen Blocker = Block aufheben.",
-                        "Click your creature, then an attacker to block. Click a blocker to undo."
-                    )
-                    .to_string(),
-                    if n == 0 { tr!("Nicht blocken", "No blocks").to_string() } else { trf!("Blocken ({n})", "Block ({n})") },
+                    if n == 0 { tr!("Nicht blocken  »", "No blocks  »").to_string() } else { trf!("Blocken ({n})  »", "Block ({n})  »") },
+                    "Blocker wählen",
                 )
             }
             _ => return None,
         };
-        // Fragetext der Engine (z. B. Hinweis nach ungültiger Erklärung) hat Vorrang
-        let title = if req.prompt.is_empty() || req.prompt.starts_with("Angreifer wählen") || req.prompt.starts_with("Blocker wählen") {
-            title
-        } else {
-            req.prompt.clone()
-        };
-        Some(HudChoice { key: req.id, title, detail, mode: ChoiceMode::Done { label }, options: Vec::new(), cancelable: false, side: true, numbered: false, repeat: false })
+        let hint = if req.prompt.is_empty() || req.prompt.starts_with(standard) { String::new() } else { req.prompt.clone() };
+        Some((label, hint))
     }
 
     /// Karten-IDs, die der Kartenfächer für `decision` zeigt (leer = kein Fächer).
@@ -1511,6 +1536,23 @@ impl ForgeTable {
         let floating = self.pool_total(*player as usize);
         self.manual_pay = floating > 0;
         floating == 0
+    }
+
+    /// Antwort für „Sofort beenden“ auf die offene Entscheidung (`None` = selbst entscheiden).
+    /// Beendet das automatische Passen bei neuer Runde oder fremdem Stack-Eintrag.
+    fn auto_pass_choice(&mut self) -> Option<Choice> {
+        let since = self.auto_pass_turn?;
+        let turn = self.state.as_ref().map_or(0, |s| get_int(s, "turn"));
+        let foreign = self.stack_items().iter().any(|item| get_int(item, "controller") != 0);
+        if turn != since || foreign {
+            self.auto_pass_turn = None;
+            return None;
+        }
+        match self.pending.as_ref().map(|r| &r.decision) {
+            Some(Decision::Priority { .. }) => Some(Choice::Action(Action::Pass)),
+            Some(Decision::DeclareAttackers { .. }) => Some(Choice::Attackers(Vec::new())),
+            _ => None,
+        }
     }
 
     /// Menge an schwebendem Mana im Pool eines Sitzplatzes (aus dem Zustand).

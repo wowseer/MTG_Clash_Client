@@ -107,6 +107,8 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 |---|---|---|
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
+| `end_turn()` | `void` | Knopf „Sofort beenden“: bis zum Ende dieser Runde automatisch passen; im eigenen Zug wird ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die UI weiter. Legt ein anderer Spieler etwas auf den Stack, endet das automatische Passen, damit man antworten kann. |
+| `is_ending_turn()` | `bool` | Ist „Sofort beenden“ gerade aktiv? |
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
 | `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
 | `on_bottom_done()` | `void` | „Fertig“ bei `MulliganBottom`: gewählte Karten an die Engine. |
@@ -170,7 +172,7 @@ Sanduhr-Symbol (HUD), z. B. neben der Rundenzahl am linken Bildrand. Größe = `
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), großer Button „Nächste Phase“ / „Passen“ (unten rechts, auch Leertaste; blau, bei belegtem Stack orange) und ein Auswahlfenster (z. B. Mulligan). Liest den Zustand jedes Frame vom `ForgeTable` (Spiel mit der Forge-Regel-Engine).
+Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen (n)“ / „Blocken (n)“) und darunter „Sofort beenden »»“ (beide orange animierte `Button3D`) und ein Auswahlfenster (z. B. Mulligan). Liest den Zustand jedes Frame vom `ForgeTable` (Spiel mit der Forge-Regel-Engine).
 
 ### Eigenschaften
 
@@ -195,7 +197,8 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | `on_choice_values_changed(value: float)` | `void` | Ein Zahlenfeld beim Verteilen wurde geändert: Summe und „Fertig“ aktualisieren. |
 | `on_choice_filter_changed(text: String)` | `void` | Suchfeld des Auswahlfensters geändert: Optionen filtern. |
 | `on_choice_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster: Antwort null. |
-| `on_next_pressed()` | `void` | Button „Passen“ bzw. Leertaste: ruft `ForgeTable.pass_priority()` auf. |
+| `on_next_pressed()` | `void` | Phasen-Knopf bzw. Leertaste: ruft `ForgeTable.pass_priority()` auf (passen bzw. im Kampf Angreifer/Blocker bestätigen). |
+| `on_end_turn_pressed()` | `void` | Knopf „Sofort beenden“: ruft `ForgeTable.end_turn()` auf. |
 
 ## ManaCost
 
@@ -413,7 +416,8 @@ Anklickbarer Knopf in der 3D-Szene: bewegte Oberfläche und Leuchten im Farbstil
 | `is_hovered()` | `bool` | Ist die Maus über dem Knopf? |
 | `activate()` | `void` | Klick auslösen (vom `TableController` bzw. von Skripten): kurzes Eindrücken und [signal pressed]. Ohne Wirkung, wenn der Knopf nicht `enabled` ist oder gerade verschwindet. |
 | `dismiss()` | `void` | Knopf ausblenden (0,15 s) und danach freigeben; nicht mehr anklickbar. |
-| `set_label_text(text: String)` | `void` | Beschriftung ändern. |
+| `pin_to_screen(anchor: Vector2, offset: Vector2, width_px: float)` | `void` | Knopf an eine Bildschirmstelle heften (wie ein HUD-Element, aber in der 3D-Szene): Mitte = `anchor` × Fenstergröße + `offset` (Pixel, z. B. `anchor` (1, 1) = unten rechts), `width_px` = Breite der Bildfläche in Pixeln. Er steht dann jedes Frame kurz vor der Kamera, parallel zur Bildebene, vor allen Karten. |
+| `set_label_text(text: String)` | `void` | Beschriftung ändern (ohne Wirkung, wenn sie gleich bleibt). |
 
 ### Signale
 
