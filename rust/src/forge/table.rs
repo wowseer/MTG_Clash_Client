@@ -28,7 +28,7 @@ use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Decision, Request, RulesEngine, Target};
 use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
-use crate::table::button3d::{Button3D, ButtonStyle};
+use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY};
 use crate::table::showcase::Showcase;
 use crate::table::card3d::{Card3D, CardMarker, LUNGE_OUT, PLAYABLE_GLOW};
 use crate::table::fx::{mana_color, ManaFx};
@@ -157,6 +157,9 @@ pub struct ForgeTable {
     /// „Fertig“-Knopf.
     hand_pick: Vec<CardId>,
     hand_pick_button: Option<Gd<Button3D>>,
+    /// X wählen: gewählter Wert und der Bezahlen-Knopf (zeigt den Wert).
+    x_value: u32,
+    x_pay_button: Option<Gd<Button3D>>,
     /// Laufende Mana-Zahlung wird von Hand bezahlt: Beim ersten `PayMana` lag schon Mana im Pool
     /// (vorher getappt). Bleibt gesetzt, bis eine andere Entscheidung kommt.
     manual_pay: bool,
@@ -220,6 +223,8 @@ impl INode for ForgeTable {
             showcase: None,
             hand_pick: Vec::new(),
             hand_pick_button: None,
+            x_value: 0,
+            x_pay_button: None,
             manual_pay: false,
             auto_pass_turn: None,
             drawn_arrows: HashSet::new(),
@@ -461,6 +466,31 @@ impl ForgeTable {
         self.answer(Choice::Cards(pick));
     }
 
+    /// X-Knöpfe: Wert um `delta` ändern (−5, −1, +1, +5), begrenzt auf 0 … Maximum.
+    #[func]
+    fn on_x_step(&mut self, delta: i64) {
+        let Some(Decision::ChooseX { max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        self.x_value = (i64::from(self.x_value) + delta).clamp(0, i64::from(max)) as u32;
+        self.refresh_x_buttons(max);
+    }
+
+    /// „Bezahlen X = n“: Wert an Forge.
+    #[func]
+    fn on_x_pay(&mut self) {
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseX { .. })) {
+            let x = self.x_value;
+            self.answer(Choice::Number(x));
+        }
+    }
+
+    /// „Abbrechen“ beim X wählen: Wirken zurücknehmen.
+    #[func]
+    fn on_x_cancel(&mut self) {
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseX { .. })) {
+            self.answer(Choice::Cancel);
+        }
+    }
+
     /// „Abbrechen“ auf der Hand-Bühne (nur wo Forge das erlaubt).
     #[func]
     fn on_hand_pick_cancel(&mut self) {
@@ -646,6 +676,7 @@ impl ForgeTable {
         let starting = matches!(req.decision, Decision::ChooseStartingPlayer { .. }).then(|| req.clone());
         let mulligan = matches!(req.decision, Decision::Mulligan { .. }).then(|| req.clone());
         let hand_pick = self.hand_choice(&req.decision).is_some().then(|| req.clone());
+        let choose_x = matches!(req.decision, Decision::ChooseX { .. }).then(|| req.clone());
         let auto_pay = self.auto_pay(&req.decision);
         self.pending = Some(req);
         if auto_pay {
@@ -673,6 +704,9 @@ impl ForgeTable {
         }
         if let Some(req) = hand_pick {
             self.show_hand_pick(&req);
+        }
+        if let Some(req) = choose_x {
+            self.show_choose_x(&req);
         }
         self.update_glow();
     }
@@ -940,6 +974,75 @@ impl ForgeTable {
         self.showcase = Some(showcase);
     }
 
+    /// X wählen (wie im Video des Users): unter der Karte auf dem Stack eine Knopfreihe
+    /// „−5“, „−“, orange „Bezahlen X = n“, „+“, „+5“, dazu blau „Abbrechen“ (wo erlaubt) und in
+    /// der Tischmitte „Wähle einen Wert für X.“. Kein Fenster.
+    fn show_choose_x(&mut self, req: &Request) {
+        let Decision::ChooseX { max, .. } = req.decision else { return };
+        self.clear_choice_objects();
+        self.x_value = 0;
+        let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
+        let Some(cam) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else { return };
+        let right = cam.get_global_transform().basis.col_a().normalized();
+        // unter der obersten Karte des Stacks (dort liegt die Karte, die gerade gewirkt wird)
+        let center = self.stack_zone.as_ref().map_or(Vector3::new(6.0, 1.6, 1.4), |z| z.get_global_transform() * X_ROW_LOCAL);
+        let mut add = |button: Gd<Button3D>, offset: f32, method: &str, arg: Option<i64>| {
+            let mut button = button;
+            parent.add_child(&button);
+            button.set_global_position(center + right * offset);
+            let mut cb = Callable::from_object_method(&self.to_gd(), method);
+            if let Some(a) = arg {
+                cb = cb.bind(&[a.to_variant()]);
+            }
+            button.connect("pressed", &cb);
+            self.choice_buttons.push(button.clone());
+            button
+        };
+        for (text, delta, offset) in [("−5", -5i64, -X_OUTER), ("−", -1, -X_INNER), ("+", 1, X_INNER), ("+5", 5, X_OUTER)] {
+            add(Button3D::create_shaped(ButtonStyle::Blue, text, X_SMALL_WIDTH, COMPACT_BODY), offset, "on_x_step", Some(delta));
+        }
+        let pay = add(Button3D::create(ButtonStyle::Orange, &x_pay_label(0), X_PAY_WIDTH), 0.0, "on_x_pay", None);
+        self.x_pay_button = Some(pay);
+        if req.cancelable {
+            let mut cancel = Button3D::create(ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), X_PAY_WIDTH * 0.8);
+            parent.add_child(&cancel);
+            cancel.set_global_position(center + right * 0.0 + Vector3::new(0.0, 0.0, X_CANCEL_BELOW));
+            let cb = Callable::from_object_method(&self.to_gd(), "on_x_cancel");
+            cancel.connect("pressed", &cb);
+            self.choice_buttons.push(cancel);
+        }
+        let mut prompt = Label3D::new_alloc();
+        prompt.set_text(tr!("Wähle einen Wert für X.", "Select a value for X."));
+        prompt.set_billboard_mode(godot::classes::base_material_3d::BillboardMode::ENABLED);
+        prompt.set_font_size(96);
+        prompt.set_pixel_size(0.0045);
+        prompt.set_outline_size(16);
+        prompt.set_modulate(Color::from_rgb(0.95, 0.93, 0.88));
+        prompt.set_outline_modulate(Color::from_rgba(0.03, 0.03, 0.05, 0.9));
+        prompt.set_draw_flag(godot::classes::label_3d::DrawFlags::SHADED, false);
+        parent.add_child(&prompt);
+        prompt.set_global_position(Vector3::new(0.0, 0.6, 0.0));
+        self.choice_prompt = Some(prompt);
+        self.refresh_x_buttons(max);
+    }
+
+    /// Bezahlen-Knopf zeigt den Wert; „−“ bzw. „+“ nur, wo sich der Wert ändern kann.
+    fn refresh_x_buttons(&mut self, max: u32) {
+        let x = self.x_value;
+        if let Some(mut b) = self.x_pay_button.as_ref().filter(|b| b.is_instance_valid()).cloned() {
+            b.bind_mut().set_label_text(GString::from(x_pay_label(x).as_str()));
+        }
+        for mut b in self.choice_buttons.iter().filter(|b| b.is_instance_valid()).cloned() {
+            let text = b.bind().get_text().to_string();
+            let can = match text.as_str() {
+                "−5" | "−" => x > 0,
+                "+" | "+5" => x < max,
+                _ => true,
+            };
+            b.bind_mut().set_enabled(can);
+        }
+    }
+
     /// Karten aus der eigenen Hand wählen – nach einem Mulligan unter die Bibliothek legen,
     /// abwerfen (auch als Kosten oder wegen Handgröße), aufdecken …: `(Optionen, min, max)`, wenn
     /// alle wählbaren Karten auf der eigenen Hand liegen, sonst `None`.
@@ -1043,7 +1146,7 @@ impl ForgeTable {
             }
         }
         let n = self.hand_pick.len() as u32;
-        if let Some(mut b) = self.hand_pick_button.clone().filter(|b| b.is_instance_valid()) {
+        if let Some(mut b) = self.hand_pick_button.as_ref().filter(|b| b.is_instance_valid()).cloned() {
             b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
             b.bind_mut().set_enabled(n >= min && n <= max);
         }
@@ -2615,3 +2718,17 @@ fn action_caption(action: Action, label: &str) -> String {
         short.to_string()
     }
 }
+
+/// Beschriftung des Bezahlen-Knopfs beim X wählen.
+fn x_pay_label(x: u32) -> String {
+    trf!("Bezahlen  X = {x}", "Pay  X = {x}")
+}
+
+/// X-Knopfreihe: Lage unter der obersten Stack-Karte (lokal in der Stack-Zone), Abstände der
+/// Knöpfe von der Mitte (Kamera-Rechtsrichtung), Breiten, Abbrechen darunter (Welt-z).
+const X_ROW_LOCAL: Vector3 = Vector3::new(0.0, 0.25, 0.68);
+const X_INNER: f32 = 1.12;
+const X_OUTER: f32 = 1.62;
+const X_SMALL_WIDTH: f32 = 0.95;
+const X_PAY_WIDTH: f32 = 2.4;
+const X_CANCEL_BELOW: f32 = 1.0;

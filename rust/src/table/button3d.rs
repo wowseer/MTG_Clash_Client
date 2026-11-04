@@ -122,6 +122,7 @@ pub struct Button3D {
     style: ButtonStyle,
     /// Beschriftung auf dem Knopf.
     #[export]
+    #[var(pub)]
     text: GString,
     /// Breite der Bildfläche in Welteinheiten (Höhe folgt aus dem Seitenverhältnis).
     #[export]

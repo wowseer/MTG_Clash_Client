@@ -33,7 +33,7 @@ final class StateJson {
 
         JsonArray players = new JsonArray();
         int i = 0;
-        for (Player p : game.getPlayers()) {
+        for (Player p : game.getRegisteredPlayers()) {
             JsonObject po = new JsonObject();
             po.addProperty("seat", i);
             po.addProperty("name", p.getName());
@@ -327,9 +327,14 @@ final class StateJson {
         return o;
     }
 
+    /**
+     * Sitzplatz eines Spielers: Position in {@code getRegisteredPlayers()} – bleibt fest, auch
+     * wenn Spieler ausscheiden ({@code getPlayers()} lässt Verlierer weg und würde die Sitze
+     * verschieben).
+     */
     static int indexOf(Game game, Player player) {
         int i = 0;
-        for (Player p : game.getPlayers()) {
+        for (Player p : game.getRegisteredPlayers()) {
             if (p == player) {
                 return i;
             }

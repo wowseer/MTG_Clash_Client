@@ -114,6 +114,9 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
 | `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
 | `on_hand_pick_done()` | `void` | „Fertig“ auf der Hand-Bühne: gewählte Karten an die Engine. |
+| `on_x_step(delta: int)` | `void` | X-Knöpfe: Wert um `delta` ändern (−5, −1, +1, +5), begrenzt auf 0 … Maximum. |
+| `on_x_pay()` | `void` | „Bezahlen X = n“: Wert an Forge. |
+| `on_x_cancel()` | `void` | „Abbrechen“ beim X wählen: Wirken zurücknehmen. |
 | `on_hand_pick_cancel()` | `void` | „Abbrechen“ auf der Hand-Bühne (nur wo Forge das erlaubt). |
 | `on_mulligan_pressed(keep: bool)` | `void` | Ein Mulligan-Knopf wurde gedrückt: `keep` = Starthand behalten, sonst Mulligan. |
 | `on_starting_player_pressed(index: int)` | `void` | Ein Startspieler-Knopf wurde gedrückt (`index` = Eintrag in `players` der Entscheidung `ChooseStartingPlayer`). |
@@ -476,6 +479,8 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_ready_glow(on: bool)` | `void` | Dezenter goldener Rand „diese Karte kann eine Fähigkeit aktivieren“ an/aus (für Skripte; Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang. |
 | `flash()` | `void` | Rahmen leuchtet kurz hell und orange auf (etwas wurde aktiviert: gespielt, Fähigkeit, Mana-Einschlag, Angriff …), danach zurück zum normalen Leuchten. |
 | `set_attacking(attacking: bool)` | `void` | Angreifer im Kampf: Karte rückt etwas zum Gegner vor und trägt die rote Angriffsspitze an der Oberkante (`false` = zurück an ihren Platz). |
+| `set_tile(tile: bool)` | `void` | Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen und Ziehen wird die ganze Karte gezeigt. Setzt die Zone beim Anordnen. |
+| `is_tile()` | `bool` | Wird die Karte als Kachel gezeigt? |
 | `is_attacking()` | `bool` | Ist die Karte als Angreifer markiert (vorgerückt, mit Angriffsspitze)? |
 | `lunge(target: Vector3, reach: float, delay: float)` | `void` | Schlag im Kampf: die Karte holt zum Weltpunkt `target` aus (Anteil `reach` des Wegs, angehoben), trifft nach [`LUNGE_OUT`] Sekunden und kehrt zurück; Start nach `delay`. |
 | `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (rot), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
@@ -668,7 +673,9 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `grid_columns` | `int` | Spielfeld im Rastermodus: Anzahl Spalten. |
 | `grid_spacing` | `Vector2` | Spielfeld im Rastermodus: Abstand der Karten (x, z). |
 | `free_placement` | `bool` | Karten bleiben dort liegen, wo sie abgelegt werden (statt Raster). |
-| `auto_arrange` | `bool` | Automatische Anordnung nach Kartenart (hat Vorrang vor Raster und freier Ablage), aus Sicht der Seite (lokal −z = zur Tischmitte = „oben“): Helden oben links, Kreaturen oben in der Mitte (mehrere Reihen bei Bedarf), alles andere rechts. Ressourcen liegen in einer eigenen Ressourcen-Zone (unten links). |
+| `auto_arrange` | `bool` | Automatische Anordnung nach Kartenart (hat Vorrang vor Raster und freier Ablage), aus Sicht der Seite (lokal −z = zur Tischmitte = „oben“): Kreaturen vorn mittig an der Mittellinie, alle anderen bleibenden Karten hinten rechts neben dem Medaillon. Länder liegen in einer eigenen Ressourcen-Zone (hinten links). |
+| `card_scale` | `float` | Größe der Karten in dieser Zone (1 = normal). Spielfeld und Ressourcen verkleinern sie automatisch, wenn sonst nicht alle in eine Reihe passen. |
+| `tile_cards` | `bool` | Karten als Kachel zeigen (nur Name und Bild, Stärke/Widerstand unten rechts; siehe `Card3D.set_tile()`) – Form der Karten auf dem Spielfeld. |
 
 ### Funktionen
 

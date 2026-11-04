@@ -46,6 +46,10 @@ use super::zone::Zone;
 pub const CARD_WIDTH: f32 = 0.63;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
+/// Kachel-Form auf dem Spielfeld (wie im Video des Users): nur der obere Teil der Karte – Name
+/// und Bild –, Stärke/Widerstand rechts unten. Anteil der Kartenhöhe und Höhe der Kachel.
+pub const TILE_FRACTION: f32 = 0.6;
+pub const TILE_HEIGHT: f32 = CARD_HEIGHT * TILE_FRACTION;
 
 /// Farben des Kartenrahmens (Rahmen-Glow aus `Assets/Mana Glow Effekte`, linear wie in Blender):
 /// **Blau** = Standard, die Karte ist spielbar bzw. wählbar; **Orange** = aktiviert (wird gezogen
@@ -202,6 +206,10 @@ pub struct Card3D {
     /// Schlag zum Ziel (Welt), Zeit, Reichweite (Anteil des Wegs), Verzögerung.
     lunge: Option<(Vector3, f32, f32, f32)>,
     lunge_applied: Vector3,
+    /// Kachel-Form gewünscht (Spielfeld) bzw. gerade gezeigt (beim Zoomen/Ziehen ganze Karte).
+    tile: bool,
+    tile_shown: bool,
+    shape_refs: Option<ShapeRefs>,
     /// Hat in diesem Zug angegriffen (ausgegraut, bis sie enttappt wird).
     attacked: bool,
     /// Laufendes Umdrehen: vergangene Zeit und die neue Seite (Kartendaten, Bild), die bei
@@ -261,6 +269,9 @@ impl IArea3D for Card3D {
             attack_banner: None,
             lunge: None,
             lunge_applied: Vector3::ZERO,
+            tile: false,
+            tile_shown: false,
+            shape_refs: None,
             attacked: false,
             flip: None,
             owner_seat: 0,
@@ -343,6 +354,12 @@ impl IArea3D for Card3D {
         }
 
         let dt = delta as f32;
+        // Kachel auf dem Spielfeld, beim Zoomen und Ziehen die ganze Karte (lesbar)
+        let want_tile = self.tile && !zoomed && !self.dragging;
+        if want_tile != self.tile_shown {
+            self.tile_shown = want_tile;
+            self.apply_shape();
+        }
         // Aufleuchten abklingen lassen
         if let Some(t) = self.flash_t.as_mut() {
             *t += dt;
@@ -530,6 +547,23 @@ impl Card3D {
         }
     }
 
+    /// Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen
+    /// und Ziehen wird die ganze Karte gezeigt. Setzt die Zone beim Anordnen.
+    #[func]
+    pub fn set_tile(&mut self, tile: bool) {
+        if self.tile != tile {
+            self.tile = tile;
+            self.tile_shown = tile && !self.zoomed && !self.dragging;
+            self.apply_shape();
+        }
+    }
+
+    /// Wird die Karte als Kachel gezeigt?
+    #[func]
+    pub fn is_tile(&self) -> bool {
+        self.tile
+    }
+
     /// Ist die Karte als Angreifer markiert (vorgerückt, mit Angriffsspitze)?
     #[func]
     pub fn is_attacking(&self) -> bool {
@@ -686,6 +720,46 @@ impl Card3D {
         self.apply_glow();
     }
 
+    /// Sichtbare Länge der Karte (ganz bzw. Kachel).
+    fn length(&self) -> f32 {
+        if self.tile_shown { TILE_HEIGHT } else { CARD_HEIGHT }
+    }
+
+    /// Lokale z-Lage zu einer Pixelzeile der Kartentextur (358 hoch), passend zur Form.
+    fn px_z(&self, y: f32) -> f32 {
+        if self.tile_shown { y / 358.0 * CARD_HEIGHT - TILE_HEIGHT * 0.5 } else { (y / 358.0 - 0.5) * CARD_HEIGHT }
+    }
+
+    /// Meshes, Textur-Zuschnitt, Kollision, Rahmen-Glow und Beschriftung an die Form anpassen.
+    fn apply_shape(&mut self) {
+        let len = self.length();
+        let frac = len / CARD_HEIGHT;
+        if let Some(r) = self.shape_refs.as_mut() {
+            r.body.set_size(Vector3::new(CARD_WIDTH, CARD_THICKNESS, len));
+            r.face.set_size(Vector2::new(CARD_WIDTH, len));
+            r.back.set_size(Vector2::new(CARD_WIDTH, len));
+            r.shape.set_size(Vector3::new(CARD_WIDTH, CARD_THICKNESS * 4.0, len));
+            let quad = Vector2::new(CARD_WIDTH, len) + Vector2::splat(2.0 * GLOW_MARGIN);
+            r.marker.set_size(quad);
+        }
+        for m in [self.face_material.as_mut(), self.back_material.as_mut()].into_iter().flatten() {
+            m.set_uv1_scale(Vector3::new(1.0, frac, 1.0));
+        }
+        if let Some(m) = self.marker_material.as_mut() {
+            let quad = Vector2::new(CARD_WIDTH, len) + Vector2::splat(2.0 * GLOW_MARGIN);
+            m.set_shader_parameter("quad_size", &quad.to_variant());
+            m.set_shader_parameter("card_half", &(Vector2::new(CARD_WIDTH, len) * 0.5).to_variant());
+        }
+        if let Some(b) = self.attack_banner.as_mut() {
+            b.set_position(Vector3::new(0.0, CARD_THICKNESS, -len * 0.5 - BANNER_SIZE.y * 0.5 + 0.02));
+        }
+        let icon_z = if self.tile_shown { 0.0 } else { -CARD_HEIGHT * 0.12 };
+        if let Some(i) = self.tap_icon.as_mut() {
+            i.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.003, icon_z));
+        }
+        self.refresh_labels();
+    }
+
     /// Versatz des Schlags im Kampf (lokal) für dieses Frame.
     fn lunge_offset(&mut self, dt: f32) -> Vector3 {
         let Some((target, t, reach, delay)) = self.lunge.as_mut() else { return Vector3::ZERO };
@@ -780,13 +854,22 @@ impl Card3D {
 
     pub(crate) fn refresh_labels(&mut self) {
         let t = self.face_texts();
+        let tile = self.tile_shown;
+        let zs = [219.0f32, TEXT_BOX_CENTER, 130.0, placeholder::title_center_y()].map(|y| self.px_z(y));
+        let len = self.length();
         let Some(l) = self.labels.as_mut() else {
             return;
         };
-        let px = |x: f32, y: f32| {
-            Vector3::new((x / 256.0 - 0.5) * CARD_WIDTH, CARD_THICKNESS * 0.5 + 0.0015, (y / 358.0 - 0.5) * CARD_HEIGHT)
-        };
-        let ty = placeholder::title_center_y();
+        let px = |x: f32, z: f32| Vector3::new((x / 256.0 - 0.5) * CARD_WIDTH, CARD_THICKNESS * 0.5 + 0.0015, z);
+        // Kachel: nur Name, Plaketten und Stärke/Widerstand (unten rechts); keine Kosten, Typzeile, Text
+        l.kind.set_visible(!tile);
+        l.text.set_visible(!tile);
+        l.cost.set_visible(!tile && !t.cost.is_empty());
+        l.kind.set_position(px(128.0, zs[0]));
+        l.text.set_position(px(128.0, zs[1]));
+        l.badges.set_position(px(128.0, zs[2]));
+        l.stats.set_position(if tile { px(212.0, len * 0.5 - 0.045) } else { px(206.0, (333.0 / 358.0 - 0.5) * CARD_HEIGHT) });
+        let ty = zs[3];
         // Schriftgrößen an die Textlänge anpassen. Umrechnung: 1 Schriftpunkt = PIXEL m,
         // 1 Texturpixel = CARD_WIDTH / 256 m.
         let per_px = (CARD_WIDTH / 256.0) / LABEL_PIXEL;
@@ -894,6 +977,7 @@ impl Card3D {
 
         let mut shape = BoxShape3D::new_gd();
         shape.set_size(Vector3::new(CARD_WIDTH, CARD_THICKNESS * 4.0, CARD_HEIGHT));
+        let shape_ref = shape.clone();
         let mut collision = CollisionShape3D::new_alloc();
         collision.set_shape(&shape);
         self.base_mut().add_child(&collision);
@@ -1002,10 +1086,14 @@ impl Card3D {
         self.tap_icon = Some(icon);
 
         self.build_labels(&mut visual);
+        self.shape_refs = Some(ShapeRefs { body: body_mesh, face: face_mesh, back: back_mesh, shape: shape_ref, marker: marker_mesh });
         self.meshes = vec![body, face, back];
         self.face_material = Some(face_mat);
         self.back_material = Some(back_mat);
         self.apply_tapped_look();
+        if self.tile_shown {
+            self.apply_shape();
+        }
     }
 }
 
@@ -1032,6 +1120,15 @@ pub enum CardMarker {
 }
 
 /// Beschriftung auf der Vorderseite (Label3D, liegen flach auf der Karte).
+/// Formteile, die sich mit der Kachel-Form ändern.
+struct ShapeRefs {
+    body: Gd<BoxMesh>,
+    face: Gd<PlaneMesh>,
+    back: Gd<PlaneMesh>,
+    shape: Gd<BoxShape3D>,
+    marker: Gd<PlaneMesh>,
+}
+
 struct CardLabels {
     name: Gd<Label3D>,
     cost: Gd<Label3D>,

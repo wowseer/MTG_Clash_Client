@@ -74,7 +74,7 @@ final class EventForwarder {
         if (view == null) {
             return -1;
         }
-        for (forge.game.player.Player p : game.getPlayers()) {
+        for (forge.game.player.Player p : game.getRegisteredPlayers()) {
             if (p.getView() == view || p.getId() == view.getId()) {
                 return StateJson.indexOf(game, p);
             }

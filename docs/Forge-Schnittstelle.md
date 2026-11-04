@@ -79,7 +79,7 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 | `mulliganKeepHand` | `Mulligan { mulligans_taken, first_player }` | `Keep` / `Mulligan` |
 | `chooseModeForAbility` | `ChooseModes { modes, min, max, can_repeat }` | `Modes([…])` |
 | `chooseTargetsFor` (über `setupTargets`) | `ChooseTargets { source, description, candidates, min, max }` | `Targets([…])` / `Cancel` |
-| `announceRequirements` (X ab 0) | `ChooseX { max }` | `Number(n)` / `Cancel` |
+| `announceRequirements` (X ab 0) | `ChooseX { max }` (UI: 3D-Knöpfe am Stack, `ForgeTable.show_choose_x`) | `Number(n)` / `Cancel` |
 | `chooseColor`, `chooseColors` mit genau einer Farbe | `ChooseColor { options }` | `Color("R")` |
 | `chooseCardName` | `NameCard { options }` (alle erlaubten Namen) | `Number(index)` |
 | `chooseSomeType` | `ChooseType { options }` | `Number(index)` |
@@ -303,6 +303,8 @@ wie bei Zaubern. So bleibt die Karte während der Zielwahl sichtbar (Startpunkt 
     "text": "Mana Leak (92) - Counter Flametongue Kavu (52) unless its controller pays {3}.", "card": { … } }
 ]
 ```
+
+Sitzplätze (`players`, `seat`, `controller`, `player` in Zielen und Ereignissen) sind die Position in Forges `getRegisteredPlayers()` und bleiben fest, auch wenn ein Spieler ausscheidet.
 
 Phasen (`phase`): Forges `PhaseType`-Namen, z. B. `UNTAP`, `UPKEEP`, `DRAW`, `MAIN1`,
 `COMBAT_BEGIN`, `COMBAT_DECLARE_ATTACKERS`, `COMBAT_DECLARE_BLOCKERS`, `COMBAT_DAMAGE`,

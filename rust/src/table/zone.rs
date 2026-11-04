@@ -18,9 +18,8 @@ use godot::prelude::*;
 use std::collections::HashMap;
 
 use crate::game::cards::CardKind;
-use crate::game::mana::ManaType;
 
-use super::card3d::{CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, Card3D};
+use super::card3d::{CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, TILE_HEIGHT, Card3D};
 use super::layers::ZONE_LAYER;
 
 pub const ZONE_GROUP: &str = "card_zones";
@@ -31,11 +30,16 @@ const STACK_TURN_DEGREES: f32 = 3.5;
 const STACK_MAX_SHOWN: f32 = 6.0;
 /// Drehung getappter Karten im Uhrzeigersinn (Grad) – nur leicht schräg statt quer.
 pub const TAP_ANGLE_DEGREES: f32 = 15.0;
-/// Automatische Anordnung: Abstand zwischen Karten (x); der rechte Bereich bekommt eine Spalte
-/// je [AUTO_OTHER_PER_COLUMN] Karten, höchstens [AUTO_OTHER_MAX_COLUMNS].
+/// Automatische Anordnung: Abstand zwischen Karten (Anteil der Kartenbreite), Beginn der hinteren
+/// Reihe rechts neben dem Medaillon (lokal x) und kleinste Verkleinerung (Anteil von
+/// [member card_scale]), bevor Karten sich überlappen.
 const AUTO_GAP: f32 = 0.12;
-const AUTO_OTHER_PER_COLUMN: usize = 3;
-const AUTO_OTHER_MAX_COLUMNS: usize = 4;
+const BACK_ROW_START: f32 = 1.3;
+const MIN_SHRINK: f32 = 0.45;
+/// Ressourcen-Reihe: gleiche Länder überlappen um diesen Anteil der Kartenbreite versetzt;
+/// Abstand zwischen den Gruppen.
+const LAND_STACK_STEP: f32 = 0.3;
+const LAND_GROUP_GAP: f32 = 0.12;
 
 /// Art der Zone: 0 = Hand (Fächer), 1 = Stapel, 2 = Spielfeld, 3 = Ressourcen-Reihe, 4 = Stack.
 #[derive(GodotConvert, Var, Export, Clone, Copy, PartialEq, Eq, Debug)]
@@ -106,11 +110,19 @@ pub struct Zone {
     #[export]
     free_placement: bool,
     /// Automatische Anordnung nach Kartenart (hat Vorrang vor Raster und freier Ablage),
-    /// aus Sicht der Seite (lokal −z = zur Tischmitte = „oben“): Helden oben links,
-    /// Kreaturen oben in der Mitte (mehrere Reihen bei Bedarf), alles andere rechts.
-    /// Ressourcen liegen in einer eigenen Ressourcen-Zone (unten links).
+    /// aus Sicht der Seite (lokal −z = zur Tischmitte = „oben“): Kreaturen vorn mittig an der
+    /// Mittellinie, alle anderen bleibenden Karten hinten rechts neben dem Medaillon.
+    /// Länder liegen in einer eigenen Ressourcen-Zone (hinten links).
     #[export]
     auto_arrange: bool,
+    /// Größe der Karten in dieser Zone (1 = normal). Spielfeld und Ressourcen verkleinern sie
+    /// automatisch, wenn sonst nicht alle in eine Reihe passen.
+    #[export]
+    card_scale: f32,
+    /// Karten als Kachel zeigen (nur Name und Bild, Stärke/Widerstand unten rechts; siehe
+    /// [method Card3D.set_tile]) – Form der Karten auf dem Spielfeld.
+    #[export]
+    tile_cards: bool,
 
     cards: Vec<Gd<Card3D>>,
     /// Freie Positionen (lokal x/z) je Karte.
@@ -128,6 +140,8 @@ impl IArea3D for Zone {
     fn init(base: Base<Area3D>) -> Self {
         Self {
             kind: ZoneKind::Battlefield,
+            card_scale: 1.0,
+            tile_cards: false,
             size: Vector3::new(3.0, 0.2, 2.0),
             accepts_drops: true,
             cards_draggable: true,
@@ -394,7 +408,11 @@ impl Zone {
                     // Später abgelegte Karten liegen minimal höher (kein Z-Fighting bei Überlappung).
                     Transform3D::new(Basis::IDENTITY, Vector3::new(p.x, CARD_THICKNESS * 0.5 + i as f32 * 0.002, p.y))
                 }
-                _ => self.slot_transform(bi, nb),
+                _ => {
+                    let mut xf = self.slot_transform(bi, nb);
+                    xf.basis = xf.basis.scaled(Vector3::splat(self.card_scale));
+                    xf
+                }
             };
             if self.attachments.values().any(|h| h == card) {
                 local.origin.y += 0.01; // Träger liegt über seiner Ausrüstung
@@ -434,106 +452,123 @@ impl Zone {
                 Some((c, d)) if c == &card => d,
                 _ => 0.0,
             };
+            card.bind_mut().set_tile(self.tile_cards);
             card.bind_mut().move_to(zone_xf * local, delay);
         }
     }
 
+    /// Kartenhöhe in dieser Zone (Kachel oder ganze Karte), ohne Skalierung.
+    fn card_length(&self) -> f32 {
+        if self.tile_cards { TILE_HEIGHT } else { CARD_HEIGHT }
+    }
+
+    /// Größe für `n` Karten nebeneinander auf `avail` Breite: höchstens [member card_scale],
+    /// höchstens bis [`MIN_SHRINK`] verkleinert.
+    fn fit_scale(&self, n: usize, avail: f32) -> f32 {
+        let need = n.max(1) as f32 * CARD_WIDTH * (1.0 + AUTO_GAP);
+        (avail / need).clamp(self.card_scale * MIN_SHRINK, self.card_scale)
+    }
+
     /// Slots der automatischen Anordnung (siehe [member auto_arrange]) für die freien Karten
-    /// `base`, in deren Reihenfolge. Lokal: −z = oben (zur Tischmitte), −x = links.
+    /// `base`, in deren Reihenfolge – Aufbau wie im Video des Users. Lokal: −z = zur
+    /// Tischmitte, +x = rechts (aus Sicht der Seite):
+    /// - **vordere Reihe(n)**: Kreaturen mittig an der Mittellinie; passen sie nicht in eine
+    ///   Reihe, werden sie kleiner, dann zweireihig;
+    /// - **hintere Reihe rechts** (neben dem Medaillon): Planeswalker, Schlachten, Artefakte,
+    ///   Verzauberungen … – bei Platzmangel kleiner, zuletzt überlappend.
+    ///
+    /// Länder liegen in der eigenen Ressourcen-Zone (hinten links).
     fn auto_slots(&self, base: &[usize]) -> Vec<Transform3D> {
-        #[derive(PartialEq)]
-        enum Group {
-            /// Planeswalker und Schlachten: linke Spalte
-            Hero,
-            Creature,
-            Other,
-        }
-        let groups: Vec<Group> = base
-            .iter()
-            .map(|&i| match self.cards[i].bind().kind() {
-                CardKind::Planeswalker | CardKind::Battle => Group::Hero,
-                CardKind::Creature => Group::Creature,
-                _ => Group::Other,
-            })
-            .collect();
-        let count = |g: Group| groups.iter().filter(|x| **x == g).count();
-        let (n_creatures, n_other) = (count(Group::Creature), count(Group::Other));
-
-        let step_x = CARD_WIDTH + AUTO_GAP;
+        let front: Vec<bool> = base.iter().map(|&i| self.cards[i].bind().kind() == CardKind::Creature).collect();
+        let n_front = front.iter().filter(|f| **f).count();
+        let n_back = front.len() - n_front;
         let (half_x, half_z) = (self.size.x * 0.5, self.size.z * 0.5);
-        let left = -half_x + CARD_WIDTH * 0.5 + 0.1;
-        let right = half_x - CARD_WIDTH * 0.5 - 0.1;
-        let top = -half_z + CARD_HEIGHT * 0.5 + 0.1;
-        let bottom = half_z - CARD_HEIGHT * 0.5;
-        // Zeilenabstand: bei vielen Reihen enger (überlappend), damit alles in die Zone passt
-        let row_step = |rows: usize| {
-            if rows <= 1 { 0.0 } else { (CARD_HEIGHT + 0.15).min((bottom - top) / (rows - 1) as f32) }
+        let len = self.card_length();
+
+        // vorn: eine Reihe, wenn sie mit höchstens 75 % Verkleinerung passt, sonst zwei
+        let avail = 2.0 * half_x - 0.2;
+        let one_row = (avail / (n_front.max(1) as f32 * CARD_WIDTH * (1.0 + AUTO_GAP))).min(self.card_scale);
+        let (rows, s_front) = if one_row >= self.card_scale * 0.75 || n_front <= 1 {
+            (1, one_row.max(self.card_scale * MIN_SHRINK))
+        } else {
+            (2, self.fit_scale(n_front.div_ceil(2), avail))
         };
+        let per_row = n_front.div_ceil(rows).max(1);
+        let step_f = CARD_WIDTH * s_front * (1.0 + AUTO_GAP);
+        let top = -half_z + len * s_front * 0.5 + 0.05;
 
-        // Kreaturen: Mitte zwischen Helden-Spalte und rechtem Bereich, so viele pro Reihe wie passen
-        let other_cols = n_other.div_ceil(AUTO_OTHER_PER_COLUMN).clamp(1, AUTO_OTHER_MAX_COLUMNS);
-        let center_left = left + step_x; // rechts neben dem Helden
-        let center_right = right - other_cols as f32 * step_x;
-        let per_row = (((center_right - center_left) / step_x).floor() as usize + 1).max(1);
-        let creature_rows = n_creatures.div_ceil(per_row).max(1);
-        let creature_center = (center_left + center_right) * 0.5;
-        let other_rows = n_other.div_ceil(other_cols).max(1);
+        // hinten rechts
+        let back_avail = half_x - BACK_ROW_START - 0.1;
+        let s_back = self.fit_scale(n_back, back_avail);
+        let step_b = (CARD_WIDTH * s_back * (1.0 + AUTO_GAP)).min(if n_back > 1 { (back_avail - CARD_WIDTH * s_back) / (n_back - 1) as f32 } else { f32::MAX });
+        let back_z = half_z - len * s_back * 0.5 - 0.05;
+        let back_x0 = BACK_ROW_START + CARD_WIDTH * s_back * 0.5;
 
-        let (mut heroes, mut creatures, mut others) = (0usize, 0usize, 0usize);
-        groups
+        let (mut k_front, mut k_back) = (0usize, 0usize);
+        front
             .iter()
             .enumerate()
-            .map(|(i, g)| {
-                let (x, z) = match g {
-                    Group::Hero => {
-                        // Helden oben links, untereinander (leicht versetzt) bei mehreren
-                        let k = heroes;
-                        heroes += 1;
-                        (left, top + k as f32 * 0.3)
-                    }
-                    Group::Creature => {
-                        let k = creatures;
-                        creatures += 1;
-                        let row = k / per_row;
-                        let in_row = per_row.min(n_creatures - row * per_row);
-                        let col = k % per_row;
-                        let x = creature_center + (col as f32 - (in_row as f32 - 1.0) * 0.5) * step_x;
-                        (x, top + row as f32 * row_step(creature_rows))
-                    }
-                    Group::Other => {
-                        let k = others;
-                        others += 1;
-                        let (row, col) = (k / other_cols, k % other_cols);
-                        // rechtsbündig: Spalte 0 ganz rechts
-                        (right - col as f32 * step_x, top + row as f32 * row_step(other_rows))
-                    }
+            .map(|(i, is_front)| {
+                let (x, z, s) = if *is_front {
+                    let k = k_front;
+                    k_front += 1;
+                    let (row, col) = (k / per_row, k % per_row);
+                    let in_row = per_row.min(n_front - row * per_row);
+                    let x = (col as f32 - (in_row as f32 - 1.0) * 0.5) * step_f;
+                    (x, top + row as f32 * (len * s_front + 0.1), s_front)
+                } else {
+                    let k = k_back;
+                    k_back += 1;
+                    (back_x0 + k as f32 * step_b, back_z, s_back)
                 };
                 let y = CARD_THICKNESS * 0.5 + i as f32 * 0.002;
-                Transform3D::new(Basis::IDENTITY, Vector3::new(x, y, z))
+                Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
             })
             .collect()
     }
 
-    /// Slots der Ressourcen-Reihe: Spalten nach Manafarbe (in fester Farbreihenfolge),
-    /// innerhalb einer Spalte nach vorn (+z) aufgefächert.
+    /// Slots der Ressourcen-Reihe (Länder) wie im Video: von links nach rechts, gleichnamige
+    /// Länder überlappend übereinander (je [`LAND_STACK_STEP`] Kartenbreite versetzt), Gruppen
+    /// in Manafarben-Reihenfolge. Passen sie nicht, werden sie kleiner, zuletzt enger.
     fn resource_slots(&self, base: &[usize]) -> Vec<Transform3D> {
-        let types: Vec<ManaType> = base.iter().map(|&i| self.cards[i].bind().produced_mana()).collect();
-        let columns: Vec<ManaType> = ManaType::ALL.into_iter().filter(|t| types.contains(t)).collect();
-        let step_x = CARD_WIDTH + 0.12;
-        let cascade = 0.2;
-        let width = (columns.len().max(1) - 1) as f32 * step_x;
-        let mut in_column = [0usize; 6];
-        types
+        let keys: Vec<(usize, String)> = base
             .iter()
+            .map(|&i| {
+                let c = self.cards[i].bind();
+                (c.produced_mana().index(), c.card_name().to_string())
+            })
+            .collect();
+        let mut groups: Vec<(usize, String)> = Vec::new();
+        for k in &keys {
+            if !groups.contains(k) {
+                groups.push(k.clone());
+            }
+        }
+        groups.sort();
+        let sizes: Vec<usize> = groups.iter().map(|g| keys.iter().filter(|k| *k == g).count()).collect();
+        let avail = self.size.x - 0.1;
+        // Breite in Kartenbreiten bei Maßstab 1
+        let units: f32 = sizes.iter().map(|n| 1.0 + (*n as f32 - 1.0) * LAND_STACK_STEP).sum::<f32>()
+            + (groups.len().max(1) - 1) as f32 * LAND_GROUP_GAP;
+        let s = (avail / (units * CARD_WIDTH)).clamp(self.card_scale * MIN_SHRINK, self.card_scale);
+        let squeeze = (avail / (units * CARD_WIDTH * s)).min(1.0);
+        let w = CARD_WIDTH * s;
+        let mut starts = Vec::new();
+        let mut x = -self.size.x * 0.5 + 0.05 + w * 0.5;
+        for n in &sizes {
+            starts.push(x);
+            x += (w + (*n as f32 - 1.0) * LAND_STACK_STEP * w + LAND_GROUP_GAP * w) * squeeze;
+        }
+        let mut in_group = vec![0usize; groups.len()];
+        keys.iter()
             .enumerate()
-            .map(|(i, t)| {
-                let col = columns.iter().position(|c| c == t).unwrap_or(0);
-                let row = in_column[t.index()];
-                in_column[t.index()] += 1;
-                let x = -width * 0.5 + col as f32 * step_x;
-                let z = -self.size.z * 0.5 + CARD_HEIGHT * 0.5 + row as f32 * cascade;
+            .map(|(i, k)| {
+                let g = groups.iter().position(|x| x == k).unwrap_or(0);
+                let row = in_group[g];
+                in_group[g] += 1;
+                let x = starts[g] + row as f32 * LAND_STACK_STEP * w * squeeze;
                 let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
-                Transform3D::new(Basis::IDENTITY, Vector3::new(x, y, z))
+                Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, 0.0))
             })
             .collect()
     }

@@ -28,9 +28,8 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(Target) -> String) -> Option<H
         ),
         // Zielwahl: Pfeil auf dem Tisch zeichnen (ForgeTable), kein Fenster
         Decision::ChooseTargets { .. } => return None,
-        Decision::ChooseX { max, .. } => {
-            (tr!("Wert für X wählen", "Choose a value for X").into(), ChoiceMode::Number { min: 0, max: *max as i64 }, vec![])
-        }
+        // X wählen: 3D-Knöpfe am Stack (ForgeTable::show_choose_x)
+        Decision::ChooseX { .. } => return None,
         Decision::ChooseColor { options, .. } => (
             tr!("Farbe wählen", "Choose a color").into(),
             ChoiceMode::Single,

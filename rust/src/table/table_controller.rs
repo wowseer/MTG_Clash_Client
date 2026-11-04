@@ -148,7 +148,7 @@ impl INode3D for TableController {
             }
         }
         // Schieberegler ziehen: Mausstrahl mit der Ebene des Reglers schneiden
-        if let Some(mut slider) = self.slider_drag.clone().filter(|s| s.is_instance_valid()) {
+        if let Some(mut slider) = self.slider_drag.as_ref().filter(|s| s.is_instance_valid()).cloned() {
             let xf = slider.get_global_transform();
             let n = xf.basis.col_c().normalized();
             let denom = dir.dot(n);
@@ -253,7 +253,7 @@ impl TableController {
     /// Karte, von der gerade ein Pfeil gezogen wird (null = keine).
     #[func]
     pub fn get_aiming_card(&self) -> Option<Gd<Card3D>> {
-        self.aim.clone().filter(|c| c.is_instance_valid())
+        self.aim.as_ref().filter(|c| c.is_instance_valid()).cloned()
     }
 
     /// Mauspunkt auf der Tischebene (Welt), jedes Physik-Frame aktualisiert – Endpunkt gezogener
@@ -373,12 +373,12 @@ impl TableController {
     /// Drücken auf eine Karte: merken. Ob es ein Klick oder ein Ziehen wird, entscheidet die
     /// Mausbewegung (siehe `physics_process`).
     fn on_left_pressed(&mut self) {
-        if let Some(mut slider) = self.hovered_slider.clone().filter(|s| s.is_instance_valid()) {
+        if let Some(mut slider) = self.hovered_slider.as_ref().filter(|s| s.is_instance_valid()).cloned() {
             slider.bind_mut().set_dragging(true);
             self.slider_drag = Some(slider);
             return;
         }
-        if let Some(control) = self.hovered_control.clone().filter(|c| c.is_instance_valid()) {
+        if let Some(control) = self.hovered_control.as_ref().filter(|c| c.is_instance_valid()).cloned() {
             self.control_press = Some(control);
             return;
         }
@@ -475,7 +475,7 @@ impl TableController {
         }
         if let Some(card) = self.aim.take() {
             if card.is_instance_valid() {
-                let target = self.hovered.clone().filter(|h| h.is_instance_valid() && *h != card);
+                let target = self.hovered.as_ref().filter(|h| h.is_instance_valid() && **h != card).cloned();
                 self.signals().aim_released().emit(&card, target.as_ref());
             }
             return;

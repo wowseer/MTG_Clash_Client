@@ -247,7 +247,7 @@ final class Decisions {
         } else if (e instanceof Card c) {
             t.addProperty("card", c.getId());
         } else if (e instanceof Player p) {
-            t.addProperty("player", game.getPlayers().indexOf(p));
+            t.addProperty("player", StateJson.indexOf(game, p));
         }
         return t;
     }

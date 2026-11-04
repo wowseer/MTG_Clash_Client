@@ -424,7 +424,8 @@ impl ManaFx {
         if self.target.is_none() && f >= T_LAUNCH - 1.0 {
             self.target = self.fallback.take();
         }
-        let target_node = self.target.clone().filter(|t| t.is_instance_valid());
+        // erst prüfen, dann klonen (gelöschte Knoten dürfen nicht angefasst werden)
+        let target_node = self.target.as_ref().filter(|t| t.is_instance_valid()).cloned();
         let card_w = target_node.as_ref().map_or(self.target_point, |t| t.get_global_position());
         // Größe des Einschlags folgt der Zielkarte (z. B. große Karten auf dem Stack)
         let card_scale = target_node.as_ref().map_or(1.0, |t| t.get_global_transform().basis.col_a().length().max(0.3).sqrt());

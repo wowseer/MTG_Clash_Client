@@ -64,9 +64,16 @@ nach Art platziert, jeweils aus Sicht ihrer Seite („oben“ = zur Tischmitte; 
 
 | Bereich | Karten |
 |---|---|
-| unten links | Länder (eigene Länder-Reihe, Spalten nach Manafarbe) |
-| oben Mitte | Kreaturen – eine Reihe, bei vielen Kreaturen weitere Reihen darunter (bei Platzmangel überlappend) |
-| rechts | alles andere (Artefakte, Verzauberungen …) – rechtsbündiges Raster, eine Spalte je 3 Karten, höchstens 4 Spalten |
+| vorn, mittig an der Mittellinie | Kreaturen in einer Reihe; passen sie nicht, werden sie kleiner, dann zweireihig |
+| hinten links (neben dem Medaillon) | Länder (eigene Länder-Reihe): von links nach rechts, gleichnamige Länder überlappend gestapelt, Gruppen nach Manafarbe |
+| hinten rechts (neben dem Medaillon) | alles andere (Planeswalker, Schlachten, Artefakte, Verzauberungen …), bei Platzmangel kleiner, zuletzt überlappend |
+| linker Rand | Exil, Friedhof, Bibliothek (von der Mitte nach unten); Kommandozone rechts |
+
+**Form und Größe** (wie im Video des Users): Karten auf Spielfeld und Länder-Reihe sind **Kacheln**
+(`Zone.tile_cards`, `Card3D.set_tile`): nur Name und Bild, Stärke/Widerstand unten rechts, etwas
+breiter als hoch; beim Hover-Zoom und Ziehen erscheint die ganze Karte. Größe `Zone.card_scale`
+(Spielfeld 2,5, Länder 1,8); ist eine Reihe zu voll, werden die Karten automatisch kleiner
+(bis 45 %), danach rücken sie zusammen.
 
 ### Kulisse und Bildschirm-Anzeige
 
@@ -83,7 +90,7 @@ alles wird prozedural in Rust erzeugt.
 | Rand | flacher Steinrand (nur 0,06 über dem Brett) mit Goldeinlage; in den Ecken eingelassene Leuchtkristalle in Goldfassung – das Brett wirkt wie eine flache Spielmatte |
 | Umgebung | gestufter Sockel, Schieferboden, zwei Feuerschalen, Säulenruinen, runde Arenamauer mit Bannern in Spieler- (`player_color`) und Gegnerfarbe (`opponent_color`) |
 
-Das Brett ist breit angelegt (`board_size` = 19 × 9,6 in der Szene), damit es fast die ganze Bildbreite füllt; die Spielfelder sind 16,4 breit, Deck/Friedhof liegen rechts außen (x = ±8,6), die Länder-Reihen links außen (x = ∓6,6). Der Lichtkegel (`Lantern.spot_angle` 46°) deckt das ganze Brett ab.
+Das Brett ist breit angelegt (`board_size` = 19 × 9,6 in der Szene), damit es fast die ganze Bildbreite füllt; die Spielfelder sind 17 breit und reichen von der Mittellinie bis zum Rand (z 0,15 … 4,85); Bibliothek/Friedhof/Exil liegen links außen (x = −8,9, beim Gegner rechts oben), die Länder-Reihen hinten links (x = −4,8, beim Gegner gespiegelt), der Stack rechts (x = 7,2). Der Lichtkegel (`Lantern.spot_angle` 46°) deckt das ganze Brett ab.
 Einstellbar im Inspector: `board_size`, `texture_resolution` (Pixel pro Einheit der Brett-Textur),
 `rune_glow`, `player_color`, `opponent_color`. Die alte Kulisse `Tavern` existiert weiter: in
 `table.tscn` den Knoten `Arena` durch einen `Tavern`-Knoten ersetzen (dann `Lantern.light_energy`
@@ -154,6 +161,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | Klick auf eine leuchtende Karte auf dem Spielfeld | Fähigkeit aktivieren (z. B. Ausrüsten). Hat die Karte mehrere Fähigkeiten, erscheint die 3D-Bühne **„Wähle eins“** (siehe unten); bei mehreren Manafähigkeiten beim Bezahlen ein Menü |
 | **Wähle eins** (mehrere Spielweisen) | Hat eine Karte mehrere Möglichkeiten, ins Spiel zu kommen bzw. benutzt zu werden (Wirken, Cycling, Abenteuer, andere Seite, alternative Kosten, Fähigkeiten …), erscheint beim Reinziehen bzw. Anklicken eine 3D-Bühne: Tisch abgedunkelt, Titel „Wähle eins“, je Möglichkeit eine Kopie der Karte, blau leuchtend, mit Beschriftung darüber (z. B. „Wirken“, „Cycling {2}“); Hover vergrößert. Klick wählt, der orange Knopf „Abbrechen“ schließt die Bühne (die Karte bleibt auf der Hand) |
 | **Ziel wählen** | Kein Fenster: Sobald eine Karte oder Fähigkeit ein Ziel braucht, hängt an ihr (die Karte liegt dabei schon auf dem Stack in der Tischmitte) ein goldener **Pfeil**, der der Maus folgt. Gültige Ziele leuchten (Karten) bzw. bekommen einen pulsierenden goldenen Ring (Spieler-Medaillons); fährt man darüber, rastet der Pfeil dort ein. **Klick** (oder Pfeil von der Karte ziehen und loslassen) wählt das Ziel – je nach Karte eine Kreatur, einen Spieler oder anderes. Gibt es genau ein mögliches Ziel, wird es ohne Klick genommen. Der Pfeil hat die Farbe der Karte. Bei nur einem Ziel geht es sofort weiter; bei mehreren erneuter Klick = abwählen, dann Phasen-Knopf „Ziele bestätigen (n) »“. Solange zu wenige Ziele gewählt sind, heißt der Knopf „Abbrechen“ und nimmt den Zauber zurück. Was die Karte als Ziel verlangt, steht golden über dem Phasen-Zeitstrahl |
+| **X wählen** (X-Kosten) | Kein Fenster: in der Tischmitte „Wähle einen Wert für X.“, unter der Karte auf dem Stack eine Knopfreihe **−5**, **−**, orange **„Bezahlen X = n“**, **+**, **+5** (Minus erst ab 1 aktiv) und darunter blau „Abbrechen“ (nimmt den Zauber zurück). „Bezahlen“ schickt den Wert an Forge, danach wird wie gewohnt bezahlt (automatisch mit Mana-Effekten bzw. von Hand) |
 | **Mana bezahlen** | **Automatisch:** Zieht man eine Karte auf den Tisch (bzw. aktiviert eine Fähigkeit), während der Manapool leer ist, bezahlt Forge die Kosten sofort selbst – kein Fenster. **Von Hand:** Länder und andere Manaquellen kann man mit Priorität jederzeit vorab anklicken (CR 605.3a; sie leuchten dafür nicht), das Mana schwebt dann im Manapool. Liegt beim Wirken Mana im Pool, erscheint am rechten Rand „Mana bezahlen: {2}{R}“ und man bezahlt selbst: golden umrandetes Pool-Mana anklicken setzt es ein, leuchtende Quellen anklicken tappt sie und setzt das Mana sofort ein (bei mehreren Manafähigkeiten ein Menü). „Automatisch bezahlen“ überlässt den Rest Forge, „Abbrechen“ nimmt das Wirken zurück |
 | **Karten aus der Hand wählen** (abwerfen, auch als Kosten oder wegen Handgröße; nach dem Mulligan unter die Bibliothek; andere Wahl nur aus der Hand) | 3D-Bühne wie beim Mulligan: die wählbaren Handkarten groß nebeneinander vor der Kamera (blau leuchtend); passen sie nicht alle ins Bild, schiebt man sie mit dem **Schieberegler** darunter (`Slider3D`: orangen Griff ziehen oder auf die Schiene klicken) nach links und rechts. Titel z. B. „1 Karte(n) abwerfen“. Klick wählt (orange), erneuter Klick hebt auf; bei nur einer erlaubten Karte tauscht ein Klick die Wahl. Orange „Fertig (n/…)“ erst bei gültiger Anzahl aktiv, blau „Abbrechen“ nur wo Forge das erlaubt. Kein 2D-Fenster |
 | **Kartenfächer** (Karten wählen) | Muss man Karten wählen, die nicht nur auf der eigenen Hand liegen – opfern, Bibliothek durchsuchen, Karten für einen Effekt –, erscheinen sie groß in der Bildmitte (Tisch abgedunkelt, auch Karten aus der Bibliothek). Klick wählt bzw. wählt ab (goldener Rahmen), „Fertig (n/…)“ ist erst bei gültiger Anzahl aktiv. Viele Karten: kleiner und scrollbar |
