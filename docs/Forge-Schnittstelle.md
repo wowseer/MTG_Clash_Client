@@ -147,6 +147,7 @@ damit die UI unverändert mit NeoForge läuft:
 | `Decision::DivideAmount { player, source, amount, targets, min_each }` → `Choice::Damage(mengen)` | Menge beim Wirken auf die gewählten Ziele verteilen (CR 601.2d) |
 | Ziele auf dem Stack in `ChooseTargets` | als `{"card": id}` der Quelle des Zaubers bzw. der Fähigkeit (NeoForges `Target` hat keine Stack-Einträge; nachziehen: `Target::Stack(id)`) |
 | `ChooseOption` für Mana aus dem Pool (`chooseManaFromPool`) | NeoForge: `PayAction::UsePool(Farbe)` nachziehen |
+| `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
 | `ChooseCards` mit `reason: "Reveal"` und `max: 0` | Anzeige aufgedeckter Karten; NeoForge: eigenes `Decision::Reveal { cards }` oder Ereignis nachziehen |
 | `ChooseTargets` auch für Spieler-/Kartenwahl durch Effekte (`chooseSingleEntityForEffect` mit Spielern) | NeoForge hat dafür keine Entscheidung; die UI behandelt sie wie Ziele (Klick auf Medaillon/Karte) |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
@@ -317,7 +318,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
 | `AssignCombatDamage` / `DivideAmount` | Auswahlfenster „Verteilen“: Zahlenfeld je Empfänger, vorbelegt, Summenanzeige, „OK“ nur bei richtiger Summe → `Damage` |
 | `PayUnlessCost` / `PayLifeForPhyrexian` | Ja/Nein-Fenster („Zahlen“ / „Nicht zahlen“, „2 Leben zahlen“ / „Mit Mana zahlen“) |
-| `PayMana` | Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
+| `PayMana` | Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); einsetzbares Pool-Mana golden umrandet, Klick = `Pay(UsePool)`; Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |
@@ -388,6 +389,9 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   ausgelöst (nur Regressionstest mit den Standard-Testdecks).
 - Aufdecken getestet: Forge-KI deckt die gesuchte Karte aus der Bibliothek auf (Kartenfächer ohne
   Auswahl).
+- Pool-Mana per Klick getestet mit Rite of Flame (RR in den Pool) und Lightning Bolt (`UsePool R`).
+- Modi mit Wiederholung (`can_repeat`) getestet mit Fiery Confluence: dreimal derselbe Modus über
+  das HUD (vorher nicht beantwortbar, wenn weniger Modi verfügbar waren als zu wählen sind).
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

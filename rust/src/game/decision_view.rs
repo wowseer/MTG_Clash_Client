@@ -142,7 +142,9 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(Target) -> String) -> Option<H
     // Bei der Zielwahl an den Rand: Ziele werden auch direkt auf dem Tisch angeklickt
     let side = matches!(req.decision, Decision::ChooseTargets { .. });
     let numbered = matches!(req.decision, Decision::OrderTriggers { .. });
-    Some(HudChoice { key: req.id, title, detail, mode, options, cancelable: req.cancelable, side, numbered })
+    // „You may choose the same mode more than once“ (z. B. Confluence-Zauber)
+    let repeat = matches!(req.decision, Decision::ChooseModes { can_repeat: true, .. });
+    Some(HudChoice { key: req.id, title, detail, mode, options, cancelable: req.cancelable, side, numbered, repeat })
 }
 
 /// Eingabe aus dem Auswahlfenster (Index, Indizes, bool, Zahl; nil = Abbrechen) → [`Choice`]

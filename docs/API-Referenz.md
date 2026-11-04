@@ -105,6 +105,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende NeoForge-`Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
+| `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
 | `player_clicked(seat: int)` | `void` | Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt. |
 | `submit_fan(first: PackedInt64Array, second: PackedInt64Array)` | `void` | Antwort aus dem Kartenfächer: `first` = gewählte Karten (`ChooseCards`, `MulliganBottom`) bzw. Karten oben auf der Bibliothek (`Scry`, von oben nach unten), `second` = Karten unter die Bibliothek bzw. in den Friedhof. |
 | `set_choice_selection(selection: PackedInt64Array)` | `void` | Aktuelle Auswahl im Auswahlfenster (vom HUD jedes Frame gemeldet): gewählte Ziele werden auf dem Tisch golden markiert und bekommen einen Pfeil. |
@@ -183,6 +184,7 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | `on_fan_card(index: int)` | `void` | Karte `index` im Kartenfächer angeklickt (wählen bzw. in die andere Reihe legen). |
 | `on_fan_done()` | `void` | „Fertig“ im Kartenfächer: Auswahl bzw. Anordnung an den `ForgeTable`. |
 | `on_fan_cancel()` | `void` | „Abbrechen“ im Kartenfächer. |
+| `on_pool_clicked(mana: int)` | `void` | Mana-Symbol im Manapool angeklickt → an den `ForgeTable` (beim Bezahlen einsetzen). |
 | `on_badge_clicked(seat: int)` | `void` | Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den `ForgeTable` weitergeben. |
 | `on_choice_values_changed(value: float)` | `void` | Ein Zahlenfeld beim Verteilen wurde geändert: Summe und „Fertig“ aktualisieren. |
 | `on_choice_filter_changed(text: String)` | `void` | Suchfeld des Auswahlfensters geändert: Optionen filtern. |
@@ -250,13 +252,19 @@ Manavorrat eines Spielers.
 
 *Erbt von `Control` · Quelle: `rust/src/game/mana_view.rs`*
 
-Manapool als Reihe runder Symbole (HUD). Wird vom `TurnHud` jedes Frame über `set_amounts()` gefüttert; die Breite passt sich der Anzahl der Kreise an.
+Manapool als Reihe runder Symbole (HUD). Wird vom `TurnHud` jedes Frame über `set_amounts()` gefüttert; die Breite passt sich der Anzahl der Kreise an. Beim Bezahlen sind einsetzbare Kreise golden umrandet und anklickbar ([signal mana_clicked]).
 
 ### Funktionen
 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `set_amounts(amounts: PackedInt64Array)` | `void` | Setzt die Mana-Mengen je Art (Reihenfolge Weiß, Blau, Schwarz, Rot, Grün, Farblos). Leeres Array = nichts anzeigen. Zuwachs lässt den Kreis aufspringen. |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `mana_clicked(mana: int)` | Ein anklickbares Mana-Symbol wurde angeklickt (`mana` = Manaart: 0 = Weiß, 1 = Blau, 2 = Schwarz, 3 = Rot, 4 = Grün, 5 = Farblos). |
 
 ## PhaseTimeline
 

@@ -189,8 +189,11 @@ Karte oder Medaillon, siehe oben). Aktivierte Fähigkeiten bleibender Karten (z.
 leuchten, wenn sie möglich sind, und werden per Klick aktiviert.
 
 Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Würfel tauschen,
-Schutzschilde verteilen. Mana aus dem Pool: Gibt es mehrere passende Mana im Pool, fragt das Spiel,
-welches verwendet wird. Fahrzeuge besetzen:
+Schutzschilde verteilen. **Mana aus dem Pool:** Schwebendes Mana (z. B. aus Ritualen) wird nicht
+mehr automatisch ausgegeben: Beim Bezahlen sind passende Symbole der Manapool-Anzeige golden
+umrandet, Klick setzt eines davon ein („Automatisch bezahlen“ nutzt den Pool ebenfalls).
+**Modi mit Wiederholung** („you may choose the same mode more than once“): jeder Klick zählt den
+Modus erneut („2× …“), bei voller Auswahl nimmt ein Klick ihn wieder heraus. Fahrzeuge besetzen:
 Kreaturen auf dem Tisch anklicken, bis die nötige Stärke erreicht ist, dann „Fertig“.
 
 ---

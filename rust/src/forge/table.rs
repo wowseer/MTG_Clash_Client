@@ -311,6 +311,19 @@ impl ForgeTable {
         }
     }
 
+    /// Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 =
+    /// Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst
+    /// nichts.
+    #[func]
+    pub fn pool_clicked(&mut self, mana: i64) {
+        let want = pool_color(mana);
+        let Some(Decision::PayMana { options, .. }) = self.pending.as_ref().map(|r| &r.decision) else { return };
+        if let Some(pay) = options.iter().find(|o| matches!(o, PayAction::UsePool(c) if Some(*c) == want)) {
+            let pay = *pay;
+            self.answer(Choice::Pay(pay));
+        }
+    }
+
     /// Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges
     /// Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt.
     #[func]
@@ -550,6 +563,7 @@ impl ForgeTable {
             cancelable: true,
             side: false,
             numbered: false,
+            repeat: false,
         });
         let combat_choice = self
             .pending
@@ -622,6 +636,14 @@ impl ForgeTable {
             stack_busy: !self.stack_items().is_empty(),
             stack: self.hud_stack(),
             log: self.log.iter().skip(self.log.len().saturating_sub(LOG_SHOWN)).cloned().collect(),
+            pool_clickable: (0..6)
+                .map(|m| match self.pending.as_ref().map(|r| &r.decision) {
+                    Some(Decision::PayMana { options, .. }) => {
+                        options.iter().any(|o| matches!(o, PayAction::UsePool(c) if Some(*c) == pool_color(m)))
+                    }
+                    _ => false,
+                })
+                .collect(),
             player_pool: player(0)
                 .and_then(|p| get_array(&p, "mana_pool"))
                 .map(|a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).collect())
@@ -933,8 +955,8 @@ impl ForgeTable {
                     key: req.id,
                     title: trf!("Mana bezahlen: {remaining}", "Pay mana: {remaining}"),
                     detail: tr!(
-                        "Klick auf ein leuchtendes Land bzw. eine Manaquelle = Mana erzeugen und einsetzen.",
-                        "Click a glowing land or mana source to tap it for mana."
+                        "Klick auf ein leuchtendes Land bzw. eine Manaquelle = Mana erzeugen und einsetzen; Klick auf golden umrandetes Mana im Manapool = schwebendes Mana einsetzen.",
+                        "Click a glowing land or mana source to tap it for mana; click gold-ringed mana in your mana pool to spend floating mana."
                     )
                     .into(),
                     mode: ChoiceMode::Done { label: tr!("Automatisch bezahlen", "Auto pay").into() },
@@ -942,6 +964,7 @@ impl ForgeTable {
                     cancelable: true,
                     side: true,
                     numbered: false,
+                    repeat: false,
                 });
             }
             Decision::DeclareBlockers { .. } => {
@@ -964,7 +987,7 @@ impl ForgeTable {
         } else {
             req.prompt.clone()
         };
-        Some(HudChoice { key: req.id, title, detail, mode: ChoiceMode::Done { label }, options: Vec::new(), cancelable: false, side: true, numbered: false })
+        Some(HudChoice { key: req.id, title, detail, mode: ChoiceMode::Done { label }, options: Vec::new(), cancelable: false, side: true, numbered: false, repeat: false })
     }
 
     /// Karten-IDs, die der Kartenfächer für `decision` zeigt (leer = kein Fächer).
@@ -1098,6 +1121,7 @@ impl ForgeTable {
             cancelable: req.cancelable,
             side: true,
             numbered: false,
+            repeat: false,
         })
     }
 
@@ -1570,6 +1594,21 @@ fn card_badges(data: &VarDictionary, ring_bearers: &[i64]) -> String {
         lines.push(rest);
     }
     lines.join("\n")
+}
+
+/// Manaart der Manapool-Anzeige (0 = Weiß … 4 = Grün, 5 = Farblos) → Farbe für
+/// `PayAction::UsePool` (`Some(None)` = farblos, `None` = ungültig).
+fn pool_color(mana: i64) -> Option<Option<crate::rules::Color>> {
+    use crate::rules::Color;
+    Some(match mana {
+        0 => Some(Color::White),
+        1 => Some(Color::Blue),
+        2 => Some(Color::Black),
+        3 => Some(Color::Red),
+        4 => Some(Color::Green),
+        5 => None,
+        _ => return None,
+    })
 }
 
 /// Schlüssel einer verdeckten Gegner-Handkarte (nicht: Fähigkeit auf dem Stack)?

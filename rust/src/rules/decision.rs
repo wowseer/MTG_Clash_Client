@@ -56,6 +56,9 @@ pub enum Action {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PayAction {
     ActivateMana(CardId, usize),
+    /// Erweiterung gegenüber NeoForge: schwebendes Mana einer Farbe aus dem Manapool einsetzen
+    /// (`None` = farblos).
+    UsePool(Option<Color>),
     AutoPay,
     Cancel,
 }
@@ -377,6 +380,7 @@ impl PayAction {
         let o = Obj(&d);
         Some(match o.str("type").as_str() {
             "ActivateMana" => PayAction::ActivateMana(o.u32("card"), o.int("index").max(0) as usize),
+            "UsePool" => PayAction::UsePool(Color::from_letter(&o.str("color"))),
             "AutoPay" => PayAction::AutoPay,
             "Cancel" => PayAction::Cancel,
             _ => return None,
@@ -390,6 +394,10 @@ impl PayAction {
                 d.set("type", "ActivateMana");
                 d.set("card", c as i64);
                 d.set("index", i as i64);
+            }
+            PayAction::UsePool(c) => {
+                d.set("type", "UsePool");
+                d.set("color", c.map_or("C", Color::letter));
             }
             PayAction::AutoPay => d.set("type", "AutoPay"),
             PayAction::Cancel => d.set("type", "Cancel"),

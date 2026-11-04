@@ -402,11 +402,12 @@ final class Decisions {
     }
 
     /**
-     * {@code PayMana}: {@code refs} = (Karten-ID, Index der Manafähigkeit) je Quelle. Gibt den Index
-     * der gewählten Quelle als Text zurück, "AutoPay", "Cancel" oder null (unlesbar).
+     * {@code PayMana}: {@code refs} = (Karten-ID, Index der Manafähigkeit) je Quelle,
+     * {@code poolColors} = Farben im Pool, die einen Teil bezahlen können ({@code UsePool}). Gibt den
+     * Index der gewählten Quelle als Text zurück, "Pool:&lt;Farbe&gt;", "AutoPay", "Cancel" oder null.
      */
     static String payMana(Game game, int seat, SpellAbility sa, String remaining, List<int[]> refs,
-            List<String> labels) {
+            List<String> labels, List<Byte> poolColors) {
         JsonObject d = decision("PayMana", seat);
         d.addProperty("remaining", remaining);
         JsonArray opts = new JsonArray();
@@ -417,6 +418,12 @@ final class Decisions {
             o.addProperty("index", r[1]);
             opts.add(o);
         }
+        for (byte color : poolColors) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "UsePool");
+            o.addProperty("color", forge.card.MagicColor.toShortString(color));
+            opts.add(o);
+        }
         JsonObject auto = new JsonObject();
         auto.addProperty("type", "AutoPay");
         opts.add(auto);
@@ -425,6 +432,7 @@ final class Decisions {
         opts.add(cancel);
         d.add("options", opts);
         List<String> all = new ArrayList<>(labels);
+        poolColors.forEach(c -> all.add("Mana aus dem Pool: " + forge.card.MagicColor.toShortString(c)));
         all.add("Automatisch bezahlen");
         all.add("Abbrechen");
         JsonElement raw = askRaw(game, seat, d, "Mana bezahlen: " + remaining, sa, null, true, all, null);
@@ -444,6 +452,15 @@ final class Decisions {
                 return "AutoPay";
             case "Cancel":
                 return "Cancel";
+            case "UsePool": {
+                String letter = pay.has("color") ? pay.get("color").getAsString() : "";
+                for (byte pc : poolColors) {
+                    if (forge.card.MagicColor.toShortString(pc).equals(letter)) {
+                        return "Pool:" + pc;
+                    }
+                }
+                return null;
+            }
             default:
                 int i = indexOfTarget(opts, pay);
                 return i >= 0 && i < refs.size() ? String.valueOf(i) : null;

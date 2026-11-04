@@ -3,7 +3,8 @@
 //! Vier Modi ([`ChoiceMode`]):
 //! - **Eine Option**: je Option ein Knopf, Klick = Antwort (Index).
 //! - **Mehrere Optionen**: Knöpfe zum An-/Abwählen, „Fertig (n)“ wird aktiv, sobald die Anzahl
-//!   zwischen Minimum und Maximum liegt (Antwort: Liste von Indizes).
+//!   zwischen Minimum und Maximum liegt (Antwort: Liste von Indizes). Mit Wiederholung
+//!   ([`HudChoice::repeat`]) zählt jeder Klick die Option erneut („2× …“).
 //! - **Ja/Nein**: zwei Knöpfe mit eigenen Beschriftungen (Antwort: true / false).
 //! - **Zahl**: Zahlenfeld mit Minimum/Maximum und „OK“ (Antwort: Zahl).
 //!
@@ -65,6 +66,9 @@ pub struct HudChoice {
     pub side: bool,
     /// Mehrfachauswahl als Reihenfolge: gewählte Optionen zeigen ihre Position („1.“, „2.“ …).
     pub numbered: bool,
+    /// Mehrfachauswahl mit Wiederholung: jeder Klick fügt die Option einmal hinzu (Knopf zeigt
+    /// „2× …“); bei voller Auswahl nimmt ein Klick die Option ganz heraus.
+    pub repeat: bool,
 }
 
 /// Ab so vielen Optionen werden die Knöpfe zweispaltig angeordnet.
@@ -181,6 +185,15 @@ impl ChoicePanel {
         match choice.mode {
             ChoiceMode::Single => Some((index as i64).to_variant()),
             ChoiceMode::Confirm => Some((index == 0).to_variant()),
+            ChoiceMode::Multi { max, .. } if choice.repeat => {
+                if self.selected.len() < max {
+                    self.selected.push(index);
+                } else {
+                    self.selected.retain(|i| *i != index);
+                }
+                self.refresh_multi();
+                None
+            }
             ChoiceMode::Multi { max, .. } => {
                 if let Some(pos) = self.selected.iter().position(|i| *i == index) {
                     self.selected.remove(pos);
@@ -434,10 +447,15 @@ impl ChoicePanel {
     fn refresh_multi(&mut self) {
         let Some(ChoiceMode::Multi { min, max }) = self.current.as_ref().map(|c| c.mode.clone()) else { return };
         let numbered = self.current.as_ref().is_some_and(|c| c.numbered);
+        let repeat = self.current.as_ref().is_some_and(|c| c.repeat);
         let texts: Vec<String> = self.current.as_ref().map(|c| c.options.iter().map(|o| o.text.clone()).collect()).unwrap_or_default();
         for (i, b) in self.option_buttons.iter_mut() {
             let on = self.selected.contains(i);
-            if numbered {
+            if repeat {
+                let text = texts.get(*i).cloned().unwrap_or_default();
+                let count = self.selected.iter().filter(|s| *s == i).count();
+                b.set_text(&if count > 0 { format!("{count}× {text}") } else { text });
+            } else if numbered {
                 let text = texts.get(*i).cloned().unwrap_or_default();
                 match self.selected.iter().position(|s| s == i) {
                     Some(p) => b.set_text(&format!("{}. {text}", p + 1)),

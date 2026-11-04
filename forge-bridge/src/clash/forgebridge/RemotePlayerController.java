@@ -291,10 +291,10 @@ public class RemotePlayerController extends PlayerControllerAi {
     }
 
     /**
-     * {@code Decision::PayMana}: bezahlt {@code toPay} interaktiv. Schwebendes Mana im Pool wird
-     * zuerst verwendet; danach wählt der Spieler eine Manaquelle ({@code ActivateMana}), lässt
-     * Forge automatisch bezahlen ({@code AutoPay}) oder bricht ab ({@code Cancel} → Wirken wird
-     * zurückgenommen).
+     * {@code Decision::PayMana}: bezahlt {@code toPay} interaktiv. Der Spieler wählt eine
+     * Manaquelle ({@code ActivateMana}), schwebendes Mana einer Farbe aus dem Pool ({@code UsePool},
+     * Erweiterung), lässt Forge automatisch bezahlen ({@code AutoPay}) oder bricht ab
+     * ({@code Cancel} → Wirken wird zurückgenommen).
      */
     @Override
     public boolean applyManaToCost(ManaCostBeingPaid toPay, SpellAbility sa, String prompt,
@@ -309,11 +309,15 @@ public class RemotePlayerController extends PlayerControllerAi {
             me.payLife(2, sa, false);
         }
         while (true) {
-            if (!me.getManaPool().isEmpty()) {
-                me.getManaPool().payManaCostFromPool(toPay, sa, false, new ArrayList<>());
-            }
             if (toPay.isPaid()) {
                 return true;
+            }
+            // Pool-Mana, das einen Teil der Kosten bezahlen kann (je Farbe eine Option)
+            List<Byte> poolColors = new ArrayList<>();
+            for (byte color : forge.card.MagicColor.WUBRGC) {
+                if (me.getManaPool().getAmountOfColor(color) > 0 && toPay.isAnyPartPayableWith(color, me.getManaPool())) {
+                    poolColors.add(color);
+                }
             }
             List<SpellAbility> sources = new ArrayList<>();
             List<int[]> refs = new ArrayList<>();
@@ -330,9 +334,15 @@ public class RemotePlayerController extends PlayerControllerAi {
                     }
                 }
             }
-            String pick = Decisions.payMana(getGame(), seat, sa, toPay.toString(), refs, labels);
+            String pick = Decisions.payMana(getGame(), seat, sa, toPay.toString(), refs, labels, poolColors);
             if (pick == null || pick.equals("Cancel")) {
                 return false;
+            }
+            if (pick.startsWith("Pool:")) {
+                byte color = Byte.parseByte(pick.substring(5));
+                // nicht verwendbar (z. B. Einschränkung des Manas) → einfach erneut fragen
+                me.getManaPool().tryPayCostWithColor(color, sa, toPay, new ArrayList<>());
+                continue;
             }
             if (pick.equals("AutoPay")) {
                 return ComputerUtilMana.payManaCost(toPay, sa, me, effect);

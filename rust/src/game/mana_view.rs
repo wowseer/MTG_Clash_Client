@@ -4,12 +4,15 @@
 //! Symbol: Grün = Nadelbaum, Blau = Wassertropfen, Schwarz = Totenkopf, Weiß = Sonne,
 //! Rot = Flamme, Farblos = Raute. Ab 2 Mana steht die Anzahl in einer kleinen Plakette unten
 //! rechts. Kommt Mana hinzu (z. B. eine Ressource wird getappt), springt der Kreis kurz auf.
+//! Beim Bezahlen bekommen einsetzbare Kreise einen pulsierenden goldenen Ring; ein Klick darauf
+//! meldet die Manaart (Signal `mana_clicked`).
 //! Alles per `draw()`, ohne Bilddateien.
 
 use std::f32::consts::{PI, TAU};
 
 use godot::classes::control::MouseFilter;
-use godot::classes::{Control, IControl};
+use godot::classes::{Control, IControl, InputEvent, InputEventMouseButton};
+use godot::global::MouseButton;
 use godot::global::HorizontalAlignment;
 use godot::prelude::*;
 
@@ -23,20 +26,25 @@ const RIM: Color = Color::from_rgb(0.9, 0.72, 0.36);
 const POP_TIME: f32 = 0.35;
 
 /// Manapool als Reihe runder Symbole (HUD). Wird vom [TurnHud] jedes Frame über
-/// [method set_amounts] gefüttert; die Breite passt sich der Anzahl der Kreise an.
+/// [method set_amounts] gefüttert; die Breite passt sich der Anzahl der Kreise an. Beim Bezahlen
+/// sind einsetzbare Kreise golden umrandet und anklickbar ([signal mana_clicked]).
 #[derive(GodotClass)]
 #[class(base=Control)]
 pub struct ManaPoolView {
     amounts: [u32; 6],
     /// Zeit seit dem letzten Zuwachs je Manaart (für das Aufspringen).
     pop: [f32; 6],
+    /// Je Manaart: anklickbar (beim Bezahlen einsetzbar).
+    clickable: [bool; 6],
+    /// Laufzeit für das Pulsieren der anklickbaren Kreise.
+    time: f32,
     base: Base<Control>,
 }
 
 #[godot_api]
 impl IControl for ManaPoolView {
     fn init(base: Base<Control>) -> Self {
-        Self { amounts: [0; 6], pop: [POP_TIME; 6], base }
+        Self { amounts: [0; 6], pop: [POP_TIME; 6], clickable: [false; 6], time: 0.0, base }
     }
 
     fn ready(&mut self) {
@@ -51,19 +59,43 @@ impl IControl for ManaPoolView {
                 animating = true;
             }
         }
+        if self.clickable.iter().any(|c| *c) {
+            self.time += delta as f32;
+            animating = true;
+        }
         if animating {
             self.base_mut().queue_redraw();
         }
     }
 
+    fn gui_input(&mut self, event: Gd<InputEvent>) {
+        let Ok(click) = event.try_cast::<InputEventMouseButton>() else { return };
+        if !click.is_pressed() || click.get_button_index() != MouseButton::LEFT {
+            return;
+        }
+        let pos = click.get_position();
+        for (k, t) in self.shown().into_iter().enumerate() {
+            if self.clickable[t.index()] && pos.distance_to(Self::center(k)) <= RADIUS + 3.0 {
+                self.base_mut().accept_event();
+                self.signals().mana_clicked().emit(t.index() as i64);
+                return;
+            }
+        }
+    }
+
     fn draw(&mut self) {
-        let shown: Vec<ManaType> = ManaType::ALL.into_iter().filter(|t| self.amounts[t.index()] > 0).collect();
-        for (k, t) in shown.into_iter().enumerate() {
-            let c = Vector2::new(RADIUS + 2.0 + k as f32 * (2.0 * RADIUS + GAP), RADIUS + 2.0);
+        for (k, t) in self.shown().into_iter().enumerate() {
+            let c = Self::center(k);
             // Aufspringen: kurz größer, dann zurück (leichtes Überschwingen)
             let f = self.pop[t.index()] / POP_TIME;
             let scale = if f < 1.0 { 0.55 + 0.45 * f + 0.25 * (f * PI).sin() } else { 1.0 };
             self.draw_mana(t, c, RADIUS * scale);
+            if self.clickable[t.index()] {
+                // Einsetzbar: pulsierender goldener Ring
+                let a = 0.55 + 0.45 * (self.time * 4.0).sin().abs();
+                let gold = Color::from_rgba(1.0, 0.85, 0.35, a);
+                self.base_mut().draw_arc_ex(c, RADIUS + 3.5, 0.0, TAU, 40, gold).width(3.0).antialiased(true).done();
+            }
             let n = self.amounts[t.index()];
             if n > 1 {
                 self.draw_count(c + Vector2::new(RADIUS * 0.72, RADIUS * 0.72), n);
@@ -74,6 +106,11 @@ impl IControl for ManaPoolView {
 
 #[godot_api]
 impl ManaPoolView {
+    /// Ein anklickbares Mana-Symbol wurde angeklickt (`mana` = Manaart: 0 = Weiß, 1 = Blau,
+    /// 2 = Schwarz, 3 = Rot, 4 = Grün, 5 = Farblos).
+    #[signal]
+    fn mana_clicked(mana: i64);
+
     /// Setzt die Mana-Mengen je Art (Reihenfolge Weiß, Blau, Schwarz, Rot, Grün, Farblos).
     /// Leeres Array = nichts anzeigen. Zuwachs lässt den Kreis aufspringen.
     #[func]
@@ -99,6 +136,38 @@ impl ManaPoolView {
 }
 
 impl ManaPoolView {
+    /// Setzt, welche Manaarten anklickbar sind (Reihenfolge wie [`ManaType::ALL`]); mit
+    /// anklickbaren Kreisen fängt die Anzeige Mausklicks ab, sonst lässt sie sie durch.
+    pub fn set_clickable(&mut self, clickable: &[bool]) {
+        let mut next = [false; 6];
+        for (i, c) in clickable.iter().take(6).enumerate() {
+            next[i] = *c;
+        }
+        if next == self.clickable {
+            return;
+        }
+        self.clickable = next;
+        let any = next.iter().any(|c| *c);
+        let mut b = self.base_mut();
+        b.set_mouse_filter(if any { MouseFilter::STOP } else { MouseFilter::IGNORE });
+        b.set_default_cursor_shape(if any {
+            godot::classes::control::CursorShape::POINTING_HAND
+        } else {
+            godot::classes::control::CursorShape::ARROW
+        });
+        b.queue_redraw();
+    }
+
+    /// Manaarten mit Mana im Pool, in Anzeigereihenfolge.
+    fn shown(&self) -> Vec<ManaType> {
+        ManaType::ALL.into_iter().filter(|t| self.amounts[t.index()] > 0).collect()
+    }
+
+    /// Mitte des `k`-ten Kreises.
+    fn center(k: usize) -> Vector2 {
+        Vector2::new(RADIUS + 2.0 + k as f32 * (2.0 * RADIUS + GAP), RADIUS + 2.0)
+    }
+
     /// Kreis in der Manafarbe mit goldenem Rand und Symbol.
     fn draw_mana(&mut self, t: ManaType, c: Vector2, r: f32) {
         let fill = t.color().lerp(Color::WHITE, 0.15);

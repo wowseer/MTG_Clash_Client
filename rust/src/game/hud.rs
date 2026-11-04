@@ -216,6 +216,14 @@ impl TurnHud {
         self.submit(Variant::nil());
     }
 
+    /// Mana-Symbol im Manapool angeklickt → an den [ForgeTable] (beim Bezahlen einsetzen).
+    #[func]
+    fn on_pool_clicked(&mut self, mana: i64) {
+        if let Some(mut ft) = self.forge_table.clone() {
+            ft.bind_mut().pool_clicked(mana);
+        }
+    }
+
     /// Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den [ForgeTable] weitergeben.
     #[func]
     fn on_badge_clicked(&mut self, seat: i64) {
@@ -301,6 +309,8 @@ impl TurnHud {
         // Manapool des Spielers: runde Symbole rechts neben dem Medaillon (erbt die Maske)
         let mut mana = ManaPoolView::new_alloc();
         mana.set_use_parent_material(true);
+        let cb = Callable::from_object_method(&self.to_gd(), "on_pool_clicked");
+        mana.connect_flags("mana_clicked", &cb, ConnectFlags::DEFERRED);
         me_mask.clone().add_child(&mana);
         self.player_mana = Some(mana);
 
@@ -440,6 +450,7 @@ impl TurnHud {
 
         if let Some(m) = self.player_mana.as_mut() {
             m.bind_mut().set_amounts(view.player_pool.clone());
+            m.bind_mut().set_clickable(&view.pool_clickable);
         }
         for (seat, badge) in [(1, self.opponent_badge.as_mut()), (0, self.player_badge.as_mut())] {
             if let Some(b) = badge {
@@ -549,6 +560,8 @@ pub struct HudView {
     pub log: Vec<HudLogLine>,
     /// Manapool des Spielers (je [ManaType] eine Menge; leer = keine Anzeige).
     pub player_pool: PackedInt64Array,
+    /// Je Manaart: beim Bezahlen anklickbar (schwebendes Mana einsetzen).
+    pub pool_clickable: Vec<bool>,
     pub choice: Option<HudChoice>,
     /// Ist Sitzplatz 0 / 1 gerade ein gültiges Ziel (Medaillon anklickbar)?
     pub targetable_seats: [bool; 2],
