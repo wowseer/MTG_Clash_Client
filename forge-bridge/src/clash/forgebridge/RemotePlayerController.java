@@ -23,6 +23,7 @@ import forge.ai.PlayerControllerAi;
 import forge.game.Game;
 import forge.game.GameEntity;
 import forge.game.spellability.TargetChoices;
+import forge.game.card.CardLists;
 import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.GameObject;
 import forge.game.card.Card;
@@ -573,6 +574,157 @@ public class RemotePlayerController extends PlayerControllerAi {
             }
         }
         return out;
+    }
+
+    /**
+     * Spielen durch einen Effekt (Kaskade, „you may cast“, Wunder …): über Forges menschlichen
+     * Ablauf, Ziele, Modi und Kosten wählt also der Spieler (ob er spielen will, fragt der Effekt
+     * vorher über {@code confirmAction}).
+     */
+    @Override
+    public boolean playSaFromPlayEffect(SpellAbility tgtSA) {
+        return human(() -> PlaySpellAbility.playSpellAbility(this, getPlayer(), tgtSA));
+    }
+
+    /**
+     * Kosten für Angriff oder Block (z. B. Propaganda, CR 508.1h): zahlen? → {@code Confirm}, dann
+     * bezahlen wie beim Wirken.
+     */
+    @Override
+    public boolean payCombatCost(Card c, Cost cost, SpellAbility sa, String prompt) {
+        if (!ComputerUtilCost.canPayCost(cost, sa, getPlayer(), true)) {
+            return false;
+        }
+        String text = (prompt == null || prompt.isBlank() ? "Kosten zahlen" : prompt) + ": " + cost.toSimpleString()
+                + " für " + c.getName() + "?";
+        Boolean pay = Decisions.confirm(getGame(), seat, text, sa, c);
+        if (pay == null) {
+            return super.payCombatCost(c, cost, sa, prompt);
+        }
+        return pay && human(() -> PlaySpellAbility.payCostDuringAbilityResolve(this, getPlayer(), cost, sa, null));
+    }
+
+    /** Einen Teil der Kosten wirklich zahlen? ({@code Confirm}, z. B. Leben oder Marken als Kosten). */
+    @Override
+    public boolean confirmPayment(forge.game.cost.CostPart costPart, String prompt, SpellAbility sa) {
+        Boolean yes = Decisions.confirm(getGame(), seat, prompt == null || prompt.isBlank()
+                ? "Kosten zahlen: " + costPart.toString() + "?" : prompt, sa, sa == null ? null : sa.getHostCard());
+        return yes != null ? yes : super.confirmPayment(costPart, prompt, sa);
+    }
+
+    /**
+     * Zwei Stapel (Fact or Fiction u. a.): welchen Stapel nimmt der Spieler? ({@code ChooseOption},
+     * verdeckte Stapel nur mit Anzahl). true = Stapel 1.
+     */
+    @Override
+    public boolean chooseCardsPile(SpellAbility sa, CardCollectionView pile1, CardCollectionView pile2, String faceUp) {
+        boolean open1 = !"False".equals(faceUp);
+        boolean open2 = "True".equals(faceUp);
+        List<Decisions.Opt> opts = new ArrayList<>();
+        opts.add(new Decisions.Opt("Stapel 1: " + pileText(pile1, open1), null));
+        opts.add(new Decisions.Opt("Stapel 2: " + pileText(pile2, open2), null));
+        Integer i = Decisions.option(getGame(), seat, "Stapel wählen", sa, null, opts, false);
+        return i != null ? i == 0 : super.chooseCardsPile(sa, pile1, pile2, faceUp);
+    }
+
+    private static String pileText(CardCollectionView pile, boolean open) {
+        if (pile.isEmpty()) {
+            return "leer";
+        }
+        if (!open) {
+            return pile.size() + " verdeckte Karte(n)";
+        }
+        List<String> names = new ArrayList<>();
+        pile.forEach(c -> names.add(c.getName()));
+        return String.join(", ", names);
+    }
+
+    /** Reihenfolge, in der mehrere Kosten bezahlt werden ({@code OrderTriggers}). */
+    @Override
+    public List<forge.game.cost.CostPart> orderCosts(List<forge.game.cost.CostPart> costs) {
+        if (costs.size() <= 1) {
+            return costs;
+        }
+        List<String> names = new ArrayList<>();
+        costs.forEach(c -> names.add(c.toString()));
+        List<Integer> order = Decisions.order(getGame(), seat, names, "Reihenfolge der Kosten (erste zuerst)", null);
+        if (order == null) {
+            return super.orderCosts(costs);
+        }
+        List<forge.game.cost.CostPart> result = new ArrayList<>();
+        order.forEach(i -> result.add(costs.get(i)));
+        return result;
+    }
+
+    /**
+     * Karten für eine Kosten-Teilzahlung während des Auflösens (z. B. „… es sei denn, du wirfst
+     * eine Karte ab“): {@code ChooseCards} mit dem passenden Grund.
+     */
+    @Override
+    public CardCollectionView chooseCardsForCost(CardCollectionView optionList, SpellAbility sa,
+            forge.game.cost.CostPartWithList cpl, int amount, boolean isOptional, String prompt) {
+        String reason = switch (cpl.getClass().getSimpleName()) {
+            case "CostDiscard" -> "DiscardCost";
+            case "CostSacrifice" -> "SacrificeCost";
+            case "CostExile" -> "ExileCost";
+            case "CostTapType" -> "TapCost";
+            case "CostReturn" -> "ReturnCost";
+            default -> "Choose";
+        };
+        CardCollection r = pickCards(reason, optionList, isOptional ? 0 : amount, amount,
+                prompt == null || prompt.isBlank() ? "Kosten: " + cpl.toString() : prompt, sa, isOptional);
+        return r != null ? r : super.chooseCardsForCost(optionList, sa, cpl, amount, isOptional, prompt);
+    }
+
+    /**
+     * „Wirf n Karten ab, es sei denn, du wirfst eine Karte vom Typ … ab“: entweder genau eine Karte
+     * des Typs oder n Karten ({@code ChooseCards}, Grund {@code Discard}).
+     */
+    @Override
+    public CardCollectionView chooseCardsToDiscardUnlessType(int num, CardCollectionView hand, String[] uTypes,
+            SpellAbility sa) {
+        int n = Math.min(num, hand.size());
+        CardCollection r = pickCards("Discard", hand, 1, n, n + " Karte(n) abwerfen – oder eine Karte vom Typ "
+                + String.join("/", uTypes), sa, false);
+        if (r != null) {
+            boolean oneOfType = r.size() == 1
+                    && !CardLists.getValidCards(r, uTypes, getPlayer(), sa == null ? null : sa.getHostCard(), sa).isEmpty();
+            if (r.size() == n || oneOfType) {
+                return r;
+            }
+        }
+        return super.chooseCardsToDiscardUnlessType(num, hand, uTypes, sa);
+    }
+
+    /** Fähigkeiten aus der Starthand (Leylines, Chancellor …): welche nutzen? ({@code ChooseOptions}). */
+    @Override
+    public List<SpellAbility> chooseSaToActivateFromOpeningHand(List<SpellAbility> usableFromOpeningHand) {
+        if (usableFromOpeningHand.isEmpty()) {
+            return usableFromOpeningHand;
+        }
+        List<Decisions.Opt> opts = new ArrayList<>();
+        usableFromOpeningHand.forEach(sa -> opts.add(new Decisions.Opt(spellLabel(sa), null)));
+        List<Integer> chosen = Decisions.options(getGame(), seat, "Fähigkeiten aus der Starthand nutzen", null, null,
+                opts, 0, opts.size(), false);
+        if (chosen == null) {
+            return super.chooseSaToActivateFromOpeningHand(usableFromOpeningHand);
+        }
+        List<SpellAbility> result = new ArrayList<>();
+        chosen.forEach(i -> result.add(usableFromOpeningHand.get(i)));
+        return result;
+    }
+
+    /** Welche Fähigkeit einer Karte gespielt wird, wenn ein Effekt das offenlässt ({@code ChooseOption}). */
+    @Override
+    public SpellAbility getAbilityToPlay(Card hostCard, List<SpellAbility> abilities, forge.util.ITriggerEvent triggerEvent) {
+        if (abilities.size() <= 1) {
+            return abilities.isEmpty() ? null : abilities.get(0);
+        }
+        List<Decisions.Opt> opts = new ArrayList<>();
+        abilities.forEach(sa -> opts.add(new Decisions.Opt(sa.toUnsuppressedString(), null)));
+        Integer i = Decisions.option(getGame(), seat, "Fähigkeit von " + hostCard.getName() + " wählen", null,
+                hostCard, opts, true);
+        return i != null ? abilities.get(i) : null;
     }
 
     /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */

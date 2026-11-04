@@ -72,6 +72,15 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `exertAttackers`, `enlistAttackers` (CR 701.43, 702.154) | `ChooseCards { reason: "Choose", options: Angreifer, min: 0 }` (Tisch-Modus) | `Cards([…])` |
 | `chooseSingleSpellForEffect` / `chooseSpellAbilitiesForEffect` | `ChooseOption` / `ChooseOptions` mit „Karte: Text“ | `Number` / `Modes` |
 | `orderAndPlaySimultaneousSa` mit Kopien | Kopie auf den Stack wie Forges menschlicher Controller; neue Ziele über `chooseNewTargetsFor` | – |
+| `playSaFromPlayEffect` (Kaskade, „you may cast“, Wunder …) | über Forges menschlichen Ablauf (Ziele, Modi, Kosten fragt der Spieler) | – |
+| `payCombatCost` (Angriffs-/Blockkosten, CR 508.1h) | `Confirm`, dann Bezahlen wie beim Wirken | `Yes`/`No` |
+| `confirmPayment` | `Confirm` | `Yes`/`No` |
+| `chooseCardsPile` (Fact or Fiction u. a.) | `ChooseOption` „Stapel 1: …“ / „Stapel 2: …“ (verdeckte Stapel nur mit Anzahl) | `Number` |
+| `orderCosts` | `OrderTriggers` mit Kostentexten | `Order` |
+| `chooseCardsForCost` (Kosten während des Auflösens) | `ChooseCards` mit Grund nach Kostenart (`DiscardCost`, `SacrificeCost`, `ExileCost`, `TapCost`, `ReturnCost`, sonst `Choose`) | `Cards` |
+| `chooseCardsToDiscardUnlessType` | `ChooseCards { reason: "Discard", min: 1, max: n }`: n Karten oder eine Karte des Typs | `Cards` |
+| `chooseSaToActivateFromOpeningHand` (Leylines …) | `ChooseOptions` (0 bis alle) | `Modes` |
+| `getAbilityToPlay` | `ChooseOption` mit den Fähigkeiten der Karte | `Number` |
 | `chooseCardsToDelve` (CR 702.66) | `ChooseCards { reason: "Delve", options: Friedhof, min: 0, max }` | `Cards([…])` |
 | `chooseCardsForConvokeOrImprovise` (CR 702.51, 702.126, Waterbend) | `ChooseCards { reason: "Convoke" / "Improvise" / "Choose", options: ungetappte Kreaturen/Artefakte, min: 0, max }`; welches Mana jede Karte bezahlt, legt die Brücke fest (farbiges Symbol in einer Farbe der Kreatur, sonst generisch) | `Cards([…])` |
 | `orderBlockers`, `orderBlocker`, `orderAttackers` (Schadens-Reihenfolge, nur mit `order_combatants`) | `OrderTriggers { descriptions }` mit Kartennamen (wie `orderMoveToZoneList`) | `Order([…])` |
@@ -364,6 +373,8 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Kopieren nicht griff); in `ChooseTargets` erscheinen sie als Karte ihrer Quelle. Getestet mit
   Reverberate auf Shock: Kopie, „Neue Ziele wählen?“, neue Zielwahl. Erschöpfen (Ahn-Crop Crasher)
   und Rekrutieren (Yavimaya Steelcrusher) im Tisch-Modus getestet.
+- Kaskade (Bloodbraid Elf → „Do you want to play Shock?“ → Ziel), Fact or Fiction (Stapelwahl) und
+  Leyline of Punishment aus der Starthand getestet.
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.
