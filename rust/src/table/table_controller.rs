@@ -16,7 +16,7 @@
 //! [`ForgeTable`](crate::forge::table::ForgeTable) setzt ihn über Forge um oder legt die Karte zurück.
 
 use godot::classes::{
-    INode3D, InputEvent, InputEventKey, InputEventMouseButton, PhysicsRayQueryParameters3D,
+    Area3D, INode3D, InputEvent, InputEventKey, InputEventMouseButton, PhysicsRayQueryParameters3D,
 };
 use godot::global::{Key, MouseButton};
 use godot::prelude::*;
@@ -25,6 +25,7 @@ use super::card3d::Card3D;
 use super::button3d::Button3D;
 use super::slider3d::Slider3D;
 use super::mana_wheel::ManaWheel;
+use super::exile_portal::ZONE_CLICK_GROUP;
 use super::layers::{CARD_LAYER, CONTROL_LAYER, ZONE_LAYER};
 use super::table_camera::TableCamera;
 use super::zone::Zone;
@@ -85,6 +86,9 @@ pub struct TableController {
     /// Farbrad unter der Maus bzw. gedrückt (Klick beim Loslassen, wenn noch darauf).
     hovered_wheel: Option<Gd<ManaWheel>>,
     wheel_press: Option<Gd<ManaWheel>>,
+    /// Anklickbare Zonen-Fläche (z. B. Exil-Strudel) unter der Maus bzw. gedrückt.
+    hovered_zone_hit: Option<Gd<Area3D>>,
+    zone_hit_press: Option<Gd<Area3D>>,
     /// Zielen: von dieser Karte (nicht verschiebbar, z. B. auf dem Spielfeld) wird ein Pfeil
     /// gezogen. `aim_point` = Mauspunkt auf der Tischebene (immer aktuell).
     aim: Option<Gd<Card3D>>,
@@ -110,6 +114,8 @@ impl INode3D for TableController {
             hovered_slider: None,
             hovered_wheel: None,
             wheel_press: None,
+            hovered_zone_hit: None,
+            zone_hit_press: None,
             slider_drag: None,
             aim: None,
             aim_point: Vector3::ZERO,
@@ -203,6 +209,10 @@ impl TableController {
     /// Wird ausgelöst, wenn eine Karte per Drag-and-Drop in eine Zone gelegt wurde.
     #[signal]
     fn card_dropped(card: Gd<Card3D>, from_zone: Gd<Zone>, to_zone: Gd<Zone>);
+
+    /// Eine anklickbare Zonen-Fläche wurde angeklickt (z. B. der Exil-Strudel): `zone` = die Zone.
+    #[signal]
+    fn zone_clicked(zone: Gd<Zone>);
 
     /// Escape gedrückt: die Kamera geht in die Übersicht; das Spiel bricht ein laufendes Wirken
     /// bzw. Aktivieren ab, wo die Engine das erlaubt.
@@ -353,6 +363,12 @@ impl TableController {
         if let (Some(mut w), Some(h)) = (wheel.clone(), control_hit.as_ref()) {
             w.bind_mut().update_pointer(h.position);
         }
+        // anklickbare Zonen-Fläche (Exil-Strudel)
+        self.hovered_zone_hit = control_hit
+            .as_ref()
+            .and_then(|h| h.collider.clone().try_cast::<Area3D>().ok())
+            .filter(|a| a.is_in_group(ZONE_CLICK_GROUP));
+        let zone_hit = self.hovered_zone_hit.is_some();
         let control = control_hit.and_then(|h| h.collider.try_cast::<Button3D>().ok());
         if control != self.hovered_control {
             if let Some(mut old) = self.hovered_control.take() {
@@ -365,7 +381,7 @@ impl TableController {
             }
             self.hovered_control = control.clone();
         }
-        let hit = if over_gui || control.is_some() || slider.is_some() || wheel.is_some() {
+        let hit = if over_gui || control.is_some() || slider.is_some() || wheel.is_some() || zone_hit {
             None
         } else {
             self.raycast(origin, dir, CARD_LAYER).and_then(|h| {
@@ -415,6 +431,10 @@ impl TableController {
         }
         if let Some(wheel) = self.hovered_wheel.as_ref().filter(|w| w.is_instance_valid()).cloned() {
             self.wheel_press = Some(wheel);
+            return;
+        }
+        if let Some(hit) = self.hovered_zone_hit.as_ref().filter(|h| h.is_instance_valid()).cloned() {
+            self.zone_hit_press = Some(hit);
             return;
         }
         let Some(card) = self.hovered.clone() else {
@@ -505,6 +525,14 @@ impl TableController {
         if let Some(mut wheel) = self.wheel_press.take() {
             if wheel.is_instance_valid() && self.hovered_wheel.as_ref() == Some(&wheel) {
                 wheel.bind_mut().activate();
+            }
+            return;
+        }
+        if let Some(hit) = self.zone_hit_press.take() {
+            if hit.is_instance_valid() && self.hovered_zone_hit.as_ref() == Some(&hit) {
+                if let Some(zone) = hit.get_parent().and_then(|p| p.try_cast::<Zone>().ok()) {
+                    self.signals().zone_clicked().emit(&zone);
+                }
             }
             return;
         }

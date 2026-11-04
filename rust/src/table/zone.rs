@@ -40,6 +40,8 @@ const MIN_SHRINK: f32 = 0.45;
 /// Abstand zwischen den Gruppen.
 const LAND_STACK_STEP: f32 = 0.3;
 const LAND_GROUP_GAP: f32 = 0.12;
+/// Größe verschluckter Karten ([member Zone.swallow_cards]).
+const SWALLOWED_SCALE: f32 = 0.02;
 /// Cover-Flow ([member Zone.coverflow]): ab diesem seitlichen Abstand (Zonen-Einheiten) von der
 /// Mitte sind Karten ganz zur Seite gedreht ([`COVERFLOW_YAW`] Grad) und um die Hälfte von
 /// [`COVERFLOW_ROLL`] im Bogen geneigt; je Einheit Abstand liegen sie [`COVERFLOW_DEPTH`]
@@ -152,6 +154,11 @@ pub struct Zone {
     /// die Kartenansicht eine Kopie.
     #[export]
     zoom_cards: bool,
+    /// Karten verschwinden in der Zone (Exil-Strudel): sie gleiten zur Mitte, schrumpfen dabei
+    /// auf fast nichts und sinken unter den Tisch – unsichtbar und nicht anklickbar. Verlassen
+    /// sie die Zone, wachsen sie auf dem Weg zum neuen Platz wieder.
+    #[export]
+    swallow_cards: bool,
 
     cards: Vec<Gd<Card3D>>,
     /// Freie Positionen (lokal x/z) je Karte.
@@ -172,6 +179,7 @@ impl IArea3D for Zone {
             card_scale: 1.0,
             tile_cards: false,
             zoom_cards: false,
+            swallow_cards: false,
             size: Vector3::new(3.0, 0.2, 2.0),
             accepts_drops: true,
             cards_draggable: true,
@@ -446,6 +454,12 @@ impl Zone {
                 Some(p) if self.free_placement => {
                     // Später abgelegte Karten liegen minimal höher (kein Z-Fighting bei Überlappung).
                     Transform3D::new(Basis::IDENTITY, Vector3::new(p.x, CARD_THICKNESS * 0.5 + i as f32 * 0.002, p.y))
+                }
+                _ if self.swallow_cards => {
+                    let mut xf = self.slot_transform(bi, nb);
+                    xf.basis = xf.basis.scaled(Vector3::splat(SWALLOWED_SCALE));
+                    xf.origin.y -= 0.05;
+                    xf
                 }
                 _ => {
                     let mut xf = self.slot_transform(bi, nb);

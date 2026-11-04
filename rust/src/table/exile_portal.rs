@@ -1,20 +1,25 @@
 //! Exil-Strudel: dunkel wirbelnder Wirbel auf dem Tisch unter dem Exil-Stapel (nach dem Video
 //! des Users „Exile and Grave“). Ein Shader auf einer flachen Fläche: Rauschen in Polarkoordinaten,
 //! das sich langsam dreht und nach innen gezogen wird, außen weich ausgeblendet, in der Mitte ein
-//! dunkles Loch. Er liegt halbdurchsichtig über den Karten im Exil. Er ist nur offen, solange Karten im Exil liegen ([`set_exile_portal_open`]):
+//! dunkles Loch. Karten im Exil verschwinden darin ([member Zone.swallow_cards]); ein Klick auf
+//! den Strudel (Trefferfläche in der Gruppe [`ZONE_CLICK_GROUP`]) öffnet die Exil-Ansicht. Er ist nur offen, solange Karten im Exil liegen ([`set_exile_portal_open`]):
 //! öffnet sich aus der Mitte (0,30 s, Back-Out) und schließt sich wieder (0,30 s, Quad-In).
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::tween::{EaseType, TransitionType};
-use godot::classes::{MeshInstance3D, QuadMesh, Shader, ShaderMaterial};
+use godot::classes::{Area3D, CylinderShape3D, CollisionShape3D, MeshInstance3D, QuadMesh, Shader, ShaderMaterial};
 use godot::prelude::*;
 
+use super::layers::CONTROL_LAYER;
 use super::shader_noise::PERLIN_FBM;
 
-/// Durchmesser des Wirbels (Zonen-Einheiten) und Höhe über dem Tisch (über dem Exil-Stapel:
-/// die Karten liegen sichtbar „im“ Wirbel; ohne Trefferfläche, Klicks gehen an die Karten).
+/// Gruppe der Trefferflächen, deren Klick der
+/// [`TableController`](super::table_controller::TableController) als `zone_clicked` meldet.
+pub const ZONE_CLICK_GROUP: &str = "zone_click";
+
+/// Durchmesser des Wirbels (Zonen-Einheiten) und Höhe über dem Tisch.
 const PORTAL_SIZE: f32 = 1.45;
-const PORTAL_LIFT: f32 = 0.09;
+const PORTAL_LIFT: f32 = 0.006;
 /// Öffnen / Schließen (Sekunden).
 const PORTAL_TIME: f64 = 0.3;
 
@@ -75,6 +80,22 @@ pub fn attach_exile_portal(zone: &mut Gd<Node3D>) {
         Vector3::new(0.0, PORTAL_LIFT, 0.0),
     ));
     zone.add_child(&mesh);
+    // Trefferfläche (nur bedienbar, solange der Strudel offen ist)
+    let mut hit = Area3D::new_alloc();
+    hit.set_name("ExilePortalHit");
+    hit.set_collision_layer(0);
+    hit.set_collision_mask(0);
+    hit.set_monitoring(false);
+    hit.set_monitorable(false);
+    hit.add_to_group(ZONE_CLICK_GROUP);
+    let mut shape = CylinderShape3D::new_gd();
+    shape.set_radius(PORTAL_SIZE * 0.5);
+    shape.set_height(0.1);
+    let mut col = CollisionShape3D::new_alloc();
+    col.set_shape(&shape);
+    hit.add_child(&col);
+    hit.set_position(Vector3::new(0.0, 0.05, 0.0));
+    zone.add_child(&hit);
 }
 
 /// Exil-Strudel unter `zone` öffnen (`open` = Karten im Exil) bzw. schließen; animiert, nur
@@ -85,6 +106,9 @@ pub fn set_exile_portal_open(zone: &mut Gd<Node3D>, open: bool) {
         return;
     }
     mesh.set_meta("portal_open", &open.to_variant());
+    if let Some(mut hit) = zone.get_node_or_null("ExilePortalHit").and_then(|n| n.try_cast::<Area3D>().ok()) {
+        hit.set_collision_layer(if open { CONTROL_LAYER } else { 0 });
+    }
     let Some(mat) = mesh.get_mesh().and_then(|m| m.surface_get_material(0)).and_then(|m| m.try_cast::<ShaderMaterial>().ok()) else { return };
     let from = mat.get_shader_parameter("open").try_to::<f32>().unwrap_or(0.0);
     let to = if open { 1.0f32 } else { 0.0 };

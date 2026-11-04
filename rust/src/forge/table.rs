@@ -153,6 +153,9 @@ pub struct ForgeTable {
     wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
     /// Friedhof bzw. Exil wird gerade auf der Bühne durchgesehen (keine Entscheidung).
     viewer_open: bool,
+    /// Kartenkopien der Friedhof-/Exil-Ansicht mit ihrer Forge-ID (Klick = Aktion der Karte, z. B.
+    /// Rückblende oder aus dem Exil wirken).
+    viewer_cards: Vec<(Gd<Card3D>, CardId)>,
     /// Bühne vor der Kamera (z. B. Starthand beim Mulligan); schließt mit der Antwort.
     showcase: Option<Gd<Showcase>>,
     /// Karten, die nach einem Mulligan unter die Bibliothek sollen (Klick-Reihenfolge).
@@ -241,6 +244,7 @@ impl INode for ForgeTable {
             cancel_badge: None,
             wheel: None,
             viewer_open: false,
+            viewer_cards: Vec::new(),
             showcase: None,
             hand_pick: Vec::new(),
             hand_pick_button: None,
@@ -303,6 +307,7 @@ impl INode for ForgeTable {
             controller.connect("card_clicked", &cb("on_card_clicked"));
             controller.connect("aim_released", &cb("on_aim_released"));
             controller.connect("cancel_pressed", &cb("cancel_cast"));
+            controller.connect("zone_clicked", &cb("on_zone_clicked"));
             // zurückgestellt: der Tisch baut in diesem Moment noch seine Kinder auf
             let arrows = TargetArrows::new_alloc();
             controller.call_deferred("add_child", &[arrows.to_variant()]);
@@ -416,6 +421,11 @@ impl ForgeTable {
         }
     }
 
+    /// Ist gerade eine Bühne offen (und nicht schon geschlossen)?
+    fn stage_open_now(&self) -> bool {
+        self.showcase.as_ref().is_some_and(|s| s.is_instance_valid() && s.bind().is_covering())
+    }
+
     /// Friedhof bzw. Exil, in dem `card` liegt: (Sitzplatz, true = Exil).
     fn pile_of(&self, card: &Gd<Card3D>) -> Option<(usize, bool)> {
         let zone = card.bind().get_zone()?;
@@ -453,7 +463,18 @@ impl ForgeTable {
         let title = if exile { trf!("Exil ({n})", "Exile ({n})") } else { trf!("Friedhof ({n})", "Graveyard ({n})") };
         let owner = self.seat_name(seat).to_string();
         let Some(mut showcase) = self.open_stage(&title, &owner) else { return };
-        let copies: Vec<(Gd<Card3D>, String)> = cards.iter().rev().map(|d| (Self::stage_card(d, None), String::new())).collect();
+        let mut copies: Vec<(Gd<Card3D>, String)> = Vec::new();
+        let mut viewer_cards = Vec::new();
+        for d in cards.iter().rev() {
+            let mut copy = Self::stage_card(d, None);
+            let id = u32::try_from(get_int(d, "id")).unwrap_or(0);
+            // spielbar (z. B. Rückblende, aus dem Exil wirken): leuchtet, Klick führt es aus
+            if !self.card_actions(id).is_empty() {
+                copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+            }
+            viewer_cards.push((copy.clone(), id));
+            copies.push((copy, String::new()));
+        }
         showcase.bind_mut().show_options(copies);
         showcase.bind_mut().enable_coverflow(LIB_STEP, LIB_SCALE);
         showcase.bind_mut().enable_peek();
@@ -461,6 +482,18 @@ impl ForgeTable {
         done.connect("pressed", &Callable::from_object_method(&self.to_gd(), "close_zone_viewer"));
         showcase.bind_mut().add_button(done);
         self.viewer_open = true;
+        self.viewer_cards = viewer_cards;
+    }
+
+    /// Anklickbare Zonen-Fläche angeklickt (vom [TableController]): Exil-Strudel → Exil-Ansicht.
+    #[func]
+    fn on_zone_clicked(&mut self, zone: Gd<Zone>) {
+        if self.stage_open_now() {
+            return;
+        }
+        if let Some(seat) = (0..2).find(|s| self.zones(*s).exile.as_ref() == Some(&zone)) {
+            self.show_zone_viewer(seat, true);
+        }
     }
 
     /// Friedhof-/Exil-Ansicht schließen; die offene Entscheidung zeigt wieder ihre Bedienung.
@@ -1128,6 +1161,15 @@ impl ForgeTable {
     /// das Fähigkeiten-Menü.
     #[func]
     fn on_card_clicked(&mut self, card: Gd<Card3D>) {
+        // Kopie in der Friedhof-/Exil-Ansicht: hat die Karte eine Aktion, Ansicht schließen und
+        // wie ein Klick auf die Karte selbst behandeln
+        if let Some(id) = self.viewer_cards.iter().find(|(c, _)| *c == card).map(|(_, id)| *id) {
+            if !self.card_actions(id).is_empty() {
+                self.close_zone_viewer();
+                self.card_action_click(id, None);
+            }
+            return;
+        }
         // freiwilliges Farbrad offen: Klick daneben schließt es
         if self.wheel.as_ref().is_some_and(|(_, _, v)| *v) {
             self.close_wheel();
@@ -1167,12 +1209,20 @@ impl ForgeTable {
         }
         // Friedhof / Exil: ohne eigene Aktion der Karte (z. B. Rückblende) durchsehen
         if let Some((seat, exile)) = self.pile_of(&card) {
-            if self.card_actions(card_id).is_empty() && self.showcase.is_none() {
+            if self.card_actions(card_id).is_empty() && !self.stage_open_now() {
                 self.show_zone_viewer(seat, exile);
                 return;
             }
         }
-        let in_hand = self.zones(0).hand.is_some_and(|h| card.bind().get_zone().as_ref() == Some(&h));
+        self.card_action_click(card_id, Some(card));
+    }
+
+    /// Aktionen der Karte `card_id` ausführen (Klick auf eine Karte außerhalb der Hand bzw. auf
+    /// ihre Kopie in der Friedhof-/Exil-Ansicht): eine Aktion sofort, mehrere über „Wähle eins“,
+    /// Manafähigkeiten über das Farbrad bzw. Menü.
+    fn card_action_click(&mut self, card_id: CardId, card: Option<Gd<Card3D>>) {
+        let card = card.or_else(|| self.cards.get(&i64::from(card_id)).cloned());
+        let in_hand = card.as_ref().is_some_and(|c| self.zones(0).hand.is_some_and(|h| c.bind().get_zone().as_ref() == Some(&h)));
         let Some(req) = self.pending.as_ref() else { return };
         let mine: Vec<(Choice, String)> = match &req.decision {
             // Mana bezahlen: Manafähigkeiten dieser Karte
@@ -1199,7 +1249,7 @@ impl ForgeTable {
             // mehrere Manafähigkeiten mit je einer Farbe: Farbrad an der Karte
             _ if Self::mana_wheel_entries(&mine).is_some() => {
                 let entries = Self::mana_wheel_entries(&mine).unwrap_or_default();
-                let name = card.bind().card_name().to_string();
+                let name = card.as_ref().map(|c| c.bind().card_name().to_string()).unwrap_or_default();
                 let prompt = format!("({name}) {}", tr!("Wähle das Mana.", "Choose the mana."));
                 let voluntary = !matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::PayMana { .. }));
                 self.open_wheel(entries, Some(card_id), &prompt, voluntary);
@@ -2079,6 +2129,7 @@ impl ForgeTable {
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
     fn clear_choice_objects(&mut self) {
         self.viewer_open = false;
+        self.viewer_cards.clear();
         self.action_options.clear();
         self.stage_choices.clear();
         self.mode_cards.clear();

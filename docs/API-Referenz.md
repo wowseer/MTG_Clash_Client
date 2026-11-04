@@ -117,6 +117,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
 | `cancel_cast()` | `void` | Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört. |
+| `on_zone_clicked(zone: Zone)` | `void` | Anklickbare Zonen-Fläche angeklickt (vom `TableController`): Exil-Strudel → Exil-Ansicht. |
 | `close_zone_viewer()` | `void` | Friedhof-/Exil-Ansicht schließen; die offene Entscheidung zeigt wieder ihre Bedienung. |
 | `on_wheel_picked(index: int)` | `void` | Segment `index` des Farbrads angeklickt: die zugehörige Antwort an Forge. |
 | `end_turn()` | `void` | Knopf „»»“ (Sofort beenden, nur im eigenen Zug): bis zum Ende dieser Runde automatisch passen; es wird ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die UI weiter. Legt ein anderer Spieler etwas auf den Stack, endet das automatische Passen, damit man antworten kann. |
@@ -692,6 +693,7 @@ Wurzel der Tischszene: Maus-Eingabe (Hover, Drag-and-Drop per Raycast) und Kamer
 | Signal | Beschreibung |
 |---|---|
 | `card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | Wird ausgelöst, wenn eine Karte per Drag-and-Drop in eine Zone gelegt wurde. |
+| `zone_clicked(zone: Zone)` | Eine anklickbare Zonen-Fläche wurde angeklickt (z. B. der Exil-Strudel): `zone` = die Zone. |
 | `cancel_pressed()` | Escape gedrückt: die Kamera geht in die Übersicht; das Spiel bricht ein laufendes Wirken bzw. Aktivieren ab, wo die Engine das erlaubt. |
 | `card_clicked(card: Card3D)` | Eine Karte wurde angeklickt (gedrückt und ohne nennenswerte Bewegung losgelassen) – z. B. als Ziel wählen oder Fähigkeit aktivieren. Funktioniert in allen Zonen, auch bei Karten, die man nicht ziehen kann. |
 | `aim_started(card: Card3D)` | Von einer nicht verschiebbaren Karte (z. B. Kreatur auf dem Spielfeld) wird gezogen: der Spieler zieht einen Pfeil. Wohin er zeigt, liefert `get_aim_point()`; worauf die Maus liegt, `get_hovered_card()`. |
@@ -767,6 +769,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `card_scale` | `float` | Größe der Karten in dieser Zone (1 = normal). Spielfeld und Ressourcen verkleinern sie automatisch, wenn sonst nicht alle in eine Reihe passen. |
 | `tile_cards` | `bool` | Karten als Kachel zeigen (nur Name und Bild, Stärke/Widerstand unten rechts; siehe `Card3D.set_tile()`) – Form der Karten auf dem Spielfeld. |
 | `zoom_cards` | `bool` | Karten dieser Zone beim Hovern selbst groß vor die Kamera holen (eigene Hand); sonst zeigt die Kartenansicht eine Kopie. |
+| `swallow_cards` | `bool` | Karten verschwinden in der Zone (Exil-Strudel): sie gleiten zur Mitte, schrumpfen dabei auf fast nichts und sinken unter den Tisch – unsichtbar und nicht anklickbar. Verlassen sie die Zone, wachsen sie auf dem Weg zum neuen Platz wieder. |
 
 ### Funktionen
 

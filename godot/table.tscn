@@ -83,6 +83,7 @@ accepts_drops = false
 cards_draggable = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.8, 0, 4.2)
 card_scale = 1.7
+swallow_cards = true
 
 [node name="Command" type="Zone" parent="Player"]
 size = Vector3(1, 0.1, 1.6)
@@ -163,6 +164,7 @@ accepts_drops = false
 cards_draggable = false
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 5.8, 0, -4.2)
 card_scale = 1.7
+swallow_cards = true
 
 [node name="Command" type="Zone" parent="Opponent"]
 size = Vector3(1, 0.1, 1.6)
