@@ -150,6 +150,9 @@ pub struct ForgeTable {
     showcase: Option<Gd<Showcase>>,
     /// Karten, die nach einem Mulligan unter die Bibliothek sollen (Klick-Reihenfolge).
     bottom_pick: Vec<CardId>,
+    /// Laufende Mana-Zahlung wird von Hand bezahlt: Beim ersten `PayMana` lag schon Mana im Pool
+    /// (vorher getappt). Bleibt gesetzt, bis eine andere Entscheidung kommt.
+    manual_pay: bool,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -193,6 +196,7 @@ impl INode for ForgeTable {
             choice_prompt: None,
             showcase: None,
             bottom_pick: Vec::new(),
+            manual_pay: false,
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -515,7 +519,12 @@ impl ForgeTable {
         let starting = matches!(req.decision, Decision::ChooseStartingPlayer { .. }).then(|| req.clone());
         let mulligan = matches!(req.decision, Decision::Mulligan { .. }).then(|| req.clone());
         let bottom = matches!(req.decision, Decision::MulliganBottom { .. }).then(|| req.clone());
+        let auto_pay = self.auto_pay(&req.decision);
         self.pending = Some(req);
+        if auto_pay {
+            self.answer(Choice::Pay(PayAction::AutoPay));
+            return;
+        }
         if let Some(req) = starting {
             self.show_starting_player(&req);
         }
@@ -1054,7 +1063,9 @@ impl ForgeTable {
     fn update_glow(&mut self) {
         let (glow, chosen): (HashSet<i64>, HashSet<i64>) = match self.pending.as_ref().map(|r| &r.decision) {
             Some(Decision::Priority { actions, .. }) => {
-                (actions.iter().filter_map(|a| a.card()).map(i64::from).collect(), HashSet::new())
+                // Manafähigkeiten (Vorab-Tappen) leuchten nicht, sonst glühte jedes Land
+                let playable = actions.iter().filter(|a| !matches!(a, Action::ActivateMana(..)));
+                (playable.filter_map(|a| a.card()).map(i64::from).collect(), HashSet::new())
             }
             Some(Decision::ChooseTargets { candidates, .. }) => {
                 let card = |t: &Target| match t {
@@ -1484,6 +1495,33 @@ impl ForgeTable {
             }
         }
         arrows
+    }
+
+    /// Soll diese Entscheidung sofort automatisch bezahlt werden? Ja bei `PayMana`, wenn der Pool
+    /// des Spielers leer ist (nichts vorher getappt). Liegt Mana im Pool, bezahlt der Spieler die
+    /// ganze Zahlung von Hand (Pool-Mana und Quellen anklicken); merkt sich das in `manual_pay`.
+    fn auto_pay(&mut self, decision: &Decision) -> bool {
+        let Decision::PayMana { player, options, .. } = decision else {
+            self.manual_pay = false;
+            return false;
+        };
+        if self.manual_pay || !options.contains(&PayAction::AutoPay) {
+            return false;
+        }
+        let floating = self.pool_total(*player as usize);
+        self.manual_pay = floating > 0;
+        floating == 0
+    }
+
+    /// Menge an schwebendem Mana im Pool eines Sitzplatzes (aus dem Zustand).
+    fn pool_total(&self, seat: usize) -> i64 {
+        self.state
+            .as_ref()
+            .and_then(|s| get_array(s, "players"))
+            .and_then(|a| a.get(seat))
+            .and_then(|v| v.try_to::<VarDictionary>().ok())
+            .and_then(|p| get_array(&p, "mana_pool"))
+            .map_or(0, |a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).sum())
     }
 
     /// Einträge des Stacks aus dem Zustand (unterster zuerst, oberster zuletzt).

@@ -75,7 +75,7 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 
 | Forge-Methode(n) | `Decision` | Antwort (`Choice`) |
 |---|---|---|
-| `chooseSpellAbilityToPlay` | `Priority { actions }` | `Action(…)`; `Pass` |
+| `chooseSpellAbilityToPlay` | `Priority { actions }` (zusätzlich `ActivateMana(karte, i)` je Manafähigkeit, sobald es etwas zu spielen gibt) | `Action(…)`; `Pass`; `Action(ActivateMana)` → Fähigkeit sofort ausführen (Mana in den Pool), erneut fragen |
 | `mulliganKeepHand` | `Mulligan { mulligans_taken, first_player }` | `Keep` / `Mulligan` |
 | `chooseModeForAbility` | `ChooseModes { modes, min, max, can_repeat }` | `Modes([…])` |
 | `chooseTargetsFor` (über `setupTargets`) | `ChooseTargets { source, description, candidates, min, max }` | `Targets([…])` / `Cancel` |
@@ -177,6 +177,7 @@ Diese Teile gibt es im Vorbild (`decision.rs` aus forge-rules-rs) (noch) nicht:
 | `Decision::DivideAmount { player, source, amount, targets, min_each }` → `Choice::Damage(mengen)` | Menge beim Wirken auf die gewählten Ziele verteilen (CR 601.2d) |
 | Ziele auf dem Stack in `ChooseTargets` | als `{"card": id}` der Quelle des Zaubers bzw. der Fähigkeit (das Basismodell (`Target`) hat keine Stack-Einträge; nachziehen: `Target::Stack(id)`) |
 | `ChooseOption` für Mana aus dem Pool (`chooseManaFromPool`) | im Basismodell fehlt `PayAction::UsePool(Farbe)` |
+| `Action::ActivateMana { card, index }` in `Priority.actions` | Manafähigkeit mit Priorität aktivieren (CR 605.3a), z. B. Länder vorab tappen; `index` wie bei `PayAction::ActivateMana`. Das Basismodell kennt Manafähigkeiten nur beim Bezahlen |
 | `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
 | `ChooseCards` mit `reason: "Reveal"` und `max: 0` | Anzeige aufgedeckter Karten; im Basismodell fehlt ein `Decision::Reveal { cards }` bzw. Ereignis |
 | `Decision::ChooseStartingPlayer { player, players }` → `Choice::Number(index)` | wer beginnt die Partie (CR 103.1); `players` = Sitzplätze, `labels` = Spielernamen. Die UI zeigt dafür 3D-Knöpfe statt eines Fensters |
@@ -343,7 +344,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | Forge | 3D-Tisch |
 |---|---|
 | `state` (Spielstart, jede Anfrage, gebündelt nach Ereignissen) | `Card3D` je Karten-`id` in Hand / Ressourcen-Reihe (Länder) / Spielfeld / Ablagestapel, Gegnerhand verdeckt, getappt; `library` = verdeckter Stapel in der Deck-Zone, neue Handkarten werden von dort gezogen |
-| `Priority` | Karten mit einer Aktion leuchten; Handkarte auf den Tisch ziehen → `PlayLand`/`Cast`; Klick auf eine Karte außerhalb der Hand → ihre `Activate`-Aktion (mehrere: Menü „Fähigkeit wählen“, nur UI); Hauptbutton / Leertaste → `Action::Pass` |
+| `Priority` | Karten mit einer Aktion leuchten; Handkarte auf den Tisch ziehen → `PlayLand`/`Cast`; Klick auf eine Karte außerhalb der Hand → ihre `Activate`- bzw. `ActivateMana`-Aktion (mehrere: Menü „Fähigkeit wählen“, nur UI; reine Manaquellen leuchten nicht); Hauptbutton / Leertaste → `Action::Pass` |
 | `ChooseTargets` | gültige Karten leuchten, wählbare Spieler-Medaillons pulsieren golden; Klick wählt (Signal `ForgeTable.choice_option_clicked` → Auswahlfenster am rechten Rand); gewählte Ziele golden markiert, Pfeile Quelle → Ziel (`TargetArrows`) |
 | `ChooseCards` mit Karten, die alle offen auf dem Tisch liegen (Spielfeld, Länder-Reihe, Kommandozone, Stack) | Tisch-Modus: Karten leuchten, Klick wählt (gold), Fenster am rechten Rand mit Kartennamen und „Fertig“ → `Cards` |
 | `Mulligan` / `MulliganBottom` | 3D-Bühne (`Showcase`): Hand groß vor der Kamera, `Button3D` „Mulligan“/„Behalten“ → `Mulligan` / `Keep`; bei `MulliganBottom` Karten anklicken, „Fertig (n/N)“ → `Cards` |
@@ -351,7 +352,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `OrderTriggers` | Auswahlfenster, Optionen in Reihenfolge anklicken (nummeriert) → `Order` |
 | `AssignCombatDamage` / `DivideAmount` | Auswahlfenster „Verteilen“: Zahlenfeld je Empfänger, vorbelegt, Summenanzeige, „OK“ nur bei richtiger Summe → `Damage` |
 | `PayUnlessCost` / `PayLifeForPhyrexian` | Ja/Nein-Fenster („Zahlen“ / „Nicht zahlen“, „2 Leben zahlen“ / „Mit Mana zahlen“) |
-| `PayMana` | Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); einsetzbares Pool-Mana golden umrandet, Klick = `Pay(UsePool)`; Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
+| `PayMana` | Ist der Pool beim ersten `PayMana` einer Zahlung leer, antwortet `ForgeTable` sofort `Pay(AutoPay)` (kein Fenster). Sonst (vorher getappt) bezahlt der Spieler die ganze Zahlung von Hand: Manaquellen leuchten; Klick = `Pay(ActivateMana)` (mehrere Manafähigkeiten: Menü); einsetzbares Pool-Mana golden umrandet, Klick = `Pay(UsePool)`; Fenster am rechten Rand mit offenen Kosten, „Automatisch bezahlen“ (`AutoPay`), „Abbrechen“ (`Cancel`); Manapool-Anzeige aus `mana_pool` |
 | `DeclareAttackers` / `DeclareBlockers` | Kandidaten leuchten; Klick plant Angriff bzw. Block (rote / blaue Pfeile, Markierungen), Knopf „Angreifen (n)“ / „Blocken (n)“ im Fenster am rechten Rand sendet den Plan; `combat` aus dem Zustand zeigt den Kampf der KI als Pfeile |
 | alle übrigen Entscheidungen | HUD-Auswahlfenster (`decision_view.rs`): Knöpfe, Mehrfachauswahl mit „Fertig“, Zahlenfeld, Suchfeld ab 13 Optionen (höchstens 40 Knöpfe, z. B. bei `NameCard` mit allen Kartennamen); Quellkarte golden markiert |
 | `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |

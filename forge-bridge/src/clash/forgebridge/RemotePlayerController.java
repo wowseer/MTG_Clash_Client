@@ -110,7 +110,10 @@ public class RemotePlayerController extends PlayerControllerAi {
     /**
      * Priorität: {@code Decision::Priority} mit allen spielbaren Aktionen ({@code PlayLand},
      * {@code Cast}, {@code CastAlt}, {@code Activate} …) und {@code Pass}. Gibt es nichts zu
-     * spielen, wird automatisch gepasst. Ist die gewählte Aktion nicht ausführbar (abgebrochen,
+     * spielen, wird automatisch gepasst. Sonst kommen die Manafähigkeiten als
+     * {@code ActivateMana} dazu (Erweiterung, CR 605.3a): Der Spieler kann Mana vorab in den Pool
+     * tappen und es danach beim Bezahlen selbst einsetzen; die Fähigkeit wird sofort ausgeführt
+     * und erneut gefragt. Ist die gewählte Aktion nicht ausführbar (abgebrochen,
      * kein gültiges Ziel), kommt "rejected" und es wird erneut gefragt. Ob die KI den Zug für
      * sinnvoll hält, spielt keine Rolle.
      */
@@ -132,12 +135,25 @@ public class RemotePlayerController extends PlayerControllerAi {
                 actions.add(actionJson(sa, counters));
                 labels.add(sa.toUnsuppressedString());
             }
+            ManaSources mana = manaSources();
+            for (int i = 0; i < mana.sources.size(); i++) {
+                JsonObject a = new JsonObject();
+                a.addProperty("type", "ActivateMana");
+                a.addProperty("card", mana.refs.get(i)[0]);
+                a.addProperty("index", mana.refs.get(i)[1]);
+                actions.add(a);
+                labels.add(mana.labels.get(i));
+            }
             JsonObject action = Decisions.priority(getGame(), seat, actions, labels);
             int choice = action == null ? 0 : indexOf(actions, action);
             if (choice <= 0) {
                 return null; // passen (oder unlesbare Antwort)
             }
             choice -= 1;
+            if (choice >= options.size()) {
+                activateMana(mana.sources.get(choice - options.size()), false);
+                continue;
+            }
             SpellAbility sa = options.get(choice);
             lastChoice = choice;
             lastAction = action;
@@ -319,22 +335,8 @@ public class RemotePlayerController extends PlayerControllerAi {
                     poolColors.add(color);
                 }
             }
-            List<SpellAbility> sources = new ArrayList<>();
-            List<int[]> refs = new ArrayList<>();
-            List<String> labels = new ArrayList<>();
-            for (Card c : me.getCardsIn(ZoneType.Battlefield)) {
-                List<SpellAbility> abilities = new ArrayList<>(c.getManaAbilities());
-                for (int i = 0; i < abilities.size(); i++) {
-                    SpellAbility ma = abilities.get(i);
-                    ma.setActivatingPlayer(me);
-                    if (ma.canPlay() && (!ma.getPayCosts().hasTapCost() || c.canTap())) {
-                        sources.add(ma);
-                        refs.add(new int[] {c.getId(), i});
-                        labels.add(c.getName() + ": " + ma.toUnsuppressedString());
-                    }
-                }
-            }
-            String pick = Decisions.payMana(getGame(), seat, sa, toPay.toString(), refs, labels, poolColors);
+            ManaSources mana = manaSources();
+            String pick = Decisions.payMana(getGame(), seat, sa, toPay.toString(), mana.refs, mana.labels, poolColors);
             if (pick == null || pick.equals("Cancel")) {
                 return false;
             }
@@ -347,14 +349,48 @@ public class RemotePlayerController extends PlayerControllerAi {
             if (pick.equals("AutoPay")) {
                 return ComputerUtilMana.payManaCost(toPay, sa, me, effect);
             }
-            SpellAbility ma = sources.get(Integer.parseInt(pick));
-            CostPayment pay = new CostPayment(ma.getPayCosts(), ma);
-            if (!pay.payComputerCosts(new AiCostDecision(me, ma, effect, true))) {
-                continue;
+            SpellAbility ma = mana.sources.get(Integer.parseInt(pick));
+            if (activateMana(ma, effect)) {
+                me.getManaPool().payManaFromAbility(sa, toPay, ma);
             }
-            getGame().getStack().addAndUnfreeze(ma);
-            me.getManaPool().payManaFromAbility(sa, toPay, ma);
         }
+    }
+
+    /** Manaquellen des Spielers: Fähigkeit, (Karten-ID, Index der Manafähigkeit), Beschriftung. */
+    private record ManaSources(List<SpellAbility> sources, List<int[]> refs, List<String> labels) {
+    }
+
+    /** Alle Manafähigkeiten auf dem Spielfeld, die der Spieler jetzt aktivieren kann. */
+    private ManaSources manaSources() {
+        Player me = getPlayer();
+        ManaSources m = new ManaSources(new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+        for (Card c : me.getCardsIn(ZoneType.Battlefield)) {
+            List<SpellAbility> abilities = new ArrayList<>(c.getManaAbilities());
+            for (int i = 0; i < abilities.size(); i++) {
+                SpellAbility ma = abilities.get(i);
+                ma.setActivatingPlayer(me);
+                if (ma.canPlay() && (!ma.getPayCosts().hasTapCost() || c.canTap())) {
+                    m.sources.add(ma);
+                    m.refs.add(new int[] {c.getId(), i});
+                    m.labels.add(c.getName() + ": " + ma.toUnsuppressedString());
+                }
+            }
+        }
+        return m;
+    }
+
+    /**
+     * Manafähigkeit ausführen (CR 605.3b: sie geht nicht auf den Stack): Kosten bezahlen (Tappen
+     * …), dann auflösen – das Mana landet im Pool. {@code false}, wenn die Kosten nicht bezahlt
+     * werden konnten.
+     */
+    private boolean activateMana(SpellAbility ma, boolean effect) {
+        CostPayment pay = new CostPayment(ma.getPayCosts(), ma);
+        if (!pay.payComputerCosts(new AiCostDecision(getPlayer(), ma, effect, true))) {
+            return false;
+        }
+        getGame().getStack().addAndUnfreeze(ma);
+        return true;
     }
 
     /**

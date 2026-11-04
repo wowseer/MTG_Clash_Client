@@ -51,6 +51,10 @@ pub enum Action {
     CastWithAltCost(CardId, usize),
     CastFaceDown(CardId),
     TurnFaceUp(CardId),
+    /// Erweiterung gegenüber dem Basismodell: Manafähigkeit mit Priorität aktivieren (CR 605.3a),
+    /// das Mana schwebt danach im Manapool. Karte + Index der Manafähigkeit (wie bei
+    /// [`PayAction::ActivateMana`]).
+    ActivateMana(CardId, usize),
 }
 
 /// Option beim Bezahlen von Manakosten.
@@ -337,6 +341,7 @@ impl Action {
             "CastWithAltCost" => Action::CastWithAltCost(card, index),
             "CastFaceDown" => Action::CastFaceDown(card),
             "TurnFaceUp" => Action::TurnFaceUp(card),
+            "ActivateMana" => Action::ActivateMana(card, index),
             _ => return None,
         })
     }
@@ -353,6 +358,7 @@ impl Action {
             Action::CastWithAltCost(c, i) => ("CastWithAltCost", Some(c), Some(i)),
             Action::CastFaceDown(c) => ("CastFaceDown", Some(c), None),
             Action::TurnFaceUp(c) => ("TurnFaceUp", Some(c), None),
+            Action::ActivateMana(c, i) => ("ActivateMana", Some(c), Some(i)),
         };
         d.set("type", name);
         if let Some(c) = card {
@@ -375,7 +381,8 @@ impl Action {
             | Action::Activate(c, _)
             | Action::CastWithAltCost(c, _)
             | Action::CastFaceDown(c)
-            | Action::TurnFaceUp(c) => Some(c),
+            | Action::TurnFaceUp(c)
+            | Action::ActivateMana(c, _) => Some(c),
         }
     }
 }
@@ -634,5 +641,6 @@ mod tests {
     fn action_card() {
         assert_eq!(Action::Pass.card(), None);
         assert_eq!(Action::Activate(7, 1).card(), Some(7));
+        assert_eq!(Action::ActivateMana(9, 2).card(), Some(9));
     }
 }
