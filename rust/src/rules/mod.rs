@@ -1,9 +1,9 @@
-//! Engine-Grenze der UI: Entscheidungsmodell von NeoForge ([`decision`]) und die Schnittstelle
+//! Engine-Grenze der UI: Protokoll-Modell ([`decision`]) und die Schnittstelle
 //! [`RulesEngine`], über die die UI Antworten an die Regel-Engine schickt.
 //!
 //! Die UI (`ForgeTable`, HUD) kennt nur diese Typen, keine Details der Java-Engine. Heute setzt
 //! [`ForgeBridge`](crate::forge::bridge::ForgeBridge) die Schnittstelle um (Java-Prozess,
-//! Protokoll v3); später NeoForge direkt (`Engine::advance`/`Engine::submit`).
+//! Protokoll v3) – eigenständig per Java-Prozess oder eingebettet in NeoForge (lokaler Socket).
 
 pub mod decision;
 
@@ -13,8 +13,8 @@ pub use decision::{Action, CardId, Choice, Color, Decision, OptionText, PlayerId
 
 /// Eine offene Entscheidung mit allem, was die UI zur Anzeige braucht.
 ///
-/// `decision` ist die eigentliche NeoForge-Entscheidung. Die übrigen Felder sind Anzeigehilfen
-/// (Erweiterung der Hülle, nicht Teil von NeoForges `Decision`): Fragetext, Quellkarte, ob
+/// `decision` ist die eigentliche Entscheidung. Die übrigen Felder sind Anzeigehilfen
+/// (Erweiterung der Hülle, nicht Teil von `Decision`): Fragetext, Quellkarte, ob
 /// abgebrochen werden darf, und `labels` = Anzeigetext je Eintrag der Hauptliste der
 /// Entscheidung (Priority: `actions`, ChooseTargets: `candidates`, ChooseCards: `options`, …).
 #[derive(Debug, Clone, PartialEq)]

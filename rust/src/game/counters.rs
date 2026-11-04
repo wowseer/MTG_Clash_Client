@@ -1,4 +1,4 @@
-//! Anzeige von Marken (CR 122) auf Karten und Spielern: Markenname der Engine (NeoForge /
+//! Anzeige von Marken (CR 122) auf Karten und Spielern: Markenname der Engine (forge-rules-rs /
 //! Forge, z. B. `P1P1`, `LOYALTY`, `POISON`) → kurzer, zweisprachiger Anzeigetext.
 
 /// Anzeigetext einer Marke mit Anzahl, z. B. „+1/+1 ×2“, „Loyalität 3“, „Gift 4“.

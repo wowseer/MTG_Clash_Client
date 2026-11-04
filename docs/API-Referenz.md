@@ -58,7 +58,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `send_command(command: Dictionary)` | `bool` | Schickt einen beliebigen Befehl (Dictionary mit "cmd", siehe Protokoll). false, wenn die Brücke nicht läuft. |
 | `ping(nonce: int)` | `bool` | Verbindungstest; Antwort kommt als Nachricht `{type: "pong", nonce}`. |
 | `start_match(decks: PackedStringArray, remote_seats: PackedInt32Array, names: PackedStringArray, seed: int)` | `bool` | Startet eine Partie. `decks`: Pfade zu Forge-`.dck`-Dateien (`res://` erlaubt) oder Namen von Decks aus Forges Constructed-Sammlung, einer je Sitzplatz (mind. 2). `remote_seats`: Sitzplätze, die MTG Clash steuert (Rest = Forge-KI). `names`: Spielernamen (darf kürzer sein). `seed` < 0 = zufällig. |
-| `answer(request_id: int, choice: Variant)` | `bool` | Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im NeoForge-Format (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`; Aufbau siehe `docs/Forge-Schnittstelle.md`. |
+| `answer(request_id: int, choice: Variant)` | `bool` | Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im Format des Protokoll-Modells (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`; Aufbau siehe `docs/Forge-Schnittstelle.md`. |
 | `request_state(viewer: int)` | `bool` | Fragt den aktuellen Spielzustand ab → [signal state_received]. `viewer` = Sitzplatz, dessen Handkarten mitgeschickt werden (-1 = keiner). |
 
 ### Signale
@@ -69,7 +69,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `message_received(message: Dictionary)` | Jede empfangene Nachricht (vor den speziellen Signalen), z. B. für eigene Auswertung. |
 | `forge_event(event: Dictionary)` | Ein Forge-Spielereignis: `{event, text, turn, phase}` (`event` = Forge-Klassenname, z. B. "GameEventCardChangeZone"). |
 | `log_entry(entry: Dictionary)` | Neuer Eintrag im Spielprotokoll der Engine: `{kind, text, card, turn}` (`kind` z. B. "ZONE_CHANGE", "DAMAGE", "STACK_ADD", "TURN"; `card` = Karten-ID der Quelle, falls bekannt). |
-| `decision_requested(request: Dictionary)` | Ein ferngesteuerter Spieler muss entscheiden (Protokoll v3): `{id, player, decision, prompt, source, ability, cancelable, labels, state}`; `decision` ist eine NeoForge-`Decision` (z. B. `{"type": "Priority", "actions": […]}`). Antwort mit `answer()` und einer NeoForge-`Choice`. Aufbau siehe `docs/Forge-Schnittstelle.md`. |
+| `decision_requested(request: Dictionary)` | Ein ferngesteuerter Spieler muss entscheiden (Protokoll v3): `{id, player, decision, prompt, source, ability, cancelable, labels, state}`; `decision` ist eine `Decision` (z. B. `{"type": "Priority", "actions": […]}`). Antwort mit `answer()` und einer `Choice`. Aufbau siehe `docs/Forge-Schnittstelle.md`. |
 | `decision_rejected(info: Dictionary)` | Die gewählte Option wurde von Forge abgelehnt (`{player, option, reason}`); es folgt eine neue Anfrage. |
 | `match_started(state: Dictionary)` | Die Partie hat begonnen; `state` = Spielzustand (siehe Protokoll). |
 | `state_received(state: Dictionary)` | Antwort auf `request_state()`. |
@@ -104,14 +104,14 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 |---|---|---|
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
 | `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
-| `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende NeoForge-`Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
+| `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
 | `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
 | `player_clicked(seat: int)` | `void` | Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt. |
 | `submit_fan(first: PackedInt64Array, second: PackedInt64Array)` | `void` | Antwort aus dem Kartenfächer: `first` = gewählte Karten (`ChooseCards`, `MulliganBottom`) bzw. Karten oben auf der Bibliothek (`Scry`, von oben nach unten), `second` = Karten unter die Bibliothek bzw. in den Friedhof. |
 | `set_choice_selection(selection: PackedInt64Array)` | `void` | Aktuelle Auswahl im Auswahlfenster (vom HUD jedes Frame gemeldet): gewählte Ziele werden auf dem Tisch golden markiert und bekommen einen Pfeil. |
 | `get_card(forge_id: int)` | `Card3D` | Karte auf dem Tisch zur Forge-Karten-ID (null, wenn nicht sichtbar). |
 | `get_state()` | `Dictionary` | Zuletzt von Forge empfangener Spielzustand (Aufbau siehe `docs/Forge-Schnittstelle.md`). |
-| `get_pending_kind()` | `String` | Hat der Spieler gerade eine offene Entscheidung? Liefert den Namen der NeoForge-`Decision` (z. B. "Priority", "Mulligan", "ChooseTargets", "ChooseOption") oder einen leeren Text. |
+| `get_pending_kind()` | `String` | Hat der Spieler gerade eine offene Entscheidung? Liefert den Namen der `Decision` (z. B. "Priority", "Mulligan", "ChooseTargets", "ChooseOption") oder einen leeren Text. |
 | `on_bridge_ready(protocol: int)` | `void` | Brücke bereit → Partie starten (bei `autostart`). |
 | `on_state(state: Dictionary)` | `void` | Neuer Spielzustand von Forge (Spielstart oder Abfrage): Tisch abgleichen. |
 | `on_forge_event(event: Dictionary)` | `void` | Forge-Ereignis: Zustand bald neu abfragen (gebündelt, siehe `refresh_interval`). |

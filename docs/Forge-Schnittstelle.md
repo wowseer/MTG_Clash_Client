@@ -44,11 +44,11 @@ Manueller Test ohne Godot: `forge-bridge/run.sh` starten und JSON-Zeilen eintipp
 
 ## Was die Engine entscheidet und was der Spieler
 
-Seit Protokoll 3 spricht die Brücke **NeoForges Entscheidungsmodell** (`Decision` / `Choice`,
-siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt Forges
+Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Choice`, Vorbild:
+`forge-engine/src/decision.rs` aus forge-rules-rs, `~/Entwicklung/Java/forge/rust/` – nicht NeoForge). Die Java-Brücke übersetzt Forges
 `PlayerController`-Aufrufe in `Decision`s (`Decisions.java`, `RemotePlayerController.java`).
 
-| Forge-Methode(n) | NeoForge-`Decision` | Antwort (`Choice`) |
+| Forge-Methode(n) | `Decision` | Antwort (`Choice`) |
 |---|---|---|
 | `chooseSpellAbilityToPlay` | `Priority { actions }` | `Action(…)`; `Pass` |
 | `mulliganKeepHand` | `Mulligan { mulligans_taken }` | `Keep` / `Mulligan` |
@@ -67,7 +67,7 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `declareBlockers` | `DeclareBlockers { candidates, attackers }` | `Blocks([[blocker, angreifer], …])`; leer = nicht blocken |
 | `applyManaToCost` (über `payManaCost`) | `PayMana { remaining, options: [ActivateMana(karte, i), AutoPay, Cancel] }` | `Pay(ActivateMana(…))` → Quelle tappen, Mana einsetzen, erneut fragen bis bezahlt; `Pay(AutoPay)`; `Pay(Cancel)` = Wirken zurücknehmen |
 | `chooseCardsForEffect`, `chooseCardsForZoneChange`, `chooseSingleCardForZoneChange`, `chooseCardsToDiscardFrom`, `chooseCardsToDiscardToMaximumHandSize`, `choosePermanentsToSacrifice`, `choosePermanentsToDestroy`, `chooseCardsToRevealFromHand`, `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` (nur Karten) | `ChooseCards { reason, options, min, max }` (`reason`: `Choose`, `Search`, `Discard`, `DiscardToHandSize`, `Sacrifice`) | `Cards([…])` |
-| `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` mit Spielern (z. B. „Choose a player“) | `ChooseTargets { source, description, candidates, min, max }` (**Erweiterung**: NeoForge kennt keine Spielerwahl für Effekte; `source` = −1, wenn es keine Quelle gibt) | `Targets([…])` |
+| `chooseSingleEntityForEffect` / `chooseEntitiesForEffect` mit Spielern (z. B. „Choose a player“) | `ChooseTargets { source, description, candidates, min, max }` (**Erweiterung**: das Basismodell kennt keine Spielerwahl für Effekte; `source` = −1, wenn es keine Quelle gibt) | `Targets([…])` |
 | `chooseNewTargetsFor` (Umleiten, Kopien mit „you may choose new targets“) | bei optionaler Änderung zuerst `Confirm` („Neue Ziele wählen für …?“), dann `ChooseTargets` (mit Forges Zusatzfilter) | `Yes`/`No`, `Targets([…])` |
 | `exertAttackers`, `enlistAttackers` (CR 701.43, 702.154) | `ChooseCards { reason: "Choose", options: Angreifer, min: 0 }` (Tisch-Modus) | `Cards([…])` |
 | `chooseSingleSpellForEffect` / `chooseSpellAbilitiesForEffect` | `ChooseOption` / `ChooseOptions` mit „Karte: Text“ | `Number` / `Modes` |
@@ -81,7 +81,7 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `chooseCardsToDiscardUnlessType` | `ChooseCards { reason: "Discard", min: 1, max: n }`: n Karten oder eine Karte des Typs | `Cards` |
 | `chooseSaToActivateFromOpeningHand` (Leylines …) | `ChooseOptions` (0 bis alle) | `Modes` |
 | `getAbilityToPlay` | `ChooseOption` mit den Fähigkeiten der Karte | `Number` |
-| `chooseManaFromPool` (mehrere passende Mana im Pool) | `ChooseOption` mit Mana und Quelle (**Erweiterung**: NeoForges `PayAction` kennt keine Pool-Zahlung) | `Number` |
+| `chooseManaFromPool` (mehrere passende Mana im Pool) | `ChooseOption` mit Mana und Quelle (**Erweiterung**: das Basismodell (`PayAction`) kennt keine Pool-Zahlung) | `Number` |
 | `chooseCardsForSplice` (CR 702.47) | `ChooseCards { reason: "Choose", min: 0 }` aus der Hand | `Cards` |
 | `chooseCardsForEffectMultiple` | je Gruppe ein `ChooseCards { min: 0/1, max: 1 }` | `Cards` |
 | `chooseTarget` (welches Ziel geändert wird) | `ChooseOption` „Zauber → Ziel“ | `Number` |
@@ -140,10 +140,9 @@ nicht (Mana wird beim Ausführen automatisch bezahlt). Ist die gewählte Aktion 
 (abgebrochen, kein gültiges Ziel), kommt `rejected` und eine neue `Priority`-Anfrage. Ob die
 Forge-KI den Zug für sinnvoll hält, spielt keine Rolle.
 
-### Erweiterungen gegenüber NeoForge
+### Erweiterungen gegenüber dem Basismodell
 
-Diese Teile gibt es in NeoForges `decision.rs` (noch) nicht; sie sollten dort nachgezogen werden,
-damit die UI unverändert mit NeoForge läuft:
+Diese Teile gibt es im Vorbild (`decision.rs` aus forge-rules-rs) (noch) nicht:
 
 | Erweiterung | Zweck |
 |---|---|
@@ -151,11 +150,11 @@ damit die UI unverändert mit NeoForge läuft:
 | `Decision::ChooseOptions { player, prompt, options, min, max }` → `Choice::Modes(indizes)` | allgemeine Mehrfachauswahl |
 | `Decision::ChooseNumber { player, prompt, min, max }` → `Choice::Number(n)` | Zahl mit Untergrenze ≠ 0 bzw. außerhalb von X |
 | `Decision::DivideAmount { player, source, amount, targets, min_each }` → `Choice::Damage(mengen)` | Menge beim Wirken auf die gewählten Ziele verteilen (CR 601.2d) |
-| Ziele auf dem Stack in `ChooseTargets` | als `{"card": id}` der Quelle des Zaubers bzw. der Fähigkeit (NeoForges `Target` hat keine Stack-Einträge; nachziehen: `Target::Stack(id)`) |
-| `ChooseOption` für Mana aus dem Pool (`chooseManaFromPool`) | NeoForge: `PayAction::UsePool(Farbe)` nachziehen |
+| Ziele auf dem Stack in `ChooseTargets` | als `{"card": id}` der Quelle des Zaubers bzw. der Fähigkeit (das Basismodell (`Target`) hat keine Stack-Einträge; nachziehen: `Target::Stack(id)`) |
+| `ChooseOption` für Mana aus dem Pool (`chooseManaFromPool`) | im Basismodell fehlt `PayAction::UsePool(Farbe)` |
 | `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
-| `ChooseCards` mit `reason: "Reveal"` und `max: 0` | Anzeige aufgedeckter Karten; NeoForge: eigenes `Decision::Reveal { cards }` oder Ereignis nachziehen |
-| `ChooseTargets` auch für Spieler-/Kartenwahl durch Effekte (`chooseSingleEntityForEffect` mit Spielern) | NeoForge hat dafür keine Entscheidung; die UI behandelt sie wie Ziele (Klick auf Medaillon/Karte) |
+| `ChooseCards` mit `reason: "Reveal"` und `max: 0` | Anzeige aufgedeckter Karten; im Basismodell fehlt ein `Decision::Reveal { cards }` bzw. Ereignis |
+| `ChooseTargets` auch für Spieler-/Kartenwahl durch Effekte (`chooseSingleEntityForEffect` mit Spielern) | Das Basismodell hat dafür keine Entscheidung; die UI behandelt sie wie Ziele (Klick auf Medaillon/Karte) |
 | `Choice::Cancel` | Ziel-/X-Wahl beim Wirken abbrechen (Wirken wird zurückgenommen); bei anderen Entscheidungen „Engine entscheidet selbst“ |
 | Hülle der Anfrage: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | Anzeigetexte (Forges Fragetext, Quellkarte, Fähigkeitstext, Anzeigetext je Listeneintrag) und Kartendaten (`cards`: Liste wie im `state`) der Karten, um die es geht – auch aus verdeckten Zonen, z. B. bei `ChooseCards` mit `Search` |
 
@@ -182,7 +181,7 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `match_started` | `state` |
 | `event` | `event` (Forge-Klassenname, z. B. `GameEventCardChangeZone`, `GameEventTurnPhase`), `text`, `turn`, `phase` |
 | `log` | neuer Eintrag im Spielprotokoll (Forges `GameLog`, chronologisch): `kind` (`GameLogEntryType`, z. B. `TURN`, `LAND`, `STACK_ADD`, `STACK_RESOLVE`, `ZONE_CHANGE`, `DAMAGE`, `LIFE`, `COMBAT`, `PHASE`, `MANA`, `MULLIGAN`), `text` (englisch, Objekte als „Name (id)“), `card` (Karten-ID der Quelle, falls bekannt), `turn`. Godot-Signal `ForgeBridge.log_entry` |
-| `request` | `id`, `player`, `decision` (NeoForge-`Decision`), `prompt`, `source` `{id, name}`, `ability`, `cancelable`, `labels`, `state` – siehe unten |
+| `request` | `id`, `player`, `decision` (`Decision`), `prompt`, `source` `{id, name}`, `ability`, `cancelable`, `labels`, `state` – siehe unten |
 | `rejected` | `player`, `option` (Index in `actions` ohne `Pass`), `action`, `reason` – gewählte Aktion nicht ausführbar |
 | `state` | `state` |
 | `game_over` | `winner` (Name oder null), `draw`, `reason` |
@@ -202,13 +201,13 @@ Der Spiel-Thread wartet bei jeder `request`, bis die passende `answer` kommt.
  "labels": ["Spieler (du)", "Forge-KI", "Llanowar Elves (Forge-KI)"], "state": {…}}
 ```
 
-JSON-Form der NeoForge-Typen: Variante als `"type"`, Felder in `snake_case`; `Target` =
+JSON-Form der Typen: Variante als `"type"`, Felder in `snake_case`; `Target` =
 `{"card": id}` / `{"player": sitz}`; `Action` = `{"type": "Cast", "card": 34}` bzw. mit `"index"`
 (`CastAlt`, `PlayLandAlt`, `Activate`, `CastWithAltCost`); `Color` = `"W" "U" "B" "R" "G"`;
 `ChooseModes.modes` = Liste von `[index, text]`. `labels` = Anzeigetext je Eintrag der Hauptliste
 (`actions` bei Priority, `candidates` bei ChooseTargets, `modes` bei ChooseModes).
 
-**Antwort** `{"cmd": "answer", "id": 7, "choice": {…}}` mit einer NeoForge-`Choice`:
+**Antwort** `{"cmd": "answer", "id": 7, "choice": {…}}` mit einer `Choice`:
 `{"type": "Keep"}`, `{"type": "Mulligan"}`, `{"type": "Action", "action": {…}}`,
 `{"type": "Targets", "targets": [{"card": 83}]}`, `{"type": "Number", "value": 2}`,
 `{"type": "Yes"}` / `{"type": "No"}`, `{"type": "Color", "color": "R"}`,
@@ -239,7 +238,7 @@ Planeswalkern `loyalty`, bei Schlachten `defense` (im Spiel die aktuellen Marken
 Befestigungen), `commander: true`, `emblem: true`, `room` (aktueller Raum eines Dungeons),
 `face_down: true` (verdeckt, CR 708: Name leer, Werte der verdeckten Seite), `face` (bei
 doppelseitigen, modalen und Flip-Karten: 0 = Vorderseite, 1 = Rückseite/umgedreht) mit
-`other_face` `{name, type}` (nur offen), `counters` (Marken wie NeoForges `CardObj.counters`: Name → Anzahl, Namen =
+`other_face` `{name, type}` (nur offen), `counters` (Marken wie `CardObj.counters` in forge-rules-rs: Name → Anzahl, Namen =
 Forges `CounterEnumType`, z. B. `{"P1P1": 2, "LOYALTY": 4}`).
 
 Spieler zusätzlich: `mana_pool` = Menge schwebenden Manas je Farbe in der Reihenfolge W U B R G C;
@@ -257,13 +256,13 @@ gleichzeitig etwas (`ConcurrentModificationException`), liest die Brücke bis zu
 `combat` (laufender Kampf, sonst leere Listen): `attackers` = Liste `{card, target}` (`target` als
 `Target`), `blocks` = Liste `[blocker, angreifer]`.
 
-`stack` (CR 405, wie NeoForges `GameState.stack`): Liste der Einträge, **unterster zuerst, oberster
+`stack` (CR 405, wie `GameState.stack` in forge-rules-rs): Liste der Einträge, **unterster zuerst, oberster
 zuletzt**. Je Eintrag `id` (Forges Stack-ID), `kind` (`Spell` / `Ability` / `Trigger`), `source`
 (Karten-ID der Quelle), `controller` (Sitzplatz), `text` (Forges Stack-Beschreibung),
 `targets` (Ziele je Fähigkeit der Sub-Ability-Kette: Liste von Listen von `Target`) und bei Zaubern
 `card` (Kartendaten der Karte in der Stack-Zone, wie in den Spielerzonen). Ein Zauber als Ziel
 (z. B. Gegenzauber) erscheint als `{"card": id}` seiner Karte; eine Fähigkeit als Ziel als Karte
-ihrer Quelle (NeoForges `Target` kennt keine Stack-Einträge).
+ihrer Quelle (das Basismodell (`Target`) kennt keine Stack-Einträge).
 
 ```json
 "stack": [
@@ -344,7 +343,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
   Zahl, Abbrechen).
 - Ziele, X-Wert, Kicker, Modi und Ausrüsten getestet mit `testdecks/spieler.dck` gegen
   `testdecks/gegner.dck` (Standard-Decks von `ForgeTable`).
-- Protokoll v3 (NeoForge-Modell) getestet: Startspieler (`ChooseOption`), `Mulligan`, `NameCard`
+- Protokoll v3 (Protokoll-Modell) getestet: Startspieler (`ChooseOption`), `Mulligan`, `NameCard`
   (34.457 Namen, Suche), Kicker (`ChooseOptions`), Farbe, `ChooseTargets` für Ausrüsten, `Priority`
   mit `Cast` und `Activate`.
 - Ziele per Klick (Karte, Medaillon, Mehrfachziele, Pfeile) und Aktivieren per Klick (inkl. Menü)

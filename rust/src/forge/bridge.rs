@@ -147,9 +147,9 @@ impl ForgeBridge {
     fn log_entry(entry: VarDictionary);
 
     /// Ein ferngesteuerter Spieler muss entscheiden (Protokoll v3): `{id, player, decision, prompt,
-    /// source, ability, cancelable, labels, state}`; `decision` ist eine NeoForge-`Decision`
+    /// source, ability, cancelable, labels, state}`; `decision` ist eine `Decision`
     /// (z. B. `{"type": "Priority", "actions": […]}`). Antwort mit [method answer] und einer
-    /// NeoForge-`Choice`. Aufbau siehe `docs/Forge-Schnittstelle.md`.
+    /// `Choice`. Aufbau siehe `docs/Forge-Schnittstelle.md`.
     #[signal]
     fn decision_requested(request: VarDictionary);
 
@@ -351,7 +351,7 @@ impl ForgeBridge {
     }
 
     /// Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im
-    /// NeoForge-Format (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`;
+    /// Format des Protokoll-Modells (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`;
     /// Aufbau siehe `docs/Forge-Schnittstelle.md`.
     #[func]
     pub fn answer(&mut self, request_id: i64, choice: Variant) -> bool {

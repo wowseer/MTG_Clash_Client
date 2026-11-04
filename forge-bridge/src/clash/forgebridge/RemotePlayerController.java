@@ -61,7 +61,7 @@ import forge.game.zone.ZoneType;
 /**
  * Spielersteuerung, deren Hauptentscheidungen MTG Clash trifft.
  *
- * <p>Jede Frage geht als NeoForge-{@code Decision} an den Client ({@link Decisions},
+ * <p>Jede Frage geht als {@code Decision} an den Client ({@link Decisions},
  * Protokoll v3): Priorität, Mulligan, beim Wirken optionale Kosten, Modi, X und Ziele, dazu alle
  * allgemeinen Auswahl-Dialoge, Angreifer, Blocker, Kartenauswahl, Scry, Reihenfolgen. Andere Kosten als Mana trifft vorerst
  * die Forge-KI, von der diese Klasse erbt. Antwortet der Client ungültig, entscheidet ebenfalls
@@ -358,7 +358,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     }
 
     /**
-     * NeoForge-{@code Action} zu einer spielbaren Fähigkeit: Land → {@code PlayLand} (weitere
+     * {@code Action} zu einer spielbaren Fähigkeit: Land → {@code PlayLand} (weitere
      * Land-Seiten derselben Karte {@code PlayLandAlt}), Zauber → {@code Cast} (weitere Zauber-
      * Varianten derselben Karte {@code CastAlt}), sonst {@code Activate} mit laufendem Index je Karte.
      */
@@ -739,7 +739,7 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     /**
      * Welches schwebende Mana aus dem Pool bezahlt wird, wenn es mehrere Möglichkeiten gibt
-     * ({@code ChooseOption}; NeoForges {@code PayAction} kennt keine Pool-Zahlung).
+     * ({@code ChooseOption}; das Basismodell ({@code PayAction}) kennt keine Pool-Zahlung).
      */
     @Override
     public forge.game.mana.Mana chooseManaFromPool(List<forge.game.mana.Mana> manaChoices) {
@@ -1277,7 +1277,7 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     /**
      * Spieler und/oder Karten für einen Effekt wählen: {@code ChooseTargets} (Klick auf Medaillon
-     * bzw. Karte). NeoForge kennt dafür keine eigene Entscheidung (Erweiterung, siehe
+     * bzw. Karte). Das Basismodell kennt dafür keine eigene Entscheidung (Erweiterung, siehe
      * Forge-Schnittstelle.md). Liefert die gewählten Indizes oder {@code null} (Engine entscheidet).
      */
     private <T extends GameEntity> List<Integer> entities(List<T> list, int min, int max, String title,
@@ -1763,7 +1763,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     public ColorSet chooseColors(String message, SpellAbility sa, int min, int max, ColorSet options) {
         List<MagicColor.Color> list = new ArrayList<>(options.getOrderedColors());
         if (min == 1 && max == 1) {
-            // genau eine Farbe: NeoForges ChooseColor
+            // genau eine Farbe: ChooseColor des Basismodells
             byte c = chooseColor(message, sa, options);
             return ColorSet.fromMask(c);
         }

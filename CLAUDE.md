@@ -4,38 +4,44 @@
 
 **Eine 3D-Oberfläche, die das komplette Backend von Forge bedient – und am Ende in NeoForge lebt.**
 
-- **NeoForge** ist die Neuentwicklung von Forges Regel-Engine in Rust
-  (`~/Entwicklung/Java/forge/rust/`, Crates `forge-types` → `forge-script` → `forge-engine`,
-  veröffentlicht als `github.com/wowseer/forge-rules-rs`). Sie soll später als GDExtension in Godot
-  laufen; **diese 3D-UI wird dann in NeoForge übernommen.**
-- Bis dahin läuft die UI gegen die Java-Engine von Forge (über `forge-bridge/`). Die Java-Brücke ist
-  nur eine **Übergangs-Engine**: Sie übersetzt Forge in NeoForges Entscheidungsmodell.
+- **NeoForge** (`~/Entwicklung/Java/NeoForge/`, github.com/AdrianLopez98/NeoForge) ist eine neue
+  Oberfläche für Forge in **JavaFX**: ein Modul `forge-gui-neo`, das in einen Forge-Checkout
+  eingebaut wird (Menüs, Deckbau, Modi wie Commander, Quest, Ascent, Adventure, Online). Den
+  Spieltisch zeichnet dort `forge.neo.match.NeoMatchUI` (Forges `IGuiGame`); gestartet wird eine
+  Partie in `forge.neo.match.NeoGame` über Forges `HostedMatch`.
+- **Integration:** Startet NeoForge eine Partie mit dem 3D-Tisch, übernimmt unser
+  `RemotePlayerController` den menschlichen Sitzplatz und NeoForge startet diese Godot-UI als
+  Spieltisch (lokaler Socket, Protokoll v3). Deckauswahl, Formate und Modi bleiben bei NeoForge –
+  hier wird dafür **keine** UI gebaut.
+- Bis dahin läuft die UI eigenständig gegen Forge über `forge-bridge/` (Java-Prozess, stdin/stdout).
 - Jede Entscheidung, die die Engine einem Spieler abverlangt, trifft der Spieler in der 3D-Ansicht
   selbst; jeder Teil des Spielzustands ist auf dem Tisch oder im HUD sichtbar. Die KI steuert nur
   Gegner, nie den menschlichen Spieler.
 - Ein eigenes Regelwerk wird **nicht** wieder eingeführt: Die UI prüft keine Regeln, sie zeigt den
   Zustand der Engine an und schickt ihr die Antworten des Spielers.
+- **Nicht verwechseln:** `~/Entwicklung/Java/forge/rust/` (github.com/wowseer/forge-rules-rs) ist ein
+  eigenständiges Projekt, das Forges Java-Regeln in Rust neu schreibt. Es ist **nicht** NeoForge;
+  von dort stammt nur das Vorbild unseres Entscheidungsmodells.
 
-## Kompatibilität zu NeoForge (verbindlich)
+## Entscheidungsmodell und Protokoll (verbindlich)
 
-- **Entscheidungsmodell = NeoForge.** Maßgeblich ist `forge-engine/src/decision.rs` in NeoForge:
+- **Protokoll-Modell** (angelehnt an `forge-engine/src/decision.rs` aus forge-rules-rs):
   `Decision` (was die Engine fragt), `Choice` (Antwort), `Action` (Prioritäts-Aktion), `Target`,
-  `PayAction`, `CardChoiceReason`; Ablauf `Engine::advance() → Status::NeedsDecision(Decision) |
-  GameOver`, Fortsetzung mit `Engine::submit(Choice)` (`forge-engine/src/engine.rs`).
+  `PayAction`, `CardChoiceReason` – in Rust in `rust/src/rules/decision.rs`.
 - Das Protokoll zur Java-Brücke bildet diese Typen **1:1** ab (Variantenname als `decision` /
   `choice`, Felder mit denselben Namen). Die Java-Brücke übersetzt Forges `PlayerController`-Aufrufe
-  in NeoForge-`Decision`s und die `Choice`s zurück.
-- Die Rust-UI spricht nur mit einer **Engine-Schnittstelle** (`advance`/`submit`/Zustand), nie
-  direkt mit Java-Details. Heute: Umsetzung über den Java-Prozess; später: NeoForge direkt.
-  UI-Code darf keine Annahmen über Java/Forge enthalten.
-- Fragt Forge etwas, das NeoForge (noch) nicht kennt (z. B. Reihenfolge von Ersatzeffekten,
+  in `Decision`s und die `Choice`s zurück.
+- Die Rust-UI spricht nur mit einer **Engine-Schnittstelle** (`RulesEngine`, Anfragen/Zustand),
+  nie direkt mit Java-Details. UI-Code darf keine Annahmen über Java/Forge enthalten.
+- Fragt Forge etwas, das das Basismodell nicht kennt (z. B. Reihenfolge von Ersatzeffekten,
   Startspieler, Abstimmung, Marken-Typ), gibt es eine allgemeine Erweiterung (Liste von Optionen →
   `Choice::Number(index)`). Jede Erweiterung in `docs/Forge-Schnittstelle.md` unter
-  „Erweiterungen gegenüber NeoForge“ auflisten, damit sie in NeoForge nachgezogen werden kann.
-- IDs: `CardId` = Forge-Karten-ID, `PlayerId` = Sitzplatz-Index, bis NeoForge-IDs vorliegen.
-- **Multiplayer mitdenken** (NeoForge-Regel): nie „den Gegner“ als einzelnen Spieler hartkodieren.
-  Die 3D-Szene hat heute zwei Sitzplätze; neuer Code muss mit `PlayerId`s und Listen arbeiten.
-- **Umfang wie NeoForge:** Formate Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander,
+  „Erweiterungen gegenüber dem Basismodell“ auflisten.
+- IDs: `CardId` = Forge-Karten-ID, `PlayerId` = Sitzplatz-Index.
+- **Multiplayer mitdenken:** nie „den Gegner“ als einzelnen Spieler hartkodieren (NeoForge spielt
+  Commander mit bis zu vier Spielern). Die 3D-Szene hat heute zwei Sitzplätze; neuer Code muss mit
+  `PlayerId`s und Listen arbeiten.
+- **Umfang dieses Projekts:** Formate Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander,
   Booster Draft, Cube. **Keine UI bauen für** Archenemy, Planechase (Planar-Würfel), Vanguard,
   Conspiracy, Un-Sets (Contraptions, Attractions, Sticker), Alchemy/Digital-only, Ante. Im Scope
   sind u. a. Dungeons/Initiative, Monarch, Tag/Nacht, „The Ring“, Embleme, Energie/Gift/Erfahrung,
@@ -67,9 +73,9 @@ table.tscn  ─────────────▶  TableController  Hover, 
 | `rust/src/forge/table.rs` | `ForgeTable`: gleicht den Tisch mit `state` ab (Karten-ID → `Card3D`), Deck-Stapel, Leuchten spielbarer Karten, Drops → Optionen, `hud_view()` |
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController` (regelfrei), Kulisse |
 | `rust/src/game/` | Anzeige-Bausteine: HUD, Medaillons, Phasen-Zeitstrahl, Mana-Typen, Kartendaten für das Kartenbild |
-| `rust/src/rules/` | Engine-Grenze: NeoForge-Modell (`Decision`, `Choice` …), `Request`, `RulesEngine` |
+| `rust/src/rules/` | Engine-Grenze: Protokoll-Modell (`Decision`, `Choice` …), `Request`, `RulesEngine` |
 | `rust/src/game/decision_view.rs` | `Decision` → Auswahlfenster → `Choice` (engine-neutral) |
-| `forge-bridge/src/clash/forgebridge/` | `RemotePlayerController` (Forge-Aufrufe), `Decisions` (→ NeoForge-`Decision`, Antwort-`Choice` lesen), `StateJson` (Zustand → JSON), `LogForwarder` (Spielprotokoll), `ForgeBridge` (Befehle, Partie, Anfragen) |
+| `forge-bridge/src/clash/forgebridge/` | `RemotePlayerController` (Forge-Aufrufe), `Decisions` (→ `Decision`, Antwort-`Choice` lesen), `StateJson` (Zustand → JSON), `LogForwarder` (Spielprotokoll), `ForgeBridge` (Befehle, Partie, Anfragen) |
 | `forge-bridge/forge/` | lokale Kopie von Forge (Jar + `res/`), **nicht im Git** (GPL, Kartendaten von WotC) |
 | `docs/Forge-Schnittstelle.md` | Protokoll (Befehle, Nachrichten, `state`-Aufbau). **Bei jeder Protokolländerung pflegen** |
 
@@ -77,7 +83,7 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 
 ## Stand
 
-**Protokoll v3 steht:** NeoForges `Decision`/`Choice` in `rust/src/rules/` (Engine-Grenze,
+**Protokoll v3 steht:** `Decision`/`Choice` in `rust/src/rules/` (Engine-Grenze,
 `RulesEngine`), Java-Übersetzer `forge-bridge/.../Decisions.java`, UI-Abbildung
 `rust/src/game/decision_view.rs`. Jedes weitere Bedienmuster direkt gegen die passende
 `Decision`-Variante bauen. Fertig: `ChooseTargets` per Klick/Pfeil, Aktivieren per Klick,
@@ -112,7 +118,7 @@ Angezeigt:
 Jeder Punkt ist ein eigener Schritt: Brücke (Java), Protokoll, Rust/UI, Doku, Test, Commit.
 Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabdeckung.md`.
 
-**Entscheidungen des Spielers** (NeoForge-`Decision` → Forge-Methode in `RemotePlayerController`):
+**Entscheidungen des Spielers** (`Decision` → Forge-Methode in `RemotePlayerController`):
 1. ~~`ChooseTargets`~~ ✔ (Wirken, Trigger, Spielerwahl für Effekte; `ChooseCards` auf dem Tisch per Klick; offen: `chooseNewTargetsFor`)
 2. ~~`DeclareAttackers`~~ ✔ (offen: Erschöpfen/Rekrutieren)
 3. ~~`DeclareBlockers`~~ ✔ (Reihenfolge der Blocker nur mit alter Regel-Option, ferngesteuert)
@@ -128,7 +134,8 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 - ~~Spielprotokoll~~ ✔ (Nachricht `log` aus Forges `GameLog`, oben rechts im HUD)
 - ~~Kommandozone (Embleme, Commander, Dungeons, Ring), doppelseitige/verdeckte Karten~~ ✔
 
-**Später:** Deckauswahl, mehr als 2 Spieler (Commander), Formate, Umzug der UI nach NeoForge.
+**Als Nächstes:** Integration in NeoForge (siehe Ziel); danach mehr als 2 Spieler (Commander).
+Deckauswahl und Formate übernimmt NeoForge.
 
 ## Quellcode von Forge und NeoForge
 
@@ -139,9 +146,13 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
   Der Ablauf für menschliche Spieler steht in `forge-game/.../player/PlaySpellAbility.java`.
   Nur lesen, nie ändern. Der Fork kann vom Jar abweichen: Logik aus dem Quellcode übernehmen,
   aber nur Methoden verwenden, die es in 2.0.15 gibt.
-- NeoForge (Rust) zum Nachlesen: `~/Entwicklung/Java/forge/rust/` – `forge-engine/src/decision.rs`
-  (Entscheidungsmodell), `engine.rs` (`advance`/`submit`), `docs/01-architektur.md`. Nur lesen;
-  dort gelten eigene Regeln (eigene `CLAUDE.md`, Commits/Pushes dort nicht aus diesem Projekt heraus).
+- NeoForge (JavaFX-Oberfläche) im Quellcode: `~/Entwicklung/Java/NeoForge/forge-gui-neo/`
+  (Partie-Start `forge/neo/match/NeoGame.java`, Tisch `NeoMatchUI.java`). Installierte Version zum
+  Kompilieren und Testen ohne Maven: `~/Games/NeoForge/lib/app/` (`neo.jar`, Forge 2.0.16-Jars,
+  Laufzeit Java 17 unter `lib/runtime`). Der Integrationscode liegt im NeoForge-Repo unter
+  `forge/neo/clash/`; dort nur lokal committen, **nie pushen** (Remote gehört AdrianLopez98).
+- forge-rules-rs (Rust-Neuschreibung der Regeln, nicht NeoForge): `~/Entwicklung/Java/forge/rust/`
+  – Vorbild des Entscheidungsmodells (`forge-engine/src/decision.rs`). Nur lesen.
 
 ## Bauen, starten, testen
 
@@ -180,11 +191,11 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
 - Shell ist zsh: Platzhalter ohne Treffer (`rm godot/_probe*.uid`) brechen den ganzen Befehl ab.
   Doku-Skripte in einem eigenen Aufruf ausführen und ihre Ausgabe prüfen, nie an `rm` & Co. hängen.
 - Rust-Build ohne Warnungen halten; toten Code löschen statt mit `allow` zu verstecken. Einzige
-  Ausnahme: noch ungenutzte Teile des NeoForge-Modells (`rules/decision.rs`) mit
+  Ausnahme: noch ungenutzte Teile des Protokoll-Modells (`rules/decision.rs`) mit
   `#[expect(dead_code, reason = …)]` – `expect` meldet sich, sobald sie benutzt werden.
 - Texte im Spiel zweisprachig: `tr!("Deutsch", "English")` / `trf!` aus `rust/src/i18n.rs`.
 - Godot-Logik in Rust (gdext), kein GDScript im Spiel (nur temporäre Testskripte).
 - Lizenz: `forge-bridge/` ist GPL-3.0 und läuft als getrennter Prozess; keinen Forge-Code in
   `rust/` übernehmen. `forge-bridge/forge/` (Jar + Kartendaten) nie committen.
-- Begriffe in Code und Doku wie in NeoForge und den Comprehensive Rules (CR-Nummern in Kommentaren,
+- Begriffe in Code und Doku wie im Protokoll-Modell und den Comprehensive Rules (CR-Nummern in Kommentaren,
   wo eine Regel umgesetzt bzw. angezeigt wird).

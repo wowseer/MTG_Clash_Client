@@ -1,4 +1,4 @@
-//! Darstellung von Engine-Entscheidungen im HUD: NeoForge-[`Decision`] → Auswahlfenster
+//! Darstellung von Engine-Entscheidungen im HUD: [`Decision`] → Auswahlfenster
 //! ([`HudChoice`]) und die Eingabe im Fenster → [`Choice`].
 //!
 //! Engine-neutral: kennt nur das Entscheidungsmodell (`crate::rules`), keine Java-/Forge-Details.

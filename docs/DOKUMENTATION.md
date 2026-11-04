@@ -127,7 +127,7 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 |---|---|
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Ziel- und Kampfpfeile `TargetArrows` (`target_arrows.rs`), Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Kartenbilder (`placeholder.rs`) |
 | `rust/src/game/` | Anzeige-Bausteine: `PlayerSeat`, Kartenmodell aus den Kartendaten der Engine (`cards.rs`: `CardDef::from_state`, Kartenart, Wertefeld), Regeltext-Symbole und Schriftgrößen (`card_text.rs`), Markennamen (`counters.rs`), Stack-Liste (`stack_view.rs`), Mana-Typen und -Pool (`mana.rs`), Phasen-Liste (`phases.rs`), HUD (`hud.rs`), Spieler-Medaillon (`seat_badge.rs`), Sanduhr (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Phasen-Zeitstrahl (`phase_timeline.rs`), Kartenvorschau (`card_preview.rs`), Auswahlfenster (`choice_panel.rs`), Kartenfächer (`card_fan.rs`), Engine-Entscheidung → Auswahlfenster → Antwort (`decision_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
-| `rust/src/rules/` | Engine-Grenze: NeoForges Entscheidungsmodell (`Decision`, `Choice`, `Action`, `Target` …, `decision.rs`), offene Anfrage `Request` und Schnittstelle `RulesEngine` (`mod.rs`). Die UI kennt nur diese Typen |
+| `rust/src/rules/` | Engine-Grenze: Protokoll-Modell (`Decision`, `Choice`, `Action`, `Target` …, `decision.rs`), offene Anfrage `Request` und Schnittstelle `RulesEngine` (`mod.rs`). Die UI kennt nur diese Typen |
 | `rust/src/forge/` | `ForgeBridge` (Java-Prozess mit Forge, setzt `RulesEngine` um) und `ForgeTable` (Partie auf dem 3D-Tisch) |
 | `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks; `forge/` = lokale Forge-Kopie (nicht im Git) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
@@ -209,8 +209,9 @@ Das Spiel selbst prüft nichts: Es zeigt Forges Spielzustand an und schickt dein
 
 ## 5. Forge-Regel-Engine (Java)
 
-**Ziel ist NeoForge** (Rust-Neuentwicklung von Forges Regel-Engine): Die UI spricht deshalb
-NeoForges Entscheidungsmodell (`rust/src/rules/`); die Java-Brücke übersetzt Forge dorthin
+**Ziel ist NeoForge** (JavaFX-Oberfläche für Forge, `~/Entwicklung/Java/NeoForge`): Dort soll
+der 3D-Tisch die Partien spielen, die NeoForge startet. Die UI spricht das Protokoll-Modell
+(`rust/src/rules/`, angelehnt an forge-rules-rs); die Java-Brücke übersetzt Forge dorthin
 (Protokoll v3). Forge läuft als eigener Java-Prozess (`forge-bridge/`, GPL-3.0). Der Godot-Knoten `ForgeBridge`
 (`rust/src/forge/bridge.rs`) startet ihn und tauscht JSON-Zeilen über stdin/stdout aus.
 Entscheidungen des Spielers (Priorität, Mulligan, allgemeine Auswahl) kommen als Signal

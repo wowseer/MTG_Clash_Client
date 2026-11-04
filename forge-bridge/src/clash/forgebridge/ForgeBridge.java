@@ -250,7 +250,7 @@ public final class ForgeBridge {
     /**
      * Stellt dem Client eine Entscheidung (Protokoll v3) und blockiert den Spiel-Thread bis zur
      * Antwort ({"cmd":"answer","id":…,"choice":{…}}). {@code envelope} enthält
-     * {@code decision} (NeoForge-{@code Decision}) und die Anzeigehilfen (siehe {@link Decisions});
+     * {@code decision} ({@code Decision}) und die Anzeigehilfen (siehe {@link Decisions});
      * {@code type}, {@code id} und {@code player} werden hier ergänzt. Liefert die {@code choice}
      * (oder JsonNull).
      */

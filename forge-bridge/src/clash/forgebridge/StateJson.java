@@ -106,7 +106,7 @@ final class StateJson {
     }
 
     /**
-     * Stack (CR 405) wie NeoForges {@code GameState.stack}: unterster Eintrag zuerst, oberster
+     * Stack (CR 405) wie {@code GameState.stack} in forge-rules-rs: unterster Eintrag zuerst, oberster
      * zuletzt. Je Eintrag {@code id}, {@code kind} ({@code Spell} / {@code Ability} /
      * {@code Trigger}), {@code source} (Karten-ID der Quelle), {@code controller} (Sitzplatz),
      * {@code text} (Forges Stack-Beschreibung), {@code targets} (Ziele je Fähigkeit der
@@ -268,7 +268,7 @@ final class StateJson {
     }
 
     /**
-     * Marken wie NeoForges {@code counters} (Name → Anzahl), z. B. {@code {"P1P1": 2}}. Name =
+     * Marken wie {@code counters} in forge-rules-rs (Name → Anzahl), z. B. {@code {"P1P1": 2}}. Name =
      * Forges {@code CounterEnumType}-Name (P1P1, M1M1, LOYALTY, POISON …).
      */
     static JsonObject counters(GameEntity e) {

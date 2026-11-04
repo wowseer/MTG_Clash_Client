@@ -103,7 +103,7 @@ pub struct ForgeTable {
     deck_cards: [Vec<Gd<Card3D>>; 2],
     /// Zuletzt angewandter Kartenstand je ID (zum Erkennen geänderter Werte).
     signatures: HashMap<i64, String>,
-    /// Offene Entscheidung des Spielers (NeoForge-`Decision` mit Anzeigehilfen).
+    /// Offene Entscheidung des Spielers (`Decision` mit Anzeigehilfen).
     pending: Option<Request>,
     /// Karte, um die es in der offenen Auswahl geht (golden markiert).
     marked: Option<Gd<Card3D>>,
@@ -253,7 +253,7 @@ impl ForgeTable {
 
     /// Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index,
     /// mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten),
-    /// Zahl = int, Abbrechen = null. Wird in die passende NeoForge-`Choice` übersetzt; unpassende
+    /// Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende
     /// Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion
     /// daraus (null = Menü schließen).
     #[func]
@@ -374,7 +374,7 @@ impl ForgeTable {
         self.state.clone().unwrap_or_default()
     }
 
-    /// Hat der Spieler gerade eine offene Entscheidung? Liefert den Namen der NeoForge-`Decision`
+    /// Hat der Spieler gerade eine offene Entscheidung? Liefert den Namen der `Decision`
     /// (z. B. "Priority", "Mulligan", "ChooseTargets", "ChooseOption") oder einen leeren Text.
     #[func]
     pub fn get_pending_kind(&self) -> GString {
@@ -1527,7 +1527,7 @@ fn discard_card(mut card: Gd<Card3D>) {
     card.queue_free();
 }
 
-/// Name der NeoForge-Entscheidung (für [method ForgeTable.get_pending_kind]).
+/// Name der Entscheidung (für [method ForgeTable.get_pending_kind]).
 fn decision_name(d: &Decision) -> &'static str {
     match d {
         Decision::ChooseModes { .. } => "ChooseModes",

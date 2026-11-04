@@ -1,10 +1,11 @@
-//! Entscheidungsmodell von NeoForge (`forge-engine/src/decision.rs`), 1:1 nachgebildet.
+//! Protokoll-Modell: Entscheidungen nach dem Vorbild von forge-rules-rs
+//! (`forge-engine/src/decision.rs`), 1:1 nachgebildet.
 //!
 //! Die Regel-Engine hält an und liefert eine [`Decision`]; die UI antwortet mit einer [`Choice`].
-//! Variantennamen und Felder entsprechen NeoForge, damit die UI später ohne Umbau direkt mit
-//! NeoForge arbeiten kann. Varianten mit dem Vermerk **Erweiterung** gibt es in NeoForge (noch)
+//! Variantennamen und Felder entsprechen dem Vorbild, damit jede Engine, die dieses Modell spricht,
+//! ohne Umbau angebunden werden kann. Varianten mit dem Vermerk **Erweiterung** gibt es im Vorbild (noch)
 //! nicht; sie decken Fragen der Java-Engine ab und sind in `docs/Forge-Schnittstelle.md`
-//! aufgelistet, damit NeoForge sie nachziehen kann.
+//! aufgelistet.
 //!
 //! JSON-Form (Protokoll v3): jede Variante als Objekt mit `"type": "<Variantenname>"` und den
 //! Feldern in `snake_case`; IDs als Zahlen, [`Target`] als `{"card": id}` / `{"player": id}`,
@@ -56,7 +57,7 @@ pub enum Action {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PayAction {
     ActivateMana(CardId, usize),
-    /// Erweiterung gegenüber NeoForge: schwebendes Mana einer Farbe aus dem Manapool einsetzen
+    /// Erweiterung gegenüber dem Basismodell: schwebendes Mana einer Farbe aus dem Manapool einsetzen
     /// (`None` = farblos).
     UsePool(Option<Color>),
     AutoPay,
@@ -170,7 +171,7 @@ pub enum Choice {
     Modes(Vec<usize>),
     Arrange { top: Vec<CardId>, bottom: Vec<CardId> },
     /// **Erweiterung:** Auswahl abbrechen (z. B. Ziel- oder X-Wahl beim Wirken; das Wirken wird
-    /// zurückgenommen). In NeoForge entspricht das bei Zahlungen `PayAction::Cancel`.
+    /// zurückgenommen). Im Basismodell entspricht das bei Zahlungen `PayAction::Cancel`.
     Cancel,
 }
 

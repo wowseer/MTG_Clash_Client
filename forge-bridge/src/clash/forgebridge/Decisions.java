@@ -14,17 +14,17 @@ import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 
 /**
- * Übersetzer zwischen Forge und dem Entscheidungsmodell von NeoForge (Protokoll v3).
+ * Übersetzer zwischen Forge und dem Protokoll-Modell (Protokoll v3).
  *
- * <p>Jede Methode baut eine NeoForge-{@code Decision} (JSON-Objekt mit {@code "type"} = Variante,
- * Felder wie in NeoForges {@code forge-engine/src/decision.rs}), schickt sie in einer Hülle als
+ * <p>Jede Methode baut eine {@code Decision} (JSON-Objekt mit {@code "type"} = Variante,
+ * Felder wie im Vorbild {@code forge-engine/src/decision.rs} aus forge-rules-rs), schickt sie in einer Hülle als
  * {@code request} an den Client und liest die {@code Choice}-Antwort. Rückgabe {@code null} =
  * abgebrochen ({@code Choice::Cancel}) oder ungültig; die aufrufende Methode fällt dann auf die
  * Forge-KI zurück bzw. bricht das Wirken ab.
  *
- * <p>Varianten, die es in NeoForge noch nicht gibt ({@code ChooseOption}, {@code ChooseOptions},
+ * <p>Varianten, die es im Basismodell noch nicht gibt ({@code ChooseOption}, {@code ChooseOptions},
  * {@code ChooseNumber}, {@code Choice::Cancel}), sind in {@code docs/Forge-Schnittstelle.md} unter
- * „Erweiterungen gegenüber NeoForge“ aufgeführt.
+ * „Erweiterungen gegenüber dem Basismodell“ aufgeführt.
  *
  * <p>Hülle: {@code {"type":"request","id","player","decision","prompt","source":{id,name},
  * "cancelable","labels","state"}} – {@code labels} = Anzeigetext je Eintrag der Hauptliste der
@@ -166,7 +166,7 @@ final class Decisions {
         return true;
     }
 
-    // ------------------------------------------------------------------ NeoForge-Entscheidungen
+    // ------------------------------------------------------------------ Entscheidungen des Protokoll-Modells
 
     /** {@code Mulligan}: true = behalten ({@code Keep}), false = Mulligan, null = unlesbar. */
     static Boolean mulligan(Game game, int seat, int mulligansTaken) {
@@ -234,8 +234,8 @@ final class Decisions {
     }
 
     /**
-     * Ziel als NeoForge-{@code Target}: Karte {@code {"card": id}}, Spieler {@code {"player": sitz}};
-     * ein Zauber bzw. eine Fähigkeit auf dem Stack als Karte ihrer Quelle (NeoForges {@code Target}
+     * Ziel als {@code Target}: Karte {@code {"card": id}}, Spieler {@code {"player": sitz}};
+     * ein Zauber bzw. eine Fähigkeit auf dem Stack als Karte ihrer Quelle (das Basismodell ({@code Target})
      * kennt keine Stack-Einträge).
      */
     static JsonObject targetJson(Game game, forge.game.GameObject e) {
