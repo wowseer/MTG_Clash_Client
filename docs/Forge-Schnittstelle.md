@@ -75,7 +75,7 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 
 | Forge-Methode(n) | `Decision` | Antwort (`Choice`) |
 |---|---|---|
-| `chooseSpellAbilityToPlay` | `Priority { actions }` (zusätzlich `ActivateMana(karte, i)` je Manafähigkeit, sobald es etwas zu spielen gibt, und `UndoMana(karte)` je Karte, deren Manafähigkeit Forge noch zurücknehmen kann) | `Action(…)`; `Pass`; `Action(ActivateMana)` → Fähigkeit sofort ausführen (Mana in den Pool), erneut fragen; `Action(UndoMana)` → `MagicStack.filterUndoStackByHost` + `sa.undo()` (Karte enttappt, Mana aus dem Pool), erneut fragen |
+| `chooseSpellAbilityToPlay` | `Priority { actions }`; ohne spielbare Aktion passt die Brücke selbst, außer in der eigenen zweiten Hauptphase und Endphase mit leerem Stack (dann `Priority` nur mit `Pass`, damit der Spieler dort anhält) (zusätzlich `ActivateMana(karte, i)` je Manafähigkeit, sobald es etwas zu spielen gibt, und `UndoMana(karte)` je Karte, deren Manafähigkeit Forge noch zurücknehmen kann) | `Action(…)`; `Pass`; `Action(ActivateMana)` → Fähigkeit sofort ausführen (Mana in den Pool), erneut fragen; `Action(UndoMana)` → `MagicStack.filterUndoStackByHost` + `sa.undo()` (Karte enttappt, Mana aus dem Pool), erneut fragen |
 | `mulliganKeepHand` | `Mulligan { mulligans_taken, first_player }` | `Keep` / `Mulligan` |
 | `chooseModeForAbility` | `ChooseModes { modes, min, max, can_repeat }` | `Modes([…])` |
 | `chooseTargetsFor` (über `setupTargets`) | `ChooseTargets { source, description, candidates, min, max }` | `Targets([…])` / `Cancel` |

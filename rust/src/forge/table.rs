@@ -568,6 +568,17 @@ impl ForgeTable {
         let mut top_ids = ids(&top);
         top_ids.reverse();
         let bottom_ids = ids(&bottom);
+        // die Karten fliegen beim Schließen zum Bibliotheksstapel (bzw. zum Friedhof)
+        let graveyard = matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::Scry { graveyard: true, .. }));
+        let target = if graveyard && top_ids.is_empty() {
+            self.zones(LOCAL_SEAT as usize).discard.map(|z| z.get_global_transform())
+        } else {
+            self.deck_cards[LOCAL_SEAT as usize].last().filter(|c| c.is_instance_valid()).map(|c| c.get_global_transform())
+                .or_else(|| self.zones(LOCAL_SEAT as usize).deck.map(|z| z.get_global_transform()))
+        };
+        if let (Some(t), Some(mut sc)) = (target, self.showcase.clone().filter(|s| s.is_instance_valid())) {
+            sc.bind_mut().set_fly_target(t);
+        }
         self.answer(Choice::Arrange { top: top_ids, bottom: bottom_ids });
     }
 
@@ -838,6 +849,8 @@ impl ForgeTable {
         if let Some(id) = self.pick_cards.iter().find(|(c, _)| *c == card).map(|(_, id)| *id) {
             if self.scry_zones.is_none() {
                 self.library_click(id);
+            } else {
+                self.scry_click(card);
             }
             return;
         }
@@ -1409,11 +1422,15 @@ impl ForgeTable {
         }
     }
 
-    /// Hellsicht / Überwachen (CR 701.18, 701.25) wie im Video des Users: Titel und Anleitung,
-    /// ein dunkler Kasten, darunter links „UNTEN“ (bzw. „FRIEDHOF“) und rechts „OBEN“. Alle Karten
-    /// liegen zuerst rechts; man zieht sie nach links oder rechts. „Fertig“ schickt sie an Forge.
+    /// Hellsicht / Überwachen (CR 701.18, 701.25) wie im Video des Users (`Scry.mp4`): Titel und
+    /// Anleitung, ein dunkler Kasten; darin liegt die eigene Bibliothek als verdeckter Stapel.
+    /// Die aufgedeckten Karten liegen zuerst rechts **auf** dem Stapel („OBEN“, die oberste
+    /// rechts); zieht man eine nach links, rutscht sie **unter** den Stapel und schaut links
+    /// hervor („UNTEN“). Beim Überwachen liegt links statt dessen der Friedhof (neben dem Stapel).
+    /// Ein Klick auf eine Karte wechselt ebenfalls die Seite. „Fertig“ schickt die Anordnung an
+    /// Forge; die Karten fliegen dabei zum Bibliotheksstapel auf dem Tisch.
     fn show_scry(&mut self, req: &Request) {
-        let Decision::Scry { cards, graveyard, .. } = &req.decision else { return };
+        let Decision::Scry { cards, graveyard, player } = &req.decision else { return };
         let (title, sub, left) = if *graveyard {
             (tr!("Überwachen", "Surveil"), tr!("Ziehe die Karten oben auf deine Bibliothek oder in den Friedhof.", "Drag cards to the top of your library or into your graveyard."), tr!("FRIEDHOF", "GRAVEYARD"))
         } else {
@@ -1421,13 +1438,39 @@ impl ForgeTable {
         };
         let Some(mut showcase) = self.open_stage(title, sub) else { return };
         showcase.bind_mut().add_frame(SCRY_FRAME_CENTER, SCRY_FRAME_SIZE);
-        let half = SCRY_FRAME_SIZE.x * 0.25;
-        let size = Vector3::new(SCRY_FRAME_SIZE.x * 0.5 - 0.05, 0.1, SCRY_FRAME_SIZE.y - 0.1);
-        let bottom = showcase.bind_mut().add_zone("ScryBottom", Vector3::new(SCRY_FRAME_CENTER.x - half, SCRY_FRAME_CENTER.y, 0.0), size, 30.0, 0.5, 170.0, true);
-        let top = showcase.bind_mut().add_zone("ScryTop", Vector3::new(SCRY_FRAME_CENTER.x + half, SCRY_FRAME_CENTER.y, 0.0), size, 30.0, 0.5, 170.0, true);
-        let y = SCRY_FRAME_CENTER.y - SCRY_FRAME_SIZE.y * 0.5 - 0.09;
-        showcase.bind_mut().add_caption(left, Vector2::new(SCRY_FRAME_CENTER.x - SCRY_FRAME_SIZE.x * 0.5, y), false);
-        showcase.bind_mut().add_caption(tr!("OBEN", "TOP"), Vector2::new(SCRY_FRAME_CENTER.x + SCRY_FRAME_SIZE.x * 0.5, y), true);
+        let (c, size) = (SCRY_FRAME_CENTER, SCRY_FRAME_SIZE);
+        // verdeckter Bibliotheksstapel in der Kastenmitte (leicht versetzte Rückseiten)
+        let library = self.deck_cards.get(*player as usize).map_or(0, |d| d.len());
+        let face_down = Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2)
+            * Basis::from_axis_angle(Vector3::BACK, std::f32::consts::PI);
+        for i in 0..library.min(SCRY_PILE_SHOWN) {
+            let mut card = Card3D::new_alloc();
+            {
+                let mut b = card.bind_mut();
+                b.set_back_texture(Some(placeholder::card_back()));
+                let hidden = CardDef::named("?");
+                b.set_face_texture(Some(placeholder::card_face(&hidden)));
+                b.apply_def(&hidden);
+            }
+            let k = i as f32;
+            let pos = Vector3::new(c.x + SCRY_PILE_X - k * 0.012, c.y + k * 0.008, k * 0.004);
+            showcase.bind_mut().add_prop_card(card, Transform3D::new(face_down.scaled(Vector3::splat(SCRY_CARD_SCALE)), pos));
+        }
+        // Ablagen: links unter dem Stapel (bzw. Friedhof daneben), rechts auf dem Stapel
+        let left_z = if *graveyard { SCRY_TOP_Z } else { SCRY_BOTTOM_Z };
+        let left_x = if *graveyard { SCRY_GRAVEYARD_X } else { SCRY_BOTTOM_X };
+        let drop_h = size.y - 0.1;
+        let split = c.x + SCRY_SPLIT_X;
+        let left_w = split - (c.x - size.x * 0.5);
+        let right_w = (c.x + size.x * 0.5) - split;
+        let bottom = showcase.bind_mut().add_zone("ScryBottom", Vector3::new(c.x + left_x, c.y, left_z), Vector3::new(left_w, 0.1, drop_h), 30.0, SCRY_STEP, 170.0, true);
+        let top = showcase.bind_mut().add_zone("ScryTop", Vector3::new(c.x + SCRY_TOP_X, c.y, SCRY_TOP_Z), Vector3::new(right_w, 0.1, drop_h), 30.0, SCRY_STEP, 170.0, true);
+        for mut z in [bottom.clone(), top.clone()] {
+            z.set("card_scale", &SCRY_CARD_SCALE.to_variant());
+        }
+        let y = c.y - size.y * 0.5 - 0.09;
+        showcase.bind_mut().add_caption(left, Vector2::new(c.x - size.x * 0.5, y), false);
+        showcase.bind_mut().add_caption(tr!("OBEN", "TOP"), Vector2::new(c.x + size.x * 0.5, y), true);
         self.pick_cards = self.copies_for(req, cards);
         let copies: Vec<Gd<Card3D>> = self.pick_cards.iter().map(|(c, _)| c.clone()).collect();
         showcase.bind_mut().add_owned_cards(top.clone(), copies);
@@ -1436,6 +1479,16 @@ impl ForgeTable {
         let cb = Callable::from_object_method(&self.to_gd(), "on_scry_done");
         done.connect("pressed", &cb);
         showcase.bind_mut().add_button(done);
+        showcase.bind_mut().enable_peek();
+    }
+
+    /// Klick auf eine Karte der Hellsicht-Bühne: auf die andere Seite (oben ↔ unten/Friedhof).
+    fn scry_click(&mut self, card: Gd<Card3D>) {
+        let Some((mut bottom, mut top)) = self.scry_zones.clone() else { return };
+        let in_top = card.bind().get_zone().as_ref() == Some(&top);
+        let (from, to) = if in_top { (&mut top, &mut bottom) } else { (&mut bottom, &mut top) };
+        from.bind_mut().remove_card(card.clone());
+        to.bind_mut().add_card(card, -1, 0.0);
     }
 
     /// Karten aus verdeckten Zonen wählen (Bibliothek durchsuchen, Friedhof, aufgedeckte Karten …)
@@ -1839,6 +1892,7 @@ impl ForgeTable {
             button_text: button_text.as_str().into(),
             button_hint: combat.map(|(_, hint)| hint).unwrap_or_default(),
             stage_open: self.showcase.is_some() || !self.choice_buttons.is_empty(),
+            stage_covers: self.stage_covers(),
             end_turn_enabled: self.match_running
                 && self.winner.is_empty()
                 && self.auto_pass_turn.is_none()
@@ -2767,8 +2821,18 @@ impl ForgeTable {
 
     /// Alle Pfeile: Kampf, Ziele auf dem Stack (violett), Zielwahl: Quelle → gewählte Ziele (gold),
     /// und der Pfeil, den der Spieler gerade zeichnet ([`Self::live_arrow`]).
+    /// Deckt eine offene Bühne gerade den Tisch ab (siehe [method Showcase.is_covering])?
+    fn stage_covers(&self) -> bool {
+        self.showcase.as_ref().is_some_and(|s| s.is_instance_valid() && s.bind().is_covering())
+    }
+
     fn update_arrows(&mut self) {
         let Some(mut layer) = self.arrows.clone() else { return };
+        // Bühne deckt den Tisch ab: keine Pfeile quer über Titel und Karten
+        if self.stage_covers() {
+            layer.bind_mut().set_arrows(&[]);
+            return;
+        }
         let mut specs = self.combat_arrows();
         specs.extend(self.stack_arrows());
         if let Some((_, live)) = self.live_arrow() {
@@ -3287,8 +3351,22 @@ enum StageKind {
 }
 
 /// Hellsicht-Bühne: Mitte und Größe des Kastens (Bühnen-Koordinaten).
-const SCRY_FRAME_CENTER: Vector2 = Vector2::new(0.0, 0.14);
-const SCRY_FRAME_SIZE: Vector2 = Vector2::new(3.0, 1.1);
+const SCRY_FRAME_CENTER: Vector2 = Vector2::new(0.0, 0.08);
+const SCRY_FRAME_SIZE: Vector2 = Vector2::new(2.6, 1.32);
+/// Hellsicht-Bühne (relativ zur Kastenmitte): Kartengröße, Lage des verdeckten Stapels und wie
+/// viele Rückseiten er zeigt, Mitte der Ablagen „unten“ (unter dem Stapel, dahinter), „oben“
+/// (auf dem Stapel, davor) und – beim Überwachen – „Friedhof“ (neben dem Stapel), Grenze
+/// zwischen den Ablagen und Kartenabstand darin.
+const SCRY_CARD_SCALE: f32 = 1.2;
+const SCRY_PILE_X: f32 = -0.15;
+const SCRY_PILE_SHOWN: usize = 6;
+const SCRY_BOTTOM_X: f32 = -0.62;
+const SCRY_BOTTOM_Z: f32 = -0.12;
+const SCRY_GRAVEYARD_X: f32 = -0.85;
+const SCRY_TOP_X: f32 = 0.3;
+const SCRY_TOP_Z: f32 = 0.08;
+const SCRY_SPLIT_X: f32 = -0.2;
+const SCRY_STEP: f32 = 0.42;
 /// Kartenwahl-Bühne (Cover-Flow): Kartenabstand (überlappend), Kartengröße, Lage von „Ablehnen“.
 const LIB_STEP: f32 = 0.3;
 const LIB_SCALE: f32 = 1.15;

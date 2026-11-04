@@ -544,6 +544,7 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 | `enable_peek()` | `void` | Knopf „Schlachtfeld ansehen“ oben rechts: blendet die Bühne samt Abdunkelung aus (der Tisch ist dann sichtbar und hoverbar), ein erneuter Druck („Zurück zur Auswahl“) holt sie zurück. Die Entscheidung bleibt dabei offen. |
 | `on_peek()` | `void` | „Schlachtfeld ansehen“ gedrückt: Bühne aus- bzw. wieder einblenden. |
 | `static button_width()` | `float` | Breite eines Knopfes in dieser Bühne (Welteinheiten). |
+| `is_covering()` | `bool` | Deckt die Bühne gerade den Tisch ab (abgedunkelt, nicht über „Schlachtfeld ansehen“ ausgeblendet, nicht am Schließen)? Dann blenden HUD und Zielpfeile sich aus. |
 | `holds(card: Card3D)` | `bool` | Liegt `card` gerade in der Bühne? |
 | `close()` | `void` | Karten zurückgeben, Knöpfe ausblenden, abdunkeln aufheben und danach freigeben. |
 

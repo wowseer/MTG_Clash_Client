@@ -49,6 +49,13 @@ const COVERFLOW_ZOOM_HEIGHT: f32 = 0.56;
 /// „Schlachtfeld ansehen“: Lage und Breite des Knopfes (oben rechts neben dem Titel).
 const PEEK_POS: Vector2 = Vector2::new(1.62, 0.93);
 const PEEK_WIDTH: f32 = 0.86;
+/// Flug der Karten beim Schließen ([`Showcase::set_fly_target`]): Gesamtdauer bis zum Freigeben
+/// und Versatz je Karte (Sekunden).
+const FLY_TIME: f32 = 0.5;
+const FLY_STAGGER: f64 = 0.05;
+/// Kästen ([`Showcase::add_frame`]) liegen so weit hinter der Bühnenebene, dass Karten dahinter
+/// (z. B. unter dem Stapel bei Hellsicht) noch davor liegen.
+const FRAME_DEPTH: f32 = 0.25;
 /// Kartenfächer: Mitte (lokal), Radius und Abstand der Karten (sehr flacher Bogen).
 const FAN_CENTER: Vector3 = Vector3::new(0.0, 0.18, 0.0);
 const FAN_RADIUS: f32 = 10.0;
@@ -100,6 +107,15 @@ pub struct Showcase {
     /// Bühne Sichtbarkeit und Kollisionslayer vor dem Ausblenden.
     peek_button: Option<Gd<Button3D>>,
     peek_saved: Vec<(Gd<Node3D>, bool, Option<u32>)>,
+    /// Ziel (Welt), zu dem die eigenen Karten beim Schließen fliegen (z. B. Bibliotheksstapel),
+    /// und die Karten, die gerade fliegen (werden danach freigegeben).
+    fly_to: Option<Transform3D>,
+    flying: Vec<Gd<Card3D>>,
+    /// Kulissen-Karten (z. B. der verdeckte Bibliotheksstapel bei Hellsicht): nicht bedienbar.
+    props: Vec<Gd<Card3D>>,
+    /// Kästen und Beschriftungen ([method add_frame], [method add_caption]): verschwinden beim
+    /// Schließen sofort, damit fliegende Karten nicht dahinter verschwinden.
+    decor: Vec<Gd<Node3D>>,
     /// Karten und die Zone, aus der sie kamen (für die Rückgabe).
     borrowed: Vec<(Gd<Card3D>, Gd<Zone>)>,
     /// Eigene Karten der Bühne (z. B. Kopien als Optionen); werden beim Schließen freigegeben.
@@ -130,6 +146,10 @@ impl INode3D for Showcase {
             blocker: None,
             peek_button: None,
             peek_saved: Vec::new(),
+            fly_to: None,
+            flying: Vec::new(),
+            props: Vec::new(),
+            decor: Vec::new(),
             borrowed: Vec::new(),
             owned: Vec::new(),
             hidden: Vec::new(),
@@ -157,7 +177,11 @@ impl INode3D for Showcase {
             c.a = text_alpha;
             l.set_modulate(c);
         }
-        if self.closing && k >= 1.0 {
+        let done = if self.flying.is_empty() { k >= 1.0 } else { self.t >= FLY_TIME };
+        if self.closing && done {
+            for mut c in self.flying.drain(..).filter(|c| c.is_instance_valid()) {
+                c.queue_free();
+            }
             // ausgeblendete Karten erst zeigen, wenn die Bühne ganz verschwunden ist
             for mut c in self.hidden.drain(..).filter(|c| c.is_instance_valid()) {
                 c.set_visible(true);
@@ -508,7 +532,7 @@ impl Showcase {
         let mut mat = StandardMaterial3D::new_gd();
         mat.set_shading_mode(ShadingMode::UNSHADED);
         mat.set_transparency(Transparency::ALPHA);
-        mat.set_albedo(Color::from_rgba(0.03, 0.03, 0.05, 0.75));
+        mat.set_albedo(Color::from_rgba(0.02, 0.02, 0.035, 0.94));
         mat.set_render_priority(0);
         let mut quad = QuadMesh::new_gd();
         quad.set_size(size);
@@ -516,8 +540,9 @@ impl Showcase {
         let mut frame = MeshInstance3D::new_alloc();
         frame.set_mesh(&quad);
         frame.set_cast_shadows_setting(ShadowCastingSetting::OFF);
-        frame.set_position(Vector3::new(center.x, center.y, -0.05));
+        frame.set_position(Vector3::new(center.x, center.y, -FRAME_DEPTH));
         self.base_mut().add_child(&frame);
+        self.decor.push(frame.upcast());
         // Rand als etwas größere, hellere Fläche dahinter
         let mut edge_mat = StandardMaterial3D::new_gd();
         edge_mat.set_shading_mode(ShadingMode::UNSHADED);
@@ -529,8 +554,9 @@ impl Showcase {
         let mut edge = MeshInstance3D::new_alloc();
         edge.set_mesh(&edge_quad);
         edge.set_cast_shadows_setting(ShadowCastingSetting::OFF);
-        edge.set_position(Vector3::new(center.x, center.y, -0.052));
+        edge.set_position(Vector3::new(center.x, center.y, -FRAME_DEPTH - 0.002));
         self.base_mut().add_child(&edge);
+        self.decor.push(edge.upcast());
     }
 
     /// Beschriftung auf der Bühne (z. B. „UNTEN“ / „OBEN“), linksbündig ab `pos`.
@@ -546,6 +572,7 @@ impl Showcase {
         l.set_horizontal_alignment(if right_aligned { godot::global::HorizontalAlignment::RIGHT } else { godot::global::HorizontalAlignment::LEFT });
         l.set_position(Vector3::new(pos.x, pos.y, 0.05));
         self.base_mut().add_child(&l);
+        self.decor.push(l.upcast());
     }
 
     /// Der Hauptfächer der Bühne.
@@ -557,6 +584,30 @@ impl Showcase {
     #[func]
     pub fn button_width() -> f32 {
         BUTTON_WIDTH
+    }
+
+    /// Deckt die Bühne gerade den Tisch ab (abgedunkelt, nicht über „Schlachtfeld ansehen“
+    /// ausgeblendet, nicht am Schließen)? Dann blenden HUD und Zielpfeile sich aus.
+    #[func]
+    pub fn is_covering(&self) -> bool {
+        self.dimmer.is_some() && self.peek_saved.is_empty() && !self.closing
+    }
+
+    /// Beim Schließen fliegen die eigenen Karten der Bühne zu `target` (Welt-Transform, z. B.
+    /// die oberste Karte des Bibliotheksstapels) statt sofort zu verschwinden.
+    pub fn set_fly_target(&mut self, target: Transform3D) {
+        self.fly_to = Some(target);
+    }
+
+    /// Kulissen-Karte auf die Bühne legen (lokaler Transform `local`, z. B. verdeckter
+    /// Bibliotheksstapel): hell, nicht anklickbar, nicht hoverbar; beim Schließen freigegeben.
+    pub fn add_prop_card(&mut self, card: Gd<Card3D>, local: Transform3D) {
+        let mut card = card;
+        self.base_mut().add_child(&card);
+        card.set_transform(local);
+        card.bind_mut().set_bright(true);
+        card.set_collision_layer(0);
+        self.props.push(card);
     }
 
     /// Liegt `card` gerade in der Bühne?
@@ -595,11 +646,26 @@ impl Showcase {
                 b.bind_mut().dismiss();
             }
         }
-        for card in self.owned.drain(..) {
-            if card.is_instance_valid() {
-                let mut card = card;
-                card.queue_free();
+        for mut d in self.decor.drain(..).filter(|d| d.is_instance_valid()) {
+            d.set_visible(false);
+        }
+        let fly_to = self.fly_to;
+        for (i, card) in self.owned.drain(..).enumerate() {
+            if !card.is_instance_valid() {
+                continue;
             }
+            let mut card = card;
+            match fly_to {
+                Some(target) => {
+                    card.set_collision_layer(0);
+                    card.bind_mut().move_to(target, i as f64 * FLY_STAGGER);
+                    self.flying.push(card);
+                }
+                None => card.queue_free(),
+            }
+        }
+        for mut card in self.props.drain(..).filter(|c| c.is_instance_valid()) {
+            card.queue_free();
         }
         self.closing = true;
         self.t = 0.0;

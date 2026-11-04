@@ -484,6 +484,10 @@ impl TurnHud {
         let tint = if view.stage_open { STAGE_TINT } else { Color::WHITE };
         for m in [self.opponent_mask.as_mut(), self.player_mask.as_mut()].into_iter().flatten() {
             m.set_modulate(tint);
+            m.set_visible(!view.stage_covers);
+        }
+        if let Some(tl) = self.timeline.as_mut() {
+            tl.set_visible(!view.stage_covers);
         }
         for l in [self.opponent_name.as_mut(), self.player_name.as_mut(), self.opponent_turn.as_mut(), self.player_turn.as_mut()]
             .into_iter()
@@ -491,6 +495,7 @@ impl TurnHud {
         {
             if let Some(mut parent) = l.get_parent().and_then(|p| p.try_cast::<Control>().ok()) {
                 parent.set_modulate(tint);
+                parent.set_visible(!view.stage_covers);
             }
         }
         if let Some(b) = self.button.as_mut() {
@@ -519,7 +524,7 @@ impl TurnHud {
             ft.bind_mut().set_choice_selection(selection);
         }
         if let Some(stack) = self.stack.as_mut() {
-            stack.show(&view.stack);
+            stack.show(if view.stage_covers { &[] } else { &view.stack });
         }
     }
 }
@@ -550,6 +555,9 @@ pub struct HudView {
     pub end_turn_enabled: bool,
     /// Eine 3D-Bühne (Startspieler, Mulligan) ist offen: Knöpfe unten rechts ausblenden.
     pub stage_open: bool,
+    /// Die offene Bühne deckt den Tisch ab (abgedunkelt): Medaillons, Namen, Phasen-Zeitstrahl
+    /// und Stack-Liste ganz ausblenden, damit nichts über Titel, Karten und Knöpfen der Bühne liegt.
+    pub stage_covers: bool,
     /// Stack-Liste, oberster Eintrag zuerst (leer = ausgeblendet).
     pub stack: Vec<HudStackEntry>,
     /// Manapool des Spielers (je [ManaType] eine Menge; leer = keine Anzeige).

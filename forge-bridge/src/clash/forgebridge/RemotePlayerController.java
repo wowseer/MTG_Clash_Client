@@ -110,18 +110,33 @@ public class RemotePlayerController extends PlayerControllerAi {
     /**
      * Priorität: {@code Decision::Priority} mit allen spielbaren Aktionen ({@code PlayLand},
      * {@code Cast}, {@code CastAlt}, {@code Activate} …) und {@code Pass}. Gibt es nichts zu
-     * spielen, wird automatisch gepasst. Sonst kommen die Manafähigkeiten als
+     * spielen, wird automatisch gepasst – außer in der eigenen zweiten Hauptphase und der
+     * eigenen Endphase ({@link #mustStop()}): dort hält das Spiel immer an, bis der Spieler passt.
+     * Sonst kommen die Manafähigkeiten als
      * {@code ActivateMana} dazu (Erweiterung, CR 605.3a): Der Spieler kann Mana vorab in den Pool
      * tappen und es danach beim Bezahlen selbst einsetzen; die Fähigkeit wird sofort ausgeführt
      * und erneut gefragt. Ist die gewählte Aktion nicht ausführbar (abgebrochen,
      * kein gültiges Ziel), kommt "rejected" und es wird erneut gefragt. Ob die KI den Zug für
      * sinnvoll hält, spielt keine Rolle.
      */
+    /**
+     * Pflicht-Halt: eigene zweite Hauptphase (CR 505.1) und eigene Endphase (CR 513.1) mit leerem
+     * Stack werden nie automatisch übersprungen – der Spieler sieht den Wechsel dorthin und passt
+     * selbst (Leertaste / „Passen“).
+     */
+    private boolean mustStop() {
+        forge.game.phase.PhaseHandler ph = getGame().getPhaseHandler();
+        forge.game.phase.PhaseType phase = ph.getPhase();
+        return ph.isPlayerTurn(getPlayer())
+                && getGame().getStack().isEmpty()
+                && (phase == forge.game.phase.PhaseType.MAIN2 || phase == forge.game.phase.PhaseType.END_OF_TURN);
+    }
+
     @Override
     public List<SpellAbility> chooseSpellAbilityToPlay() {
         while (true) {
             List<SpellAbility> options = playableOptions();
-            if (options.isEmpty()) {
+            if (options.isEmpty() && !mustStop()) {
                 return null;
             }
             JsonArray actions = new JsonArray();
