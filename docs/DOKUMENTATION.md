@@ -188,8 +188,8 @@ der Zauber braucht: optionale Kosten (z. B. Kicker), Modus, X-Wert und das **Zie
 Karte oder Medaillon, siehe oben). Aktivierte Fähigkeiten bleibender Karten (z. B. Ausrüsten)
 leuchten, wenn sie möglich sind, und werden per Klick aktiviert.
 
-Noch **nicht** selbst steuerbar (entscheidet vorerst die Forge-KI für dich): Würfel tauschen,
-Schutzschilde verteilen. **Mana aus dem Pool:** Schwebendes Mana (z. B. aus Ritualen) wird nicht
+Alle Entscheidungen im Umfang (siehe `docs/Kartenabdeckung.md`) trifft der Spieler selbst; die
+Forge-KI springt nur ein, wenn eine Antwort ungültig ist. **Mana aus dem Pool:** Schwebendes Mana (z. B. aus Ritualen) wird nicht
 mehr automatisch ausgegeben: Beim Bezahlen sind passende Symbole der Manapool-Anzeige golden
 umrandet, Klick setzt eines davon ein („Automatisch bezahlen“ nutzt den Pool ebenfalls).
 **Modi mit Wiederholung** („you may choose the same mode more than once“): jeder Klick zählt den

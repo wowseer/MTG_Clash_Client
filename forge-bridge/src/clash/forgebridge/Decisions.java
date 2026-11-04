@@ -618,7 +618,7 @@ final class Decisions {
     static List<Integer> divide(Game game, int seat, SpellAbility sa, int amount, List<GameEntity> targets,
             List<String> labels, int minEach) {
         JsonObject d = decision("DivideAmount", seat);
-        d.addProperty("source", sa.getHostCard() == null ? -1 : sa.getHostCard().getId());
+        d.addProperty("source", sa == null || sa.getHostCard() == null ? -1 : sa.getHostCard().getId());
         d.addProperty("amount", amount);
         JsonArray ts = new JsonArray();
         targets.forEach(t -> ts.add(targetJson(game, t)));

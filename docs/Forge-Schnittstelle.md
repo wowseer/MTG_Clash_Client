@@ -87,6 +87,8 @@ siehe `forge-engine/src/decision.rs` in NeoForge). Die Java-Brücke übersetzt F
 | `chooseTarget` (welches Ziel geändert wird) | `ChooseOption` „Zauber → Ziel“ | `Number` |
 | `reveal` (Karten werden aufgedeckt, CR 701.16) | `ChooseCards { reason: "Reveal", options, min: 0, max: 0 }` (**Erweiterung**: reine Anzeige; „Fertig“ = gesehen); eigene Handkarten werden nicht gezeigt | `Cards([])` |
 | `notifyOfValue` (z. B. „wählt Rot“) | Nachricht `log` mit `kind: "INFORMATION"` (keine Entscheidung) | – |
+| `divideShield` (Schutzschild auf mehrere betroffene Ziele, CR 615.7) | `DivideAmount { amount: Schildmenge (höchstens Gesamtschaden), targets, min_each: 0 }` | `Damage([…])` |
+| `chooseRollToSwap`, `chooseRollSwapValue` (Würfelwurf tauschen) | `ChooseOption` | `Number` |
 | `chooseCardsToDelve` (CR 702.66) | `ChooseCards { reason: "Delve", options: Friedhof, min: 0, max }` | `Cards([…])` |
 | `chooseCardsForConvokeOrImprovise` (CR 702.51, 702.126, Waterbend) | `ChooseCards { reason: "Convoke" / "Improvise" / "Choose", options: ungetappte Kreaturen/Artefakte, min: 0, max }`; welches Mana jede Karte bezahlt, legt die Brücke fest (farbiges Symbol in einer Farbe der Kreatur, sonst generisch) | `Cards([…])` |
 | `orderBlockers`, `orderBlocker`, `orderAttackers` (Schadens-Reihenfolge, nur mit `order_combatants`) | `OrderTriggers { descriptions }` mit Kartennamen (wie `orderMoveToZoneList`) | `Order([…])` |
@@ -392,6 +394,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Pool-Mana per Klick getestet mit Rite of Flame (RR in den Pool) und Lightning Bolt (`UsePool R`).
 - Modi mit Wiederholung (`can_repeat`) getestet mit Fiery Confluence: dreimal derselbe Modus über
   das HUD (vorher nicht beantwortbar, wenn weniger Modi verfügbar waren als zu wählen sind).
+- Schutzschild verteilen und Würfel tauschen ferngesteuert, nicht gezielt ausgelöst.
 - Spielprotokoll getestet: 440 Einträge in einer Partie, chronologisch (Mulligan, Runden, Länder,
   Zauber mit Zielen, Auflösen, Zonenwechsel), Anzeige oben rechts im Fenster geprüft.
 - Forges eigene Fragetexte sind englisch (Forge-Spracheinstellung); die Texte der Brücke deutsch.

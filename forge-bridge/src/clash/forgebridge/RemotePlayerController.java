@@ -868,6 +868,58 @@ public class RemotePlayerController extends PlayerControllerAi {
         ForgeBridge.send(m);
     }
 
+    /**
+     * Schutzschild auf mehrere betroffene Ziele verteilen (CR 615.7): {@code DivideAmount} mit der
+     * Schildmenge (höchstens der gesamte Schaden), je Ziel ab 0.
+     */
+    @Override
+    public Map<GameEntity, Integer> divideShield(Card effectSource, Map<GameEntity, Integer> affected, int shieldAmount) {
+        List<GameEntity> targets = new ArrayList<>(affected.keySet());
+        int damage = affected.values().stream().mapToInt(Integer::intValue).sum();
+        int amount = Math.min(shieldAmount, damage);
+        if (targets.size() <= 1 || amount <= 0) {
+            return super.divideShield(effectSource, affected, shieldAmount);
+        }
+        List<String> labels = new ArrayList<>();
+        targets.forEach(t -> labels.add(targetLabel(t) + " (" + affected.get(t) + " Schaden)"));
+        List<Integer> parts = Decisions.divide(getGame(), seat, null, amount, targets, labels, 0);
+        if (parts == null) {
+            return super.divideShield(effectSource, affected, shieldAmount);
+        }
+        Map<GameEntity, Integer> result = new java.util.HashMap<>();
+        for (int i = 0; i < targets.size(); i++) {
+            result.put(targets.get(i), parts.get(i));
+        }
+        return result;
+    }
+
+    /** Welcher Würfelwurf getauscht wird ({@code ChooseOption}). */
+    @Override
+    public forge.game.ability.effects.RollDiceEffect.DieRollResult chooseRollToSwap(
+            List<forge.game.ability.effects.RollDiceEffect.DieRollResult> rolls) {
+        if (rolls.size() <= 1) {
+            return super.chooseRollToSwap(rolls);
+        }
+        List<Decisions.Opt> opts = new ArrayList<>();
+        rolls.forEach(r -> opts.add(new Decisions.Opt("Wurf " + r.getModifiedValue()
+                + (r.getModifiedValue() != r.getNaturalValue() ? " (gewürfelt " + r.getNaturalValue() + ")" : ""), null)));
+        Integer i = Decisions.option(getGame(), seat, "Würfelwurf zum Tauschen wählen", null, null, opts, false);
+        return i != null ? rolls.get(i) : super.chooseRollToSwap(rolls);
+    }
+
+    /** Mit welchem Wert getauscht wird (z. B. Stärke oder Widerstand, {@code ChooseOption}). */
+    @Override
+    public String chooseRollSwapValue(List<String> swapChoices, Integer currentResult, int power, int toughness) {
+        if (swapChoices.size() <= 1) {
+            return super.chooseRollSwapValue(swapChoices, currentResult, power, toughness);
+        }
+        List<Decisions.Opt> opts = new ArrayList<>();
+        swapChoices.forEach(c -> opts.add(new Decisions.Opt(c, null)));
+        Integer i = Decisions.option(getGame(), seat, "Wurf " + currentResult + " tauschen mit (Stärke " + power
+                + ", Widerstand " + toughness + ")", null, null, opts, false);
+        return i != null ? swapChoices.get(i) : super.chooseRollSwapValue(swapChoices, currentResult, power, toughness);
+    }
+
     /** Anzeige eines möglichen Ziels: Karte „Name (Besitzer)“ bzw. Spieler „Name“ / „Name (du)“. */
     private String targetLabel(GameObject e) {
         if (e instanceof SpellAbility s) {
