@@ -6,6 +6,8 @@
 #   NEOFORGE_TEST_ROOT  Testkopie (Standard forge-bridge/build/neoforge/testroot)
 #   CLASH_GODOT         Godot-Programm (Standard: Godot 4.7.2 aus ~/.appimages)
 #   CLASH_JAVA          Java ab 17 (Standard: java im PATH; die mitgelieferte Laufzeit hat kein bin/java)
+#   CLASH_CMD           NeoForge-Befehl: clash (Standard, Testpartie) oder ui (normales Menü; dann in
+#                       Einstellungen → 3D-Tisch „Meine Partien am 3D-Tisch spielen“ einschalten)
 # Weitere Argumente gehen an NeoForge, z. B. --deck="Food and Fellowship" --timeout=600
 set -e
 cd "$(dirname "$0")/.."
@@ -34,4 +36,4 @@ exec "$JAVA" \
   --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED \
   --add-opens=java.base/java.net=ALL-UNNAMED \
   -Dneo.clash.godot="$GODOT" -Dneo.clash.project="$REPO/godot" \
-  -cp "$PATCH:$APP/lib/app/*" forge.neo.NeoMain clash "$@"
+  -cp "$PATCH:$APP/lib/app/*" forge.neo.NeoMain "${CLASH_CMD:-clash}" "$@"

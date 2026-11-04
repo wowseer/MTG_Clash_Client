@@ -268,6 +268,9 @@ Maven. Für die Integration reicht die installierte NeoForge (`~/Games/NeoForge`
   `NeoGame`, `SafeAi`, `NeoMain`, `SettingsPanel`, Sprachdateien) zu einem Patch-Jar,
 - `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` spielt eine Commander-Partie mit dem
   3D-Tisch in einer Testkopie (eigene NeoForge-Daten bleiben unberührt; Befehl `NeoMain clash`).
+  Mit `CLASH_CMD=ui tools/neoforge_clash.sh` startet stattdessen NeoForges normales Menü (Testkopie,
+  Patch geladen, Godot-Pfade schon gesetzt); dort nur noch den 3D-Tisch in den Einstellungen
+  einschalten.
 
 ## 6. Sprache (Deutsch / Englisch)
 
