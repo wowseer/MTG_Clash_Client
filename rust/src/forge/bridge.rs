@@ -5,10 +5,13 @@
 //!   einen Kanal an den Hauptthread; `process()` parst sie (Godot-`JSON`) und sendet Signale.
 //! - Befehle werden als eine JSON-Zeile auf stdin geschrieben.
 //! - stderr (Forge-Logausgaben) landet in `user://forge-bridge.log`.
+//! - Eingebettet (Godot von NeoForge gestartet mit `-- --clash-port=N`): statt des Java-Prozesses
+//!   eine TCP-Verbindung zu `127.0.0.1:N`, gleiches Protokoll; die Partie startet der Gastgeber.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::net::TcpStream;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
@@ -22,6 +25,8 @@ use crate::rules::{Choice, PlayerId, RulesEngine};
 /// Höchstens so viele Nachrichten werden pro Frame verarbeitet (Forge sendet in Spitzen
 /// Hunderte Ereignisse auf einmal).
 const MAX_MESSAGES_PER_FRAME: usize = 400;
+/// Eingebettet: so lange (Sekunden) bleibt der Tisch nach dem Ende der Verbindung offen.
+const HOSTED_CLOSE_DELAY: f64 = 4.0;
 
 enum Incoming {
     Line(String),
@@ -68,6 +73,8 @@ pub struct ForgeBridge {
 
     child: Option<Child>,
     stdin: Option<ChildStdin>,
+    /// Eingebettet: Verbindung zum Gastgeber (NeoForge), der die Partie startet.
+    socket: Option<TcpStream>,
     rx: Option<Receiver<Incoming>>,
     ready: bool,
     base: Base<Node>,
@@ -86,6 +93,7 @@ impl INode for ForgeBridge {
             log_messages: false,
             child: None,
             stdin: None,
+            socket: None,
             rx: None,
             ready: false,
             base,
@@ -183,8 +191,12 @@ impl ForgeBridge {
     /// [signal bridge_ready] (Forge braucht einige Sekunden zum Laden).
     #[func]
     pub fn start_bridge(&mut self) -> bool {
-        if self.child.is_some() {
+        if self.child.is_some() || self.socket.is_some() {
             return false;
+        }
+        // Gestartet von einem Gastgeber (NeoForge) mit `-- --clash-port=N`: dorthin verbinden
+        if let Some(port) = host_port() {
+            return self.connect_host(port);
         }
         let forge_dir = self.resolved_forge_dir();
         let forge_jar = match self.resolved_forge_jar(&forge_dir) {
@@ -213,7 +225,7 @@ impl ForgeBridge {
             .arg("-Djava.awt.headless=true")
             .arg("-cp")
             .arg(classpath)
-            .arg("clash.forgebridge.ForgeBridge")
+            .arg("clash.forgebridge.BridgeMain")
             .current_dir(&forge_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -250,10 +262,61 @@ impl ForgeBridge {
         true
     }
 
+    /// Verbindet sich mit dem Gastgeber auf `127.0.0.1:port` (eingebetteter Betrieb). Der
+    /// Gastgeber startet die Partie selbst; Nachrichten und Befehle wie beim Java-Prozess.
+    fn connect_host(&mut self, port: u16) -> bool {
+        let stream = match TcpStream::connect(("127.0.0.1", port)) {
+            Ok(s) => s,
+            Err(e) => {
+                self.emit_error("connect_failed", &format!("Gastgeber auf Port {port}: {e}"));
+                return false;
+            }
+        };
+        let reader = match stream.try_clone() {
+            Ok(r) => r,
+            Err(e) => {
+                self.emit_error("connect_failed", &e.to_string());
+                return false;
+            }
+        };
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            for line in BufReader::new(reader).lines() {
+                match line {
+                    Ok(l) => {
+                        if tx.send(Incoming::Line(l)).is_err() {
+                            return;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = tx.send(Incoming::Closed);
+        });
+        self.socket = Some(stream);
+        self.rx = Some(rx);
+        self.ready = false;
+        true
+    }
+
+    /// Läuft die Brücke eingebettet in einem Gastgeber (NeoForge startet die Partie)?
+    #[func]
+    pub fn is_hosted(&self) -> bool {
+        self.socket.is_some() || host_port().is_some()
+    }
+
     /// Beendet die Brücke (Befehl "quit", nach 2 s hart beendet). Sendet
     /// [signal bridge_stopped] mit -1, falls sie lief.
     #[func]
     fn stop_bridge(&mut self) {
+        if let Some(mut socket) = self.socket.take() {
+            let _ = socket.write_all(b"{\"cmd\":\"quit\"}\n");
+            let _ = socket.shutdown(std::net::Shutdown::Both);
+            self.rx = None;
+            self.ready = false;
+            self.signals().bridge_stopped().emit(-1);
+            return;
+        }
         let Some(mut child) = self.child.take() else {
             return;
         };
@@ -279,7 +342,7 @@ impl ForgeBridge {
     /// Läuft der Java-Prozess?
     #[func]
     pub fn is_running(&self) -> bool {
-        self.child.is_some()
+        self.child.is_some() || self.socket.is_some()
     }
 
     /// Hat Forge fertig geladen ([signal bridge_ready] empfangen)?
@@ -293,10 +356,13 @@ impl ForgeBridge {
     #[func]
     fn send_command(&mut self, command: VarDictionary) -> bool {
         let line = Json::stringify(&command.to_variant());
-        let Some(stdin) = self.stdin.as_mut() else {
+        let ok = if let Some(socket) = self.socket.as_mut() {
+            writeln!(socket, "{line}").and_then(|_| socket.flush()).is_ok()
+        } else if let Some(stdin) = self.stdin.as_mut() {
+            writeln!(stdin, "{line}").and_then(|_| stdin.flush()).is_ok()
+        } else {
             return false;
         };
-        let ok = writeln!(stdin, "{line}").and_then(|_| stdin.flush()).is_ok();
         if !ok {
             self.emit_error("write_failed", "Befehl konnte nicht gesendet werden");
         }
@@ -452,6 +518,15 @@ impl ForgeBridge {
         self.rx = None;
         self.stdin = None;
         self.ready = false;
+        if self.socket.take().is_some() {
+            // Eingebettet: der Gastgeber hat die Partie beendet → Spieltisch nach kurzer Zeit
+            // schließen (die Spielende-Meldung bleibt so lange sichtbar)
+            self.signals().bridge_stopped().emit(0);
+            let mut tree = self.base().get_tree();
+            let quit = Callable::from_object_method(&tree, "quit");
+            tree.create_timer(HOSTED_CLOSE_DELAY).connect("timeout", &quit);
+            return;
+        }
         let code = self
             .child
             .take()
@@ -507,4 +582,14 @@ impl RulesEngine for Gd<ForgeBridge> {
     fn request_state(&mut self, viewer: PlayerId) -> bool {
         self.bind_mut().request_state(viewer as i64)
     }
+}
+
+/// Port des Gastgebers aus den Programmargumenten nach `--` (`--clash-port=N`), falls Godot von
+/// NeoForge als Spieltisch gestartet wurde.
+fn host_port() -> Option<u16> {
+    godot::classes::Os::singleton()
+        .get_cmdline_user_args()
+        .as_slice()
+        .iter()
+        .find_map(|a| a.to_string().strip_prefix("--clash-port=").and_then(|p| p.parse().ok()))
 }

@@ -242,6 +242,33 @@ vor `~/Games/Forge` verwendet.
 
 ---
 
+## 5a. Spielen in NeoForge (3D-Tisch)
+
+NeoForge (`~/Entwicklung/Java/NeoForge`, JavaFX-Oberfläche für Forge) kann seine Partien auf
+diesem 3D-Tisch spielen lassen: Menüs, Decks und Modi bleiben in NeoForge, der Spieltisch ist
+Godot. Technisch: NeoForge öffnet einen lokalen Port, startet Godot mit `-- --clash-port=N`, und
+der menschliche Sitz wird über die Brücke (Protokoll v3) bedient (Details:
+`docs/Forge-Schnittstelle.md`, Abschnitt „Eingebettet in NeoForge“).
+
+**Einschalten:** In NeoForge unter *Einstellungen → 3D-Tisch (MTG Clash)*:
+„Meine Partien am 3D-Tisch spielen“ = Ja, „Godot-Programm“ (Pfad zur Godot-4.7-Datei) und
+„Projektordner von MTG Clash“ (der Ordner `godot/` dieses Projekts). Alternativ beim Start
+`-Dneo.clash=true -Dneo.clash.godot=… -Dneo.clash.project=…` bzw. die Umgebungsvariablen
+`NEOFORGE_CLASH`, `CLASH_GODOT`, `CLASH_PROJECT`. Startet sich Godot nicht innerhalb von 2 Minuten,
+spielt NeoForge wie gewohnt mit seinem eigenen Tisch.
+
+**Ablauf:** Partie in NeoForge starten → Godot-Fenster öffnet sich mit der Partie → Spielende wird
+4 s angezeigt, dann schließt sich Godot und NeoForge zeigt das Ergebnis. Wird das Godot-Fenster
+mitten in der Partie geschlossen, gibt der eigene Sitz auf.
+
+**Entwickeln und Testen ohne Maven:** NeoForges Quellen bauen nur in einem Forge-Checkout mit
+Maven. Für die Integration reicht die installierte NeoForge (`~/Games/NeoForge`):
+- `tools/sync_neoforge.sh` kopiert den Brücken-Code nach NeoForge (`clash/forgebridge/`),
+- `tools/neoforge_patch.sh` kompiliert ihn mit den geänderten NeoForge-Klassen (`ClashTable`,
+  `NeoGame`, `SafeAi`, `NeoMain`, `SettingsPanel`, Sprachdateien) zu einem Patch-Jar,
+- `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` spielt eine Commander-Partie mit dem
+  3D-Tisch in einer Testkopie (eigene NeoForge-Daten bleiben unberührt; Befehl `NeoMain clash`).
+
 ## 6. Sprache (Deutsch / Englisch)
 
 - **Umschalten** per Code: `$Table.set_language("en")` / `$Table.set_language("de")`; abfragen mit

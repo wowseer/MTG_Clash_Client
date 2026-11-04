@@ -9,4 +9,4 @@ fi
 FORGE_JAR="${FORGE_JAR:-$(ls "$FORGE_DIR"/forge-gui-desktop-*-jar-with-dependencies.jar 2>/dev/null | sort | tail -n 1)}"
 cd "$FORGE_DIR" || exit 1
 exec java -Xmx2g -Dfile.encoding=UTF-8 -Djava.awt.headless=true \
-  -cp "$BRIDGE_DIR/build/forge-bridge.jar:$FORGE_JAR" clash.forgebridge.ForgeBridge
+  -cp "$BRIDGE_DIR/build/forge-bridge.jar:$FORGE_JAR" clash.forgebridge.BridgeMain

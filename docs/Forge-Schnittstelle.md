@@ -1,14 +1,39 @@
 # Forge-Schnittstelle
 
-MTG Clash kann die Regel-Engine von **Forge** (Java) nutzen. Forge läuft dabei als eigener
-Prozess; Godot spricht über stdin/stdout mit ihm.
+MTG Clash kann die Regel-Engine von **Forge** (Java) nutzen, auf zwei Arten mit demselben
+Protokoll:
+
+**Eigenständig:** Godot startet Forge als eigenen Prozess und spricht über stdin/stdout mit ihm.
 
 ```
 Godot (Rust)                                  Java-Prozess (forge-bridge/)
-ForgeBridge-Node  ── JSON-Zeile auf stdin ──▶  clash.forgebridge.ForgeBridge
+ForgeBridge-Node  ── JSON-Zeile auf stdin ──▶  clash.forgebridge.BridgeMain → ForgeBridge
   Signale        ◀── JSON-Zeile auf stdout ──    └─ Forge (forge-game, forge-ai, …)
                        stderr ──▶ user://forge-bridge.log
 ```
+
+**Eingebettet in NeoForge:** NeoForge (JavaFX-Oberfläche für Forge) startet die Partie und
+Godot als Spieltisch. Godot verbindet sich über einen lokalen Socket.
+
+```
+NeoForge (JVM)                                              Godot (gestartet von NeoForge)
+NeoGame.play ── ClashTable.open(): Port öffnen, Godot starten ──▶ godot --path … -- --clash-port=N
+   │            ForgeBridge.attach(Socket)  ◀── JSON-Zeilen über TCP 127.0.0.1:N ──▶ ForgeBridge-Node
+   └─ HostedMatch: menschlicher Sitz = RemoteLobbyPlayer (RemotePlayerController)
+```
+
+- NeoForge-Seite: `forge.neo.clash.ClashTable` und ein kleiner Eingriff in `forge.neo.match.NeoGame`
+  (NeoForge-Repo). Der Brücken-Code wird mit `tools/sync_neoforge.sh` nach
+  `forge-gui-neo/src/main/java/clash/forgebridge/` kopiert; maßgeblich ist die Fassung hier.
+- Eingeschaltet über `neo.clash=true` (oder Umgebung `NEOFORGE_CLASH=true`); Godot-Programm
+  `neo.clash.godot` / `CLASH_GODOT`, Projektordner `neo.clash.project` / `CLASH_PROJECT`.
+  Befehl zum Testen: `NeoMain clash [--deck=NAME] [--opponents=N] [--timeout=SEK]` bzw. `tools/neoforge_clash.sh`.
+- Ablauf: `ready` (mit `embedded: true`) → `match_started` (ohne Zustand; der Zustand kommt mit der
+  ersten Anfrage) → Anfragen wie gewohnt → `game_over` (aus `GameEventGameOutcome`) → NeoForge
+  schließt den Socket, Godot beendet sich. `start_match` ist eingebettet nicht erlaubt.
+- Schließt der Spieler das Godot-Fenster während der Partie, gibt sein Sitz auf.
+- NeoMatchUI läuft unsichtbar als Zuschauer mit (wie NeoForges Modus OBSERVE ohne Tisch);
+  Hot-Seat-Rivalen werden mit dem 3D-Tisch als KI gespielt.
 
 ## Lizenz
 
@@ -176,7 +201,7 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 
 | `type` | Felder |
 |---|---|
-| `ready` | `protocol`, `working_dir` – Forge ist geladen (ca. 5 s nach Start) |
+| `ready` | `protocol`, `embedded` (true = in NeoForge eingebettet), `working_dir` – Forge ist geladen (ca. 5 s nach Start) |
 | `pong` | `nonce` |
 | `match_started` | `state` |
 | `event` | `event` (Forge-Klassenname, z. B. `GameEventCardChangeZone`, `GameEventTurnPhase`), `text`, `turn`, `phase` |

@@ -63,9 +63,12 @@ table.tscn  ─────────────▶  TableController  Hover, 
                             ForgeTable       Forge-Zustand → Card3D/Zonen,
                                              Spielerzüge → Antworten
                             TurnHud          liest HudView vom ForgeTable
-                            ForgeBridge  ── JSON Lines stdin/stdout ──▶  clash.forgebridge.ForgeBridge
-                                                                              └─ Forge 2.0.15 (forge-bridge/forge/)
+                            ForgeBridge  ── JSON Lines stdin/stdout ──▶  clash.forgebridge.BridgeMain/ForgeBridge
+                                         (eingebettet: TCP-Socket zu NeoForge) └─ Forge 2.0.15 (forge-bridge/forge/)
 ```
+
+Eingebettet in NeoForge: `forge.neo.clash.ClashTable` (NeoForge-Repo) öffnet einen Port, startet
+Godot mit `-- --clash-port=N` und hängt den menschlichen Sitz (`RemoteLobbyPlayer`) an die Brücke.
 
 | Ort | Inhalt |
 |---|---|
@@ -162,6 +165,9 @@ Deckauswahl und Formate übernimmt NeoForge.
 | Unit-Tests | `cd rust && cargo test` |
 | Brücke bauen | `forge-bridge/build.sh` (nutzt `forge-bridge/forge/`, sonst `~/Games/Forge`) |
 | Brücke von Hand | `forge-bridge/run.sh`, dann JSON-Zeilen tippen, z. B. `{"cmd":"ping"}` |
+| Brücken-Code nach NeoForge kopieren | `tools/sync_neoforge.sh` (nach jeder Änderung an `forge-bridge/src/`) |
+| NeoForge-Patch bauen (ohne Maven) | `tools/neoforge_patch.sh` → `forge-bridge/build/neoforge/neoforge-clash-patch.jar` |
+| NeoForge-Partie mit 3D-Tisch | `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` (Testkopie der Installation, eigene Spielstände bleiben unberührt) |
 | Godot | `~/.appimages/Godot_v4.7.2-stable_mono_linux_x86_64/Godot_v4.7.2-stable_mono_linux.x86_64` (nicht im PATH) |
 | Spiel starten | Godot öffnen, F5 (Hauptszene `godot/table.tscn`) |
 | API-Referenz | `python3 tools/gen_api_doc.py` → muss „ohne Beschreibung: 0“ melden |

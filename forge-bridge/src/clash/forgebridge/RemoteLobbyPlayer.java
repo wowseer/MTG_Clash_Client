@@ -30,6 +30,10 @@ public class RemoteLobbyPlayer extends LobbyPlayer implements IGameEntitiesFacto
     public Player createIngamePlayer(Game game, int id) {
         Player player = new Player(getName(), game, id);
         player.setFirstController(new RemotePlayerController(game, player, this));
+        if (ForgeBridge.isEmbedded()) {
+            // Eingebettet (NeoForge): die Partie startet der Gastgeber, hier erfährt die Brücke davon
+            ForgeBridge.gameStarted(game);
+        }
         return player;
     }
 

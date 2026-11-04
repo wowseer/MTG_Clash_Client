@@ -27,5 +27,9 @@ final class EventForwarder {
         m.addProperty("turn", ph.getTurn());
         m.addProperty("phase", ph.getPhase() == null ? null : ph.getPhase().name());
         ForgeBridge.send(m);
+        // Eingebettet startet der Gastgeber die Partie, also meldet sie hier ihr Ende
+        if (ForgeBridge.isEmbedded() && ev instanceof forge.game.event.GameEventGameOutcome) {
+            ForgeBridge.sendGameOver(game);
+        }
     }
 }

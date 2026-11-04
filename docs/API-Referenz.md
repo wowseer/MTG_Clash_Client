@@ -52,6 +52,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `start_bridge()` | `bool` | Startet den Java-Prozess. Gibt false zurück, wenn er schon läuft oder nicht starten konnte (dann zusätzlich [signal bridge_error]). Fertig ist er erst mit [signal bridge_ready] (Forge braucht einige Sekunden zum Laden). |
+| `is_hosted()` | `bool` | Läuft die Brücke eingebettet in einem Gastgeber (NeoForge startet die Partie)? |
 | `stop_bridge()` | `void` | Beendet die Brücke (Befehl "quit", nach 2 s hart beendet). Sendet [signal bridge_stopped] mit -1, falls sie lief. |
 | `is_running()` | `bool` | Läuft der Java-Prozess? |
 | `is_ready()` | `bool` | Hat Forge fertig geladen ([signal bridge_ready] empfangen)? |

@@ -21,7 +21,6 @@ import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import forge.GuiDesktop;
 import forge.LobbyPlayer;
 import forge.deck.Deck;
 import forge.deck.io.DeckSerializer;
@@ -31,7 +30,6 @@ import forge.game.GameRules;
 import forge.game.GameType;
 import forge.game.Match;
 import forge.game.player.RegisteredPlayer;
-import forge.gui.GuiBase;
 import forge.model.FModel;
 import forge.player.GamePlayerUtil;
 import forge.util.MyRandom;
@@ -39,9 +37,10 @@ import forge.util.MyRandom;
 /**
  * Brücke zwischen MTG Clash (Godot/Rust) und der Forge-Regel-Engine.
  *
- * <p>Läuft als eigener Prozess. Protokoll: JSON Lines (UTF-8), eine Nachricht pro Zeile.
- * Befehle kommen über stdin, Antworten/Ereignisse gehen über stdout. Alle sonstigen Ausgaben
- * von Forge werden nach stderr umgeleitet, damit stdout sauber bleibt.
+ * <p>Läuft als eigener Prozess ({@link BridgeMain}, stdin/stdout) oder eingebettet in einen
+ * Gastgeber wie NeoForge ({@link #attach}, lokaler Socket). Protokoll: JSON Lines (UTF-8), eine
+ * Nachricht pro Zeile. Im eigenen Prozess werden alle sonstigen Ausgaben von Forge nach stderr
+ * umgeleitet, damit stdout sauber bleibt.
  * Das vollständige Protokoll steht in {@code docs/Forge-Schnittstelle.md}.
  *
  * <p>Muss mit dem Forge-Installationsordner als Arbeitsverzeichnis gestartet werden
@@ -57,33 +56,87 @@ public final class ForgeBridge {
     private static final AtomicInteger NEXT_ID = new AtomicInteger(1);
     private static volatile Thread gameThread;
     private static volatile Game currentGame;
+    /** Eingebettet in einen Gastgeber (NeoForge) statt eigener Prozess. */
+    private static volatile boolean embedded;
 
     private ForgeBridge() {}
 
-    public static void main(String[] args) throws Exception {
+    /**
+     * Eigenständiger Betrieb, vor dem Laden von Forge: Protokoll-Ausgabe auf das echte stdout,
+     * alle übrigen Ausgaben ({@code System.out} von Forge) nach stderr.
+     */
+    static void prepareStandalone() {
         out = new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8);
         System.setOut(System.err);
-        System.setProperty("java.awt.headless", "true");
+    }
 
-        try {
-            GuiBase.setInterface(new GuiDesktop());
-            FModel.initialize(null, null);
-        } catch (Throwable t) {
-            sendError("init_failed", t);
-            System.exit(1);
-        }
+    /**
+     * Eigenständiger Betrieb (Prozess, gestartet von Godot): Nachrichten auf stdout, Befehle von
+     * stdin. Forge muss vorher initialisiert sein (siehe {@link BridgeMain}).
+     */
+    static void runStandalone() throws Exception {
+        sendReady();
+        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        readCommands(in);
+        // stdin geschlossen: Godot ist weg -> beenden.
+        System.exit(0);
+    }
 
+    /**
+     * Eingebetteter Betrieb (z. B. in NeoForge): Die Partie startet der Gastgeber selbst; MTG Clash
+     * ist nur der Spieltisch. Nachrichten gehen auf {@code os}, Befehle kommen von {@code is}
+     * (typischerweise ein lokaler Socket). Liest in einem eigenen Thread; ist die Verbindung zu,
+     * werden offene Anfragen beendet (die Engine entscheidet dann selbst) und {@code onClose}
+     * läuft. {@code start_match} ist hier nicht erlaubt; die Partie meldet
+     * {@link RemoteLobbyPlayer} mit {@link #gameStarted}.
+     */
+    public static void attach(java.io.OutputStream os, java.io.InputStream is, Runnable onClose) {
+        out = new PrintStream(os, true, StandardCharsets.UTF_8);
+        embedded = true;
+        sendReady();
+        Thread reader = new Thread(() -> {
+            try {
+                readCommands(new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8)));
+            } catch (Exception e) {
+                // Verbindung abgebrochen
+            }
+            PENDING.values().forEach(f -> f.complete(JsonNull.INSTANCE));
+            PENDING.clear();
+            if (onClose != null) {
+                onClose.run();
+            }
+        }, "clash-bridge-reader");
+        reader.setDaemon(true);
+        reader.start();
+    }
+
+    /** Aktuelle Partie (oder {@code null}), z. B. damit der Gastgeber aufgeben kann. */
+    public static Game currentGame() {
+        return currentGame;
+    }
+
+    /** Läuft die Brücke eingebettet ({@link #attach})? */
+    public static boolean isEmbedded() {
+        return embedded;
+    }
+
+    private static void sendReady() {
         JsonObject ready = message("ready");
         ready.addProperty("protocol", PROTOCOL_VERSION);
+        ready.addProperty("embedded", embedded);
         ready.addProperty("working_dir", new File(".").getAbsolutePath());
         send(ready);
+    }
 
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+    private static void readCommands(BufferedReader in) throws java.io.IOException {
         String line;
         while ((line = in.readLine()) != null) {
             line = line.trim();
             if (line.isEmpty()) {
                 continue;
+            }
+            if (embedded && line.contains("\"quit\"")) {
+                return;
             }
             try {
                 handle(JsonParser.parseString(line).getAsJsonObject());
@@ -91,8 +144,34 @@ public final class ForgeBridge {
                 sendError("bad_command", e);
             }
         }
-        // stdin geschlossen: Godot ist weg -> beenden.
-        System.exit(0);
+    }
+
+    /**
+     * Eingebettet: eine neue Partie hat begonnen (von {@link RemoteLobbyPlayer} beim Anlegen des
+     * Spielers gemeldet). Hängt Ereignis- und Protokoll-Weiterleitung an und meldet
+     * {@code match_started}; der vollständige Zustand kommt mit der ersten Anfrage.
+     */
+    static void gameStarted(Game game) {
+        if (currentGame == game) {
+            return;
+        }
+        currentGame = game;
+        game.subscribeToEvents(new EventForwarder(game));
+        game.getGameLog().addObserver(new LogForwarder(game));
+        send(message("match_started"));
+    }
+
+    /** Partie zu Ende: {@code game_over} mit Sieger, Unentschieden und Grund. */
+    static void sendGameOver(Game game) {
+        JsonObject over = message("game_over");
+        GameOutcome outcome = game.getOutcome();
+        if (outcome != null) {
+            over.addProperty("draw", outcome.isDraw());
+            LobbyPlayer winner = outcome.getWinningLobbyPlayer();
+            over.addProperty("winner", winner == null ? null : winner.getName());
+            over.addProperty("reason", String.valueOf(outcome.getWinCondition()));
+        }
+        send(over);
     }
 
     // ------------------------------------------------------------------ Befehle
@@ -107,7 +186,13 @@ public final class ForgeBridge {
                 }
                 send(pong);
             }
-            case "start_match" -> startMatch(cmd);
+            case "start_match" -> {
+                if (embedded) {
+                    sendError("embedded", "Die Partie startet der Gastgeber (NeoForge)");
+                } else {
+                    startMatch(cmd);
+                }
+            }
             case "answer" -> {
                 int id = cmd.get("id").getAsInt();
                 CompletableFuture<JsonElement> f = PENDING.remove(id);
@@ -127,7 +212,11 @@ public final class ForgeBridge {
                     send(st);
                 }
             }
-            case "quit" -> System.exit(0);
+            case "quit" -> {
+                if (!embedded) {
+                    System.exit(0);
+                }
+            }
             default -> sendError("unknown_command", "Unbekannter Befehl: " + name);
         }
     }
@@ -194,15 +283,7 @@ public final class ForgeBridge {
         } catch (Throwable t) {
             sendError("game_crashed", t);
         }
-        JsonObject over = message("game_over");
-        GameOutcome outcome = game.getOutcome();
-        if (outcome != null) {
-            over.addProperty("draw", outcome.isDraw());
-            LobbyPlayer winner = outcome.getWinningLobbyPlayer();
-            over.addProperty("winner", winner == null ? null : winner.getName());
-            over.addProperty("reason", String.valueOf(outcome.getWinCondition()));
-        }
-        send(over);
+        sendGameOver(game);
         // currentGame bleibt gesetzt, damit "state" auch nach Spielende den Endstand liefert.
         // Offene Anfragen beenden, damit kein Thread hängen bleibt.
         PENDING.values().forEach(f -> f.complete(JsonNull.INSTANCE));

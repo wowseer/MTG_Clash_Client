@@ -384,7 +384,13 @@ impl ForgeTable {
     /// Brücke bereit → Partie starten (bei [member autostart]).
     #[func]
     fn on_bridge_ready(&mut self, _protocol: i64) {
-        if self.autostart {
+        let hosted = self.bridge.as_ref().is_some_and(|b| b.bind().is_hosted());
+        if hosted {
+            // Eingebettet (NeoForge): die Partie startet der Gastgeber
+            self.winner.clear();
+            self.log.clear();
+            self.match_running = true;
+        } else if self.autostart {
             self.start_match();
         }
     }
