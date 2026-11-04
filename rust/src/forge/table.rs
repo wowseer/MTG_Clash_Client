@@ -25,7 +25,7 @@ use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, Request, RulesEngine, Target};
 use crate::table::mana_wheel::{ManaWheel, WheelSegment};
-use crate::table::exile_portal::attach_exile_portal;
+use crate::table::exile_portal::{attach_exile_portal, set_exile_portal_open};
 use crate::game::debug_panel::DebugPanel;
 use godot::classes::Os;
 use crate::game::phases::Phase;
@@ -3181,15 +3181,18 @@ impl ForgeTable {
 
     /// Gleicht den Tisch mit dem Forge-Zustand ab: Karten anlegen, verschieben, tappen, entfernen.
     fn apply_state(&mut self, state: VarDictionary) {
-        // Exil-Strudel unter jedes Exil (einmalig)
-        for seat in 0..2 {
-            if let Some(z) = self.zones(seat).exile {
-                attach_exile_portal(&mut z.upcast());
-            }
-        }
         let players: Vec<VarDictionary> = get_array(&state, "players")
             .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
             .unwrap_or_default();
+        // Exil-Strudel: offen, solange Karten im Exil liegen, sonst ist die Zone zu
+        for (seat, p) in players.iter().enumerate().take(2) {
+            if let Some(z) = self.zones(seat).exile {
+                let mut node = z.upcast::<Node3D>();
+                attach_exile_portal(&mut node);
+                let open = get_array(p, "exile").is_some_and(|a| !a.is_empty());
+                set_exile_portal_open(&mut node, open);
+            }
+        }
         self.state = Some(state);
 
         // Soll-Zustand: (Schlüssel, Karte oder None = verdeckt, Zielzone, Besitzer)

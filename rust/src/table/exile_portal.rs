@@ -1,27 +1,33 @@
 //! Exil-Strudel: dunkel wirbelnder Wirbel auf dem Tisch unter dem Exil-Stapel (nach dem Video
 //! des Users „Exile and Grave“). Ein Shader auf einer flachen Fläche: Rauschen in Polarkoordinaten,
 //! das sich langsam dreht und nach innen gezogen wird, außen weich ausgeblendet, in der Mitte ein
-//! dunkles Loch. Der Wirbel ist etwas größer als eine Karte im Exil, sodass er um sie herum
-//! sichtbar bleibt; ohne Karten sieht man ihn ganz.
+//! dunkles Loch. Er liegt halbdurchsichtig über den Karten im Exil. Er ist nur offen, solange Karten im Exil liegen ([`set_exile_portal_open`]):
+//! öffnet sich aus der Mitte (0,30 s, Back-Out) und schließt sich wieder (0,30 s, Quad-In).
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
+use godot::classes::tween::{EaseType, TransitionType};
 use godot::classes::{MeshInstance3D, QuadMesh, Shader, ShaderMaterial};
 use godot::prelude::*;
 
 use super::shader_noise::PERLIN_FBM;
 
-/// Durchmesser des Wirbels (Zonen-Einheiten) und Höhe über dem Tisch.
-const PORTAL_SIZE: f32 = 2.0;
-const PORTAL_LIFT: f32 = 0.004;
+/// Durchmesser des Wirbels (Zonen-Einheiten) und Höhe über dem Tisch (über dem Exil-Stapel:
+/// die Karten liegen sichtbar „im“ Wirbel; ohne Trefferfläche, Klicks gehen an die Karten).
+const PORTAL_SIZE: f32 = 1.45;
+const PORTAL_LIFT: f32 = 0.09;
+/// Öffnen / Schließen (Sekunden).
+const PORTAL_TIME: f64 = 0.3;
 
 const SHADER_HEAD: &str = r#"
 shader_type spatial;
 render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;
+uniform float open = 0.0;
 "#;
 
 const SHADER_BODY: &str = r#"
 void fragment() {
-    vec2 p = (UV - 0.5) * 2.0;
+    if (open <= 0.001) { discard; }
+    vec2 p = (UV - 0.5) * 2.0 / open;
     float r = length(p);
     if (r > 1.0) { discard; }
     float a = atan(p.y, p.x);
@@ -38,7 +44,7 @@ void fragment() {
     col = mix(col, glint, streak * 0.35 * smoothstep(0.15, 0.6, r));
     // dunkles Loch in der Mitte, weicher Rand außen
     col *= mix(0.25, 1.0, smoothstep(0.05, 0.45, r));
-    float alpha = (1.0 - smoothstep(0.7, 1.0, r)) * 0.92;
+    float alpha = (1.0 - smoothstep(0.7, 1.0, r)) * mix(0.45, 0.8, smoothstep(0.1, 0.6, r)) * clamp(open, 0.0, 1.0);
     ALBEDO = col;
     ALPHA = alpha;
 }
@@ -54,6 +60,7 @@ pub fn attach_exile_portal(zone: &mut Gd<Node3D>) {
     shader.set_code(&format!("{SHADER_HEAD}{PERLIN_FBM}{SHADER_BODY}"));
     let mut mat = ShaderMaterial::new_gd();
     mat.set_shader(&shader);
+    mat.set_shader_parameter("open", &0.0f32.to_variant());
     mat.set_render_priority(-2);
     let mut quad = QuadMesh::new_gd();
     quad.set_size(Vector2::splat(PORTAL_SIZE));
@@ -68,4 +75,28 @@ pub fn attach_exile_portal(zone: &mut Gd<Node3D>) {
         Vector3::new(0.0, PORTAL_LIFT, 0.0),
     ));
     zone.add_child(&mesh);
+}
+
+/// Exil-Strudel unter `zone` öffnen (`open` = Karten im Exil) bzw. schließen; animiert, nur
+/// wenn sich der Zustand ändert.
+pub fn set_exile_portal_open(zone: &mut Gd<Node3D>, open: bool) {
+    let Some(mut mesh) = zone.get_node_or_null("ExilePortal").and_then(|n| n.try_cast::<MeshInstance3D>().ok()) else { return };
+    if mesh.has_meta("portal_open") && mesh.get_meta("portal_open").try_to::<bool>().ok() == Some(open) {
+        return;
+    }
+    mesh.set_meta("portal_open", &open.to_variant());
+    let Some(mat) = mesh.get_mesh().and_then(|m| m.surface_get_material(0)).and_then(|m| m.try_cast::<ShaderMaterial>().ok()) else { return };
+    let from = mat.get_shader_parameter("open").try_to::<f32>().unwrap_or(0.0);
+    let to = if open { 1.0f32 } else { 0.0 };
+    // Wert über eine Funktion setzen: der Shader-Parameter ist vor dem ersten Kompilieren noch
+    // keine Eigenschaft, die ein Tween direkt ansprechen könnte
+    let mut target = mat.clone();
+    let set = Callable::from_linked_fn("set_portal_open", &mat, move |args: &[&Variant]| {
+        let v = args.first().and_then(|a| a.try_to::<f32>().ok()).unwrap_or(0.0);
+        target.set_shader_parameter("open", &v.to_variant());
+    });
+    let mut tween = mesh.create_tween();
+    tween.set_trans(if open { TransitionType::BACK } else { TransitionType::QUAD });
+    tween.set_ease(if open { EaseType::OUT } else { EaseType::IN });
+    tween.tween_method(&set, &from.to_variant(), &to.to_variant(), PORTAL_TIME);
 }
