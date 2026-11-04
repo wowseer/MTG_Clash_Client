@@ -1245,6 +1245,10 @@ impl ForgeTable {
             let at = zone.get_global_transform() * X_STAGE_LOCAL;
             showcase.bind_mut().open_at(at, X_STAGE_SCALE, X_STAGE_LIFT);
         }
+        // die leuchtende Originalkarte auf dem Stack dahinter ausblenden, bis die Bühne weg ist
+        if let Some(card) = req.source.and_then(|id| self.cards.get(&i64::from(id)).cloned()) {
+            showcase.bind_mut().hide_while_open(card);
+        }
         // die Karte groß, hell und lesbar in der Mitte
         if let Some(data) = data {
             let mut copy = Self::stage_card(&data, None);

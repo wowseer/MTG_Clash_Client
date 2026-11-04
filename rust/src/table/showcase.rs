@@ -78,6 +78,9 @@ pub struct Showcase {
     borrowed: Vec<(Gd<Card3D>, Gd<Zone>)>,
     /// Eigene Karten der Bühne (z. B. Kopien als Optionen); werden beim Schließen freigegeben.
     owned: Vec<Gd<Card3D>>,
+    /// Karten, die während der Bühne ausgeblendet sind (z. B. das Original hinter einer Kopie);
+    /// erscheinen wieder, wenn die Bühne ganz verschwunden ist.
+    hidden: Vec<Gd<Card3D>>,
     /// Zeit seit dem Öffnen bzw. Beginn des Schließens.
     t: f32,
     closing: bool,
@@ -99,6 +102,7 @@ impl INode3D for Showcase {
             focus: false,
             borrowed: Vec::new(),
             owned: Vec::new(),
+            hidden: Vec::new(),
             t: 0.0,
             closing: false,
             base,
@@ -123,6 +127,10 @@ impl INode3D for Showcase {
             l.set_modulate(c);
         }
         if self.closing && k >= 1.0 {
+            // ausgeblendete Karten erst zeigen, wenn die Bühne ganz verschwunden ist
+            for mut c in self.hidden.drain(..).filter(|c| c.is_instance_valid()) {
+                c.set_visible(true);
+            }
             self.base_mut().queue_free();
         }
     }
@@ -233,6 +241,15 @@ impl Showcase {
             };
             b.set_position(pos);
         }
+    }
+
+    /// Karte ausblenden, solange die Bühne offen ist (z. B. das Original auf dem Stack hinter
+    /// seiner großen Kopie); sie erscheint wieder, sobald die Bühne nach dem Schließen ganz
+    /// ausgeblendet ist.
+    pub fn hide_while_open(&mut self, card: Gd<Card3D>) {
+        let mut card = card;
+        card.set_visible(false);
+        self.hidden.push(card);
     }
 
     /// Knopf an eine feste Stelle der Bühne setzen (lokal x/y, z. B. eine waagerechte
