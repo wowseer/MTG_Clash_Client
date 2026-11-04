@@ -67,10 +67,32 @@ fn palette(style: ButtonStyle) -> Palette {
     }
 }
 
-/// Seitenverhältnis der gerenderten Knopfbilder (2144 × 600).
-const IMAGE_ASPECT: f32 = 2144.0 / 600.0;
-/// Anteil des Knopfes an der Bildfläche (Rest ist Leuchten): Breite, Höhe.
-const FACE_FRACTION: Vector2 = Vector2::new(0.838, 0.634);
+/// Form (Blender-Einheiten, Bildausschnitt 5,3 × 1,4832): Höhe der Bildfläche, Eckenradius des
+/// abgerundeten Rechtecks und Rand für das Leuchten links/rechts.
+const CANVAS_HEIGHT: f32 = 1.4832;
+const CORNER: f32 = 0.405;
+const GLOW_MARGIN: f32 = 0.45;
+/// Halbe Länge des geraden Knopfkörpers: breite Pille wie in Blender bzw. kurz (nur für ein,
+/// zwei Symbole).
+pub const WIDE_BODY: f32 = 1.795;
+pub const COMPACT_BODY: f32 = 0.12;
+/// Anteil der Knopf-Fläche an der Bildhöhe (Rest ist Leuchten).
+const FACE_HEIGHT_FRACTION: f32 = 0.634;
+
+/// Breite der Bildfläche (Blender-Einheiten) bei halber Körperlänge `body`.
+fn canvas_width(body: f32) -> f32 {
+    2.0 * (body + CORNER + GLOW_MARGIN)
+}
+
+/// Seitenverhältnis der Bildfläche.
+fn aspect(body: f32) -> f32 {
+    canvas_width(body) / CANVAS_HEIGHT
+}
+
+/// Anteil der Knopf-Fläche an der Bildbreite (Rest ist Leuchten).
+fn face_width_fraction(body: f32) -> f32 {
+    (body + CORNER) / (body + CORNER + GLOW_MARGIN)
+}
 /// Erscheinen, Verschwinden, Hover-Glättung, Klick-Eindrücken (Sekunden).
 const APPEAR_TIME: f32 = 0.20;
 const DISMISS_TIME: f32 = 0.15;
@@ -111,6 +133,10 @@ pub struct Button3D {
     #[export]
     #[var(pub)]
     enabled: bool,
+    /// Halbe Länge des geraden Knopfkörpers in Blender-Einheiten: 1,795 = breite Pille wie in
+    /// Blender, 0,12 = kurzer Knopf für ein, zwei Symbole. Höhe, Rundung und Leuchten bleiben.
+    #[export]
+    body_half: f32,
 
     material: Option<Gd<ShaderMaterial>>,
     label: Option<Gd<Label3D>>,
@@ -136,6 +162,7 @@ impl IArea3D for Button3D {
             width: 2.4,
             face_camera: true,
             enabled: true,
+            body_half: WIDE_BODY,
             material: None,
             label: None,
             visual: None,
@@ -252,14 +279,19 @@ impl Button3D {
     }
 
     /// Breite der Bildfläche in Pixeln, die zu einer Knopf-Fläche (ohne Leuchten) von `face_px`
-    /// Pixeln gehört.
-    pub fn image_width_for_face(face_px: f32) -> f32 {
-        face_px / FACE_FRACTION.x
+    /// Pixeln gehört (Körperlänge `body`, z. B. [`WIDE_BODY`]).
+    pub fn image_width_for_face(face_px: f32, body: f32) -> f32 {
+        face_px / face_width_fraction(body)
     }
 
     /// Höhe der Knopf-Fläche (ohne Leuchten) in Pixeln bei `face_px` Pixeln Breite.
-    pub fn face_height_for_face(face_px: f32) -> f32 {
-        face_px / FACE_FRACTION.x / IMAGE_ASPECT * FACE_FRACTION.y
+    pub fn face_height_for_face(face_px: f32, body: f32) -> f32 {
+        Self::image_width_for_face(face_px, body) / aspect(body) * FACE_HEIGHT_FRACTION
+    }
+
+    /// Breite der Knopf-Fläche in Pixeln bei `face_height_px` Pixeln Höhe.
+    pub fn face_width_for_height(face_height_px: f32, body: f32) -> f32 {
+        face_height_px / FACE_HEIGHT_FRACTION * aspect(body) * face_width_fraction(body)
     }
 
     /// Beschriftung ändern (ohne Wirkung, wenn sie gleich bleibt).
@@ -279,12 +311,18 @@ impl Button3D {
 impl Button3D {
     /// Neuer Knopf im Farbstil `style` mit Beschriftung (noch nicht in der Szene).
     pub fn create(style: ButtonStyle, text: &str, width: f32) -> Gd<Button3D> {
+        Self::create_shaped(style, text, width, WIDE_BODY)
+    }
+
+    /// Wie [`Self::create`], mit halber Körperlänge `body` ([`WIDE_BODY`], [`COMPACT_BODY`] …).
+    pub fn create_shaped(style: ButtonStyle, text: &str, width: f32, body: f32) -> Gd<Button3D> {
         let mut b = Button3D::new_alloc();
         {
             let mut m = b.bind_mut();
             m.style = style;
             m.text = text.into();
             m.width = width;
+            m.body_half = body;
         }
         b
     }
@@ -304,7 +342,7 @@ impl Button3D {
     }
 
     fn build(&mut self) {
-        let height = self.width / IMAGE_ASPECT;
+        let height = self.width / aspect(self.body_half);
         self.base_mut().set_collision_layer(CONTROL_LAYER);
         self.base_mut().set_collision_mask(0);
         self.base_mut().set_monitoring(false);
@@ -312,14 +350,18 @@ impl Button3D {
 
         // Trefferfläche: nur der Knopf, nicht das Leuchten
         let mut shape = BoxShape3D::new_gd();
-        shape.set_size(Vector3::new(self.width * FACE_FRACTION.x, height * FACE_FRACTION.y, 0.05));
+        shape.set_size(Vector3::new(
+            self.width * face_width_fraction(self.body_half),
+            height * FACE_HEIGHT_FRACTION,
+            0.05,
+        ));
         let mut collision = CollisionShape3D::new_alloc();
         collision.set_shape(&shape);
         self.base_mut().add_child(&collision);
 
         let mut visual = Node3D::new_alloc();
         visual.set_name("Visual");
-        let (surface, material) = surface(self.style, Vector2::new(self.width, height));
+        let (surface, material) = surface(self.style, Vector2::new(self.width, height), self.body_half);
         visual.add_child(&surface);
 
         let mut label = Label3D::new_alloc();
@@ -346,9 +388,9 @@ impl Button3D {
 
     /// Schriftgröße so wählen, dass der Text auf den Knopf passt (Höhe ca. 30 % des Knopfes).
     fn fit_label(&mut self) {
-        let height = self.width / IMAGE_ASPECT;
-        let text_height = height * FACE_FRACTION.y * 0.42;
-        let max_width = self.width * FACE_FRACTION.x * 0.86;
+        let height = self.width / aspect(self.body_half);
+        let text_height = height * FACE_HEIGHT_FRACTION * 0.42;
+        let max_width = self.width * face_width_fraction(self.body_half) * 0.86;
         let chars = self.text.to_string().chars().count().max(1) as f32;
         // Breite eines Zeichens ca. 0,55 Schriftgrößen
         let size = text_height.min(max_width / (chars * 0.55));
@@ -360,7 +402,7 @@ impl Button3D {
 
 /// Fläche mit dem Knopf-Shader im Farbstil `style` (Vorderseite +Z). Jeder Knopf bekommt einen
 /// zufälligen Zeitversatz, damit nebeneinanderliegende Knöpfe nicht im Gleichtakt laufen.
-fn surface(style: ButtonStyle, size: Vector2) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
+fn surface(style: ButtonStyle, size: Vector2, body: f32) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
     let mut shader = Shader::new_gd();
     shader.set_code(&button_shader());
     let mut mat = ShaderMaterial::new_gd();
@@ -382,6 +424,8 @@ fn surface(style: ButtonStyle, size: Vector2) -> (Gd<MeshInstance3D>, Gd<ShaderM
     ] {
         mat.set_shader_parameter(name, &v4(c).to_variant());
     }
+    mat.set_shader_parameter("canvas", &Vector2::new(canvas_width(body), CANVAS_HEIGHT).to_variant());
+    mat.set_shader_parameter("body_half", &body.to_variant());
     let offset = godot::global::randf_range(0.0, 4.0) as f32;
     mat.set_shader_parameter("time_offset", &offset.to_variant());
     let mut mesh = QuadMesh::new_gd();

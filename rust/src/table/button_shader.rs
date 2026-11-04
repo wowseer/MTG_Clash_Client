@@ -3,7 +3,8 @@
 //! ihrer Treiber, damit sich die Oberfläche bewegt wie in Blender.
 //!
 //! Abbildung der Blender-Knoten (Objektkoordinaten des Knopfes, Bildausschnitt 5,3 × 1,4832):
-//! - Form: abgerundetes Rechteck, `d = |max(|p| − (1,795; 0,045), 0)| + min(max(q.x, q.y), 0) − 0,405`;
+//! - Form: abgerundetes Rechteck, `d = |max(|p| − (1,795; 0,045), 0)| + min(max(q.x, q.y), 0) − 0,405`
+//!   (1,795 = `body_half`, kürzer für kompakte Knöpfe; der Bildausschnitt `canvas` wächst mit);
 //!   Deckkraft `clamp(−d / 0,012)` (weiche Kante).
 //! - Farbe: senkrechter Verlauf (Color Ramp über `y·1,1111 + 0,5`), darüber zwei 4D-fBm-Rauschen
 //!   (Skala 2,2 / Detail 4 / Rauheit 0,55 / Verzerrung 1,2 und 3,5 / 2 / 0,5 / 0,8) an
@@ -42,7 +43,9 @@ uniform float glow_boost = 1.0;   // Hover: > 1
 uniform float time_offset = 0.0;  // damit nicht alle Knöpfe gleich laufen
 uniform float disabled = 0.0;     // 1 = ausgegraut
 
-const vec2 CANVAS = vec2(5.3, 1.4832);
+// Bildausschnitt (Blender-Einheiten) und halbe Länge des geraden Knopfkörpers (1,795 = Blender)
+uniform vec2 canvas = vec2(5.3, 1.4832);
+uniform float body_half = 1.795;
 
 %NOISE%
 // Blenders Noise-Texture-Knoten (4D, fBm, normalisiert) mit Verzerrung
@@ -64,9 +67,9 @@ vec3 ramp(float t) {
 }
 
 void fragment() {
-    vec2 o = vec2(UV.x - 0.5, 0.5 - UV.y) * CANVAS;
+    vec2 o = vec2(UV.x - 0.5, 0.5 - UV.y) * canvas;
     // abgerundetes Rechteck (SDF wie in Blender)
-    vec2 q = abs(o) - vec2(1.795, 0.045);
+    vec2 q = abs(o) - vec2(body_half, 0.045);
     float d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - 0.405;
 
     // Treiber: 30 fps, 120 Frames

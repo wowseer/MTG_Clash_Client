@@ -290,12 +290,16 @@ impl ForgeTable {
         }
     }
 
-    /// Knopf „Sofort beenden“: bis zum Ende dieser Runde automatisch passen; im eigenen Zug wird
-    /// ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die
+    /// Knopf „»»“ (Sofort beenden, nur im eigenen Zug): bis zum Ende dieser Runde automatisch
+    /// passen; es wird ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die
     /// UI weiter. Legt ein anderer Spieler etwas auf den Stack, endet das automatische Passen,
     /// damit man antworten kann.
     #[func]
     pub fn end_turn(&mut self) {
+        // nur im eigenen Zug (im Zug des Gegners ist der Knopf ausgegraut)
+        if self.state.as_ref().is_none_or(|s| get_int(s, "active_player") != 0) {
+            return;
+        }
         let turn = self.state.as_ref().map_or(0, |s| get_int(s, "turn"));
         self.auto_pass_turn = Some(turn);
         if let Some(choice) = self.auto_pass_choice() {
@@ -993,7 +997,10 @@ impl ForgeTable {
             button_text: button_text.as_str().into(),
             button_hint: combat.map(|(_, hint)| hint).unwrap_or_default(),
             stage_open: self.showcase.is_some() || !self.choice_buttons.is_empty(),
-            end_turn_enabled: self.match_running && self.winner.is_empty() && self.auto_pass_turn.is_none(),
+            end_turn_enabled: self.match_running
+                && self.winner.is_empty()
+                && self.auto_pass_turn.is_none()
+                && st.is_some_and(|s| get_int(s, "active_player") == 0),
             stack: self.hud_stack(),
             log: self.log.iter().skip(self.log.len().saturating_sub(LOG_SHOWN)).cloned().collect(),
             pool_clickable: (0..6)

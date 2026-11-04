@@ -10,7 +10,7 @@
 //! - linker Bildrand: Spielername, darüber die Rundenzahl mit Sanduhr ([`HourglassIcon`]) –
 //!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
 //! - unten rechts: Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen (n)“ /
-//!   „Blocken (n)“) und darunter klein „Sofort beenden »»“ – beide als orange animierte
+//!   „Blocken (n)“) und darunter klein „»»“ (Sofort beenden) – beide als orange animierte
 //!   [`Button3D`] in der 3D-Szene, an die Bildschirmstelle geheftet
 //! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
 //! - oben rechts: Spielprotokoll ([`GameLogList`]), die letzten Einträge der Engine
@@ -44,7 +44,7 @@ use super::log_view::{GameLogList, HudLogLine};
 use super::stack_view::{HudStackEntry, StackList};
 pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
-use crate::table::button3d::{Button3D, ButtonStyle};
+use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY, WIDE_BODY};
 use crate::table::table_controller::TableController;
 
 const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
@@ -56,7 +56,8 @@ const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
 /// Phasen-Knopf und „Sofort beenden“ ([Button3D], unten rechts): Breite der Knopf-Fläche in
 /// Pixeln, Rand zum Bildschirm und Abstand zwischen den Knöpfen.
 const MAIN_FACE_PX: f32 = 300.0;
-const END_FACE_PX: f32 = 190.0;
+/// „»»“: kurzer Knopf, nur so groß wie die Symbole (Höhe der Knopf-Fläche in Pixeln).
+const END_FACE_HEIGHT_PX: f32 = 34.0;
 const BUTTON_MARGIN: f32 = 14.0;
 const BUTTON_GAP_PX: f32 = 8.0;
 /// Abstand des Phasen-Zeitstrahls über dem Phasen-Knopf.
@@ -69,7 +70,7 @@ const PREVIEW_Z: i32 = 50;
 /// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
 /// sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr
 /// ([HourglassIcon]; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf
-/// „Angreifen (n)“ / „Blocken (n)“) und darunter „Sofort beenden »»“ (beide orange animierte [Button3D]) und ein
+/// „Angreifen (n)“ / „Blocken (n)“) und darunter „»»“ (Sofort beenden) (beide orange animierte [Button3D]) und ein
 /// Auswahlfenster (z. B. Mulligan).
 /// Liest den Zustand jedes Frame vom [ForgeTable] (Spiel mit der Forge-Regel-Engine).
 #[derive(GodotClass)]
@@ -298,8 +299,9 @@ impl TurnHud {
         root.set_mouse_filter(MouseFilter::IGNORE);
 
         // Unten rechts übereinander: Zeitstrahl der Phasen, Phasen-Knopf, „Sofort beenden“
-        let end_h = Button3D::face_height_for_face(END_FACE_PX);
-        let main_h = Button3D::face_height_for_face(MAIN_FACE_PX);
+        let end_w = Button3D::face_width_for_height(END_FACE_HEIGHT_PX, COMPACT_BODY);
+        let end_h = END_FACE_HEIGHT_PX;
+        let main_h = Button3D::face_height_for_face(MAIN_FACE_PX, WIDE_BODY);
         let end_y = -BUTTON_MARGIN - end_h * 0.5;
         let main_y = -BUTTON_MARGIN - end_h - BUTTON_GAP_PX - main_h * 0.5;
         let main_top = -BUTTON_MARGIN - end_h - BUTTON_GAP_PX - main_h;
@@ -352,17 +354,17 @@ impl TurnHud {
         button.bind_mut().pin_to_screen(
             Vector2::new(1.0, 1.0),
             Vector2::new(-BUTTON_MARGIN - MAIN_FACE_PX * 0.5, main_y),
-            Button3D::image_width_for_face(MAIN_FACE_PX),
+            Button3D::image_width_for_face(MAIN_FACE_PX, WIDE_BODY),
         );
         let cb = Callable::from_object_method(&self.to_gd(), "on_next_pressed");
         button.connect("pressed", &cb);
         self.base_mut().add_child(&button);
-        let mut end_turn = Button3D::create(ButtonStyle::Orange, &tr!("Sofort beenden  »»", "End now  »»"), 1.0);
+        let mut end_turn = Button3D::create_shaped(ButtonStyle::Orange, "»»", 1.0, COMPACT_BODY);
         end_turn.set_name("EndTurnButton");
         end_turn.bind_mut().pin_to_screen(
             Vector2::new(1.0, 1.0),
-            Vector2::new(-BUTTON_MARGIN - END_FACE_PX * 0.5, end_y),
-            Button3D::image_width_for_face(END_FACE_PX),
+            Vector2::new(-BUTTON_MARGIN - end_w * 0.5, end_y),
+            Button3D::image_width_for_face(end_w, COMPACT_BODY),
         );
         let cb = Callable::from_object_method(&self.to_gd(), "on_end_turn_pressed");
         end_turn.connect("pressed", &cb);
@@ -606,7 +608,7 @@ pub struct HudView {
     pub button_text: GString,
     /// Hinweis der Engine unter dem Phasen-Knopf (z. B. ungültiger Angriff; leer = keiner).
     pub button_hint: String,
-    /// Knopf „Sofort beenden“ anklickbar (Partie läuft, nicht schon aktiv).
+    /// Knopf „»»“ (Sofort beenden) anklickbar: Partie läuft, eigener Zug, nicht schon aktiv.
     pub end_turn_enabled: bool,
     /// Eine 3D-Bühne (Startspieler, Mulligan) ist offen: Knöpfe unten rechts ausblenden.
     pub stage_open: bool,
