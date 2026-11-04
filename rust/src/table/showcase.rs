@@ -7,7 +7,9 @@
 //! - **Kartenfächer**: eine echte [`Zone`] (Art Hand, flach und breit), in die Karten von ihrem
 //!   Platz auf dem Tisch hineingleiten und aus der sie wieder zurückgehen,
 //! - **Titel / Untertitel / Hinweis**: `Label3D`,
-//! - **Knöpfe**: [`Button3D`] in einer Reihe unter dem Fächer.
+//! - **Knöpfe**: [`Button3D`] in einer Reihe unter dem Fächer,
+//! - **Optionen** ([`Showcase::show_options`]): eigene Karten (z. B. Kopien je Spielweise einer
+//!   Karte) mit Beschriftung darüber, die die Bühne beim Schließen freigibt.
 //!
 //! Zeiten nach `docs/claude/ANIMATION.md`: Öffnen 0,20 s (Abdunkeln 0,15 s), Schließen 0,15 s.
 
@@ -18,7 +20,7 @@ use godot::classes::{INode3D, Label3D, MeshInstance3D, QuadMesh, StandardMateria
 use godot::prelude::*;
 
 use super::button3d::Button3D;
-use super::card3d::Card3D;
+use super::card3d::{Card3D, CARD_HEIGHT};
 use super::zone::{Zone, ZoneKind};
 
 /// Abstand der Bühne vor der Kamera (Welteinheiten).
@@ -34,6 +36,8 @@ const FAN_STEP: f32 = 0.58;
 const BUTTON_ROW_Y: f32 = -0.72;
 const BUTTON_WIDTH: f32 = 0.95;
 const BUTTON_GAP: f32 = 0.92;
+/// Abstand der Options-Beschriftung über der Kartenoberkante.
+const CAPTION_GAP: f32 = 0.07;
 
 /// Bühne vor der Kamera: Abdunkelung, Kartenfächer ([Zone]), Titel und [Button3D]-Knöpfe.
 /// [method open] stellt sie vor die aktuelle Kamera, [method show_cards] holt Karten herein,
@@ -49,6 +53,8 @@ pub struct Showcase {
     buttons: Vec<Gd<Button3D>>,
     /// Karten und die Zone, aus der sie kamen (für die Rückgabe).
     borrowed: Vec<(Gd<Card3D>, Gd<Zone>)>,
+    /// Eigene Karten der Bühne (z. B. Kopien als Optionen); werden beim Schließen freigegeben.
+    owned: Vec<Gd<Card3D>>,
     /// Zeit seit dem Öffnen bzw. Beginn des Schließens.
     t: f32,
     closing: bool,
@@ -66,6 +72,7 @@ impl INode3D for Showcase {
             note: None,
             buttons: Vec::new(),
             borrowed: Vec::new(),
+            owned: Vec::new(),
             t: 0.0,
             closing: false,
             base,
@@ -135,6 +142,37 @@ impl Showcase {
         }
     }
 
+    /// Eigene Karten als Optionen in den Fächer legen (z. B. Kopien einer Karte je Spielweise),
+    /// je mit Beschriftung darüber (leer = keine). Die Bühne gibt sie beim Schließen frei.
+    pub fn show_options(&mut self, options: Vec<(Gd<Card3D>, String)>) {
+        let Some(mut zone) = self.zone.clone() else { return };
+        let start = zone.get_global_transform();
+        for (mut card, caption) in options {
+            // in den Baum (unter die Bühne), aus der Fächermitte heraus
+            self.base_mut().add_child(&card);
+            card.set_global_transform(start);
+            zone.bind_mut().add_card(card.clone(), -1, 0.0);
+            if !caption.is_empty() {
+                let mut l = Label3D::new_alloc();
+                l.set_text(&caption);
+                l.set_font_size(64);
+                l.set_pixel_size(0.0016);
+                l.set_outline_size(12);
+                l.set_modulate(Color::from_rgb(0.93, 0.95, 1.0));
+                l.set_outline_modulate(Color::from_rgba(0.02, 0.03, 0.08, 0.9));
+                l.set_draw_flag(DrawFlags::SHADED, false);
+                l.set_draw_flag(DrawFlags::DOUBLE_SIDED, false);
+                // flach auf der Kartenebene, über der Oberkante (Karte: Vorderseite +Y, oben −Z)
+                l.set_transform(Transform3D::new(
+                    Basis::from_axis_angle(Vector3::RIGHT, -std::f32::consts::FRAC_PI_2),
+                    Vector3::new(0.0, 0.01, -CARD_HEIGHT * 0.5 - CAPTION_GAP),
+                ));
+                card.add_child(&l);
+            }
+            self.owned.push(card);
+        }
+    }
+
     /// Knopf in die Knopfreihe unter dem Fächer setzen (Reihenfolge = links nach rechts).
     pub fn add_button(&mut self, button: Gd<Button3D>) {
         self.base_mut().add_child(&button);
@@ -175,6 +213,12 @@ impl Showcase {
         for mut b in self.buttons.drain(..) {
             if b.is_instance_valid() {
                 b.bind_mut().dismiss();
+            }
+        }
+        for card in self.owned.drain(..) {
+            if card.is_instance_valid() {
+                let mut card = card;
+                card.queue_free();
             }
         }
         self.closing = true;

@@ -128,6 +128,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
+| `on_action_choice_cancel()` | `void` | Knopf „Abbrechen“ bei „Wähle eins“: Bühne schließen, die Priorität bleibt offen. |
 | `on_aim_released(card: Card3D, target: Card3D)` | `void` | Pfeil losgelassen (vom `TableController`): Angreifer → Spieler/Planeswalker = angreifen, Blocker → Angreifer = blocken, Quelle der Zielwahl → gültiges Ziel = Ziel wählen. Ins Leere losgelassen nimmt den Angriff bzw. Block dieser Kreatur zurück. |
 | `on_card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | `void` | Karte wurde auf dem Tisch abgelegt: Hat sie eine Aktion in der offenen `Priority`- Entscheidung (aus der Hand: Land spielen / wirken; auf dem Spielfeld: Fähigkeit aktivieren), wird diese gewählt. Aus der Hand zurück auf die Hand = abbrechen. Alles andere wird auf den Engine-Stand zurückgesetzt. |
 

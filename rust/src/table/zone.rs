@@ -24,6 +24,11 @@ use super::card3d::{CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, Card3D};
 use super::layers::ZONE_LAYER;
 
 pub const ZONE_GROUP: &str = "card_zones";
+/// Stack-Stapel: Versatz je älterem Eintrag (nach links, nach oben; Zonen-Einheiten), Drehung
+/// je Eintrag und wie viele ältere Einträge noch weiter versetzt werden (danach liegen sie gleich).
+const STACK_OFFSET: Vector2 = Vector2::new(0.2, 0.11);
+const STACK_TURN_DEGREES: f32 = 3.5;
+const STACK_MAX_SHOWN: f32 = 6.0;
 /// Drehung getappter Karten im Uhrzeigersinn (Grad) – nur leicht schräg statt quer.
 pub const TAP_ANGLE_DEGREES: f32 = 15.0;
 /// Automatische Anordnung: Abstand zwischen Karten (x); der rechte Bereich bekommt eine Spalte
@@ -566,9 +571,18 @@ impl Zone {
                 Transform3D::new(basis, pos)
             }
             ZoneKind::Stack => {
-                // Neuere Karten liegen höher und weiter vorn (zur Kamera hin) – oben auf.
-                let x = (i as f32 - (n as f32 - 1.0) * 0.5) * 0.32;
-                Transform3D::new(flip, Vector3::new(x, half_t + 0.05 + i as f32 * 0.012, i as f32 * 0.06))
+                // Stapel wie ein Kartenhaufen: der neueste Eintrag (oben auf dem Stack, wird zuerst
+                // abgehandelt) liegt vorn; jeder ältere ein Stück weiter oben links, etwas gedreht
+                // und dahinter – so bleibt sichtbar, was darunter liegt und worauf reagiert wird.
+                let depth = (n - 1 - i) as f32;
+                let shown = depth.min(STACK_MAX_SHOWN);
+                let pos = Vector3::new(
+                    -shown * STACK_OFFSET.x,
+                    half_t + 0.05 + i as f32 * 0.012,
+                    -shown * STACK_OFFSET.y,
+                );
+                let turn = Basis::from_axis_angle(Vector3::UP, shown * STACK_TURN_DEGREES.to_radians());
+                Transform3D::new(turn * flip, pos)
             }
             ZoneKind::Battlefield | ZoneKind::Resources => {
                 let cols = (self.grid_columns.max(1) as usize).min(n.max(1));

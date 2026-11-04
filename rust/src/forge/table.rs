@@ -30,9 +30,9 @@ use crate::game::phases::Phase;
 use crate::game::seat::PlayerSeat;
 use crate::table::button3d::{Button3D, ButtonStyle};
 use crate::table::showcase::Showcase;
-use crate::table::card3d::{Card3D, CardMarker};
+use crate::table::card3d::{Card3D, CardMarker, BLOCK_GLOW};
 use godot::classes::Label3D;
-use crate::table::target_arrows::{ArrowColor, ArrowSpec, TargetArrows};
+use crate::table::target_arrows::{ArrowColor, ArrowSpec, TargetArrows, LOOP_DISTANCE};
 use crate::table::placeholder;
 use crate::table::table_controller::TableController;
 use crate::table::zone::Zone;
@@ -156,6 +156,8 @@ pub struct ForgeTable {
     auto_pass_turn: Option<i64>,
     /// Pfeile, die der Spieler selbst gezogen hat (wachsen nicht noch einmal).
     drawn_arrows: HashSet<u64>,
+    /// „Wähle eins“: Kartenkopien auf der Bühne und die Aktion, für die sie stehen.
+    action_options: Vec<(Gd<Card3D>, Action)>,
     /// Zuletzt empfangener Spielzustand.
     state: Option<VarDictionary>,
     /// Seit der letzten Zustandsabfrage kamen Ereignisse.
@@ -202,6 +204,7 @@ impl INode for ForgeTable {
             manual_pay: false,
             auto_pass_turn: None,
             drawn_arrows: HashSet::new(),
+            action_options: Vec::new(),
             state: None,
             dirty: false,
             since_refresh: 0.0,
@@ -581,6 +584,15 @@ impl ForgeTable {
             self.answer(choice);
             return;
         }
+        // Genau ein mögliches Ziel und genau eins verlangt: keine echte Wahl – sofort nehmen
+        // (der Pfeil erscheint dann am Stack-Eintrag)
+        if let Some(Decision::ChooseTargets { candidates, min: 1, max: 1, .. }) = self.pending.as_ref().map(|r| &r.decision) {
+            if candidates.len() == 1 {
+                let only = candidates[0];
+                self.answer(Choice::Targets(vec![only]));
+                return;
+            }
+        }
         if let Some(req) = starting {
             self.show_starting_player(&req);
         }
@@ -618,6 +630,10 @@ impl ForgeTable {
     /// das Fähigkeiten-Menü.
     #[func]
     fn on_card_clicked(&mut self, card: Gd<Card3D>) {
+        if let Some(action) = self.action_options.iter().find(|(c, _)| *c == card).map(|(_, a)| *a) {
+            self.answer(Choice::Action(action));
+            return;
+        }
         let Some(id) = self.forge_id(&card) else { return };
         let Ok(card_id) = u32::try_from(id) else { return };
         if self.bottom_click(card_id) {
@@ -650,11 +666,20 @@ impl ForgeTable {
                 .collect(),
             _ => return,
         };
+        let all_actions = mine.iter().all(|(c, _)| matches!(c, Choice::Action(_)));
         match mine.len() {
             0 => {}
             1 => self.answer(mine[0].0.clone()),
+            // mehrere Fähigkeiten: „Wähle eins“ auf der 3D-Bühne (Manafähigkeiten: Menü)
+            _ if all_actions => self.show_action_choice(card_id),
             _ => self.menu = Some(mine.into_iter().unzip()),
         }
+    }
+
+    /// Knopf „Abbrechen“ bei „Wähle eins“: Bühne schließen, die Priorität bleibt offen.
+    #[func]
+    fn on_action_choice_cancel(&mut self) {
+        self.clear_choice_objects();
     }
 
     /// Pfeil losgelassen (vom [TableController]): Angreifer → Spieler/Planeswalker = angreifen,
@@ -705,6 +730,15 @@ impl ForgeTable {
         let back_to_hand = hand.as_ref() == Some(&from_zone) && hand.as_ref() == Some(&to_zone);
         let id = self.forge_id(&card);
         if !back_to_hand {
+            // mehrere Spielweisen (z. B. Wirken oder Cycling): „Wähle eins“; die Karte geht
+            // solange zurück an ihren Platz
+            if let Some(cid) = id.and_then(|i| u32::try_from(i).ok()).filter(|c| self.card_actions(*c).len() > 1) {
+                if let Some(state) = self.state.clone() {
+                    self.apply_state(state);
+                }
+                self.show_action_choice(cid);
+                return;
+            }
             if let Some(action) = id.and_then(|id| self.action_for_card(id)) {
                 self.answer(Choice::Action(action));
                 return;
@@ -896,6 +930,7 @@ impl ForgeTable {
 
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
     fn clear_choice_objects(&mut self) {
+        self.action_options.clear();
         if let Some(mut s) = self.showcase.take() {
             if s.is_instance_valid() {
                 s.bind_mut().close();
@@ -1139,6 +1174,58 @@ impl ForgeTable {
 
     /// Aktion der offenen `Priority`-Entscheidung für die Karte `card_id`: Land spielen bzw.
     /// wirken zuerst, sonst die erste Aktion der Karte (z. B. Fähigkeit aktivieren).
+    /// Aktionen der offenen Priorität für Karte `card` (mit Beschriftung), ohne Manafähigkeiten.
+    fn card_actions(&self, card: CardId) -> Vec<(Action, String)> {
+        let Some(req) = self.pending.as_ref() else { return Vec::new() };
+        let Decision::Priority { actions, .. } = &req.decision else { return Vec::new() };
+        actions
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.card() == Some(card) && !matches!(a, Action::ActivateMana(..)))
+            .map(|(i, a)| (*a, req.label(i)))
+            .collect()
+    }
+
+    /// „Wähle eins“ (wie im Video des Users): Bühne mit je einer Kopie der Karte pro Spielweise
+    /// (Wirken, Cycling, Fähigkeiten …), Beschriftung darüber, blaues Leuchten, Hover vergrößert;
+    /// Klick wählt die Aktion, „Abbrechen“ schließt die Bühne (Priorität bleibt offen).
+    fn show_action_choice(&mut self, card: CardId) {
+        let options = self.card_actions(card);
+        if options.len() < 2 {
+            return;
+        }
+        let Some(data) = self.card_data(i64::from(card)) else { return };
+        self.clear_choice_objects();
+        let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
+        let mut showcase = Showcase::new_alloc();
+        parent.add_child(&showcase);
+        showcase.bind_mut().open();
+        showcase.bind_mut().set_texts(
+            tr!("Wähle eins", "Choose one").into(),
+            tr!("Klicke eine Option an.", "Click an option to select it.").into(),
+            GString::new(),
+        );
+        let def = CardDef::from_state(&data);
+        let mut cards = Vec::new();
+        for (action, label) in options {
+            let mut copy = Card3D::new_alloc();
+            {
+                let mut c = copy.bind_mut();
+                c.set_face_texture(Some(placeholder::card_face(&def)));
+                c.apply_def(&def);
+                c.set_ready_color(Some(BLOCK_GLOW));
+            }
+            cards.push((copy.clone(), action_caption(action, &label)));
+            self.action_options.push((copy, action));
+        }
+        showcase.bind_mut().show_options(cards);
+        let mut cancel = Button3D::create(ButtonStyle::Orange, tr!("Abbrechen", "Cancel"), Showcase::button_width());
+        let cb = Callable::from_object_method(&self.to_gd(), "on_action_choice_cancel");
+        cancel.connect("pressed", &cb);
+        showcase.bind_mut().add_button(cancel);
+        self.showcase = Some(showcase);
+    }
+
     fn action_for_card(&self, card_id: i64) -> Option<Action> {
         let Some(Decision::Priority { actions, .. }) = self.pending.as_ref().map(|r| &r.decision) else {
             return None;
@@ -1617,6 +1704,21 @@ impl ForgeTable {
         arrows
     }
 
+    /// Pfeilfarbe einer Karte aus der Farbpalette des Pfeil-Assets: einfarbig = ihre Farbe,
+    /// mehrfarbig = Gold, farblos bzw. unbekannt = Grau.
+    fn arrow_color_of(&self, card: i64) -> ArrowColor {
+        let colors = self.card_data(card).map(|c| get_str(&c, "colors")).unwrap_or_default();
+        match colors.as_str() {
+            "W" => ArrowColor::Gold,
+            "U" => ArrowColor::Blue,
+            "B" => ArrowColor::Black,
+            "R" => ArrowColor::Red,
+            "G" => ArrowColor::Green,
+            "" => ArrowColor::Gray,
+            _ => ArrowColor::Gold,
+        }
+    }
+
     /// Darf von Karte `card` jetzt ein Pfeil gezogen werden? Art und gültige Ziele.
     fn aim_kind(&self, card: CardId) -> Option<(AimKind, Vec<Target>)> {
         let req = self.pending.as_ref()?;
@@ -1678,19 +1780,15 @@ impl ForgeTable {
         let color = match kind {
             AimKind::Attack => ArrowColor::Red,
             AimKind::Block => ArrowColor::Blue,
-            AimKind::Target => ArrowColor::Gold,
+            AimKind::Target => self.arrow_color_of(i64::from(id)),
         };
         let from = card.get_global_position();
-        let dir = (to - from).normalized_or_zero();
         // fester Schlüssel während des Ziehens: die Biegung läuft ohne Sprung weiter
-        let spec = ArrowSpec {
-            key: arrow_key(99, i64::from(id), Target::Player(u8::MAX)),
-            from: from + dir * 0.3,
-            to: if target.is_some() { to - dir * 0.35 } else { to },
-            color,
-            alpha,
-            grow: false,
-        };
+        let key = arrow_key(99, i64::from(id), Target::Player(u8::MAX));
+        let mut spec = arrow(key, from, to, color, alpha, false);
+        if target.is_none() {
+            spec.to = to; // frei an der Maus: bis zum Mauspunkt
+        }
         Some((id, spec))
     }
 
@@ -1707,7 +1805,8 @@ impl ForgeTable {
             };
             for t in stack_targets(&item) {
                 if let Some(to) = self.target_position(t) {
-                    arrows.push(arrow(arrow_key(10, key, t), from, to, ArrowColor::Black, 1.0, true));
+                    let color = self.arrow_color_of(get_int(&item, "source"));
+                    arrows.push(arrow(arrow_key(10, key, t), from, to, color, 1.0, true));
                 }
             }
         }
@@ -1770,14 +1869,24 @@ impl ForgeTable {
     /// Kartendaten der Quelle eines Stack-Eintrags (aus allen offenen Zonen; `None` = unbekannt).
     fn card_data(&self, id: i64) -> Option<VarDictionary> {
         let players = self.state.as_ref().and_then(|s| get_array(s, "players")).unwrap_or_default();
-        players.iter_shared().filter_map(|p| p.try_to::<VarDictionary>().ok()).find_map(|p| {
-            ["battlefield", "graveyard", "exile", "hand"].iter().find_map(|zone| {
-                get_array(&p, zone)?
-                    .iter_shared()
-                    .filter_map(|c| c.try_to::<VarDictionary>().ok())
+        players
+            .iter_shared()
+            .filter_map(|p| p.try_to::<VarDictionary>().ok())
+            .find_map(|p| {
+                ["battlefield", "graveyard", "exile", "hand"].iter().find_map(|zone| {
+                    get_array(&p, zone)?
+                        .iter_shared()
+                        .filter_map(|c| c.try_to::<VarDictionary>().ok())
+                        .find(|c| get_int(c, "id") == id)
+                })
+            })
+            .or_else(|| {
+                // Zauber auf dem Stack (auch „wird gewirkt“)
+                self.stack_items()
+                    .iter()
+                    .filter_map(|item| item.get("card").and_then(|v| v.try_to::<VarDictionary>().ok()))
                     .find(|c| get_int(c, "id") == id)
             })
-        })
     }
 
     /// Kartendaten für die Karte einer Fähigkeit auf dem Stack: Name und Typ der Quelle, keine
@@ -1823,7 +1932,8 @@ impl ForgeTable {
                     for (t, alpha) in targets {
                         if let Some(to) = self.target_position(t) {
                             let key = arrow_key(20, source, t);
-                            specs.push(arrow(key, from, to, ArrowColor::Gold, alpha, !self.drawn_arrows.contains(&key)));
+                            let color = self.arrow_color_of(source);
+                            specs.push(arrow(key, from, to, color, alpha, !self.drawn_arrows.contains(&key)));
                         }
                     }
                 }
@@ -2221,6 +2331,10 @@ mod tests {
 /// Pfeil von `from` nach `to`; beginnt ein Stück vor der Quellkarte und endet kurz vor dem
 /// Ziel (die Spitze bleibt sichtbar, auch vor Medaillon und Tischrand).
 fn arrow(key: u64, from: Vector3, to: Vector3, color: ArrowColor, alpha: f32, grow: bool) -> ArrowSpec {
+    // übereinanderliegende Karten: Bogen, den baut TargetArrows (Enden nicht verschieben)
+    if Vector3::new(to.x - from.x, 0.0, to.z - from.z).length() < LOOP_DISTANCE {
+        return ArrowSpec { key, from, to, color, alpha, grow };
+    }
     let dir = (to - from).normalized_or_zero();
     ArrowSpec { key, from: from + dir * 0.3, to: to - dir * 0.35, color, alpha, grow }
 }
@@ -2251,4 +2365,20 @@ fn arrow_key(kind: u64, source: i64, target: Target) -> u64 {
         Target::Player(p) => (1u8, u32::from(p)).hash(&mut h),
     }
     h.finish()
+}
+
+/// Beschriftung einer Spielweise auf der „Wähle eins“-Bühne: Wirken / Land spielen, sonst der
+/// Anfang des Fähigkeitstexts der Engine (vor Erklärungen in Klammern, höchstens 28 Zeichen).
+fn action_caption(action: Action, label: &str) -> String {
+    match action {
+        Action::Cast(_) => return tr!("Wirken", "Cast").to_string(),
+        Action::PlayLand(_) => return tr!("Land spielen", "Play land").to_string(),
+        _ => {}
+    }
+    let short = label.split(" (").next().unwrap_or(label).trim();
+    if short.chars().count() > 28 {
+        format!("{}…", short.chars().take(27).collect::<String>())
+    } else {
+        short.to_string()
+    }
 }

@@ -189,6 +189,13 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
 
 ## Regeln für die Arbeit
 
+- **Videos des Users sind Vorlagen für allgemeine UI-Regeln, keine Testfälle.** Der User schickt
+  immer wieder Videos (z. B. in `~/Dokumente/MTG Clash/` oder im Projektordner), die ein
+  Verhalten zeigen – meist an einem Beispiel mit zwei Karten. Nicht dieses Beispiel nachbauen
+  oder Karten hartcoden, sondern die dahinterliegende Regel erkennen („jede Karte mit mehreren
+  Spielweisen bekommt eine Auswahl“, „ein Zauber, der auf etwas auf dem Stack reagiert, bekommt
+  einen Pfeil dorthin“) und sie allgemein in der 3D-UI umsetzen, für alle Karten und Fälle.
+  Getestet wird mit den vorhandenen Testdecks, nicht mit Decks aus den Karten im Video.
 - **Sprache:** Code-Kommentare, `///`-Doku und Dokumentation auf **Deutsch**; Commit-Messages auf Englisch.
 - **Doku immer mitpflegen**, im selben Schritt wie die Änderung:
   1. `///`-Doku an jeder neuen oder geänderten Godot-Klasse, `#[func]`, `#[export]`, `#[var]`, `#[signal]` (erscheint in der Godot-Hilfe, F1)

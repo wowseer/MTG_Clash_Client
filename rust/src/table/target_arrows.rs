@@ -6,7 +6,10 @@
 //!   gebogen: Kontrollpunkt `(S+Z)/2 + 2·Bogen·|Z−S|·rechts`. Anders als in Blender (fest 0,3) ist
 //!   „Bogen“ **dynamisch**: in Ruhe 0 (gerader Pfeil); bewegt sich ein Ende quer zum Pfeil, bleibt
 //!   die Mitte zurück wie bei einem Seil (Feder mit leichtem Nachschwingen, [`BEND_STIFFNESS`],
-//!   [`BEND_DAMPING`]), höchstens [`MAX_BOGEN`]. Darüber ein flaches
+//!   [`BEND_DAMPING`]), höchstens [`MAX_BOGEN`]. Liegen Start und Ziel übereinander (näher als
+//!   [`LOOP_DISTANCE`], z. B. Zauber auf dem Stack → Zauber darunter), wird er zum **Bogen**, der
+//!   aus der Quelle aufsteigt und auf dem Ziel landet. Die Enden liegen in der Höhe ihrer Karten.
+//!   Darüber ein flaches
 //!   Band (Profil von −2·[`BREITE`] bis +2·[`BREITE`], Rest ist Leuchten). Auf den letzten
 //!   [`SPITZE_LAENGE`] (höchstens halbe Länge) springt die Breite auf das [`SPITZE_BREITE`]-fache
 //!   und läuft bis zur Spitze linear auf 0 – die Pfeilspitze.
@@ -51,8 +54,23 @@ const MIN_POINTS: usize = 32;
 const MAX_POINTS: usize = 240;
 /// Dauer des Erscheinens (Blender: Frame 1 → 9 bei 24 fps).
 const GROW_TIME: f32 = 8.0 / 24.0;
-/// Höhe über dem Tisch (über flach liegenden Karten).
+/// Höhe über dem Tisch (über flach liegenden Karten) bzw. über der Karte am Pfeilende (Pfeile
+/// liegen in der Höhe ihrer Karten, z. B. auf dem Stapel des Stacks).
 const END_LIFT: f32 = 0.06;
+const CARD_LIFT: f32 = 0.03;
+/// Liegen Start und Ziel näher als das (waagerecht), wird der Pfeil zum **Bogen**: er steigt aus
+/// der Quelle auf und landet auf dem Ziel (z. B. Zauber auf dem Stack → Zauber darunter).
+pub const LOOP_DISTANCE: f32 = 1.0;
+/// Bogen: Richtung (Tisch, Bildschirm oben links – dorthin liegen ältere Stack-Einträge), Höhe
+/// des Scheitels, Start in der oberen Karte bzw. Landepunkt auf dem sichtbaren Rand der Karte
+/// darunter (Abstand vom Kartenmittelpunkt in Bogenrichtung), seitlicher Abstand der Enden und
+/// Anhebung des Scheitels.
+const LOOP_DIR: Vector3 = Vector3::new(-0.41, 0.0, -0.91);
+const LOOP_HEIGHT: f32 = 1.6;
+const LOOP_START: f32 = 0.8;
+const LOOP_LAND: f32 = 1.25;
+const LOOP_SPREAD: f32 = 0.3;
+const LOOP_RISE: f32 = 0.25;
 /// Kürzeste Pfeillänge; kürzere Pfeile werden nicht gezeichnet.
 const MIN_LENGTH: f32 = 0.15;
 
@@ -213,15 +231,30 @@ impl TargetArrows {
         // einen einzigen Pfeil keine Fläche anlegen (Godot meldet sonst einen Fehler).
         let mut ends = Vec::new();
         for a in arrows {
-            let from = inv * Vector3::new(a.from.x, table_y + END_LIFT, a.from.z);
-            let to = inv * Vector3::new(a.to.x, table_y + END_LIFT, a.to.z);
+            let lift = |p: Vector3| inv * Vector3::new(p.x, (p.y + CARD_LIFT).max(table_y + END_LIFT), p.z);
+            let (mut from, mut to) = (lift(a.from), lift(a.to));
+            let flat = Vector3::new(to.x - from.x, 0.0, to.z - from.z).length();
+            // Bogen bei übereinanderliegenden Karten, sonst gerader/dynamisch gebogener Pfeil
+            let arch = (flat < LOOP_DISTANCE).then(|| {
+                let dir = LOOP_DIR.normalized();
+                let side = dir.cross(Vector3::UP).normalized();
+                // beide Enden über der oberen Karte, sonst verdeckt sie den Bogen
+                let top = from.y.max(to.y);
+                from.y = top;
+                to.y = top;
+                from += dir * LOOP_START + side * LOOP_SPREAD;
+                to += dir * LOOP_LAND - side * LOOP_SPREAD;
+                let mut p = (from + to) * 0.5 + dir * (2.0 * LOOP_HEIGHT);
+                p.y = from.y.max(to.y) + LOOP_RISE;
+                p
+            });
             let length = (to - from).length();
-            if length < MIN_LENGTH {
+            if length < MIN_LENGTH && arch.is_none() {
                 continue;
             }
             let born = if a.grow { now } else { now - GROW_TIME as f64 };
             let st = self.states.entry(a.key).or_insert(ArrowState { born, from, to, bend: 0.0, bend_velocity: 0.0 });
-            if dt > 1e-4 {
+            if dt > 1e-4 && arch.is_none() {
                 // Querbewegung der Enden (Pfeillängen/s): die Mitte bleibt zurück
                 let right = (to - from).cross(Vector3::UP).normalized_or_zero();
                 let moved = ((to - st.to) + (from - st.from) * 0.5).dot(right) / length / dt;
@@ -234,14 +267,19 @@ impl TargetArrows {
             st.to = to;
             let k = (((now - st.born) as f32) / GROW_TIME).clamp(0.0, 1.0);
             let progress = (k * k * (3.0 - 2.0 * k)).max(0.001);
-            ends.push((from, to, a.color, a.alpha, progress, st.bend));
+            let control = arch.unwrap_or_else(|| {
+                let d = to - from;
+                let right = d.cross(Vector3::UP).normalized_or_zero();
+                (from + to) * 0.5 + right * (d.length() * st.bend * 2.0)
+            });
+            ends.push((from, to, a.color, a.alpha, progress, control));
         }
         if ends.is_empty() {
             return;
         }
         self.mesh.surface_begin(PrimitiveType::TRIANGLES);
-        for (from, to, color, alpha, progress, bend) in ends {
-            build_arrow(&mut self.mesh, from, to, color, alpha, progress, bend);
+        for (from, to, color, alpha, progress, control) in ends {
+            build_arrow(&mut self.mesh, from, to, color, alpha, progress, control);
         }
         self.mesh.surface_end();
     }
@@ -259,12 +297,9 @@ fn color_from_index(i: i32) -> ArrowColor {
     }
 }
 
-/// Kontrollpunkte der (Teil-)Kurve bis `progress` (0 … 1) bei Biegung `bend`: Start, Mitte, Ende.
-fn control_points(from: Vector3, to: Vector3, progress: f32, bend: f32) -> [Vector3; 3] {
-    let d = to - from;
-    let right = d.cross(Vector3::UP).normalized_or_zero();
-    let offset = right * (d.length() * bend);
-    let p = (from + to) * 0.5 + offset * 2.0;
+/// Kontrollpunkte der (Teil-)Kurve bis `progress` (0 … 1) mit Kontrollpunkt `p` der ganzen
+/// Kurve: Start, Mitte, Ende (de Casteljau).
+fn control_points(from: Vector3, to: Vector3, progress: f32, p: Vector3) -> [Vector3; 3] {
     let mid = from.lerp(p, progress);
     let end = mid.lerp(p.lerp(to, progress), progress);
     [from, mid, end]
@@ -276,9 +311,9 @@ fn bezier(c: &[Vector3; 3], t: f32) -> Vector3 {
 }
 
 /// Ein Pfeil als Band aus Vierecken (zwei Punkte quer, wie Blenders Profil-Linie).
-fn build_arrow(mesh: &mut Gd<ImmediateMesh>, from: Vector3, to: Vector3, color: ArrowColor, alpha: f32, progress: f32, bend: f32) {
-    let c = control_points(from, to, progress, bend);
-    let n = ((from.distance_to(to) / AUFLOESUNG) as usize).clamp(MIN_POINTS, MAX_POINTS);
+fn build_arrow(mesh: &mut Gd<ImmediateMesh>, from: Vector3, to: Vector3, color: ArrowColor, alpha: f32, progress: f32, control: Vector3) {
+    let c = control_points(from, to, progress, control);
+    let n = (((from.distance_to(control) + control.distance_to(to)) / AUFLOESUNG) as usize).clamp(MIN_POINTS, MAX_POINTS);
     let pts: Vec<Vector3> = (0..=n).map(|i| bezier(&c, i as f32 / n as f32)).collect();
     let mut dist = vec![0.0f32];
     for w in pts.windows(2) {

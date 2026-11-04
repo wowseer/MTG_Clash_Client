@@ -40,6 +40,8 @@ Spiel nie auf.
 | Tappen / Enttappen | 0,18 s | Quad-Out | Drehung um 90° bzw. projekteigene Neigung |
 | Angriff erklären | 0,25 s | Back-Out | Karte rückt 0,3 nach vorn, Pfeil wächst aus der Karte |
 | Pfeil erscheinen | 0,33 s (Blender: Frame 1 → 9 bei 24 fps) | weich (smoothstep) | wächst vom Start zum Ziel (`TargetArrows`, `GROW_TIME`); selbst gezogene Pfeile wachsen nicht |
+| Pfeil-Bogen auf dem Stack | wächst wie jeder Pfeil (0,33 s) | weich | Ziel liegt unter der Quelle (näher als `LOOP_DISTANCE`): Bogen steigt aus der vorderen Karte auf (Scheitel 1,6) und landet auf dem sichtbaren Rand der Karte dahinter |
+| „Wähle eins“ | Bühne wie Mulligan (0,20 s auf / 0,15 s zu) | Cubic-Out | Kartenkopien gleiten aus der Fächermitte in den Fächer |
 | Pfeil biegen | Feder 140 / Dämpfung 15 | leicht unterdämpft | Querbewegung eines Endes biegt den Pfeil (höchstens 0,3 der Länge), danach schwingt er gerade zurück |
 | Pfeil Lichtwellen | laufend, 1,5 Einheiten/s | – | fBm-Rauschen entlang des Pfeils zur Spitze hin (Treiber `frame/24`) |
 | Kampfschaden | 0,30 s Stoß + 0,2 s zurück | Expo-Out / Quad-In | Zahl springt aus dem Ziel, Treffer-Blitz |
