@@ -52,7 +52,7 @@ const PLAYER_ACCENT: Color = Color::from_rgb(0.25, 0.55, 0.95);
 const OPPONENT_ACCENT: Color = Color::from_rgb(0.9, 0.25, 0.22);
 /// Phasen-Knopf und „Sofort beenden“ ([Button3D], unten rechts): Breite der Knopf-Fläche in
 /// Pixeln, Rand zum Bildschirm und Abstand zwischen den Knöpfen.
-const MAIN_FACE_PX: f32 = 300.0;
+const MAIN_FACE_PX: f32 = 225.0;
 /// „»»“: kurzer Knopf, nur so groß wie die Symbole (Höhe der Knopf-Fläche in Pixeln).
 const END_FACE_HEIGHT_PX: f32 = 34.0;
 const BUTTON_MARGIN: f32 = 14.0;
