@@ -66,21 +66,23 @@ accepts_drops = false
 cards_draggable = false
 click_to_draw = true
 face_up = false
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.9, 0, 4.2)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.35, 0, 4.2)
 visible = false
 card_scale = 1.7
 
 [node name="Discard" type="Zone" parent="Player"]
 kind = 1
-size = Vector3(0.95, 0.3, 1.2)
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.9, 0, 2.6)
+size = Vector3(1.1, 0.3, 1.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.9, 0, 4.2)
+card_scale = 1.7
 
 [node name="Exile" type="Zone" parent="Player"]
 kind = 1
-size = Vector3(0.95, 0.3, 1.2)
+size = Vector3(1.1, 0.3, 1.5)
 accepts_drops = false
 cards_draggable = false
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.9, 0, 1.0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.8, 0, 4.2)
+card_scale = 1.7
 
 [node name="Command" type="Zone" parent="Player"]
 size = Vector3(1, 0.1, 1.6)
@@ -92,9 +94,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.9, 0, 3.6)
 
 [node name="Resources" type="Zone" parent="Player"]
 kind = 3
-size = Vector3(6.6, 0.3, 1.6)
+size = Vector3(4.0, 0.3, 1.6)
 cards_draggable = false
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.8, 0, 4.15)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.95, 0, 4.15)
 card_scale = 1.8
 tile_cards = true
 
@@ -112,7 +114,7 @@ zoom_cards = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 4.78)
 
 [node name="ManaAnchor" type="Marker3D" parent="Player"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.8, 0, 4.85)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.95, 0, 4.85)
 
 [node name="Opponent" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "exile", "command", "resource_zone", "mana_pool")]
 display_name = "Forge-KI"
@@ -143,22 +145,24 @@ size = Vector3(0.95, 0.3, 1.2)
 accepts_drops = false
 cards_draggable = false
 face_up = false
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 8.9, 0, -4.2)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 7.35, 0, -4.2)
 card_scale = 1.7
 
 [node name="Discard" type="Zone" parent="Opponent"]
 kind = 1
-size = Vector3(0.95, 0.3, 1.2)
+size = Vector3(1.1, 0.3, 1.5)
 accepts_drops = false
 cards_draggable = false
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 8.9, 0, -2.6)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 8.9, 0, -4.2)
+card_scale = 1.7
 
 [node name="Exile" type="Zone" parent="Opponent"]
 kind = 1
-size = Vector3(0.95, 0.3, 1.2)
+size = Vector3(1.1, 0.3, 1.5)
 accepts_drops = false
 cards_draggable = false
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 8.9, 0, -1.0)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 5.8, 0, -4.2)
+card_scale = 1.7
 
 [node name="Command" type="Zone" parent="Opponent"]
 size = Vector3(1, 0.1, 1.6)
@@ -170,10 +174,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.9, 0, -3.6)
 
 [node name="Resources" type="Zone" parent="Opponent"]
 kind = 3
-size = Vector3(6.6, 0.3, 1.6)
+size = Vector3(4.0, 0.3, 1.6)
 accepts_drops = false
 cards_draggable = false
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4.8, 0, -4.15)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 2.95, 0, -4.15)
 card_scale = 1.8
 tile_cards = true
 

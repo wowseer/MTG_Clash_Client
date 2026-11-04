@@ -25,6 +25,7 @@ use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, Request, RulesEngine, Target};
 use crate::table::mana_wheel::{ManaWheel, WheelSegment};
+use crate::table::exile_portal::attach_exile_portal;
 use crate::game::debug_panel::DebugPanel;
 use godot::classes::Os;
 use crate::game::phases::Phase;
@@ -150,6 +151,8 @@ pub struct ForgeTable {
     /// Offenes Farbrad: Rad, Antwort je Segment, freiwillig (Manafähigkeit eines Landes mit
     /// Priorität – schließen ohne Antwort möglich) oder Antwort auf eine Frage der Engine.
     wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
+    /// Friedhof bzw. Exil wird gerade auf der Bühne durchgesehen (keine Entscheidung).
+    viewer_open: bool,
     /// Bühne vor der Kamera (z. B. Starthand beim Mulligan); schließt mit der Antwort.
     showcase: Option<Gd<Showcase>>,
     /// Karten, die nach einem Mulligan unter die Bibliothek sollen (Klick-Reihenfolge).
@@ -237,6 +240,7 @@ impl INode for ForgeTable {
             choice_prompt: None,
             cancel_badge: None,
             wheel: None,
+            viewer_open: false,
             showcase: None,
             hand_pick: Vec::new(),
             hand_pick_button: None,
@@ -358,6 +362,10 @@ impl ForgeTable {
     /// `Action::Pass`.
     #[func]
     pub fn pass_priority(&mut self) {
+        if self.viewer_open {
+            self.close_zone_viewer();
+            return;
+        }
         match self.pending.as_ref().map(|r| &r.decision) {
             Some(Decision::Priority { .. }) => self.answer(Choice::Action(Action::Pass)),
             // Kampf: der Phasen-Knopf bestätigt den Plan, der auf dem Tisch gebaut wurde
@@ -392,6 +400,10 @@ impl ForgeTable {
     /// Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört.
     #[func]
     pub fn cancel_cast(&mut self) {
+        if self.viewer_open {
+            self.close_zone_viewer();
+            return;
+        }
         if self.wheel.as_ref().is_some_and(|(_, _, v)| *v) {
             self.close_wheel();
             return;
@@ -402,6 +414,64 @@ impl ForgeTable {
         if let Some(c) = self.cast_cancel() {
             self.answer(c);
         }
+    }
+
+    /// Friedhof bzw. Exil, in dem `card` liegt: (Sitzplatz, true = Exil).
+    fn pile_of(&self, card: &Gd<Card3D>) -> Option<(usize, bool)> {
+        let zone = card.bind().get_zone()?;
+        (0..2).find_map(|seat| {
+            let z = self.zones(seat);
+            if z.discard.as_ref() == Some(&zone) {
+                Some((seat, false))
+            } else if z.exile.as_ref() == Some(&zone) {
+                Some((seat, true))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Friedhof bzw. Exil von `seat` durchsehen (CR 404.2, 406.3: beide Zonen sind öffentlich):
+    /// dieselbe Cover-Flow-Bühne wie beim Durchsuchen der Bibliothek, jüngste Karte zuerst,
+    /// Titel „Friedhof (n)“ bzw. „Exil (n)“ mit dem Namen des Besitzers, „Schlachtfeld ansehen“,
+    /// orange „Fertig“ (auch Leertaste / Escape). Die offene Entscheidung bleibt bestehen.
+    fn show_zone_viewer(&mut self, seat: usize, exile: bool) {
+        let key = if exile { "exile" } else { "graveyard" };
+        let cards: Vec<VarDictionary> = self
+            .state
+            .as_ref()
+            .and_then(|s| get_array(s, "players"))
+            .and_then(|ps| ps.get(seat))
+            .and_then(|p| p.try_to::<VarDictionary>().ok())
+            .and_then(|p| get_array(&p, key))
+            .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
+            .unwrap_or_default();
+        if cards.is_empty() {
+            return;
+        }
+        let n = cards.len();
+        let title = if exile { trf!("Exil ({n})", "Exile ({n})") } else { trf!("Friedhof ({n})", "Graveyard ({n})") };
+        let owner = self.seat_name(seat).to_string();
+        let Some(mut showcase) = self.open_stage(&title, &owner) else { return };
+        let copies: Vec<(Gd<Card3D>, String)> = cards.iter().rev().map(|d| (Self::stage_card(d, None), String::new())).collect();
+        showcase.bind_mut().show_options(copies);
+        showcase.bind_mut().enable_coverflow(LIB_STEP, LIB_SCALE);
+        showcase.bind_mut().enable_peek();
+        let mut done = Button3D::create(ButtonStyle::Orange, tr!("Fertig", "Done"), Showcase::button_width());
+        done.connect("pressed", &Callable::from_object_method(&self.to_gd(), "close_zone_viewer"));
+        showcase.bind_mut().add_button(done);
+        self.viewer_open = true;
+    }
+
+    /// Friedhof-/Exil-Ansicht schließen; die offene Entscheidung zeigt wieder ihre Bedienung.
+    #[func]
+    fn close_zone_viewer(&mut self) {
+        if !self.viewer_open {
+            return;
+        }
+        self.viewer_open = false;
+        self.clear_choice_objects();
+        self.show_cancel_badge();
     }
 
     /// Farbrad für eine Frage der Engine, wenn sie eine Manafarbe verlangt: `ChooseColor`
@@ -1094,6 +1164,13 @@ impl ForgeTable {
         if let Some(i) = self.candidate_index(Target::Card(card_id)) {
             self.pick_candidate(i);
             return;
+        }
+        // Friedhof / Exil: ohne eigene Aktion der Karte (z. B. Rückblende) durchsehen
+        if let Some((seat, exile)) = self.pile_of(&card) {
+            if self.card_actions(card_id).is_empty() && self.showcase.is_none() {
+                self.show_zone_viewer(seat, exile);
+                return;
+            }
         }
         let in_hand = self.zones(0).hand.is_some_and(|h| card.bind().get_zone().as_ref() == Some(&h));
         let Some(req) = self.pending.as_ref() else { return };
@@ -2001,6 +2078,7 @@ impl ForgeTable {
 
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
     fn clear_choice_objects(&mut self) {
+        self.viewer_open = false;
         self.action_options.clear();
         self.stage_choices.clear();
         self.mode_cards.clear();
@@ -2240,6 +2318,7 @@ impl ForgeTable {
     /// Antwortet über die Engine-Schnittstelle auf die offene Entscheidung.
     fn answer(&mut self, choice: Choice) {
         let Some(req) = self.pending.take() else { return };
+        self.viewer_open = false;
         self.clear_choice_objects();
         self.menu = None;
         self.selection.clear();
@@ -3102,6 +3181,12 @@ impl ForgeTable {
 
     /// Gleicht den Tisch mit dem Forge-Zustand ab: Karten anlegen, verschieben, tappen, entfernen.
     fn apply_state(&mut self, state: VarDictionary) {
+        // Exil-Strudel unter jedes Exil (einmalig)
+        for seat in 0..2 {
+            if let Some(z) = self.zones(seat).exile {
+                attach_exile_portal(&mut z.upcast());
+            }
+        }
         let players: Vec<VarDictionary> = get_array(&state, "players")
             .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
             .unwrap_or_default();
