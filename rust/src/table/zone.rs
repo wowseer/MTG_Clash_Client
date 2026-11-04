@@ -123,6 +123,10 @@ pub struct Zone {
     /// [method Card3D.set_tile]) – Form der Karten auf dem Spielfeld.
     #[export]
     tile_cards: bool,
+    /// Karten dieser Zone beim Hovern selbst groß vor die Kamera holen (eigene Hand); sonst zeigt
+    /// die Kartenansicht eine Kopie.
+    #[export]
+    zoom_cards: bool,
 
     cards: Vec<Gd<Card3D>>,
     /// Freie Positionen (lokal x/z) je Karte.
@@ -142,6 +146,7 @@ impl IArea3D for Zone {
             kind: ZoneKind::Battlefield,
             card_scale: 1.0,
             tile_cards: false,
+            zoom_cards: false,
             size: Vector3::new(3.0, 0.2, 2.0),
             accepts_drops: true,
             cards_draggable: true,
@@ -252,6 +257,12 @@ impl Zone {
     #[func]
     pub fn is_free_placement(&self) -> bool {
         self.free_placement
+    }
+
+    /// Ist das ein Handfächer (eigene Hand, Gegnerhand, Fächer einer 3D-Bühne)?
+    #[func]
+    pub fn is_hand(&self) -> bool {
+        self.kind == ZoneKind::Hand
     }
 
     /// Art der Zone (für Rust-Code; in Godot über die Eigenschaft `kind`).
@@ -453,6 +464,7 @@ impl Zone {
                 _ => 0.0,
             };
             card.bind_mut().set_tile(self.tile_cards);
+            card.bind_mut().set_zoom(self.zoom_cards);
             card.bind_mut().move_to(zone_xf * local, delay);
         }
     }

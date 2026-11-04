@@ -162,8 +162,9 @@ pub struct Card3D {
     move_duration: f64,
 
     #[export_group(name = "Hover-Zoom")]
-    /// Offene Karten beim Hovern selbst groß und lesbar vor die Kamera holen (Standard: aus –
-    /// stattdessen zeigt der [CardInspector] eine Kopie mit Fähigkeiten und Buffs).
+    /// Offene Karten beim Hovern selbst groß und lesbar vor die Kamera holen (setzt die Zone,
+    /// [member Zone.zoom_cards]: an für die eigene Hand; sonst zeigt der [CardInspector] eine Kopie
+    /// mit Fähigkeiten und Buffs).
     #[export]
     zoom_enabled: bool,
     /// Anteil der Bildschirmhöhe, den die gezoomte Karte einnimmt.
@@ -558,6 +559,12 @@ impl Card3D {
     pub fn set_bright(&mut self, bright: bool) {
         self.bright = bright;
         self.apply_brightness();
+    }
+
+    /// Beim Hovern selbst groß vor die Kamera holen (Hand) – setzt die Zone beim Anordnen.
+    #[func]
+    pub fn set_zoom(&mut self, zoom: bool) {
+        self.zoom_enabled = zoom;
     }
 
     /// Wird die Karte als Kachel gezeigt?

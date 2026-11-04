@@ -2336,8 +2336,8 @@ impl ForgeTable {
     /// Kartenansicht beim Hovern (wie `Fähigkeiten.png`): statt die Karte selbst zur Mitte zu
     /// holen, zeigt der [CardInspector] eine helle Kopie am Bildschirmrand gegenüber der Maus,
     /// daneben Fähigkeiten (Schlüsselwörter mit Erklärung der Engine) und Veränderungen
-    /// (Marken, Stärke/Widerstand, Schaden, angelegte Karten). Nicht beim Ziehen und Zielen und
-    /// nicht bei verdeckten Karten.
+    /// (Marken, Stärke/Widerstand, Schaden, angelegte Karten). Nicht bei Handkarten (die zeigen
+    /// sich selbst groß), nicht beim Ziehen und Zielen und nicht bei verdeckten Karten.
     fn update_inspector(&mut self) {
         let Some(controller) = self.controller.clone() else { return };
         let Some(mut inspector) = self.inspector.as_ref().filter(|i| i.is_instance_valid()).cloned() else { return };
@@ -2355,7 +2355,9 @@ impl ForgeTable {
             return;
         };
         let def = card.bind().def().clone();
-        if def.name == "?" || def.name.is_empty() {
+        // Handkarten (eigene Hand, Fächer der Bühnen) zeigen sich beim Hovern selbst groß
+        let in_hand = card.bind().get_zone().is_some_and(|z| z.bind().is_hand());
+        if def.name == "?" || def.name.is_empty() || (in_hand && self.inspect_override.is_none()) {
             inspector.bind_mut().hide_card();
             return;
         }

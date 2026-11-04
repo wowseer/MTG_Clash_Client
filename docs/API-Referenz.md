@@ -453,7 +453,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `max_tilt_degrees` | `float` | Maximale Neigung bei Mouseover (Grad). |
 | `tilt_speed` | `float` | Glättung von Tilt/Zoom (größer = schneller). |
 | `move_duration` | `float` | Dauer der Gleit-Animation zu einem Slot (Sekunden). |
-| `zoom_enabled` | `bool` | Offene Karten beim Hovern selbst groß und lesbar vor die Kamera holen (Standard: aus – stattdessen zeigt der `CardInspector` eine Kopie mit Fähigkeiten und Buffs). |
+| `zoom_enabled` | `bool` | Offene Karten beim Hovern selbst groß und lesbar vor die Kamera holen (setzt die Zone, `Zone.zoom_cards`: an für die eigene Hand; sonst zeigt der `CardInspector` eine Kopie mit Fähigkeiten und Buffs). |
 | `zoom_screen_height` | `float` | Anteil der Bildschirmhöhe, den die gezoomte Karte einnimmt. |
 | `zoom_distance` | `float` | Abstand der gezoomten Karte zur Kamera (liegt damit vor allem anderen). |
 | `zoom_margin_px` | `float` | Rand zum Bildschirmrand in Pixeln. |
@@ -485,6 +485,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_attacking(attacking: bool)` | `void` | Angreifer im Kampf: Karte rückt etwas zum Gegner vor und trägt die rote Angriffsspitze an der Oberkante (`false` = zurück an ihren Platz). |
 | `set_tile(tile: bool)` | `void` | Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen und Ziehen wird die ganze Karte gezeigt. Setzt die Zone beim Anordnen. |
 | `set_bright(bright: bool)` | `void` | Immer hell in Originalfarben zeigen (Karten auf einer 3D-Bühne vor der Kamera). |
+| `set_zoom(zoom: bool)` | `void` | Beim Hovern selbst groß vor die Kamera holen (Hand) – setzt die Zone beim Anordnen. |
 | `is_tile()` | `bool` | Wird die Karte als Kachel gezeigt? |
 | `is_attacking()` | `bool` | Ist die Karte als Angreifer markiert (vorgerückt, mit Angriffsspitze)? |
 | `lunge(target: Vector3, reach: float, delay: float)` | `void` | Schlag im Kampf: die Karte holt zum Weltpunkt `target` aus (Anteil `reach` des Wegs, angehoben), trifft nach [`LUNGE_OUT`] Sekunden und kehrt zurück; Start nach `delay`. |
@@ -698,6 +699,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `auto_arrange` | `bool` | Automatische Anordnung nach Kartenart (hat Vorrang vor Raster und freier Ablage), aus Sicht der Seite (lokal −z = zur Tischmitte = „oben“): Kreaturen vorn mittig an der Mittellinie, alle anderen bleibenden Karten hinten rechts neben dem Medaillon. Länder liegen in einer eigenen Ressourcen-Zone (hinten links). |
 | `card_scale` | `float` | Größe der Karten in dieser Zone (1 = normal). Spielfeld und Ressourcen verkleinern sie automatisch, wenn sonst nicht alle in eine Reihe passen. |
 | `tile_cards` | `bool` | Karten als Kachel zeigen (nur Name und Bild, Stärke/Widerstand unten rechts; siehe `Card3D.set_tile()`) – Form der Karten auf dem Spielfeld. |
+| `zoom_cards` | `bool` | Karten dieser Zone beim Hovern selbst groß vor die Kamera holen (eigene Hand); sonst zeigt die Kartenansicht eine Kopie. |
 
 ### Funktionen
 
@@ -707,6 +709,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `add_card(card: Card3D, index: int, delay: float)` | `void` | Fügt eine Karte ein (index < 0 = ans Ende) und ordnet alle Karten neu an. `delay` verzögert nur die Animation der neuen Karte (z. B. zum Austeilen). |
 | `add_card_at(card: Card3D, world_point: Vector3, delay: float)` | `void` | Legt eine Karte frei am Weltpunkt ab (nur mit `free_placement`, sonst wie `add_card` ans Ende). Die Position wird in der Zone begrenzt. |
 | `is_free_placement()` | `bool` | Bleiben Karten dort liegen, wo sie abgelegt werden (statt Raster)? |
+| `is_hand()` | `bool` | Ist das ein Handfächer (eigene Hand, Gegnerhand, Fächer einer 3D-Bühne)? |
 | `remove_card(card: Card3D)` | `int` | Entfernt eine Karte; gibt ihren bisherigen Index zurück (-1 falls nicht enthalten). |
 | `layout()` | `void` | Ordnet alle Karten neu an (Tween zu ihren Slots). |
 | `get_card_count()` | `int` | Anzahl der Karten in der Zone. |

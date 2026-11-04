@@ -105,6 +105,7 @@ size = Vector3(5, 0.3, 1.4)
 hand_card_angle_degrees = 4.6
 hand_max_spread_degrees = 32.0
 transform = Transform3D(2.8, 0, 0, 0, 2.705, -0.725, 0, 0.725, 2.705, 0, 0.6, 5.95)
+zoom_cards = true
 
 [node name="HeroAnchor" type="Marker3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 4.78)
