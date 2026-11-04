@@ -44,8 +44,12 @@ const LOCAL_SEAT: i64 = 0;
 /// (verdeckte Gegner-Handkarten liegen zwischen −1 und dieser Grenze).
 const ABILITY_KEY_BASE: i64 = -1_000_000;
 /// Beschriftung des Fertig-Knopfes beim Unter-die-Bibliothek-Legen.
-fn bottom_label(n: u32, count: u32) -> String {
-    trf!("Fertig ({n}/{count})", "Done ({n}/{count})")
+fn pick_label(n: u32, min: u32, max: u32) -> String {
+    if min == max {
+        trf!("Fertig ({n}/{max})", "Done ({n}/{max})")
+    } else {
+        trf!("Fertig ({n}/{min}–{max})", "Done ({n}/{min}–{max})")
+    }
 }
 
 /// Startspieler-Knöpfe: Breite, Abstand untereinander (in Bildschirm-Hochrichtung) und Mitte der
@@ -149,7 +153,10 @@ pub struct ForgeTable {
     /// Bühne vor der Kamera (z. B. Starthand beim Mulligan); schließt mit der Antwort.
     showcase: Option<Gd<Showcase>>,
     /// Karten, die nach einem Mulligan unter die Bibliothek sollen (Klick-Reihenfolge).
-    bottom_pick: Vec<CardId>,
+    /// Auswahl auf der Hand-Bühne (Mulligan unter die Bibliothek, Abwerfen …) und ihr
+    /// „Fertig“-Knopf.
+    hand_pick: Vec<CardId>,
+    hand_pick_button: Option<Gd<Button3D>>,
     /// Laufende Mana-Zahlung wird von Hand bezahlt: Beim ersten `PayMana` lag schon Mana im Pool
     /// (vorher getappt). Bleibt gesetzt, bis eine andere Entscheidung kommt.
     manual_pay: bool,
@@ -211,7 +218,8 @@ impl INode for ForgeTable {
             choice_buttons: Vec::new(),
             choice_prompt: None,
             showcase: None,
-            bottom_pick: Vec::new(),
+            hand_pick: Vec::new(),
+            hand_pick_button: None,
             manual_pay: false,
             auto_pass_turn: None,
             drawn_arrows: HashSet::new(),
@@ -434,21 +442,30 @@ impl ForgeTable {
         }
     }
 
-    /// „Fertig“ bei `MulliganBottom`: gewählte Karten an die Engine.
+    /// „Fertig“ auf der Hand-Bühne: gewählte Karten an die Engine.
     #[func]
-    fn on_bottom_done(&mut self) {
-        let Some(Decision::MulliganBottom { count, hand, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else {
+    fn on_hand_pick_done(&mut self) {
+        let Some((options, min, max)) = self.pending.as_ref().and_then(|r| self.hand_choice(&r.decision)) else {
             return;
         };
-        if self.bottom_pick.len() == count as usize {
-            for id in &hand {
-                if let Some(mut c) = self.cards.get(&i64::from(*id)).cloned() {
-                    c.bind_mut().set_marker(CardMarker::None);
-                }
-            }
-            let pick = std::mem::take(&mut self.bottom_pick);
-            self.answer(Choice::Cards(pick));
+        let n = self.hand_pick.len() as u32;
+        if n < min || n > max {
+            return;
         }
+        for id in &options {
+            if let Some(mut c) = self.cards.get(&i64::from(*id)).cloned() {
+                c.bind_mut().set_marker(CardMarker::None);
+            }
+        }
+        let pick = std::mem::take(&mut self.hand_pick);
+        self.answer(Choice::Cards(pick));
+    }
+
+    /// „Abbrechen“ auf der Hand-Bühne (nur wo Forge das erlaubt).
+    #[func]
+    fn on_hand_pick_cancel(&mut self) {
+        self.hand_pick.clear();
+        self.answer(Choice::Cancel);
     }
 
     /// Ein Mulligan-Knopf wurde gedrückt: `keep` = Starthand behalten, sonst Mulligan.
@@ -628,7 +645,7 @@ impl ForgeTable {
         self.combat_armed = None;
         let starting = matches!(req.decision, Decision::ChooseStartingPlayer { .. }).then(|| req.clone());
         let mulligan = matches!(req.decision, Decision::Mulligan { .. }).then(|| req.clone());
-        let bottom = matches!(req.decision, Decision::MulliganBottom { .. }).then(|| req.clone());
+        let hand_pick = self.hand_choice(&req.decision).is_some().then(|| req.clone());
         let auto_pay = self.auto_pay(&req.decision);
         self.pending = Some(req);
         if auto_pay {
@@ -654,8 +671,8 @@ impl ForgeTable {
         if let Some(req) = mulligan {
             self.show_mulligan(&req);
         }
-        if let Some(req) = bottom {
-            self.show_mulligan_bottom(&req);
+        if let Some(req) = hand_pick {
+            self.show_hand_pick(&req);
         }
         self.update_glow();
     }
@@ -691,7 +708,7 @@ impl ForgeTable {
         }
         let Some(id) = self.forge_id(&card) else { return };
         let Ok(card_id) = u32::try_from(id) else { return };
-        if self.bottom_click(card_id) {
+        if self.hand_pick_click(card_id) {
             return;
         }
         if self.combat_click(card_id) {
@@ -923,68 +940,112 @@ impl ForgeTable {
         self.showcase = Some(showcase);
     }
 
-    /// Nach einem Mulligan Karten unter die Bibliothek legen (London-Mulligan) in 3D: die Hand
-    /// auf der Bühne, Klick auf eine Karte markiert sie (golden), orange „Fertig (n/N)“ ist erst
-    /// bei der richtigen Anzahl aktiv.
-    fn show_mulligan_bottom(&mut self, req: &Request) {
-        let Decision::MulliganBottom { hand, count, .. } = &req.decision else { return };
-        let count = *count;
+    /// Karten aus der eigenen Hand wählen – nach einem Mulligan unter die Bibliothek legen,
+    /// abwerfen (auch als Kosten oder wegen Handgröße), aufdecken …: `(Optionen, min, max)`, wenn
+    /// alle wählbaren Karten auf der eigenen Hand liegen, sonst `None`.
+    fn hand_choice(&self, decision: &Decision) -> Option<(Vec<CardId>, u32, u32)> {
+        match decision {
+            Decision::MulliganBottom { hand, count, .. } => Some((hand.clone(), *count, *count)),
+            Decision::ChooseCards { options, min, max, .. } => {
+                let hand = self.zones(LOCAL_SEAT as usize).hand?;
+                // Handkarten, auch wenn sie gerade auf der Bühne liegen
+                let staged = |c: &Gd<Card3D>| self.showcase.as_ref().is_some_and(|s| s.is_instance_valid() && s.bind().holds(c.clone()));
+                let in_hand = |id: &CardId| {
+                    self.cards
+                        .get(&i64::from(*id))
+                        .is_some_and(|c| staged(c) || c.bind().get_zone().is_some_and(|z| z == hand))
+                };
+                (!options.is_empty() && options.iter().all(in_hand)).then(|| (options.clone(), *min, *max))
+            }
+            _ => None,
+        }
+    }
+
+    /// Hand-Bühne (wie der Mulligan): die wählbaren Handkarten groß aufgefächert vor der Kamera,
+    /// Titel nach dem Grund, Klick wählt (orange) bzw. hebt die Wahl auf, „Fertig (n/…)“ erst bei
+    /// gültiger Anzahl aktiv, „Abbrechen“ wo Forge das erlaubt.
+    fn show_hand_pick(&mut self, req: &Request) {
+        let Some((options, min, max)) = self.hand_choice(&req.decision) else { return };
         self.clear_choice_objects();
-        self.bottom_pick.clear();
+        self.hand_pick.clear();
         let Some(mut parent) = self.controller.clone().map(|c| c.upcast::<Node>()) else { return };
         let mut showcase = Showcase::new_alloc();
         parent.add_child(&showcase);
         showcase.bind_mut().open();
-        let title = trf!("{count} Karte(n) unter die Bibliothek", "Put {count} card(s) on the bottom");
-        let subtitle = tr!(
-            "Klicke die Karten an, die unter deine Bibliothek kommen.",
-            "Click the cards to put on the bottom of your library."
-        );
-        showcase.bind_mut().set_texts(GString::from(title.as_str()), GString::from(subtitle), GString::new());
-        let cards: Vec<Gd<Card3D>> = hand.iter().filter_map(|id| self.cards.get(&i64::from(*id)).cloned()).collect();
+        let (title, subtitle) = match &req.decision {
+            Decision::MulliganBottom { count, .. } => (
+                trf!("{count} Karte(n) unter die Bibliothek", "Put {count} card(s) on the bottom"),
+                tr!("Klicke die Karten an, die unter deine Bibliothek kommen.", "Click the cards to put on the bottom of your library.").to_string(),
+            ),
+            Decision::ChooseCards { reason, .. } => {
+                let count = if min == max { max.to_string() } else { format!("{min}–{max}") };
+                let title = match reason {
+                    CardChoiceReason::Discard | CardChoiceReason::DiscardCost | CardChoiceReason::DiscardToHandSize => {
+                        trf!("{count} Karte(n) abwerfen", "Discard {count} card(s)")
+                    }
+                    _ if !req.prompt.is_empty() => req.prompt.clone(),
+                    _ => trf!("{count} Karte(n) wählen", "Choose {count} card(s)"),
+                };
+                let sub = if req.source_name.is_empty() {
+                    tr!("Klicke die Karten an.", "Click the cards.").to_string()
+                } else {
+                    format!("{} – {}", req.source_name, tr!("Klicke die Karten an.", "Click the cards."))
+                };
+                (title, sub)
+            }
+            _ => return,
+        };
+        showcase.bind_mut().set_texts(GString::from(title.as_str()), GString::from(subtitle.as_str()), GString::new());
+        let cards: Vec<Gd<Card3D>> = options.iter().filter_map(|id| self.cards.get(&i64::from(*id)).cloned()).collect();
+        for c in &cards {
+            let mut c = c.clone();
+            c.bind_mut().set_ready_glow(true);
+        }
         showcase.bind_mut().show_cards(&cards);
-        let mut button = Button3D::create(ButtonStyle::Orange, &bottom_label(0, count), Showcase::button_width() * 1.2);
-        button.bind_mut().set_enabled(count == 0);
-        let cb = Callable::from_object_method(&self.to_gd(), "on_bottom_done");
+        if req.cancelable {
+            let mut cancel = Button3D::create(ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), Showcase::button_width());
+            let cb = Callable::from_object_method(&self.to_gd(), "on_hand_pick_cancel");
+            cancel.connect("pressed", &cb);
+            showcase.bind_mut().add_button(cancel);
+        }
+        let mut button = Button3D::create(ButtonStyle::Orange, &pick_label(0, min, max), Showcase::button_width() * 1.2);
+        button.bind_mut().set_enabled(min == 0);
+        let cb = Callable::from_object_method(&self.to_gd(), "on_hand_pick_done");
         button.connect("pressed", &cb);
-        showcase.bind_mut().add_button(button);
+        showcase.bind_mut().add_button(button.clone());
+        self.hand_pick_button = Some(button);
         self.showcase = Some(showcase);
     }
 
-    /// Klick auf eine Karte bei `MulliganBottom`: markieren bzw. Markierung aufheben, Knopf
-    /// aktualisieren. true = behandelt.
-    fn bottom_click(&mut self, card: CardId) -> bool {
-        let Some(Decision::MulliganBottom { hand, count, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else {
+    /// Klick auf eine Karte auf der Hand-Bühne: wählen (orange) bzw. Wahl aufheben, Knopf
+    /// aktualisieren; ist schon das Maximum gewählt und nur eine erlaubt, wird getauscht.
+    /// true = behandelt.
+    fn hand_pick_click(&mut self, card: CardId) -> bool {
+        let Some((options, min, max)) = self.pending.as_ref().and_then(|r| self.hand_choice(&r.decision)) else {
             return false;
         };
-        if !hand.contains(&card) {
+        if !options.contains(&card) {
             return true;
         }
-        if let Some(pos) = self.bottom_pick.iter().position(|c| *c == card) {
-            self.bottom_pick.remove(pos);
-        } else if self.bottom_pick.len() < count as usize {
-            self.bottom_pick.push(card);
-        } else if count == 1 {
-            self.bottom_pick = vec![card];
+        if let Some(pos) = self.hand_pick.iter().position(|c| *c == card) {
+            self.hand_pick.remove(pos);
+        } else if self.hand_pick.len() < max as usize {
+            self.hand_pick.push(card);
+        } else if max == 1 {
+            self.hand_pick = vec![card];
         }
-        for id in &hand {
+        for id in &options {
             if let Some(mut c) = self.cards.get(&i64::from(*id)).cloned() {
-                let marker = if self.bottom_pick.contains(id) { CardMarker::Selected } else { CardMarker::None };
+                let marker = if self.hand_pick.contains(id) { CardMarker::Selected } else { CardMarker::None };
                 c.bind_mut().set_marker(marker);
             }
         }
-        let n = self.bottom_pick.len() as u32;
-        if let Some(mut b) = self.showcase_button() {
-            b.bind_mut().set_label_text(GString::from(bottom_label(n, count).as_str()));
-            b.bind_mut().set_enabled(n == count);
+        let n = self.hand_pick.len() as u32;
+        if let Some(mut b) = self.hand_pick_button.clone().filter(|b| b.is_instance_valid()) {
+            b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
+            b.bind_mut().set_enabled(n >= min && n <= max);
         }
         true
-    }
-
-    /// Erster Knopf der offenen Bühne.
-    fn showcase_button(&self) -> Option<Gd<Button3D>> {
-        let s = self.showcase.as_ref()?;
-        s.get_children().iter_shared().find_map(|c| c.try_cast::<Button3D>().ok())
     }
 
     /// 3D-Bedienobjekte der letzten Entscheidung ausblenden und freigeben.
@@ -1327,6 +1388,11 @@ impl ForgeTable {
                     self.selection.iter().filter_map(|i| candidates.get(*i)).filter_map(card).collect(),
                 )
             }
+            // Wahl aus der eigenen Hand (Hand-Bühne): alle Optionen leuchten blau
+            Some(d) if self.hand_choice(d).is_some() => {
+                let (options, _, _) = self.hand_choice(d).unwrap_or_default();
+                (options.iter().map(|c| i64::from(*c)).collect(), HashSet::new())
+            }
             Some(d @ Decision::ChooseCards { .. }) if self.table_pick(d).is_some() => {
                 let options = self.table_pick(d).unwrap_or_default();
                 (
@@ -1526,7 +1592,7 @@ impl ForgeTable {
         match decision {
             Decision::ChooseCards { options, .. } => options.clone(),
             Decision::Scry { cards, .. } => cards.clone(),
-            // MulliganBottom: auf der 3D-Bühne (show_mulligan_bottom)
+            // MulliganBottom und Wahl aus der eigenen Hand: 3D-Bühne (show_hand_pick)
             _ => Vec::new(),
         }
     }
@@ -1535,8 +1601,8 @@ impl ForgeTable {
     /// den mitgeschickten Kartendaten).
     fn prepare_fan(&mut self, req: &Request) {
         self.free_fan_cards();
-        if self.table_pick(&req.decision).is_some() {
-            return; // Karten werden auf dem Tisch angeklickt
+        if self.table_pick(&req.decision).is_some() || self.hand_choice(&req.decision).is_some() {
+            return; // Karten werden auf dem Tisch bzw. auf der Hand-Bühne angeklickt
         }
         for id in Self::fan_ids(&req.decision) {
             if let Some(card) = self.cards.get(&i64::from(id)).cloned() {

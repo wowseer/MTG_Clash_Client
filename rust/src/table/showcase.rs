@@ -193,7 +193,8 @@ impl Showcase {
     /// Liegt `card` gerade in der Bühne?
     #[func]
     pub fn holds(&self, card: Gd<Card3D>) -> bool {
-        self.borrowed.iter().any(|(c, _)| *c == card)
+        // gelöschte Karten nie vergleichen (der Vergleich bräuchte ihre Instanz-ID)
+        card.is_instance_valid() && self.borrowed.iter().any(|(c, _)| c.is_instance_valid() && *c == card)
     }
 
     /// Karten zurückgeben, Knöpfe ausblenden, abdunkeln aufheben und danach freigeben.

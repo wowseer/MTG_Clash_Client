@@ -112,7 +112,8 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `is_ending_turn()` | `bool` | Ist „Sofort beenden“ gerade aktiv? |
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
 | `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
-| `on_bottom_done()` | `void` | „Fertig“ bei `MulliganBottom`: gewählte Karten an die Engine. |
+| `on_hand_pick_done()` | `void` | „Fertig“ auf der Hand-Bühne: gewählte Karten an die Engine. |
+| `on_hand_pick_cancel()` | `void` | „Abbrechen“ auf der Hand-Bühne (nur wo Forge das erlaubt). |
 | `on_mulligan_pressed(keep: bool)` | `void` | Ein Mulligan-Knopf wurde gedrückt: `keep` = Starthand behalten, sonst Mulligan. |
 | `on_starting_player_pressed(index: int)` | `void` | Ein Startspieler-Knopf wurde gedrückt (`index` = Eintrag in `players` der Entscheidung `ChooseStartingPlayer`). |
 | `player_clicked(seat: int)` | `void` | Ein Spieler-Medaillon wurde angeklickt (`seat` = Sitzplatz): ist der Spieler ein gültiges Ziel der offenen Zielwahl, wird er gewählt bzw. abgewählt. |
