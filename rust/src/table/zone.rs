@@ -609,12 +609,14 @@ impl Zone {
                 None => groups.push((k.clone(), *f, 1)),
             }
         }
-        // gleichnamige Stapel nebeneinander, der getappte rechts vom ungetappten (wie bei Ländern)
+        // gleichnamige Stapel nebeneinander (wie bei Ländern)
         let name_of = |k: &str| k.split('|').next().unwrap_or("").to_string();
         let first: Vec<String> = groups.iter().map(|g| name_of(&g.0)).collect();
+        // gleichnamige Stapel: bereit, dann noch nicht einsatzbereit, angreifend, getappt (rechts)
         let rank = |g: &(String, bool, usize)| {
             let n = name_of(&g.0);
-            (first.iter().position(|f| *f == n).unwrap_or(0), g.0.split('|').nth(1) == Some("true"))
+            let flag = |i: usize| g.0.split('|').nth(i) == Some("true");
+            (first.iter().position(|f| *f == n).unwrap_or(0), flag(2), flag(1), flag(3))
         };
         groups.sort_by_key(|g| rank(g));
         // Breite einer Gruppe in Kartenbreiten (ohne Abstand) und je Reihe in Einheiten

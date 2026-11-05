@@ -79,6 +79,10 @@ pub struct CardDef {
     /// Regeltext wurde für eine Bühne ersetzt (ein Modus, ein Ersatzeffekt): auf dem echten
     /// Kartenbild steht dann nur dieser Text, auf einem Feld über dem gedruckten Textfeld.
     pub custom_text: bool,
+    /// Kreatur ist noch nicht einsatzbereit (CR 302.6, „summoning sick“).
+    pub sick: bool,
+    /// Kreatur greift im laufenden Kampf an.
+    pub attacking: bool,
     /// Farben der Karte (CR 105), leer = farblos.
     pub colors: Vec<ManaType>,
     /// Regeltext (Symbole wie `{T}` noch nicht ersetzt).
@@ -149,6 +153,8 @@ impl CardDef {
             art: s("art"),
             // Stack: nur die gewählten Modi stehen im Text (auf dem echten Bild auf einem Feld)
             custom_text: card.get("chosen_modes").is_some_and(|v| v.booleanize()),
+            sick: card.get("sick").is_some_and(|v| v.booleanize()),
+            attacking: card.get("attacking").is_some_and(|v| v.booleanize()),
             colors,
             text: s("text"),
             base_stats: pair("base_power", "base_toughness").or(stats),

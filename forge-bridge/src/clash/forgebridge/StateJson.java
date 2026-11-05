@@ -231,6 +231,16 @@ final class StateJson {
         o.addProperty("name", c.getName());
         o.addProperty("type", String.valueOf(c.getType()));
         o.addProperty("tapped", c.isTapped());
+        // Kreaturen: Einsatzbereitschaft (CR 302.6, „summoning sick“) und Angreifer im laufenden Kampf
+        if (c.isCreature() && c.isInPlay()) {
+            if (c.isSick()) {
+                o.addProperty("sick", true);
+            }
+            forge.game.combat.Combat combat = c.getGame().getCombat();
+            if (combat != null && combat.isAttacking(c)) {
+                o.addProperty("attacking", true);
+            }
+        }
         o.addProperty("cost", c.getManaCost() == null ? "" : c.getManaCost().getShortString());
         if (c.isCreature()) {
             o.addProperty("power", c.getNetPower());

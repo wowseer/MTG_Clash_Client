@@ -703,14 +703,17 @@ impl Card3D {
     }
 
     /// Schlüssel zum Stapeln gleicher Karten auf dem Spielfeld (wie gleichnamige Länder): nur
-    /// Karten mit gleichem Namen, Tapp-Zustand, Stärke/Widerstand, Schaden, Marken und Seite
-    /// liegen auf einem Stapel; getappte bilden einen eigenen.
+    /// Karten mit gleichem Namen, Tapp-Zustand, Angriff, Einsatzbereitschaft, Stärke/Widerstand,
+    /// Schaden, Marken und Seite liegen auf einem Stapel; getappte, angreifende und noch nicht
+    /// einsatzbereite (summoning sick) Kreaturen bilden je einen eigenen.
     pub fn stack_key(&self) -> String {
         let counters: Vec<String> = self.coins.iter().map(|(k, n, _, _)| format!("{k}{n}")).collect();
         format!(
-            "{}|{}|{:?}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{:?}|{}|{}|{}|{}",
             self.card_name,
             self.tapped,
+            self.def.attacking,
+            self.def.sick,
             self.def.stats,
             self.def.damage,
             self.def.face,
