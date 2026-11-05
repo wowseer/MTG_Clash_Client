@@ -636,7 +636,7 @@ impl Zone {
     ///   Mitte der eigenen Seite direkt hinter den Kreaturen, rechts von der Mitte (bei zwei
     ///   Kreaturen-Reihen ganz hinten); bei Platzmangel kleiner, zuletzt überlappend;
     /// - **Planeswalker**: links in der Kreaturen-Reihe (am linken Feldrand), weitere zur Mitte
-    ///   hin; die Kreaturen rücken bei Bedarf nach rechts.
+    ///   hin, immer in voller Größe; die Kreaturen teilen sich den Platz rechts daneben.
     ///
     /// Länder liegen in der eigenen Ressourcen-Zone (hinten links).
     fn auto_slots(&self, base: &[usize]) -> Vec<Transform3D> {
@@ -707,16 +707,20 @@ impl Zone {
         let wall = half_x - 0.1;
         // hintere Reihe immer ab BACK_ROW_START (rechts vom Medaillon), unten in der Zone
         let back_start = |_: f32| BACK_ROW_START;
+        // Planeswalker behalten immer ihre volle Größe ([member card_scale]); Breite ihres Bereichs
+        let pw_s = self.card_scale;
+        let left_w = if n_left == 0 { 0.0 } else { units_left * CARD_WIDTH * pw_s };
         // höchster Kreaturen-Stapel (Karten übereinander, höchstens STACK_MAX)
         let tallest = groups.iter().filter(|g| g.1 == 0).map(|g| g.2.min(STACK_MAX)).max().unwrap_or(0);
         let fits = |s: f32| {
             let front_h = if n_front == 0 { 0.0 } else { len * s * (1.0 + (tallest as f32 - 1.0) * CREATURE_STACK_STEP) };
             // die hintere Reihe zählt in der Höhe nur, wenn die Kreaturen bis über sie reichen
             let w = CARD_WIDTH * s;
-            let front_right = (-units_front * w * 0.5).max(-wall + units_left * w) + units_front * w;
+            let front_right = (-units_front * w * 0.5).max(-wall + left_w) + units_front * w;
             let back_h = if n_back == 0 || front_right <= back_start(s) { 0.0 } else { len * s + BACK_ROW_GAP };
-            // Planeswalker links in der Kreaturen-Reihe: beide zusammen in die Breite
-            (units_front + units_left) * CARD_WIDTH * s <= 2.0 * wall
+            // Planeswalker links in der Kreaturen-Reihe in voller Größe; die Kreaturen teilen
+            // sich den Rest der Breite
+            units_front * CARD_WIDTH * s <= 2.0 * wall - left_w
                 && (n_back == 0 || back_start(s) + units_back * CARD_WIDTH * s <= wall)
                 // Kreaturen und hintere Reihe übereinander in der Zonentiefe
                 && front_h + back_h <= 2.0 * half_z - 0.1
@@ -734,11 +738,12 @@ impl Zone {
             // linke Kante (Mitte der ersten Karte) jeder Gruppe: vorn mittig, hinten ab back_start
             let mut starts = vec![0.0f32; groups.len()];
             // Kreaturen mittig, aber rechts von den Planeswalkern (die links in derselben Reihe liegen)
-            let left_end = -wall + units_left * w;
+            let left_end = -wall + left_w;
             let mut x_front = (-units_front * w * 0.5).max(left_end) + w * 0.5 + AUTO_GAP * w * 0.5;
             let mut x_back = back_start(s) + w * 0.5;
-            // links: am linken Feldrand (über dem Deck), Gruppen wachsen zur Mitte
-            let mut x_left = -wall + w * 0.5;
+            // Planeswalker: am linken Feldrand in voller Größe, Gruppen wachsen zur Mitte
+            let pw_w = CARD_WIDTH * pw_s;
+            let mut x_left = -wall + pw_w * 0.5;
             for (g, (_, f, n)) in groups.iter().enumerate() {
                 let step = (group_units(*n, *f) + AUTO_GAP) * w;
                 match f {
@@ -752,7 +757,7 @@ impl Zone {
                     }
                     _ => {
                         starts[g] = x_left;
-                        x_left += step;
+                        x_left += (group_units(*n, *f) + AUTO_GAP) * pw_w;
                     }
                 }
             }
@@ -770,17 +775,19 @@ impl Zone {
                     let (x, z) = match f {
                         0 => (starts[g], top + row as f32 * CREATURE_STACK_STEP * len * s),
                         1 => (starts[g] + row as f32 * BATTLE_STACK_STEP * w, back_z),
-                        // Planeswalker: links in der Kreaturen-Reihe
-                        _ => (starts[g] + row as f32 * BATTLE_STACK_STEP * w, top),
+                        // Planeswalker: links in der Kreaturen-Reihe, volle Größe
+                        _ => (starts[g] + row as f32 * BATTLE_STACK_STEP * pw_w, -half_z + len * pw_s * 0.5 + 0.05),
                     };
                     let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
-                    Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
+                    let scale = if *f == 2 { pw_s } else { s };
+                    Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(scale)), Vector3::new(x, y, z))
                 })
                 .collect();
         }
 
         // zu viele Karten: vorn eine Reihe, wenn sie mit höchstens 75 % Verkleinerung passt, sonst zwei
-        let avail = 2.0 * half_x - 0.2;
+        // Platz rechts neben den Planeswalkern (die behalten ihre volle Größe)
+        let avail = 2.0 * half_x - 0.2 - left_w;
         let one_row = (avail / (n_front.max(1) as f32 * CARD_WIDTH * (1.0 + AUTO_GAP))).min(self.card_scale);
         let (rows, s_front) = if one_row >= self.card_scale * 0.75 || n_front <= 1 {
             (1, one_row.max(self.card_scale * MIN_SHRINK))
@@ -799,7 +806,7 @@ impl Zone {
         let back_z = half_z - len * s_back * 0.5 - 0.05;
         let back_x0 = BACK_ROW_START + CARD_WIDTH * s_back * 0.5;
         // Planeswalker links, gespiegelt
-        let s_left = self.fit_scale(n_left, back_avail);
+        let s_left = pw_s;
         let step_l = (CARD_WIDTH * s_left * (1.0 + AUTO_GAP)).min(if n_left > 1 { (back_avail - CARD_WIDTH * s_left) / (n_left - 1) as f32 } else { f32::MAX });
         let left_x0 = -half_x + 0.1 + CARD_WIDTH * s_left * 0.5;
 
@@ -817,7 +824,7 @@ impl Zone {
                     k_front += 1;
                     let (row, col) = (k / per_row, k % per_row);
                     let in_row = per_row.min(n_front - row * per_row);
-                    let x = (col as f32 - (in_row as f32 - 1.0) * 0.5) * step_f;
+                    let x = (col as f32 - (in_row as f32 - 1.0) * 0.5) * step_f + left_w * 0.5;
                     (x, top + row as f32 * (len * s_front + 0.1), s_front)
                 } else {
                     let k = k_back;
