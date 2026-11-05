@@ -580,16 +580,26 @@ impl Zone {
     /// Tischmitte, +x = rechts (aus Sicht der Seite):
     /// - **vordere Reihe(n)**: Kreaturen mittig an der Mittellinie; passen sie nicht in eine
     ///   Reihe, werden sie kleiner, dann zweireihig;
-    /// - **hintere Reihe rechts**: Planeswalker, Schlachten, Artefakte, Ausrüstung,
-    ///   Verzauberungen … – in der Mitte der eigenen Seite direkt hinter den Kreaturen, rechts
-    ///   von der Mitte (bei zwei Kreaturen-Reihen ganz hinten); bei Platzmangel kleiner, zuletzt
-    ///   überlappend.
+    /// - **hintere Reihe rechts**: Schlachten, Artefakte, Ausrüstung, Verzauberungen … – in der
+    ///   Mitte der eigenen Seite direkt hinter den Kreaturen, rechts von der Mitte (bei zwei
+    ///   Kreaturen-Reihen ganz hinten); bei Platzmangel kleiner, zuletzt überlappend;
+    /// - **hintere Reihe links**: Planeswalker – gespiegelt auf derselben Höhe links von den
+    ///   Kreaturen (über dem Deck), weitere nach links.
     ///
     /// Länder liegen in der eigenen Ressourcen-Zone (hinten links).
     fn auto_slots(&self, base: &[usize]) -> Vec<Transform3D> {
-        let front: Vec<bool> = base.iter().map(|&i| self.cards[i].bind().kind() == CardKind::Creature).collect();
-        let n_front = front.iter().filter(|f| **f).count();
-        let n_back = front.len() - n_front;
+        // Reihe je Karte: 0 = Kreaturen vorn, 1 = hinten rechts, 2 = Planeswalker hinten links
+        let front: Vec<u8> = base
+            .iter()
+            .map(|&i| match self.cards[i].bind().kind() {
+                CardKind::Creature => 0,
+                CardKind::Planeswalker => 2,
+                _ => 1,
+            })
+            .collect();
+        let n_front = front.iter().filter(|f| **f == 0).count();
+        let n_back = front.iter().filter(|f| **f == 1).count();
+        let n_left = front.iter().filter(|f| **f == 2).count();
         let (half_x, half_z) = (self.size.x * 0.5, self.size.z * 0.5);
         let len = self.card_length();
 
@@ -614,7 +624,7 @@ impl Zone {
             })
             .collect();
         // Gruppen je Reihe in der Reihenfolge des ersten Auftretens: (Schlüssel, vorn?, Anzahl)
-        let mut groups: Vec<(String, bool, usize)> = Vec::new();
+        let mut groups: Vec<(String, u8, usize)> = Vec::new();
         for (k, f) in keys.iter().zip(&front) {
             match groups.iter_mut().find(|(gk, gf, _)| gk == k && gf == f) {
                 Some(g) => g.2 += 1,
@@ -625,7 +635,7 @@ impl Zone {
         let name_of = |k: &str| k.split('|').next().unwrap_or("").to_string();
         let first: Vec<String> = groups.iter().map(|g| name_of(&g.0)).collect();
         // gleichnamige Stapel: bereit, dann noch nicht einsatzbereit, angreifend, getappt (rechts)
-        let rank = |g: &(String, bool, usize)| {
+        let rank = |g: &(String, u8, usize)| {
             let n = name_of(&g.0);
             let flag = |i: usize| g.0.split('|').nth(i) == Some("true");
             (first.iter().position(|f| *f == n).unwrap_or(0), flag(2), flag(1), flag(3))
@@ -633,11 +643,11 @@ impl Zone {
         groups.sort_by_key(|g| rank(g));
         // Breite einer Gruppe in Kartenbreiten (ohne Abstand) und je Reihe in Einheiten
         // Kreaturen-Stapel liegen untereinander (eine Kartenbreite), die anderen nebeneinander
-        let group_units = |n: usize, front: bool| if front { 1.0 } else { 1.0 + (n as f32 - 1.0) * BATTLE_STACK_STEP };
-        let row_units = |f: bool| -> f32 {
+        let group_units = |n: usize, row: u8| if row == 0 { 1.0 } else { 1.0 + (n as f32 - 1.0) * BATTLE_STACK_STEP };
+        let row_units = |f: u8| -> f32 {
             groups.iter().filter(|g| g.1 == f).map(|g| group_units(g.2, g.1) + AUTO_GAP).sum::<f32>()
         };
-        let (units_front, units_back) = (row_units(true), row_units(false));
+        let (units_front, units_back, units_left) = (row_units(0), row_units(1), row_units(2));
 
         // Zuerst alles gemeinsam kleiner: Kreaturen in einer Reihe mittig, die anderen rechts
         // daneben in der Mitte der eigenen Seite – die größte gemeinsame Größe, bei der beides
@@ -647,7 +657,9 @@ impl Zone {
             if n_front == 0 { BACK_ROW_START } else { (units_front * CARD_WIDTH * s * 0.5 + BACK_ROW_GAP).max(BACK_ROW_START) }
         };
         let fits = |s: f32| {
-            units_front * CARD_WIDTH * s * 0.5 <= wall && (n_back == 0 || back_start(s) + units_back * CARD_WIDTH * s <= wall)
+            units_front * CARD_WIDTH * s * 0.5 <= wall
+                && (n_back == 0 || back_start(s) + units_back * CARD_WIDTH * s <= wall)
+                && (n_left == 0 || back_start(s) + units_left * CARD_WIDTH * s <= wall)
         };
         let min_s = self.card_scale * MIN_SHRINK;
         let mut shared = self.card_scale;
@@ -663,10 +675,24 @@ impl Zone {
             let mut starts = vec![0.0f32; groups.len()];
             let mut x_front = -units_front * w * 0.5 + w * 0.5 + AUTO_GAP * w * 0.5;
             let mut x_back = back_start(s) + w * 0.5;
+            // links: Mitte der rechten Karte jeder Gruppe, Gruppen wachsen nach links
+            let mut x_left = -back_start(s) - w * 0.5;
             for (g, (_, f, n)) in groups.iter().enumerate() {
-                let x = if *f { &mut x_front } else { &mut x_back };
-                starts[g] = *x;
-                *x += (group_units(*n, *f) + AUTO_GAP) * w;
+                let step = (group_units(*n, *f) + AUTO_GAP) * w;
+                match f {
+                    0 => {
+                        starts[g] = x_front;
+                        x_front += step;
+                    }
+                    1 => {
+                        starts[g] = x_back;
+                        x_back += step;
+                    }
+                    _ => {
+                        starts[g] = x_left;
+                        x_left -= step;
+                    }
+                }
             }
             let mut in_group = vec![0usize; groups.len()];
             return keys
@@ -679,10 +705,10 @@ impl Zone {
                     in_group[g] += 1;
                     // Kreaturen: jede weitere etwas weiter zum Spieler hin und obenauf, die
                     // Kopfzeilen darunter bleiben sichtbar; andere: nach rechts versetzt
-                    let (x, z) = if *f {
-                        (starts[g], top + row as f32 * CREATURE_STACK_STEP * len * s)
-                    } else {
-                        (starts[g] + row as f32 * BATTLE_STACK_STEP * w, back_z)
+                    let (x, z) = match f {
+                        0 => (starts[g], top + row as f32 * CREATURE_STACK_STEP * len * s),
+                        1 => (starts[g] + row as f32 * BATTLE_STACK_STEP * w, back_z),
+                        _ => (starts[g] - row as f32 * BATTLE_STACK_STEP * w, back_z),
                     };
                     let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
                     Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
@@ -719,13 +745,21 @@ impl Zone {
             half_z - len * s_back * 0.5 - 0.05
         };
         let back_x0 = BACK_ROW_START + CARD_WIDTH * s_back * 0.5;
+        // Planeswalker links, gespiegelt
+        let s_left = self.fit_scale(n_left, back_avail);
+        let step_l = (CARD_WIDTH * s_left * (1.0 + AUTO_GAP)).min(if n_left > 1 { (back_avail - CARD_WIDTH * s_left) / (n_left - 1) as f32 } else { f32::MAX });
+        let left_x0 = -BACK_ROW_START - CARD_WIDTH * s_left * 0.5;
 
-        let (mut k_front, mut k_back) = (0usize, 0usize);
+        let (mut k_front, mut k_back, mut k_left) = (0usize, 0usize, 0usize);
         front
             .iter()
             .enumerate()
-            .map(|(i, is_front)| {
-                let (x, z, s) = if *is_front {
+            .map(|(i, row_kind)| {
+                let (x, z, s) = if *row_kind == 2 {
+                    let k = k_left;
+                    k_left += 1;
+                    (left_x0 - k as f32 * step_l, back_z, s_left)
+                } else if *row_kind == 0 {
                     let k = k_front;
                     k_front += 1;
                     let (row, col) = (k / per_row, k % per_row);
