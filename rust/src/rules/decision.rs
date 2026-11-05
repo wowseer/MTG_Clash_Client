@@ -121,6 +121,9 @@ pub enum Decision {
         candidates: Vec<Target>,
         min: u32,
         max: u32,
+        /// Erweiterung: `"Choose"` = Wahl für einen Effekt ohne Ziel („choose a player“,
+        /// CR 115.1), leer = echtes Ziel (CR 115) eines Zaubers oder einer Fähigkeit.
+        purpose: String,
     },
     ChooseX { player: PlayerId, max: u32 },
     PayMana { player: PlayerId, remaining: String, options: Vec<PayAction> },
@@ -481,6 +484,7 @@ impl Decision {
                 candidates: targets("candidates"),
                 min: o.u32("min"),
                 max: o.u32("max"),
+                purpose: o.str("purpose"),
             },
             "ChooseX" => Decision::ChooseX { player, max: o.u32("max") },
             "PayMana" => Decision::PayMana {

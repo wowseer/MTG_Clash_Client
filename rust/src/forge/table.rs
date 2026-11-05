@@ -1415,11 +1415,13 @@ impl ForgeTable {
         self.choice_prompt = Some(prompt);
     }
 
-    /// Spieler wählen: Zielwahl, bei der nur Spieler zur Wahl stehen und genau einer gewählt
-    /// wird (z. B. „Ziel-Spieler zieht“, „wähle einen Spieler“): `(Sitzplätze, darf leer bleiben)`.
+    /// Spieler wählen für einen Effekt ohne Ziel (`purpose == "Choose"`, z. B. „wähle einen
+    /// Spieler“, CR 115.1), bei der nur Spieler zur Wahl stehen und genau einer gewählt wird:
+    /// `(Sitzplätze, darf leer bleiben)`. Echte Ziele (CR 115, z. B. Lightning Bolt „any target“,
+    /// „target player“) wählt man immer nur mit dem Pfeil – keine Knöpfe.
     fn player_pick(decision: &Decision) -> Option<(Vec<PlayerId>, bool)> {
-        let Decision::ChooseTargets { candidates, min, max, .. } = decision else { return None };
-        if *max != 1 || candidates.len() < 2 {
+        let Decision::ChooseTargets { candidates, min, max, purpose, .. } = decision else { return None };
+        if purpose != "Choose" || *max != 1 || candidates.len() < 2 {
             return None;
         }
         let seats: Vec<PlayerId> = candidates
@@ -1432,7 +1434,7 @@ impl ForgeTable {
         Some((seats, *min == 0))
     }
 
-    /// Spieler wählen wie die Startspieler-Wahl, ohne Karte: über dem Tisch je Gegner ein
+    /// Spieler wählen (nur Effekte ohne Ziel, siehe `player_pick`) wie die Startspieler-Wahl, ohne Karte: über dem Tisch je Gegner ein
     /// **oranger** Knopf mit seinem Namen (oben), darunter der **blaue** Knopf für den eigenen
     /// Spieler („Ich selbst“); darf man keinen wählen, zuletzt grau „Keinen Spieler“. Darüber
     /// „(Karte) Wähle einen Spieler.“. Medaillons und Pfeil funktionieren weiter; Abbrechen über den Phasen-Knopf.
@@ -3741,6 +3743,23 @@ mod tests {
         assert_eq!(phase_index("COMBAT_DECLARE_BLOCKERS"), 5);
         assert_eq!(phase_index("CLEANUP"), 8);
         assert_eq!(phase_index("???"), -1);
+    }
+
+    /// Echte Ziele (Lightning Bolt ohne Kreaturen: nur Spieler) nur per Pfeil, Knöpfe je Spieler
+    /// nur bei „wähle einen Spieler“ ohne Ziel.
+    #[test]
+    fn player_buttons_only_for_non_target_choices() {
+        let choose = |purpose: &str| Decision::ChooseTargets {
+            player: 0,
+            source: 5,
+            description: String::new(),
+            candidates: vec![Target::Player(0), Target::Player(1)],
+            min: 1,
+            max: 1,
+            purpose: purpose.to_string(),
+        };
+        assert_eq!(ForgeTable::player_pick(&choose("")), None);
+        assert_eq!(ForgeTable::player_pick(&choose("Choose")), Some((vec![0, 1], false)));
     }
 }
 

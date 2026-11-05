@@ -1372,8 +1372,8 @@ public class RemotePlayerController extends PlayerControllerAi {
     }
 
     /**
-     * Spieler und/oder Karten für einen Effekt wählen: {@code ChooseTargets} (Klick auf Medaillon
-     * bzw. Karte). Das Basismodell kennt dafür keine eigene Entscheidung (Erweiterung, siehe
+     * Spieler und/oder Karten für einen Effekt wählen: {@code ChooseTargets} mit
+     * {@code purpose = "Choose"} (kein Ziel; Knöpfe je Spieler, Klick auf Medaillon bzw. Karte). Das Basismodell kennt dafür keine eigene Entscheidung (Erweiterung, siehe
      * Forge-Schnittstelle.md). Liefert die gewählten Indizes oder {@code null} (Engine entscheidet).
      */
     private <T extends GameEntity> List<Integer> entities(List<T> list, int min, int max, String title,
@@ -1381,7 +1381,7 @@ public class RemotePlayerController extends PlayerControllerAi {
         List<GameEntity> candidates = new ArrayList<>(list);
         List<String> labels = new ArrayList<>();
         list.forEach(e -> labels.add(targetLabel(e)));
-        return Decisions.targets(getGame(), seat, sa, title, candidates, labels, min, max);
+        return Decisions.targets(getGame(), seat, sa, title, candidates, labels, min, max, "Choose");
     }
 
     @Override

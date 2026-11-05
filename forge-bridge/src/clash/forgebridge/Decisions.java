@@ -209,7 +209,20 @@ final class Decisions {
      */
     static List<Integer> targets(Game game, int seat, SpellAbility sa, String description,
             List<? extends forge.game.GameObject> candidates, List<String> labels, int min, int max) {
+        return targets(game, seat, sa, description, candidates, labels, min, max, null);
+    }
+
+    /**
+     * Wie {@link #targets}, mit Erweiterung {@code purpose}: {@code "Choose"} = Wahl für einen
+     * Effekt ohne Ziel (CR 115.1: „choose a player“ zielt nicht), sonst leer = echtes Ziel.
+     */
+    static List<Integer> targets(Game game, int seat, SpellAbility sa, String description,
+            List<? extends forge.game.GameObject> candidates, List<String> labels, int min, int max,
+            String purpose) {
         JsonObject d = decision("ChooseTargets", seat);
+        if (purpose != null) {
+            d.addProperty("purpose", purpose);
+        }
         Card src = sa == null ? null : sa.getHostCard();
         d.addProperty("source", src == null ? -1 : src.getId());
         d.addProperty("description", withName(description, src));
