@@ -840,6 +840,7 @@ impl Card3D {
     /// Pixeln der Kartentextur (256 × 358) – Quelle der 3D-Beschriftung.
     pub fn face_texts(&self) -> FaceTexts {
         let (stats, stats_color) = self.def.stats_text();
+        let printed = placeholder::has_printed_face(&self.def);
         let name = self.card_name.to_string();
         let (cost, cost_x, name_x, name_width) = if self.card_kind == CardKind::Land {
             (String::new(), 0.0, 128.0, 216.0)
@@ -854,6 +855,7 @@ impl Card3D {
             (cost, centers.first().copied().unwrap_or(0.0), (26.0 + left_pip - 16.0) * 0.5, left_pip - 16.0 - 26.0)
         };
         FaceTexts {
+            printed,
             name,
             name_x,
             name_width,
@@ -887,10 +889,15 @@ impl Card3D {
             return;
         };
         let px = |x: f32, z: f32| Vector3::new((x / 256.0 - 0.5) * CARD_WIDTH, CARD_THICKNESS * 0.5 + 0.0015, z);
-        // Kachel: nur Name, Plaketten und Stärke/Widerstand (unten rechts); keine Kosten, Typzeile, Text
-        l.kind.set_visible(!tile);
-        l.text.set_visible(!tile);
-        l.cost.set_visible(!tile && !t.cost.is_empty());
+        // Kachel: nur Name, Plaketten und Stärke/Widerstand (unten rechts); keine Kosten, Typzeile, Text.
+        // Echtes Kartenbild: Name, Kosten, Typzeile und Text stehen im Bild; Stärke/Widerstand nur,
+        // wenn sie vom Aufdruck abweichen (grün/rot) – sonst verdeckten sie die gedruckten Werte.
+        let printed = t.printed;
+        l.name.set_visible(!printed);
+        l.kind.set_visible(!tile && !printed);
+        l.text.set_visible(!tile && !printed);
+        l.cost.set_visible(!tile && !printed && !t.cost.is_empty());
+        l.stats.set_visible(!printed || t.stats_color != Color::WHITE);
         l.kind.set_position(px(128.0, zs[0]));
         l.text.set_position(px(128.0, zs[1]));
         l.badges.set_position(px(128.0, zs[2]));
@@ -1258,6 +1265,8 @@ pub struct FaceTexts {
     pub body: String,
     pub stats: String,
     pub stats_color: Color,
+    /// Echtes Kartenbild statt Platzhalter: Name, Kosten, Typzeile und Text stehen im Bild.
+    pub printed: bool,
 }
 
 /// Verstärkung des Aufleuchtens `t` Sekunden nach [`Card3D::flash`].

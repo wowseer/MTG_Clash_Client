@@ -200,7 +200,17 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 | **Pfeile** | Nachbau des Pfeils aus `Assets/Pfeil/MTG_Pfeil.blend` (`target_arrows.rs`): leuchtendes Band mit hellem Kern, Spitze und zur Spitze laufenden Lichtwellen; Farben aus der Palette des Blender-Materials (rot = Angriff, blau = Block, gold = Zielwahl, violett = Ziele auf dem Stack). Neue Pfeile wachsen in 0,33 s vom Start zum Ziel. In Ruhe gerade; bewegt sich ein Ende quer (z. B. beim Ziehen), biegt sich der Pfeil wie ein Seil und schwingt zurück |
 | Rechtsklick auf Karte | Kamera-Nahaufnahme; erneut oder Esc = Übersicht |
 
-**Kartenbild:** Name, Kostensymbole, Typzeile und Regeltext kommen von der Engine. Symbole im
+**Kartenbilder (JPG):** Wie Forge und NeoForge zeigen die Karten echte Kartenbilder von Scryfall.
+Die Brücke sucht sie im Bildordner von Forge (`~/.cache/forge/pics/cards/`) und von NeoForge
+(`~/Games/NeoForge/datos/cache/pics/cards/`, anderer Ort über die Umgebungsvariable
+`CLASH_EXTRA_PICS`) und lädt fehlende im Hintergrund von Scryfall in den Forge-Bildordner (beim
+ersten Spiel mit einem Deck erscheinen die Bilder nach und nach). Mit Bild blendet die Karte Name,
+Kosten, Typzeile und Text aus (stehen im Bild); Stärke/Widerstand nur, wenn sie vom Aufdruck
+abweichen. Ohne Bild, bei verdeckten Karten, Spielsteinen und Bühnenkopien mit eigenem Text (ein
+Modus, ein Ersatzeffekt) bleibt der gezeichnete Platzhalter (`placeholder::card_face`). Die Bilder
+gehören Wizards of the Coast und kommen nie ins Git.
+
+**Platzhalter-Kartenbild:** Name, Kostensymbole, Typzeile und Regeltext kommen von der Engine. Symbole im
 Regeltext werden ersetzt (`{T}` → ↷, `{R}` → Ⓡ, `{2}` → ②, hybrid als „(R/G)“), die Schriftgröße
 von Name, Typzeile und Regeltext passt sich der Textlänge an (`card_text::fit_line` / `fit_font`).
 Wertefeld unten rechts: Kreaturen Stärke/Widerstand (grün = über dem Aufdruck, rot = darunter oder

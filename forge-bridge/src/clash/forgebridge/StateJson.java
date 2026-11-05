@@ -285,6 +285,11 @@ final class StateJson {
         if (room != null && !room.isEmpty()) {
             o.addProperty("room", room);
         }
+        // Kartenbild (JPG von Scryfall im Forge-Bildordner); fehlt es, wird es im Hintergrund geladen
+        String image = CardImages.path(c);
+        if (!image.isEmpty()) {
+            o.addProperty("image", image);
+        }
         // Verdeckt (Morph, Manifest …, CR 708): Forge liefert dann die Werte der verdeckten Seite
         if (c.isFaceDown()) {
             o.addProperty("face_down", true);

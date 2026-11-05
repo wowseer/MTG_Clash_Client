@@ -317,6 +317,11 @@ impl INode for ForgeTable {
         }
     }
 
+    fn exit_tree(&mut self) {
+        // geladene Kartenbilder freigeben (sonst meldet Godot beim Beenden übrige Texturen)
+        placeholder::clear_printed();
+    }
+
     fn process(&mut self, delta: f64) {
         self.clock += delta;
         // Mana-Effekte ohne Ziel: sobald eine Karte auf dem Stack liegt, fliegt das Mana dorthin
@@ -1580,7 +1585,9 @@ impl ForgeTable {
     fn stage_card(data: &VarDictionary, text: Option<&str>) -> Gd<Card3D> {
         let mut def = CardDef::from_state(data);
         if let Some(t) = text {
+            // eigener Text (ein Modus, ein Effekt): Platzhalter, damit nur dieser Text darauf steht
             def.text = t.to_string();
+            def.image.clear();
         }
         let mut copy = Card3D::new_alloc();
         {
@@ -3643,7 +3650,7 @@ impl ForgeTable {
                 let def = CardDef::from_state(data);
                 let sig = format!("{def:?}");
                 if self.signatures.get(&key) != Some(&sig) {
-                    let frame = |d: &CardDef| (d.kind, d.cost, d.produces, d.colors.clone(), d.face_down, d.face);
+                    let frame = |d: &CardDef| (d.kind, d.cost, d.produces, d.colors.clone(), d.face_down, d.face, d.image.clone());
                     let known = self.signatures.contains_key(&key);
                     let mut c = card.bind_mut();
                     // Seitenwechsel (Transformieren, Umdrehen, Aufdecken; CR 711, 708.8): animiert

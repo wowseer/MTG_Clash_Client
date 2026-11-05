@@ -280,6 +280,7 @@ zusätzlich `power`, `toughness` (aktuell) und `base_power`, `base_toughness` (a
 Planeswalkern `loyalty`, bei Schlachten `defense` (im Spiel die aktuellen Marken, sonst aufgedruckt),
 `damage` (nur > 0, erlittener Schaden); nur wenn zutreffend: `token: true` (Spielstein), `attached_to` (Karten-ID des Trägers bei Auren, Ausrüstung,
 Befestigungen), `commander: true`, `emblem: true`, `room` (aktueller Raum eines Dungeons),
+`image` (absoluter Pfad des Kartenbilds, JPG von Scryfall im Forge-Bildordner `pics/cards/<SET>/<Name>.fullborder.jpg` oder im Bildordner von NeoForge; fehlt es, lädt die Brücke es im Hintergrund von Scryfall – `CardImages.java` – und ein späterer Zustand enthält den Pfad; nie bei verdeckten Karten und Spielsteinen),
 `face_down: true` (verdeckt, CR 708: Name leer, Werte der verdeckten Seite), `face` (bei
 doppelseitigen, modalen und Flip-Karten: 0 = Vorderseite, 1 = Rückseite/umgedreht) mit
 `other_face` `{name, type}` (nur offen), `counters` (Marken wie `CardObj.counters` in forge-rules-rs: Name → Anzahl, Namen =

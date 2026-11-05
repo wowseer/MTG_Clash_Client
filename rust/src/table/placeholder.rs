@@ -3,6 +3,9 @@
 
 use godot::classes::image::Format;
 use godot::classes::{Image, ImageTexture, Texture2D};
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use godot::prelude::*;
 
 use crate::game::cards::{CardDef, CardKind};
@@ -47,12 +50,50 @@ fn circle(img: &mut Gd<Image>, cx: i32, cy: i32, r: i32, color: Color) {
     }
 }
 
-/// Vorderseite für eine Kartendefinition: Rahmen in Kartenfarbe, Titelleiste mit
-/// Kostensymbolen, Bildfeld, Typzeile, Textfeld und (bei Kreaturen) Wertefeld.
-/// Texte kommen per Label3D dazu.
+thread_local! {
+    /// Geladene Kartenbilder je Pfad (None = nicht ladbar).
+    static PRINTED: RefCell<HashMap<String, Option<Gd<Texture2D>>>> = RefCell::new(HashMap::new());
+}
+
+/// Kartenbild aus einer Datei (JPG/PNG von Scryfall, Pfad aus dem Zustand), einmal geladen und
+/// zwischengespeichert; None, wenn die Datei fehlt oder nicht lesbar ist.
+pub fn printed_face(path: &str) -> Option<Gd<Texture2D>> {
+    if path.is_empty() {
+        return None;
+    }
+    if let Some(t) = PRINTED.with(|c| c.borrow().get(path).cloned()) {
+        return t;
+    }
+    let tex = Image::load_from_file(path).map(|mut img| {
+        img.generate_mipmaps();
+        ImageTexture::create_from_image(&img).map(|t| t.upcast::<Texture2D>())
+    });
+    let tex = tex.flatten();
+    PRINTED.with(|c| c.borrow_mut().insert(path.to_string(), tex.clone()));
+    tex
+}
+
+/// Zwischenspeicher der Kartenbilder leeren (beim Verlassen des Tisches, damit beim Beenden
+/// keine Texturen übrig bleiben).
+pub fn clear_printed() {
+    PRINTED.with(|c| c.borrow_mut().clear());
+}
+
+/// Zeigt die Karte ihr echtes Kartenbild (statt des gezeichneten Platzhalters)?
+pub fn has_printed_face(def: &CardDef) -> bool {
+    !def.face_down && printed_face(&def.image).is_some()
+}
+
+/// Vorderseite für eine Kartendefinition: das echte Kartenbild, wenn es eins gibt
+/// ([`printed_face`], Name und Text stehen dann im Bild); sonst der Platzhalter mit Rahmen in
+/// Kartenfarbe, Titelleiste mit Kostensymbolen, Bildfeld, Typzeile, Textfeld und (bei
+/// Kreaturen) Wertefeld – Texte kommen dann per Label3D dazu.
 pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
     if def.face_down {
         return face_down_face(def);
+    }
+    if let Some(t) = printed_face(&def.image) {
+        return t;
     }
     let base = def.frame_color();
     let frame = base * 0.85;

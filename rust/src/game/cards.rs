@@ -70,6 +70,9 @@ pub struct CardDef {
     /// Manakosten in der Schreibweise der Engine („1 U“, „{X}{R}“), für die Kostensymbole über
     /// den Handkarten (`table::cost_symbols`; behält Hybrid, X und phyrexianische Symbole).
     pub cost_text: String,
+    /// Pfad des Kartenbilds (JPG von Scryfall im Forge-Bildordner, leer = keins): ersetzt den
+    /// gezeichneten Platzhalter (`table::placeholder::card_face`).
+    pub image: String,
     /// Farben der Karte (CR 105), leer = farblos.
     pub colors: Vec<ManaType>,
     /// Regeltext (Symbole wie `{T}` noch nicht ersetzt).
@@ -136,6 +139,7 @@ impl CardDef {
             kind,
             cost: parse_cost(&s("cost")),
             cost_text: s("cost"),
+            image: s("image"),
             colors,
             text: s("text"),
             base_stats: pair("base_power", "base_toughness").or(stats),
