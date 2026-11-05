@@ -3816,7 +3816,7 @@ impl ForgeTable {
                 let d = def.damage;
                 buffs.push(InspectorEntry { title: tr!("Schaden", "Damage").into(), text: d.to_string() });
             }
-            for line in card_badges(data, &[]).lines().filter(|l| !l.is_empty()) {
+            for line in card_badges(data, &[], true).lines().filter(|l| !l.is_empty()) {
                 buffs.push(InspectorEntry { title: line.to_string(), text: String::new() });
             }
             // angelegte Karten (Auren, Ausrüstung)
@@ -4330,7 +4330,7 @@ impl ForgeTable {
                     drop(c);
                     self.signatures.insert(key, sig);
                 }
-                card.bind_mut().set_badges(&card_badges(data, &ring_bearers));
+                card.bind_mut().set_badges(&card_badges(data, &ring_bearers, false));
                 // Marken als Münzen, dazu Klassen-Stufe (CR 716) und offene Türen (CR 709.5)
                 let mut coins = counter_list(data);
                 let level = get_int(data, "class_level");
@@ -4494,8 +4494,9 @@ fn phase_index(phase: &str) -> i64 {
     }
 }
 
-/// Plaketten einer Karte: Spielstein, Commander, Ringträger, Dungeon-Raum, andere Seite, Marken.
-fn card_badges(data: &VarDictionary, ring_bearers: &[i64]) -> String {
+/// Plaketten einer Karte: Commander, Ringträger, Dungeon-Raum, andere Seite, mit `token` auch
+/// „Spielstein“ (nur in der Kartenansicht – auf dem Tisch zeigt die Kachel das Bild frei).
+fn card_badges(data: &VarDictionary, ring_bearers: &[i64], token: bool) -> String {
     let mut lines: Vec<String> = Vec::new();
     if get_bool(data, "commander") {
         lines.push(tr!("Commander", "Commander").to_string());
@@ -4519,7 +4520,7 @@ fn card_badges(data: &VarDictionary, ring_bearers: &[i64]) -> String {
     if let Some(other) = data.get("other_face").and_then(|v| v.try_to::<VarDictionary>().ok()) {
         lines.push(format!("↺ {}", get_str(&other, "name")));
     }
-    let rest = counters::card_badges(get_bool(data, "token"));
+    let rest = counters::card_badges(token && get_bool(data, "token"));
     if !rest.is_empty() {
         lines.push(rest);
     }

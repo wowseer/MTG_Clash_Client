@@ -330,26 +330,44 @@ fn has_tap_ability(def: &CardDef) -> bool {
     def.text.lines().any(|l| l.split(':').next().is_some_and(|cost| l.contains(':') && cost.contains("{T}")))
 }
 
+/// Bildfeld eines ganzen Kartenbilds (links, oben, rechts, unten als Anteile) – für Kacheln von
+/// Karten ohne eigenen Bildausschnitt, z. B. Spielsteine.
+const FULL_ART: (f32, f32, f32, f32) = (0.08, 0.115, 0.92, 0.555);
+
 /// Kachel einer Karte auf dem Spielfeld wie in `Cratzuren icons.png`: Rahmen in Kartenfarbe,
-/// dunkle Namensleiste oben, der Bildausschnitt (Scryfall `art_crop`) in der Mitte, unten eine
+/// dunkle Namensleiste oben, der Bildausschnitt (Scryfall `art_crop`, sonst das Bildfeld des ganzen Kartenbilds, z. B. bei
+/// Spielsteinen) in der Mitte, unten eine
 /// Leiste mit hellem, abgerundetem Wertekästchen (Stärke/Widerstand, Verteidigung; Loyalität hat
 /// einen eigenen Schild an der Karte;
 /// Text per Label3D) und links unten ein runder schwarzer Knopf mit weißem Symbol (↷ bei einer
-/// Tapp-Fähigkeit, sonst ◎). Name und Werte kommen per Label3D dazu. None ohne Bildausschnitt.
+/// Tapp-Fähigkeit, sonst ◎). Name und Werte kommen per Label3D dazu. None ohne Bild.
 pub fn tile_face(def: &CardDef) -> Option<Gd<Texture2D>> {
-    if def.face_down || def.crop.is_empty() || CLOSED.with(|c| c.get()) {
+    // ohne Bildausschnitt (z. B. Spielsteine): der Bildbereich aus dem ganzen Kartenbild
+    let from_full = def.crop.is_empty();
+    let source = if from_full { &def.image } else { &def.crop };
+    if def.face_down || source.is_empty() || CLOSED.with(|c| c.get()) {
         return None;
     }
     // Planeswalker: Loyalität im eigenen Schild der Karte (Card3D), kein Wertekästchen
     let stats = matches!(def.kind, CardKind::Creature | CardKind::Battle) || def.stats.is_some();
     let tap = has_tap_ability(def);
     let base = def.frame_color();
-    let key = format!("{}|{}|{}|{}", def.crop, base.to_html(), stats, tap);
+    let key = format!("{}|{}|{}|{}", source, base.to_html(), stats, tap);
     if let Some(t) = TILES.with(|m| m.borrow().get(&key).cloned()) {
         return Some(t);
     }
-    let mut art = Image::load_from_file(&def.crop)?;
+    let mut art = Image::load_from_file(source)?;
     art.convert(Format::RGBA8);
+    if from_full {
+        // Bildfeld eines Scryfall-Kartenbilds (normale Karte und Spielstein): unter der Namenszeile,
+        // über der Typzeile bzw. dem Textfeld – nur der Bildteil, nicht die halbe Karte
+        let (iw, ih) = (art.get_width() as f32, art.get_height() as f32);
+        let r = Rect2i::new(
+            Vector2i::new((iw * FULL_ART.0) as i32, (ih * FULL_ART.1) as i32),
+            Vector2i::new((iw * (FULL_ART.2 - FULL_ART.0)) as i32, (ih * (FULL_ART.3 - FULL_ART.1)) as i32),
+        );
+        art = art.get_region(r)?;
+    }
     let (w, h) = (TILE_W, TILE_H);
     let frame = base.darkened(0.25);
     let dark = Color::from_rgb(0.08, 0.08, 0.09);
