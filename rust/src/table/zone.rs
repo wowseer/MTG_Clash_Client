@@ -49,6 +49,9 @@ const LAND_GROUP_GAP: f32 = 0.12;
 const BATTLE_STACK_STEP: f32 = 0.3;
 /// Handfächer: Lücke vor der Endgruppe (in Kartenabständen).
 const TAIL_GAP: f32 = 1.5;
+/// Spielfeld: höchstens so viele gleiche Karten auf einem Stapel (Kreaturen wachsen sonst bis
+/// über Manapool und Hand), danach beginnt daneben ein neuer Stapel.
+const STACK_MAX: usize = 6;
 /// Spielfeld: Versatz gleicher Kreaturen untereinander (Anteil der Kartenlänge).
 const CREATURE_STACK_STEP: f32 = 0.2;
 /// Größe verschluckter Karten ([member Zone.swallow_cards]).
@@ -593,12 +596,21 @@ impl Zone {
         // Gleiche Karten stapeln wie gleichnamige Länder (Stapel = Gruppe gleicher stack_key,
         // je Karte BATTLE_STACK_STEP Kartenbreite versetzt); Träger angelegter Karten bleiben allein
         let hosts: Vec<Gd<Card3D>> = self.attachments.values().cloned().collect();
+        // höchstens STACK_MAX Karten je Stapel, danach beginnt daneben ein neuer
+        let mut per_key: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         let keys: Vec<String> = base
             .iter()
             .enumerate()
             .map(|(n, &i)| {
                 let c = &self.cards[i];
-                if hosts.contains(c) { format!("#host{n}") } else { c.bind().stack_key() }
+                if hosts.contains(c) {
+                    return format!("#host{n}");
+                }
+                let k = c.bind().stack_key();
+                let count = per_key.entry(k.clone()).or_insert(0);
+                let chunk = *count / STACK_MAX;
+                *count += 1;
+                format!("{k}#{chunk}")
             })
             .collect();
         // Gruppen je Reihe in der Reihenfolge des ersten Auftretens: (Schlüssel, vorn?, Anzahl)
