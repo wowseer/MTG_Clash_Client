@@ -7,6 +7,9 @@
 //! Schnee; Zeile 3 = Hybride W/U, W/B, U/B, U/R, B/R, B/G, R/W, R/G, G/W, G/U; Zeile 4 = 2/W … 2/G,
 //! W/P … G/P (phyrexianisch); Zeile 5 = Tappen, Enttappen, ∞, ½. Farbloses Mana {C} fehlt im
 //! Bogen: es kommt aus `Assets/Mana/Colorless.svg` und wird beim Laden in Zelle (8, 5) kopiert.
+//!
+//! Mit dem Schalter „nur eigene Grafik“ ([`crate::assets`]) gibt es keinen Bogen; dann zeichnen
+//! alle Stellen ihre eigenen Symbole (`mana_view::draw_mana_symbol`, Kreise mit Zahl, Farbrad-Shader).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -77,6 +80,10 @@ pub fn cell(token: &str) -> Option<(i32, i32)> {
 }
 
 fn sheet() -> Option<Gd<Image>> {
+    // „nur eigene Grafik“: kein Bogen – alle Stellen zeichnen ihre eigenen Symbole
+    if !crate::assets::protected_enabled() {
+        return None;
+    }
     SHEET_IMAGE.with(|s| {
         s.borrow_mut()
             .get_or_insert_with(|| {

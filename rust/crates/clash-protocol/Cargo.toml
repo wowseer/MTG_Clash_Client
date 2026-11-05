@@ -3,7 +3,7 @@ name = "clash-protocol"
 version = "0.3.0"
 edition = "2024"
 description = "Protokoll-Modell (Decision/Choice) und JSON-Form (Protokoll v3) der Forge-Brücke von MTG Clash – ohne Godot"
-license = "Apache-2.0"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 serde_json = "1"

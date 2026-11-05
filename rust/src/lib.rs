@@ -1,5 +1,6 @@
 use godot::prelude::*;
 
+mod assets;
 mod hello;
 #[macro_use]
 mod i18n;

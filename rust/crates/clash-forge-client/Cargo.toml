@@ -3,7 +3,7 @@ name = "clash-forge-client"
 version = "0.3.0"
 edition = "2024"
 description = "Verbindung zur Forge-Brücke von MTG Clash: Java-Prozess starten oder mit einem Gastgeber verbinden, JSON Lines senden und empfangen – ohne Godot"
-license = "Apache-2.0"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 clash-protocol = { path = "../clash-protocol" }

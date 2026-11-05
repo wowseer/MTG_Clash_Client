@@ -151,9 +151,10 @@ impl CardDef {
             kind,
             cost: parse_cost(&s("cost")),
             cost_text: s("cost"),
-            image: s("image"),
-            art: s("art"),
-            crop: s("crop"),
+            // „nur eigene Grafik“ (`crate::assets`): keine Kartenbilder, nur eigene Rahmen
+            image: if crate::assets::protected_enabled() { s("image") } else { String::new() },
+            art: if crate::assets::protected_enabled() { s("art") } else { String::new() },
+            crop: if crate::assets::protected_enabled() { s("crop") } else { String::new() },
             // Stack: nur die gewählten Modi stehen im Text (auf dem echten Bild auf einem Feld)
             custom_text: card.get("chosen_modes").is_some_and(|v| v.booleanize()),
             sick: card.get("sick").is_some_and(|v| v.booleanize()),
@@ -304,3 +305,4 @@ mod tests {
         assert_eq!(CardKind::from_type_line("Kindred Instant — Goblin"), CardKind::Instant);
     }
 }
+

@@ -31,6 +31,15 @@ Nach jedem Rust-Build das Spiel neu starten, damit die neue Bibliothek geladen w
 
 ---
 
+
+**Nur eigene Grafik** (z. B. für Bilder, die kein geschütztes Material zeigen dürfen):
+Umgebungsvariable `CLASH_FREE_ASSETS=1` oder Godot mit `-- --free-assets` starten
+(`rust/src/assets.rs`). Dann zeigt der Tisch keine Kartenbilder (Scryfall) und nimmt keine Symbole
+aus `Assets/Mana/*.svg`, sondern nur selbst gezeichnete Kartenrahmen mit Typsymbolen (Kreatur:
+gekreuzte Klingen, Spontanzauber: Blitz, Hexerei: Zauberkreis, Artefakt: Zahnrad, Ausrüstung:
+Schwert, Planeswalker: Krone …) und die eigenen Manasymbole (Sonne, Tropfen, Schädel, Flamme,
+Baum, Raute). Die Bilder im README sind so entstanden.
+
 ## 2. Aufbau der Szene `table.tscn`
 
 ```

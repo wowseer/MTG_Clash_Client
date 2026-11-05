@@ -41,11 +41,10 @@ NeoGame.play ── ClashTable.open() → TableLauncher.launch(): Port öffnen, 
 
 ## Lizenz
 
-Forge steht unter **GPL-3.0**. Die Brücke (`forge-bridge/`) linkt Forge-Klassen und steht
-deshalb ebenfalls unter GPL-3.0 (`forge-bridge/LICENSE`). Das Spiel selbst (Apache-2.0) startet
-die Brücke nur als getrenntes Programm und kommuniziert über Pipes; es enthält keinen Forge-Code.
-Forges Kartendatenbank (`res/cardsfolder`) enthält Karten von Wizards of the Coast, sie wird nicht
-mit dem Spiel ausgeliefert, sondern aus der lokalen Forge-Installation gelesen.
+Forge steht unter **GPL-3.0**; MTG Clash übernimmt diese Lizenz für das ganze Projekt (`LICENSE`,
+gleicher Text wie `forge-bridge/LICENSE`). Forges Programm-Jar und Kartendatenbank
+(`res/cardsfolder`, enthält Karten von Wizards of the Coast) liegen nicht im Repo, sondern werden
+aus der lokalen Forge-Installation gelesen.
 
 ## Einrichtung
 

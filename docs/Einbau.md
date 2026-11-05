@@ -24,15 +24,14 @@ Forge-Desktop, eigene Java-Programme) hängen.
 | Baustein | Ort | Lizenz | Abhängigkeiten | Wofür |
 |---|---|---|---|---|
 | **Protokoll** | [`docs/Forge-Schnittstelle.md`](Forge-Schnittstelle.md) | – | – | Nachrichten, Befehle, `Decision`/`Choice`, Spielzustand |
-| **`clash-protocol`** (Rust-Crate) | `rust/crates/clash-protocol/` | Apache-2.0 | `serde_json` | Protokoll-Modell als Rust-Typen, Lesen/Schreiben der JSON-Form, Befehle, Schnittstelle `RulesEngine` |
-| **`clash-forge-client`** (Rust-Crate) | `rust/crates/clash-forge-client/` | Apache-2.0 | `clash-protocol`, `serde_json` | Brücke als Java-Prozess starten **oder** mit einem Gastgeber verbinden; Nachrichten ohne Blockieren abholen |
+| **`clash-protocol`** (Rust-Crate) | `rust/crates/clash-protocol/` | GPL-3.0 | `serde_json` | Protokoll-Modell als Rust-Typen, Lesen/Schreiben der JSON-Form, Befehle, Schnittstelle `RulesEngine` |
+| **`clash-forge-client`** (Rust-Crate) | `rust/crates/clash-forge-client/` | GPL-3.0 | `clash-protocol`, `serde_json` | Brücke als Java-Prozess starten **oder** mit einem Gastgeber verbinden; Nachrichten ohne Blockieren abholen |
 | **Forge-Brücke** (Java) | `forge-bridge/` | GPL-3.0 | Forge-Jars (Forge 2.0.15+), Gson | Übersetzt Forges `PlayerController`-Aufrufe in `Decision`s und zurück |
 | **NeoForge-Anbindung** | `integrations/neoforge/` | GPL-3.0 | NeoForge, Forge-Brücke | Hülle `ClashTable` + Patch für NeoForges Klassen |
-| **Godot-Tisch** | `godot/`, `rust/src/` | Apache-2.0 | Godot 4.7, gdext, beide Crates | Die 3D-Oberfläche dieses Projekts |
+| **Godot-Tisch** | `godot/`, `rust/src/` | GPL-3.0 | Godot 4.7, gdext, beide Crates | Die 3D-Oberfläche dieses Projekts |
 
-Die Lizenzgrenze liegt am Prozess bzw. Socket: Alles, was Forge-Klassen benutzt, ist GPL-3.0
-(`forge-bridge/`, `integrations/`); die Oberfläche und die Rust-Crates sprechen nur das Protokoll
-und enthalten keinen Forge-Code.
+Das ganze Projekt steht wie Forge unter der **GPL-3.0** (`LICENSE`). Wer die Bausteine einbaut,
+übernimmt diese Lizenz. Forge selbst (Jar und Kartendaten) liegt nicht im Repo.
 
 ---
 

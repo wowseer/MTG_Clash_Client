@@ -269,7 +269,18 @@ fn emblem(img: &mut Gd<Image>, kind: CardKind, c: Color) {
             }
             img.fill_rect(rect(cx - 5, cy - 46, 10, 88), c.lightened(0.6));
         }
-        CardKind::Creature | CardKind::Land => {}
+        CardKind::Creature => {
+            // zwei gekreuzte Klingen mit Griffen
+            for k in -44..=44 {
+                img.fill_rect(rect(cx + k - 5, cy + k - 5, 11, 11), c);
+                img.fill_rect(rect(cx - k - 5, cy + k - 5, 11, 11), c);
+            }
+            for (gx, gy) in [(-44, 44), (44, 44)] {
+                img.fill_rect(rect(cx + gx - 16, cy + gy - 16 + 6, 32, 8), c.darkened(0.3));
+                circle(img, cx + gx + gx.signum() * 6, cy + gy + 12, 8, c);
+            }
+        }
+        CardKind::Land => {}
     }
 }
 

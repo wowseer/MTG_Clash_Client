@@ -230,7 +230,9 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
   reicht „{1}{U}“ im Text). Symbole aus dem Symbolbogen `Assets/Mana/Mana.svg`
   (`game/mana_symbols.rs`; farblos {C} aus `Assets/Mana/Colorless.svg`), nie „{…}“ als Text und keine eigenen Motive.
 - Godot-Logik in Rust (gdext), kein GDScript im Spiel (nur temporäre Testskripte).
-- Lizenz: `forge-bridge/` ist GPL-3.0 und läuft als getrennter Prozess; keinen Forge-Code in
-  `rust/` übernehmen. `forge-bridge/forge/` (Jar + Kartendaten) nie committen.
+- Lizenz: das ganze Projekt ist GPL-3.0 wie Forge (`LICENSE`). Keinen Forge-Code in `rust/`
+  übernehmen (die Grenze bleibt das Protokoll). `forge-bridge/forge/` (Jar + Kartendaten) nie
+  committen. Bilder für README/Doku nur mit `CLASH_FREE_ASSETS=1` (keine Kartenbilder, keine
+  Symbole aus `Assets/Mana/*.svg`).
 - Begriffe in Code und Doku wie im Protokoll-Modell und den Comprehensive Rules (CR-Nummern in Kommentaren,
   wo eine Regel umgesetzt bzw. angezeigt wird).
