@@ -3676,6 +3676,7 @@ impl ForgeTable {
                     self.signatures.insert(key, sig);
                 }
                 card.bind_mut().set_badges(&card_badges(data, &ring_bearers));
+                card.bind_mut().set_counters(&counter_list(data));
                 let tapped = get_bool(data, "tapped");
                 if card.bind().is_tapped() != tapped {
                     card.bind_mut().set_tapped_state(tapped);
@@ -3837,7 +3838,7 @@ fn card_badges(data: &VarDictionary, ring_bearers: &[i64]) -> String {
     if let Some(other) = data.get("other_face").and_then(|v| v.try_to::<VarDictionary>().ok()) {
         lines.push(format!("↺ {}", get_str(&other, "name")));
     }
-    let rest = counters::card_badges(get_bool(data, "token"), &counter_list(data));
+    let rest = counters::card_badges(get_bool(data, "token"));
     if !rest.is_empty() {
         lines.push(rest);
     }

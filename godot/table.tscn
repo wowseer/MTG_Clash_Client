@@ -52,10 +52,10 @@ resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
 [node name="Battlefield" type="Zone" parent="Player"]
-size = Vector3(17, 0.1, 4.7)
+size = Vector3(17, 0.1, 3.76)
 free_placement = true
 auto_arrange = true
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.03)
 card_scale = 2.5
 tile_cards = true
 

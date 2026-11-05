@@ -48,6 +48,9 @@ pub const CARD_WIDTH: f32 = 0.63;
 /// Kostensymbole über Handkarten: Durchmesser und Abstand vom rechten Rand (Welteinheiten).
 const HAND_COST_SIZE: f32 = 0.15;
 const HAND_COST_INSET: f32 = 0.03;
+/// Marken-Münzen: Durchmesser (Welteinheiten) und Dauer von Aufspringen/Leuchten (Sekunden).
+const COIN_SIZE: f32 = 0.2;
+const COIN_POP_TIME: f32 = 0.5;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
 /// Kachel-Form auf dem Spielfeld (wie im Video des Users): nur der obere Teil der Karte – Name
@@ -235,6 +238,9 @@ pub struct Card3D {
     marker_material: Option<Gd<ShaderMaterial>>,
     tap_icon: Option<Gd<MeshInstance3D>>,
     visual: Option<Gd<Node3D>>,
+    /// Marken als Münzen rechts oben am Rand (`set_counters`): Markenart, Anzahl, Münze,
+    /// Zeit seit dem Zuwachs (für Aufspringen und blaues Leuchten; ≥ COIN_POP_TIME = ruhig).
+    coins: Vec<(String, u32, Gd<godot::classes::Sprite3D>, f32)>,
     /// Feld über dem gedruckten Textfeld für eigenen Text einer Bühne (`set_text_panel`).
     text_panel: Option<Gd<MeshInstance3D>>,
     /// Kostensymbole über der Oberkante (nur in Zonen mit `show_costs`): Kosten-Text und Reihe.
@@ -307,6 +313,7 @@ impl IArea3D for Card3D {
             zone: None,
             cost_row: None,
             text_panel: None,
+            coins: Vec::new(),
             base,
         }
     }
@@ -360,6 +367,7 @@ impl IArea3D for Card3D {
         }
 
         self.update_cost_row();
+        self.update_coins(delta as f32);
         let dt = delta as f32;
         // Kachel auf dem Spielfeld, beim Zoomen und Ziehen die ganze Karte (lesbar)
         let want_tile = self.tile && !zoomed && !self.dragging;
@@ -874,6 +882,61 @@ impl Card3D {
 
     /// Plaketten über dem Bildfeld der Vorderseite (eine Zeile je Marke bzw. Kennzeichen,
     /// z. B. „+1/+1 ×2“, „Spielstein“); leer = keine.
+    /// Marken der Karte (CR 122) als Münzen wie im Video „Choose One + Marke“: je Markenart eine
+    /// silberne Münze mit der Anzahl, rechts oben zur Hälfte über den Rand ragend, mehrere
+    /// untereinander. Loyalität und Verteidigung stehen im Wertefeld und bekommen keine Münze.
+    /// Kommt eine Marke hinzu, springt ihre Münze kurz auf und leuchtet blau.
+    pub fn set_counters(&mut self, counters: &[(String, u32)]) {
+        let wanted: Vec<(String, u32)> = counters
+            .iter()
+            .filter(|(k, n)| *n > 0 && k != "LOYALTY" && k != "DEFENSE")
+            .cloned()
+            .collect();
+        let same = wanted.len() == self.coins.len() && wanted.iter().zip(&self.coins).all(|((k, n), (ck, cn, _, _))| k == ck && n == cn);
+        if same {
+            return;
+        }
+        let Some(mut visual) = self.visual.clone() else { return };
+        let old: Vec<(String, u32, f32)> = self.coins.iter().map(|(k, n, _, t)| (k.clone(), *n, *t)).collect();
+        for (_, _, mut coin, _) in self.coins.drain(..) {
+            coin.queue_free();
+        }
+        for (k, n) in wanted {
+            let before = old.iter().find(|(ok, _, _)| *ok == k);
+            // neu oder mehr geworden: Animation von vorn; sonst den Stand übernehmen
+            let t = match before {
+                Some((_, on, ot)) if *on >= n => *ot,
+                _ => 0.0,
+            };
+            let mut coin = cost_symbols::counter_coin(&k, n, COIN_SIZE);
+            coin.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
+            visual.add_child(&coin);
+            self.coins.push((k, n, coin, t));
+        }
+        self.update_coins(0.0);
+    }
+
+    /// Münzen platzieren (rechts oben am sichtbaren Kartenrand, auch als Kachel) und animieren.
+    fn update_coins(&mut self, dt: f32) {
+        if self.coins.is_empty() {
+            return;
+        }
+        let top = if self.tile_shown { -TILE_HEIGHT * 0.5 } else { -CARD_HEIGHT * 0.5 };
+        for (i, (_, _, coin, t)) in self.coins.iter_mut().enumerate() {
+            *t = (*t + dt).min(COIN_POP_TIME);
+            let p = *t / COIN_POP_TIME;
+            let pop = if p < 1.0 { 1.0 + 0.6 * (p * std::f32::consts::PI).sin() } else { 1.0 };
+            coin.set_scale(Vector3::splat(pop));
+            let glow = if p < 1.0 { 1.0 - p } else { 0.0 };
+            coin.set_modulate(Color::WHITE.lerp(Color::from_rgb(0.55, 0.75, 1.6), f64::from(glow)));
+            coin.set_position(Vector3::new(
+                CARD_WIDTH * 0.5,
+                CARD_THICKNESS * 0.5 + 0.006,
+                top + COIN_SIZE * 0.7 + i as f32 * COIN_SIZE * 1.08,
+            ));
+        }
+    }
+
     pub fn set_badges(&mut self, text: &str) {
         if self.badges == text {
             return;

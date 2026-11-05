@@ -64,6 +64,32 @@ impl IControl for CostSymbolCanvas {
             draw_mana_symbol(&mut b, t, c, r);
             return;
         }
+        // Marken-Münze („#Rand:Anzahl“, siehe [`counter_coin`]): silbern mit farbigem Rand
+        if let Some(rest) = token.strip_prefix('#') {
+            let (rim, count) = rest.split_once(':').unwrap_or(("gold", rest));
+            let rim_color = match rim {
+                "green" => Color::from_rgb(0.35, 0.85, 0.4),
+                "red" => Color::from_rgb(0.95, 0.35, 0.3),
+                _ => Color::from_rgb(0.9, 0.75, 0.4),
+            };
+            b.draw_circle(c + Vector2::new(0.0, size * 0.03), r + size * 0.02, Color::from_rgba(0.0, 0.0, 0.0, 0.5));
+            b.draw_circle(c, r, Color::from_rgb(0.62, 0.64, 0.7));
+            // Glanz: hellere Scheibe oben links, dunklerer Ring innen
+            b.draw_circle(c - Vector2::splat(size * 0.04), r * 0.82, Color::from_rgb(0.86, 0.88, 0.93));
+            b.draw_arc_ex(c, r * 0.8, 0.0, std::f32::consts::TAU, 48, Color::from_rgb(0.5, 0.52, 0.58)).width(size * 0.025).antialiased(true).done();
+            b.draw_arc_ex(c, r, 0.0, std::f32::consts::TAU, 48, rim_color).width(size * 0.06).antialiased(true).done();
+            let Some(font) = ThemeDb::singleton().get_fallback_font() else { return };
+            let font_size = if count.chars().count() <= 1 { 80 } else if count.chars().count() == 2 { 64 } else { 46 };
+            let ascent = font.get_ascent_ex().font_size(font_size).done();
+            let descent = font.get_descent_ex().font_size(font_size).done();
+            b.draw_string_ex(&font, Vector2::new(0.0, c.y + (ascent - descent) * 0.5), count)
+                .alignment(HorizontalAlignment::CENTER)
+                .width(size)
+                .font_size(font_size)
+                .modulate(Color::from_rgb(0.12, 0.12, 0.16))
+                .done();
+            return;
+        }
         // Zahl, X oder sonstiges Symbol: grauer Kreis mit goldenem Rand und dunkler Schrift
         b.draw_circle(c + Vector2::new(0.0, size * 0.02), r + size * 0.02, Color::from_rgba(0.0, 0.0, 0.0, 0.45));
         b.draw_circle(c, r, Color::from_rgb(0.78, 0.76, 0.72));
@@ -97,7 +123,7 @@ pub fn symbol_texture(token: &str) -> Option<Gd<Texture2D>> {
     let tree = Engine::singleton().get_main_loop()?.try_cast::<SceneTree>().ok()?;
     let mut root = tree.get_root();
     let mut vp = SubViewport::new_alloc();
-    vp.set_name(&format!("CostSymbol_{}", token.replace('/', "_")));
+    vp.set_name(&format!("CostSymbol_{}", token.replace(['/', '#', ':'], "_")));
     vp.set_size(Vector2i::new(TEX, TEX));
     vp.set_transparent_background(true);
     vp.set_disable_3d(true);
@@ -126,6 +152,18 @@ fn symbol_sprite(token: &str, height: f32) -> Gd<Sprite3D> {
     s.set_texture_filter(TextureFilter::LINEAR_WITH_MIPMAPS);
     s.set_render_priority(3);
     s
+}
+
+/// Marken-Münze als `Sprite3D` (Durchmesser `size`, Fläche in der XY-Ebene, Vorderseite +Z):
+/// silbern mit der Anzahl, Rand je Markenart (+1/+1 grün, −1/−1 rot, sonst golden) – wie im
+/// Video „Choose One + Marke“.
+pub fn counter_coin(kind: &str, count: u32, size: f32) -> Gd<Sprite3D> {
+    let rim = match kind {
+        "P1P1" => "green",
+        "M1M1" => "red",
+        _ => "gold",
+    };
+    symbol_sprite(&format!("#{rim}:{count}"), size)
 }
 
 /// Breite einer Symbolreihe aus `n` Symbolen der Höhe `height`.
