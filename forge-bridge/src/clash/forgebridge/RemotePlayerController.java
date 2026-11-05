@@ -168,7 +168,21 @@ public class RemotePlayerController extends PlayerControllerAi {
                 actions.add(a);
                 labels.add("Mana zurücknehmen: " + c.getName());
             }
-            JsonObject action = Decisions.priority(getGame(), seat, actions, labels);
+            // Spielbar aus einer anderen Zone (Flashback, Foretell, Commander, Companion …):
+            // die UI zeigt diese Karten zusätzlich im Handfächer
+            List<Card> elsewhere = new ArrayList<>();
+            for (SpellAbility sa : options) {
+                Card host = sa.getHostCard();
+                forge.game.zone.Zone z = host == null ? null : getGame().getZoneOf(host);
+                if (z == null || elsewhere.contains(host)) {
+                    continue;
+                }
+                ZoneType zt = z.getZoneType();
+                if (zt != ZoneType.Hand && zt != ZoneType.Battlefield && zt != ZoneType.Stack) {
+                    elsewhere.add(host);
+                }
+            }
+            JsonObject action = Decisions.priority(getGame(), seat, actions, labels, elsewhere);
             if (action != null && action.has("type") && "Refresh".equals(action.get("type").getAsString())) {
                 continue; // Debug-Werkzeug hat etwas geändert: neu fragen
             }

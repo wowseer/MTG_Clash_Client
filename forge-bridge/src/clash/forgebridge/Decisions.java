@@ -365,9 +365,29 @@ final class Decisions {
 
     /** {@code Priority}: gibt das gewählte {@code Action}-Objekt zurück (null = unlesbar). */
     static JsonObject priority(Game game, int seat, JsonArray actions, List<String> labels) {
+        return priority(game, seat, actions, labels, List.of());
+    }
+
+    /**
+     * Wie {@link #priority}, mit Erweiterung {@code elsewhere}: Karten, die gerade aus einer
+     * anderen Zone als Hand und Spielfeld gespielt werden können (Friedhof, Exil, Kommandozone,
+     * Sideboard/Companion, Bibliothek) – je {@code {"card": id, "zone": "Graveyard"}}, ihre Daten
+     * in der Hülle {@code cards}. Die UI zeigt sie zusätzlich im Handfächer.
+     */
+    static JsonObject priority(Game game, int seat, JsonArray actions, List<String> labels, List<Card> elsewhere) {
         JsonObject d = decision("Priority", seat);
         d.add("actions", actions);
-        JsonObject c = ask(game, seat, d, "", null, null, false, labels);
+        JsonArray other = new JsonArray();
+        for (Card c : elsewhere) {
+            JsonObject o = new JsonObject();
+            o.addProperty("card", c.getId());
+            forge.game.zone.Zone z = game.getZoneOf(c);
+            o.addProperty("zone", z == null ? "" : z.getZoneType().name());
+            other.add(o);
+        }
+        d.add("elsewhere", other);
+        JsonElement raw = askRaw(game, seat, d, "", null, null, false, labels, elsewhere.isEmpty() ? null : elsewhere);
+        JsonObject c = raw != null && raw.isJsonObject() && !"Cancel".equals(type(raw.getAsJsonObject())) ? raw.getAsJsonObject() : null;
         if ("Refresh".equals(type(c))) {
             return c; // Debug-Werkzeug: Priorität neu stellen
         }

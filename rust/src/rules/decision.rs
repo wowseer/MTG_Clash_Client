@@ -127,7 +127,10 @@ pub enum Decision {
     Mulligan { player: PlayerId, mulligans_taken: u32, first_player: Option<PlayerId> },
     /// Nach dem Behalten `count` Karten unter die Bibliothek legen.
     MulliganBottom { player: PlayerId, hand: Vec<CardId>, count: u32 },
-    Priority { player: PlayerId, actions: Vec<Action> },
+    /// `elsewhere` (Erweiterung): Karten, die gerade aus einer anderen Zone als Hand und
+    /// Spielfeld gespielt werden können (Karte, Zone der Engine: `Graveyard`, `Exile`, `Command`,
+    /// `Sideboard`, `Library` …); ihre Daten stehen in `Request::cards`.
+    Priority { player: PlayerId, actions: Vec<Action>, elsewhere: Vec<(CardId, String)> },
     ChooseTargets {
         player: PlayerId,
         source: CardId,
@@ -495,6 +498,15 @@ impl Decision {
             "Priority" => Decision::Priority {
                 player,
                 actions: o.arr("actions").iter().filter_map(Action::from_var).collect(),
+                elsewhere: o
+                    .arr("elsewhere")
+                    .iter()
+                    .filter_map(dict)
+                    .filter_map(|e| {
+                        let e = Obj(&e);
+                        Some((u32::try_from(e.int("card")).ok()?, e.str("zone")))
+                    })
+                    .collect(),
             },
             "ChooseTargets" => Decision::ChooseTargets {
                 player,
