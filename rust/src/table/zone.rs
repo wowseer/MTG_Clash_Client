@@ -45,6 +45,8 @@ const MIN_SHRINK: f32 = 0.45;
 /// Abstand zwischen den Gruppen.
 const LAND_STACK_STEP: f32 = 0.3;
 const LAND_GROUP_GAP: f32 = 0.12;
+/// Spielfeld: Versatz gleicher Karten auf einem Stapel (Kartenbreiten).
+const BATTLE_STACK_STEP: f32 = 0.3;
 /// Größe verschluckter Karten ([member Zone.swallow_cards]).
 const SWALLOWED_SCALE: f32 = 0.02;
 /// Cover-Flow ([member Zone.coverflow]): ab diesem seitlichen Abstand (Zonen-Einheiten) von der
@@ -558,16 +560,49 @@ impl Zone {
         let (half_x, half_z) = (self.size.x * 0.5, self.size.z * 0.5);
         let len = self.card_length();
 
+        // Gleiche Karten stapeln wie gleichnamige Länder (Stapel = Gruppe gleicher stack_key,
+        // je Karte BATTLE_STACK_STEP Kartenbreite versetzt); Träger angelegter Karten bleiben allein
+        let hosts: Vec<Gd<Card3D>> = self.attachments.values().cloned().collect();
+        let keys: Vec<String> = base
+            .iter()
+            .enumerate()
+            .map(|(n, &i)| {
+                let c = &self.cards[i];
+                if hosts.contains(c) { format!("#host{n}") } else { c.bind().stack_key() }
+            })
+            .collect();
+        // Gruppen je Reihe in der Reihenfolge des ersten Auftretens: (Schlüssel, vorn?, Anzahl)
+        let mut groups: Vec<(String, bool, usize)> = Vec::new();
+        for (k, f) in keys.iter().zip(&front) {
+            match groups.iter_mut().find(|(gk, gf, _)| gk == k && gf == f) {
+                Some(g) => g.2 += 1,
+                None => groups.push((k.clone(), *f, 1)),
+            }
+        }
+        // gleichnamige Stapel nebeneinander, der getappte rechts vom ungetappten (wie bei Ländern)
+        let name_of = |k: &str| k.split('|').next().unwrap_or("").to_string();
+        let first: Vec<String> = groups.iter().map(|g| name_of(&g.0)).collect();
+        let rank = |g: &(String, bool, usize)| {
+            let n = name_of(&g.0);
+            (first.iter().position(|f| *f == n).unwrap_or(0), g.0.split('|').nth(1) == Some("true"))
+        };
+        groups.sort_by_key(|g| rank(g));
+        // Breite einer Gruppe in Kartenbreiten (ohne Abstand) und je Reihe in Einheiten
+        let group_units = |n: usize| 1.0 + (n as f32 - 1.0) * BATTLE_STACK_STEP;
+        let row_units = |f: bool| -> f32 {
+            groups.iter().filter(|g| g.1 == f).map(|g| group_units(g.2) + AUTO_GAP).sum::<f32>()
+        };
+        let (units_front, units_back) = (row_units(true), row_units(false));
+
         // Zuerst alles gemeinsam kleiner: Kreaturen in einer Reihe mittig, die anderen rechts
         // daneben in der Mitte der eigenen Seite – die größte gemeinsame Größe, bei der beides
         // nebeneinander passt (höchstens bis MIN_SHRINK)
-        let unit = CARD_WIDTH * (1.0 + AUTO_GAP);
         let wall = half_x - 0.1;
         let back_start = |s: f32| {
-            if n_front == 0 { BACK_ROW_START } else { (n_front as f32 * unit * s * 0.5 + BACK_ROW_GAP).max(BACK_ROW_START) }
+            if n_front == 0 { BACK_ROW_START } else { (units_front * CARD_WIDTH * s * 0.5 + BACK_ROW_GAP).max(BACK_ROW_START) }
         };
         let fits = |s: f32| {
-            n_front as f32 * unit * s * 0.5 <= wall && (n_back == 0 || back_start(s) + n_back as f32 * unit * s <= wall)
+            units_front * CARD_WIDTH * s * 0.5 <= wall && (n_back == 0 || back_start(s) + units_back * CARD_WIDTH * s <= wall)
         };
         let min_s = self.card_scale * MIN_SHRINK;
         let mut shared = self.card_scale;
@@ -576,24 +611,30 @@ impl Zone {
         }
         if fits(shared) {
             let s = shared;
+            let w = CARD_WIDTH * s;
             let top = -half_z + len * s * 0.5 + 0.05;
             let back_z = -half_z * BACK_ROW_MID;
-            let x0 = back_start(s) + CARD_WIDTH * s * 0.5;
-            let (mut k_front, mut k_back) = (0usize, 0usize);
-            return front
+            // linke Kante (Mitte der ersten Karte) jeder Gruppe: vorn mittig, hinten ab back_start
+            let mut starts = vec![0.0f32; groups.len()];
+            let mut x_front = -units_front * w * 0.5 + w * 0.5 + AUTO_GAP * w * 0.5;
+            let mut x_back = back_start(s) + w * 0.5;
+            for (g, (_, f, n)) in groups.iter().enumerate() {
+                let x = if *f { &mut x_front } else { &mut x_back };
+                starts[g] = *x;
+                *x += (group_units(*n) + AUTO_GAP) * w;
+            }
+            let mut in_group = vec![0usize; groups.len()];
+            return keys
                 .iter()
+                .zip(&front)
                 .enumerate()
-                .map(|(i, is_front)| {
-                    let (x, z) = if *is_front {
-                        let k = k_front;
-                        k_front += 1;
-                        ((k as f32 - (n_front as f32 - 1.0) * 0.5) * unit * s, top)
-                    } else {
-                        let k = k_back;
-                        k_back += 1;
-                        (x0 + k as f32 * unit * s, back_z)
-                    };
-                    let y = CARD_THICKNESS * 0.5 + i as f32 * 0.002;
+                .map(|(i, (k, f))| {
+                    let g = groups.iter().position(|(gk, gf, _)| gk == k && gf == f).unwrap_or(0);
+                    let row = in_group[g];
+                    in_group[g] += 1;
+                    let x = starts[g] + row as f32 * BATTLE_STACK_STEP * w;
+                    let z = if *f { top } else { back_z };
+                    let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
                     Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
                 })
                 .collect();

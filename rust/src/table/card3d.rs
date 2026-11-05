@@ -699,6 +699,23 @@ impl Card3D {
         &self.def
     }
 
+    /// Schlüssel zum Stapeln gleicher Karten auf dem Spielfeld (wie gleichnamige Länder): nur
+    /// Karten mit gleichem Namen, Tapp-Zustand, Stärke/Widerstand, Schaden, Marken und Seite
+    /// liegen auf einem Stapel; getappte bilden einen eigenen.
+    pub fn stack_key(&self) -> String {
+        let counters: Vec<String> = self.coins.iter().map(|(k, n, _, _)| format!("{k}{n}")).collect();
+        format!(
+            "{}|{}|{:?}|{}|{}|{}|{}",
+            self.card_name,
+            self.tapped,
+            self.def.stats,
+            self.def.damage,
+            self.def.face,
+            self.def.face_down,
+            counters.join(",")
+        )
+    }
+
     /// Nur Länder: Manafarbe (Spalte in der Länder-Reihe).
     pub fn produced_mana(&self) -> ManaType {
         self.def.produces

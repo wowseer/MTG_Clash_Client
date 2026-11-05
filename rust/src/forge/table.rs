@@ -3657,6 +3657,8 @@ impl ForgeTable {
                 }
             };
             let mut card = card;
+            // Stapel-Schlüssel vorher (gleiche Karten liegen gestapelt): ändert er sich, neu anordnen
+            let key_before = card.bind().stack_key();
             if let Some(data) = &data {
                 // Werte nur bei Änderung neu setzen (Kartenbild wird dabei neu gezeichnet)
                 // Bild nur neu zeichnen, wenn sich Rahmen oder Kosten ändern; Beschriftung bei
@@ -3685,7 +3687,10 @@ impl ForgeTable {
                 let tapped = get_bool(data, "tapped");
                 if card.bind().is_tapped() != tapped {
                     card.bind_mut().set_tapped_state(tapped);
-                    // Drehung setzt die Zone beim Anordnen: Zone neu anordnen (z. B. Länder-Reihe)
+                }
+                // Drehung bzw. Stapel setzt die Zone beim Anordnen: neu anordnen, wenn sich Tappen,
+                // Werte, Schaden oder Marken geändert haben (Länder-Reihe, Stapel auf dem Spielfeld)
+                if card.bind().stack_key() != key_before {
                     if let Some(z) = card.bind().get_zone() {
                         if !retap_zones.contains(&z) {
                             retap_zones.push(z);
