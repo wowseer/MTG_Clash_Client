@@ -96,9 +96,9 @@ card_scale = 1.7
 
 [node name="Resources" type="Zone" parent="Player"]
 kind = 3
-size = Vector3(5.4, 0.3, 1.3)
+size = Vector3(3.9, 0.3, 1.3)
 cards_draggable = false
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.75, 0, 2.6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.0, 0, 2.6)
 card_scale = 1.6
 tile_cards = true
 
@@ -179,10 +179,10 @@ card_scale = 1.7
 
 [node name="Resources" type="Zone" parent="Opponent"]
 kind = 3
-size = Vector3(5.4, 0.3, 1.3)
+size = Vector3(3.9, 0.3, 1.3)
 accepts_drops = false
 cards_draggable = false
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -4.75, 0, -2.6)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -4.0, 0, -2.6)
 card_scale = 1.6
 tile_cards = true
 

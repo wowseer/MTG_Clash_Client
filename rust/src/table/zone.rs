@@ -40,6 +40,11 @@ const BACK_ROW_START: f32 = 3.2;
 const BACK_ROW_GAP: f32 = 0.12;
 /// Kleinste Größe der Planeswalker (Anteil von [member card_scale]) bei vielen Planeswalkern.
 const PW_MIN_SCALE: f32 = 0.6;
+/// Ab so vielen Planeswalkern liegen sie in zwei Reihen.
+const PW_TWO_ROWS_FROM: usize = 3;
+/// Breite des Planeswalker-Bereichs links (lokal, ab dem linken Rand) – rechts davon beginnen
+/// die Länder (Zone `Resources`).
+const PW_REGION_WIDTH: f32 = 2.9;
 /// Tiefe der unteren Reihe (Länder in ihrer Zone, Artefakte im Spielfeld) – Kreaturen und
 /// Planeswalker bleiben darüber.
 const BACK_ROW_DEPTH: f32 = 1.35;
@@ -632,7 +637,7 @@ impl Zone {
     /// Tischmitte, +x = rechts (aus Sicht der Seite):
     /// - **untere Reihe** ([`BACK_ROW_DEPTH`] tief): links die Länder (eigene Zone), rechts ab
     ///   [`BACK_ROW_START`] Artefakte, Verzauberungen, Schlachten … in eigener Größe;
-    /// - **darüber** Planeswalker ganz links (Größe nur nach ihrer Zahl, ab drei in zwei Reihen) und
+    /// - **darüber** Planeswalker ganz links (Größe nur nach ihrer Zahl, ab [`PW_TWO_ROWS_FROM`] in zwei Reihen) und
     ///   die Kreaturen mittig, rechts neben den Planeswalkern; gleiche Kreaturen untereinander
     ///   gestapelt (hohe Stapel enger, [`stack_step`]). Passen sie nicht, werden sie kleiner; eine
     ///   zweite Kreaturen-Reihe kommt, sobald eine Reihe unter [`TWO_ROWS_BELOW`] schrumpfen müsste
@@ -702,15 +707,17 @@ impl Zone {
         let area_h = (2.0 * half_z - BACK_ROW_DEPTH - 0.05).max(len * self.card_scale * MIN_SHRINK);
         let min_s = self.card_scale * MIN_SHRINK;
 
-        // Planeswalker: Größe nur nach ihrer Zahl (bis zwei voll, danach sanft kleiner), ab drei
-        // in zwei Reihen links in der Kreaturen-Reihe
+        // Planeswalker: Größe nur nach ihrer Zahl (bis zwei voll, danach sanft kleiner), ganz
+        // links; ab PW_TWO_ROWS_FROM in zwei Reihen. Ihr Bereich links reicht über die ganze
+        // Tiefe (die Länder beginnen erst rechts davon), höchstens PW_REGION_WIDTH breit
         let pw: Vec<usize> = (0..groups.len()).filter(|&g| groups[g].1 == 2).collect();
-        let pw_rows = if pw.len() > 2 { 2 } else { 1 };
+        let pw_rows = if pw.len() >= PW_TWO_ROWS_FROM { 2 } else { 1 };
         let pw_cols = pw.len().div_ceil(pw_rows).max(1);
         let pw_s = {
             let by_count = if pw.len() <= 2 { 1.0 } else { (2.0 / pw.len() as f32).sqrt().max(PW_MIN_SCALE) };
-            let by_height = (area_h - BACK_ROW_GAP * (pw_rows as f32 - 1.0)) / (pw_rows as f32 * len);
-            (self.card_scale * by_count).min(by_height).max(min_s)
+            let by_height = (2.0 * half_z - 0.1 - BACK_ROW_GAP * (pw_rows as f32 - 1.0)) / (pw_rows as f32 * len);
+            let by_width = PW_REGION_WIDTH / (pw_cols as f32 * CARD_WIDTH * (1.0 + AUTO_GAP));
+            (self.card_scale * by_count).min(by_height).min(by_width).max(min_s)
         };
         let pw_w = CARD_WIDTH * pw_s;
         let left_w = if pw.is_empty() { 0.0 } else { pw_cols as f32 * pw_w * (1.0 + AUTO_GAP) };
