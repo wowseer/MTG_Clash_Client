@@ -79,9 +79,15 @@ pub fn clear_printed() {
     PRINTED.with(|c| c.borrow_mut().clear());
 }
 
+/// Bühnenkopie mit eigenem Text einer Karte ohne Druck mit normalem Rahmen: dann gezeichneter
+/// Rahmen mit dem Bildausschnitt statt des Kartenbilds (dessen Textfeld liegt woanders).
+fn own_frame(def: &CardDef) -> bool {
+    def.custom_text && !def.art.is_empty()
+}
+
 /// Zeigt die Karte ihr echtes Kartenbild (statt des gezeichneten Platzhalters)?
 pub fn has_printed_face(def: &CardDef) -> bool {
-    !def.face_down && printed_face(&def.image).is_some()
+    !def.face_down && !own_frame(def) && printed_face(&def.image).is_some()
 }
 
 /// Vorderseite für eine Kartendefinition: das echte Kartenbild, wenn es eins gibt
@@ -92,9 +98,13 @@ pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
     if def.face_down {
         return face_down_face(def);
     }
-    if let Some(t) = printed_face(&def.image) {
-        return t;
+    if !own_frame(def) {
+        if let Some(t) = printed_face(&def.image) {
+            return t;
+        }
     }
+    // Bildausschnitt fürs Bildfeld (nur eigener Rahmen bei Sonderrahmen-Karten)
+    let art_image = if own_frame(def) { Image::load_from_file(&def.art) } else { None };
     let base = def.frame_color();
     let frame = base * 0.85;
     let dark = base.darkened(0.6);
@@ -131,8 +141,11 @@ pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
                 circle(&mut img, x as i32, TITLE_Y, PIP / 2 + 1, Color::from_rgb(0.05, 0.04, 0.03));
                 circle(&mut img, x as i32, TITLE_Y, PIP / 2 - 1, c);
             }
-            // Typsymbol im Bildfeld
-            emblem(&mut img, kind, dark);
+            // Bildfeld: Bildausschnitt der Karte, sonst Typsymbol
+            match art_image.clone() {
+                Some(a) => blit_art(&mut img, a),
+                None => emblem(&mut img, kind, dark),
+            }
             // Wertefeld unten rechts (Kreatur, Planeswalker, Schlacht)
             if matches!(kind, CardKind::Creature | CardKind::Planeswalker | CardKind::Battle) {
                 img.fill_rect(rect(W - 82, 318, 64, 32), Color::from_rgb(0.12, 0.08, 0.06));
@@ -141,6 +154,19 @@ pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
         }
     }
     finish(img)
+}
+
+/// Bildausschnitt in das Bildfeld (20/60, 216 × 140 px) einpassen: auf die Feldbreite skaliert,
+/// überstehende Höhe oben und unten gleichmäßig abgeschnitten (bzw. umgekehrt bei breiten Bildern).
+fn blit_art(img: &mut Gd<Image>, mut art: Gd<Image>) {
+    let (fw, fh) = (W - 40, 140);
+    let (aw, ah) = (art.get_width().max(1) as f32, art.get_height().max(1) as f32);
+    let scale = (fw as f32 / aw).max(fh as f32 / ah);
+    let (nw, nh) = ((aw * scale).ceil() as i32, (ah * scale).ceil() as i32);
+    art.convert(Format::RGBA8);
+    art.resize_ex(nw, nh).interpolation(godot::classes::image::Interpolation::LANCZOS).done();
+    let src = rect((nw - fw) / 2, (nh - fh) / 2, fw, fh);
+    img.blit_rect(&art, src, Vector2i::new(20, 60));
 }
 
 /// Einfaches Symbol je Kartentyp in der Mitte des Bildfelds (Mitte 128/130).

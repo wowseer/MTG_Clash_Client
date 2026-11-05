@@ -918,7 +918,17 @@ impl Card3D {
         l.kind.set_font_size(card_text::fit_line(&t.kind, 216.0 * per_px, 14, 34));
         // Textfeld: 0,52 m breit (Umbruch), ca. 90 Texturpixel hoch
         let area = (0.52 / LABEL_PIXEL) * (TEXT_BOX_HEIGHT * per_px);
-        l.text.set_font_size(card_text::fit_font(&t.body, area, 10, 30));
+        if custom {
+            // eigener Text auf dem größeren Feld über dem gedruckten Textfeld: größere Schrift
+            let panel = (0.52 / LABEL_PIXEL) * (CARD_HEIGHT * TEXT_PANEL_HEIGHT * 0.8 / LABEL_PIXEL);
+            l.text.set_font_size(card_text::fit_font(&t.body, panel, 14, 56));
+            l.text.set_position(px(128.0, (TEXT_PANEL_CENTER - 0.5) * CARD_HEIGHT));
+        } else if t.custom_text {
+            // eigener Text einer Bühne im gezeichneten Rahmen: größer, das Textfeld gehört ihm allein
+            l.text.set_font_size(card_text::fit_font(&t.body, area, 12, 44));
+        } else {
+            l.text.set_font_size(card_text::fit_font(&t.body, area, 10, 30));
+        }
         l.cost.set_text(&t.cost);
         if !t.cost.is_empty() {
             l.cost.set_position(px(t.cost_x, ty));

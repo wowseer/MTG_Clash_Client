@@ -19,6 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import forge.StaticData;
+import forge.card.CardEdition;
 import forge.game.card.Card;
 import forge.item.IPaperCard;
 import forge.item.PaperCard;
@@ -57,17 +59,98 @@ final class CardImages {
     /** Abstand zwischen zwei Scryfall-Anfragen (Millisekunden). */
     private static final long REQUEST_GAP_MS = 120;
 
-    /** Absoluter Pfad des Bilds der angezeigten Seite von {@code c}, oder "" (dann ggf. Download). */
-    static String path(Card c) {
+    /**
+     * Bilder einer Karte: {@code image} = ganzes Kartenbild, {@code art} = nur der Bildausschnitt
+     * (Scryfall {@code art_crop}), nur bei Karten ohne Druck mit normalem Rahmen (sonst leer).
+     */
+    record Info(String image, String art) {
+        static final Info NONE = new Info("", "");
+    }
+
+    /** Gewählter Anzeige-Druck je Kartenname und Druck (normaler Rahmen bevorzugt). */
+    private static final Map<String, PaperCard> DISPLAY = new ConcurrentHashMap<>();
+
+    /**
+     * Bilder der angezeigten Seite von {@code c}; fehlende werden im Hintergrund geladen (dann
+     * leer, ein späterer Zustand bringt den Pfad). Für die Anzeige zählt ein Druck mit normalem
+     * Rahmen ({@link #regular}): ist der Druck der Karte keiner, wird der neueste normale Druck
+     * gezeigt (die Karte im Spiel bleibt unverändert); gibt es keinen, kommt zusätzlich der
+     * Bildausschnitt mit, damit die UI eigene Rahmen bauen kann.
+     */
+    static Info info(Card c) {
         if (c == null || c.isFaceDown() || c.isToken()) {
-            return "";
+            return Info.NONE;
         }
         IPaperCard ip = c.getPaperCard();
         if (!(ip instanceof PaperCard pc)) {
-            return "";
+            return Info.NONE;
         }
         String face = c.isBackSide() || c.isFlipped() ? "back" : "";
-        String key = pc.getName() + "|" + pc.getEdition() + "|" + pc.getArtIndex() + "|" + face;
+        PaperCard shown = DISPLAY.computeIfAbsent(pc.getName() + "|" + pc.getEdition() + "|" + pc.getArtIndex(),
+                k -> displayPrinting(pc));
+        String image = resolve(shown, face, false);
+        String art = regular(shown) ? "" : resolve(shown, face, true);
+        return new Info(image, art);
+    }
+
+    /** Editionsarten mit normalem Rahmen (Kernset, Erweiterung, Reprint-, Commander-, Draft-Sets …). */
+    private static final java.util.EnumSet<CardEdition.Type> REGULAR_TYPES = java.util.EnumSet.of(
+            CardEdition.Type.CORE, CardEdition.Type.EXPANSION, CardEdition.Type.REPRINT,
+            CardEdition.Type.COMMANDER, CardEdition.Type.DRAFT, CardEdition.Type.STARTER,
+            CardEdition.Type.DUEL_DECK);
+
+    /**
+     * Druck mit normalem Rahmen: aus einer Edition mit normalen Rahmen ({@link #REGULAR_TYPES},
+     * nicht Secret Lair, Promo, Mystery Booster, „The List“ …) und im Abschnitt {@code cards} der
+     * Editionsdatei (nicht Showcase, Borderless, Extended Art …). Bei solchen Drucken liegen
+     * Name, Kosten und Textfeld im Bild an der gewohnten Stelle.
+     */
+    private static boolean regular(PaperCard pc) {
+        CardEdition ed = StaticData.instance().getCardEdition(pc.getEdition());
+        if (ed == null || !REGULAR_TYPES.contains(ed.getType()) || "PLST".equals(ed.getCode())) {
+            return false;
+        }
+        String section = ed.getSectionForCollectorNumber(pc.getCollectorNumber());
+        return section == null || section.isEmpty() || section.equalsIgnoreCase("cards");
+    }
+
+    /** Anzeige-Druck: der eigene, wenn er normal ist, sonst der neueste normale, sonst der eigene. */
+    private static PaperCard displayPrinting(PaperCard pc) {
+        if (regular(pc)) {
+            return pc;
+        }
+        PaperCard best = null;
+        java.util.Date bestDate = null;
+        try {
+            for (PaperCard other : StaticData.instance().getCommonCards().getAllCards(pc.getName())) {
+                if (!regular(other)) {
+                    continue;
+                }
+                CardEdition ed = StaticData.instance().getCardEdition(other.getEdition());
+                java.util.Date d = ed == null ? null : ed.getDate();
+                // Kernsets und Erweiterungen vor Reprint-/Commander-Sets, dann der neueste
+                boolean main = ed != null && (ed.getType() == CardEdition.Type.CORE || ed.getType() == CardEdition.Type.EXPANSION);
+                boolean bestMain = best != null && isMain(best);
+                if (best == null || (main && !bestMain)
+                        || (main == bestMain && d != null && (bestDate == null || d.after(bestDate)))) {
+                    best = other;
+                    bestDate = d;
+                }
+            }
+        } catch (RuntimeException e) {
+            return pc;
+        }
+        return best != null ? best : pc;
+    }
+
+    private static boolean isMain(PaperCard pc) {
+        CardEdition ed = StaticData.instance().getCardEdition(pc.getEdition());
+        return ed != null && (ed.getType() == CardEdition.Type.CORE || ed.getType() == CardEdition.Type.EXPANSION);
+    }
+
+    /** Pfad des Bilds ({@code art} = Bildausschnitt) von {@code pc}, oder "" (Download angestoßen). */
+    private static String resolve(PaperCard pc, String face, boolean art) {
+        String key = pc.getName() + "|" + pc.getEdition() + "|" + pc.getArtIndex() + "|" + face + (art ? "|art" : "");
         String known = FOUND.get(key);
         if (known != null && !known.isEmpty()) {
             return known;
@@ -81,18 +164,18 @@ final class CardImages {
         if (rel == null) {
             return "";
         }
-        for (File f : candidates(rel)) {
+        for (File f : candidates(rel, art)) {
             if (f.isFile() && f.length() > 0) {
                 FOUND.put(key, f.getAbsolutePath());
                 return f.getAbsolutePath();
             }
         }
         if (REQUESTED.add(key)) {
-            File target = new File(ForgeConstants.CACHE_CARD_PICS_DIR, fullborder(rel) + ".jpg");
+            File target = new File(ForgeConstants.CACHE_CARD_PICS_DIR, (art ? artcrop(rel) : fullborder(rel)) + ".jpg");
             String url;
             try {
                 url = ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD
-                        + ImageUtil.getScryfallDownloadUrl(pc, face.isEmpty() ? "front" : face, null, "en", false);
+                        + ImageUtil.getScryfallDownloadUrl(pc, face.isEmpty() ? "front" : face, null, "en", art);
             } catch (RuntimeException e) {
                 return "";
             }
@@ -108,13 +191,18 @@ final class CardImages {
         return "";
     }
 
+    /** „SET/Name.full“ → „SET/Name.artcrop“ (Bildausschnitt, Name wie bei NeoForge). */
+    private static String artcrop(String rel) {
+        return rel.endsWith(".full") ? rel.substring(0, rel.length() - ".full".length()) + ".artcrop" : rel + ".artcrop";
+    }
+
     /** „SET/Name.full“ → „SET/Name.fullborder“ (Forges Name für Scryfall-Bilder mit Rand). */
     private static String fullborder(String rel) {
         return rel.endsWith(".full") ? rel.substring(0, rel.length() - ".full".length()) + ".fullborder" : rel;
     }
 
     /** Mögliche Dateien für {@code rel} in allen Bildordnern (mit und ohne Set-Ordner). */
-    private static List<File> candidates(String rel) {
+    private static List<File> candidates(String rel, boolean art) {
         List<File> dirs = new ArrayList<>();
         dirs.add(new File(ForgeConstants.CACHE_CARD_PICS_DIR));
         String extra = System.getenv("CLASH_EXTRA_PICS");
@@ -128,7 +216,9 @@ final class CardImages {
         String setless = rel.contains("/") ? rel.substring(rel.indexOf('/') + 1) : rel;
         List<File> out = new ArrayList<>();
         for (File d : dirs) {
-            for (String r : List.of(fullborder(rel), rel, fullborder(setless), setless)) {
+            List<String> names = art ? List.of(artcrop(rel), artcrop(setless))
+                    : List.of(fullborder(rel), rel, fullborder(setless), setless);
+            for (String r : names) {
                 out.add(new File(d, r + ".jpg"));
                 out.add(new File(d, r + ".png"));
             }

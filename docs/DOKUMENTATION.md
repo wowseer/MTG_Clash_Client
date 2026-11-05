@@ -206,9 +206,16 @@ Die Brücke sucht sie im Bildordner von Forge (`~/.cache/forge/pics/cards/`) und
 `CLASH_EXTRA_PICS`) und lädt fehlende im Hintergrund von Scryfall in den Forge-Bildordner (beim
 ersten Spiel mit einem Deck erscheinen die Bilder nach und nach). Mit Bild blendet die Karte Name,
 Kosten, Typzeile und Text aus (stehen im Bild); Stärke/Widerstand nur, wenn sie vom Aufdruck
-abweichen. Bühnenkopien mit eigenem Text (ein Modus, ein Ersatzeffekt) zeigen das echte Bild mit
-einem hellen Feld über dem gedruckten Textfeld, auf dem nur dieser Text steht (wie im Video „Spree
-und Stack“). Ohne Bild, bei verdeckten Karten und Spielsteinen bleibt der gezeichnete Platzhalter
+abweichen. Gezeigt wird immer ein Druck mit **normalem Rahmen**: ist der Druck aus der Deckliste ein
+Sonderdruck (Secret Lair, Showcase, Borderless, Comic-Ausgaben …), nimmt die Brücke für das Bild den
+neuesten Druck aus einem Kernset oder einer Erweiterung (sonst Reprint-, Commander-, Draft-Sets;
+nie „The List“) – nur das Bild, die Karte im Spiel bleibt unverändert. So liegen Name, Kosten und
+Textfeld bei fast allen Karten an derselben Stelle. Bühnenkopien mit eigenem Text (ein Modus, ein
+Ersatzeffekt) zeigen das echte Bild mit einem hellen Feld über dem gedruckten Textfeld, auf dem nur
+dieser Text steht (wie im Video „Spree und Stack“; Schrift bis 56 Punkte). Gibt es von einer Karte
+gar keinen Druck mit normalem Rahmen, schickt die Brücke zusätzlich den Bildausschnitt (`art`,
+Scryfall `art_crop`); die Bühnenkopie bekommt dann den gezeichneten Rahmen mit diesem Ausschnitt im
+Bildfeld und dem eigenen Text im Textfeld. Ohne Bild, bei verdeckten Karten und Spielsteinen bleibt der gezeichnete Platzhalter
 (`placeholder::card_face`). Wird ein Bild erst während des Wartens fertig, schickt die Brücke
 danach einen neuen Zustand, damit es sofort erscheint. Die Bilder
 gehören Wizards of the Coast und kommen nie ins Git.
