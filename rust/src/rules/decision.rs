@@ -105,6 +105,10 @@ pub struct OptionText {
     pub card: Option<CardId>,
     /// Erweiterung: Schlüssel der Engine (z. B. Markenart `P1P1`), leer = keiner.
     pub key: String,
+    /// Erweiterung „Piles“: offene Karten dieses Stapels.
+    pub pile: Vec<CardId>,
+    /// Erweiterung „Piles“: Anzahl verdeckter Karten dieses Stapels.
+    pub hidden: u32,
 }
 
 /// Erweiterung von `Decision::Priority`: eine Karte, die gerade aus einer anderen Zone als Hand
@@ -468,9 +472,18 @@ fn options_from(o: &Obj) -> Vec<OptionText> {
                 let oo = Obj(&d);
                 let c = oo.str("color");
                 let card = u32::try_from(oo.int("card")).ok().filter(|_| d.contains_key("card"));
-                OptionText { text: oo.str("text"), color: Color::from_letter(&c), colorless: c == "C", card, key: oo.str("key") }
+                let pile = oo.arr("cards").iter().filter_map(|v| v.try_to::<i64>().ok()).filter_map(|i| u32::try_from(i).ok()).collect();
+                OptionText {
+                    text: oo.str("text"),
+                    color: Color::from_letter(&c),
+                    colorless: c == "C",
+                    card,
+                    key: oo.str("key"),
+                    pile,
+                    hidden: oo.u32("hidden"),
+                }
             }
-            None => OptionText { text: v.to_string(), color: None, colorless: false, card: None, key: String::new() },
+            None => OptionText { text: v.to_string(), color: None, colorless: false, card: None, key: String::new(), pile: Vec::new(), hidden: 0 },
         })
         .collect()
 }

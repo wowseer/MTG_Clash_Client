@@ -768,12 +768,14 @@ public class RemotePlayerController extends PlayerControllerAi {
      */
     @Override
     public boolean chooseCardsPile(SpellAbility sa, CardCollectionView pile1, CardCollectionView pile2, String faceUp) {
-        boolean open1 = !"False".equals(faceUp);
-        boolean open2 = "True".equals(faceUp);
-        List<Decisions.Opt> opts = new ArrayList<>();
-        opts.add(new Decisions.Opt("Stapel 1: " + pileText(pile1, open1), null));
-        opts.add(new Decisions.Opt("Stapel 2: " + pileText(pile2, open2), null));
-        Integer i = Decisions.option(getGame(), seat, "Stapel wählen", sa, null, opts, false);
+        // Forge übergibt den Parameter „FaceDown“: "False" = beide offen, "One" = Stapel 1
+        // verdeckt, "True" = beide verdeckt
+        boolean open1 = !"One".equals(faceUp) && !"True".equals(faceUp);
+        boolean open2 = !"True".equals(faceUp);
+        // Erweiterung „Piles“: je Stapel seine offenen Karten bzw. die Anzahl verdeckter
+        List<Decisions.Pile> piles = List.of(new Decisions.Pile("Stapel 1: " + pileText(pile1, open1), pile1, open1),
+                new Decisions.Pile("Stapel 2: " + pileText(pile2, open2), pile2, open2));
+        Integer i = Decisions.piles(getGame(), seat, "Stapel wählen", sa, piles);
         return i != null ? i == 0 : super.chooseCardsPile(sa, pile1, pile2, faceUp);
     }
 
@@ -852,10 +854,12 @@ public class RemotePlayerController extends PlayerControllerAi {
         if (usableFromOpeningHand.isEmpty()) {
             return usableFromOpeningHand;
         }
+        // je Fähigkeit ihre Karte (Karten-Optionen-Bühne mit Mehrfachwahl, 0 bis alle)
         List<Decisions.Opt> opts = new ArrayList<>();
-        usableFromOpeningHand.forEach(sa -> opts.add(new Decisions.Opt(spellLabel(sa), null)));
-        List<Integer> chosen = Decisions.options(getGame(), seat, "Fähigkeiten aus der Starthand nutzen", null, null,
-                opts, 0, opts.size(), false);
+        List<Card> hosts = new ArrayList<>();
+        usableFromOpeningHand.forEach(sa -> addSpellOption(sa, opts, hosts));
+        List<Integer> chosen = Decisions.cardOptions(getGame(), seat, "Fähigkeiten aus der Starthand nutzen", opts, hosts,
+                0, opts.size(), "OpeningHand", null);
         if (chosen == null) {
             return super.chooseSaToActivateFromOpeningHand(usableFromOpeningHand);
         }

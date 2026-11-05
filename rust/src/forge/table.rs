@@ -414,6 +414,16 @@ impl ForgeTable {
                     self.answer(Choice::Cancel);
                 }
             }
+            // Kartenwahl auf dem Tisch: genug gewählt = bestätigen, sonst abbrechen (wo erlaubt)
+            Some(d @ Decision::ChooseCards { min, .. }) if self.table_pick(d).is_some() => {
+                let options = self.table_pick(d).unwrap_or_default();
+                if self.selection.len() >= *min as usize {
+                    let cards = self.selection.iter().filter_map(|i| options.get(*i).copied()).collect();
+                    self.answer(Choice::Cards(cards));
+                } else if self.pending.as_ref().is_some_and(|r| r.cancelable) {
+                    self.answer(Choice::Cancel);
+                }
+            }
             // sonst beim Wirken/Aktivieren: der Knopf heißt „Abbrechen“ und nimmt es zurück
             _ => {
                 if let Some(c) = self.cast_cancel() {
@@ -1128,7 +1138,9 @@ impl ForgeTable {
     #[func]
     pub fn set_choice_selection(&mut self, selection: PackedInt64Array) {
         // Zielwahl läuft ohne Auswahlfenster: die Auswahl verwaltet der ForgeTable selbst
-        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseTargets { .. })) {
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseTargets { .. }))
+            || self.pending.as_ref().is_some_and(|r| self.table_pick(&r.decision).is_some())
+        {
             return;
         }
         let sel: Vec<usize> = selection.as_slice().iter().filter_map(|i| usize::try_from(*i).ok()).collect();
@@ -1289,6 +1301,7 @@ impl ForgeTable {
                 StageKind::Order => self.show_order(&req),
                 StageKind::CardOptions => self.show_card_options(&req),
                 StageKind::Buttons => self.show_option_buttons(&req),
+                StageKind::Piles => self.show_piles(&req),
             }
         }
         if let Some(req) = library_pick {
@@ -1746,6 +1759,7 @@ impl ForgeTable {
             | Decision::OptionalTrigger { .. }
             | Decision::PayUnlessCost { .. }
             | Decision::PayLifeForPhyrexian { .. } => Some(StageKind::Binary),
+            Decision::ChooseOption { purpose, .. } if purpose == "Piles" => Some(StageKind::Piles),
             Decision::ChooseOption { options, .. } if options.len() >= 2 && options.iter().all(|o| o.card.is_some()) => {
                 Some(StageKind::CardOptions)
             }
@@ -2055,6 +2069,11 @@ impl ForgeTable {
                 tr!("Wähle eins", "Choose one").to_string(),
                 tr!("Wie soll die Karte gespielt werden?", "How should the card be played?").to_string(),
             ),
+            // CR 113.6b: Fähigkeiten, die aus der Starthand wirken (Leylines …)
+            "OpeningHand" => (
+                tr!("Aus der Starthand", "From your opening hand").to_string(),
+                tr!("Welche Karten willst du zu Spielbeginn nutzen?", "Which cards do you want to use at the start of the game?").to_string(),
+            ),
             "SpellsForEffect" => {
                 let n = multi.map_or(1, |(_, max)| max);
                 (trf!("Wähle {n}", "Choose {n}"), engine_prompt)
@@ -2062,7 +2081,7 @@ impl ForgeTable {
             _ => (tr!("Wähle eins", "Choose one").to_string(), engine_prompt),
         };
         // Seiten: die ganze Seite; sonst nur der Text dieser Möglichkeit
-        let whole_face = purpose == "CardFace";
+        let whole_face = purpose == "CardFace" || purpose == "OpeningHand";
         let Some(mut showcase) = self.open_stage(&title, &subtitle) else { return };
         let mut cards = Vec::new();
         for (i, o) in options.iter().enumerate() {
@@ -2155,6 +2174,52 @@ impl ForgeTable {
         if hud.cancelable {
             self.stage_button(&mut showcase, ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), width * 0.8, Choice::Cancel);
         }
+    }
+
+    /// Kartenstapel wählen (CR 700.3, z. B. Fact or Fiction): je Stapel ein eigener Kartenfächer
+    /// nebeneinander, offene Karten mit Bild, verdeckte als Rückseiten, darüber „Stapel n (k)“.
+    /// Klick auf eine Karte wählt ihren ganzen Stapel (alle Karten orange), „Anwenden“ bestätigt.
+    fn show_piles(&mut self, req: &Request) {
+        let Decision::ChooseOption { options, prompt, .. } = &req.decision else { return };
+        let subtitle = if prompt.is_empty() { req.source_name.clone() } else { prompt.clone() };
+        let Some(mut showcase) = self.open_stage(tr!("Stapel wählen", "Choose a pile"), &subtitle) else { return };
+        let n = options.len().max(1) as f32;
+        for (i, o) in options.iter().enumerate() {
+            let x = (i as f32 - (n - 1.0) * 0.5) * PILE_SPACING;
+            let count = o.pile.len() + o.hidden as usize;
+            let mut zone = showcase.bind_mut().add_zone(&format!("Pile{i}"), Vector3::new(x, 0.1, 0.0), Vector3::new(PILE_SPACING * 0.9, 0.1, 1.0), 6.0, 0.32, 18.0, false);
+            zone.set("card_scale", &PILE_CARD_SCALE.to_variant());
+            let mut cards: Vec<Gd<Card3D>> = o
+                .pile
+                .iter()
+                .map(|id| {
+                    let data = req.cards.iter().find(|c| get_int(c, "id") == i64::from(*id)).cloned().or_else(|| self.card_data(i64::from(*id))).unwrap_or_default();
+                    Self::stage_card(&data, None)
+                })
+                .collect();
+            for _ in 0..o.hidden {
+                let mut hidden = CardDef::named("?");
+                hidden.face_down = true;
+                let mut c = Card3D::new_alloc();
+                {
+                    let mut b = c.bind_mut();
+                    b.set_face_texture(Some(placeholder::card_face(&hidden)));
+                    b.apply_def(&hidden);
+                }
+                cards.push(c);
+            }
+            for c in cards.iter_mut() {
+                c.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+                self.mode_cards.push((c.clone(), i));
+            }
+            showcase.bind_mut().add_owned_cards(zone, cards);
+            showcase.bind_mut().add_caption(&trf!("Stapel {} ({count})", "Pile {} ({count})", i + 1), Vector2::new(x, PILE_CAPTION_Y), false);
+        }
+        let mut apply = Button3D::create(ButtonStyle::Orange, tr!("Anwenden", "Apply"), Showcase::button_width() * 1.2);
+        apply.bind_mut().set_enabled(false);
+        let cb = Callable::from_object_method(&self.to_gd(), "on_modes_done");
+        apply.connect("pressed", &cb);
+        showcase.bind_mut().add_button(apply);
     }
 
     /// Drei und mehr Möglichkeiten als Text (Markenart, Schlüsselwort, Schutz-Art, Zahl aus einer
@@ -2687,7 +2752,11 @@ impl ForgeTable {
                 } else {
                     format!("{} – {}", req.source_name, tr!("Klicke die Karten an.", "Click the cards."))
                 };
-                (title, sub)
+                // „Spleißen: Karten wählen, die …“ → Titel „Spleißen“, der Rest als Untertitel
+                match title.split_once(": ") {
+                    Some((head, rest)) if head.chars().count() <= 24 => (head.to_string(), rest.to_string()),
+                    _ => (title, sub),
+                }
             }
             _ => return,
         };
@@ -2805,11 +2874,9 @@ impl ForgeTable {
             numbered: false,
             repeat: false,
         });
-        let combat_choice = self
-            .pending
-            .as_ref()
-            .and_then(|req| self.table_pick_choice(req));
-        let choice = menu_choice.or(combat_choice).or_else(|| self.pending.as_ref().filter(|r| Self::stage_kind(&r.decision).is_none() && self.wheel.is_none() && Self::number_range(&r.decision).is_none()).and_then(|req| {
+        // Kartenwahl auf dem Tisch: kein Fenster (Klick auf die Karten, Phasen-Knopf bestätigt)
+        let table_pick_open = self.pending.as_ref().is_some_and(|r| self.table_pick(&r.decision).is_some());
+        let choice = menu_choice.or_else(|| self.pending.as_ref().filter(|r| !table_pick_open && Self::stage_kind(&r.decision).is_none() && self.wheel.is_none() && Self::number_range(&r.decision).is_none()).and_then(|req| {
             // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
             let name_of = |t: Target| match t {
                 Target::Player(p) => self.seat_name(p as usize).to_string(),
@@ -2961,6 +3028,10 @@ impl ForgeTable {
     /// Antwortet über die Engine-Schnittstelle auf die offene Entscheidung.
     fn answer(&mut self, choice: Choice) {
         let Some(req) = self.pending.take() else { return };
+        // ein offenes Farbrad gehört zur beantworteten Frage (freiwillige Räder bleiben)
+        if self.wheel.as_ref().is_some_and(|(_, _, voluntary)| !*voluntary) {
+            self.close_wheel();
+        }
         // Karte aus einer anderen Zone gespielt: ihre Kopie im Handfächer verschwindet
         if let Choice::Action(action) = &choice {
             if let Some(c) = action.card() {
@@ -3334,6 +3405,19 @@ impl ForgeTable {
                 let what = if description.is_empty() { req.prompt.clone() } else { description.clone() };
                 return Some((label, what));
             }
+            // Kartenwahl auf dem Tisch: Zähler im Phasen-Knopf, Hinweis = Forges Frage
+            d @ Decision::ChooseCards { min, max, .. } if self.table_pick(d).is_some() => {
+                let n = self.selection.len() as u32;
+                let label = if n >= *min && (n > 0 || *min == 0) {
+                    format!("{}  »", pick_label(n, *min, *max))
+                } else if req.cancelable {
+                    tr!("Abbrechen", "Cancel").to_string()
+                } else {
+                    format!("{} …", pick_label(n, *min, *max))
+                };
+                let what = if req.prompt.is_empty() { tr!("Klicke die Karten auf dem Tisch an.", "Click the cards on the table.").to_string() } else { req.prompt.clone() };
+                return Some((label, what));
+            }
             // jede andere abbrechbare Frage beim Wirken/Aktivieren: Knopf „Abbrechen“
             _ => return self.cast_cancel().map(|_| (tr!("Abbrechen", "Cancel").to_string(), String::new())),
         };
@@ -3345,6 +3429,26 @@ impl ForgeTable {
     /// abwählen; sind so viele Ziele gewählt, wie die Karte höchstens erlaubt, geht die Antwort
     /// sofort an Forge. Kartenwahl auf dem Tisch: weiter an das Auswahlfenster.
     fn pick_candidate(&mut self, index: usize) {
+        // Kartenwahl auf dem Tisch (opfern, tappen, Convoke …): Klick wählt bzw. hebt auf; genau
+        // eine Karte verlangt → sofort; sonst bestätigt der Phasen-Knopf „Fertig (n/…)“
+        if let Some(d @ Decision::ChooseCards { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) {
+            let Some(options) = self.table_pick(&d) else {
+                self.signals().choice_option_clicked().emit(index as i64);
+                return;
+            };
+            if let Some(pos) = self.selection.iter().position(|i| *i == index) {
+                self.selection.remove(pos);
+            } else if self.selection.len() < max as usize {
+                self.selection.push(index);
+            }
+            if min == 1 && max == 1 && self.selection.len() == 1 {
+                let cards = self.selection.iter().filter_map(|i| options.get(*i).copied()).collect();
+                self.answer(Choice::Cards(cards));
+                return;
+            }
+            self.update_glow();
+            return;
+        }
         let Some(Decision::ChooseTargets { candidates, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else {
             self.signals().choice_option_clicked().emit(index as i64);
             return;
@@ -3394,31 +3498,6 @@ impl ForgeTable {
         (!options.is_empty() && options.iter().all(on_table)).then(|| options.clone())
     }
 
-    /// Auswahlfenster am rechten Rand für `ChooseCards` im Tisch-Modus: Kartennamen als Liste
-    /// (Ausweichweg zum Klick), „Fertig“ bei Mehrfachwahl.
-    fn table_pick_choice(&self, req: &Request) -> Option<HudChoice> {
-        let options = self.table_pick(&req.decision)?;
-        let Decision::ChooseCards { min, max, .. } = &req.decision else { return None };
-        let name = |id: &CardId| {
-            self.cards.get(&i64::from(*id)).map(|c| c.bind().card_name().to_string()).unwrap_or_else(|| format!("#{id}"))
-        };
-        let title = if req.prompt.is_empty() { tr!("Karten wählen", "Choose cards").to_string() } else { req.prompt.clone() };
-        Some(HudChoice {
-            key: req.id,
-            title,
-            detail: tr!("Karte auf dem Tisch anklicken", "Click a card on the table").into(),
-            mode: if *min == 1 && *max == 1 {
-                ChoiceMode::Single
-            } else {
-                ChoiceMode::Multi { min: *min as usize, max: *max as usize }
-            },
-            options: options.iter().map(|id| ChoiceOption { text: name(id), color: None }).collect(),
-            cancelable: req.cancelable,
-            side: true,
-            numbered: false,
-            repeat: false,
-        })
-    }
 
     /// Medaillon-Anker eines Sitzplatzes (Welt).
     fn hero_anchor(&self, seat: u8) -> Option<Vector3> {
@@ -4452,6 +4531,10 @@ const WHEEL_ABOVE_CARD: f32 = 0.16;
 /// „Fertig“-Knopf der Mehrfachwahl im Farbrad: Abstand unter der Radmitte und Breite (Pixel).
 const WHEEL_DONE_OFFSET: f32 = 130.0;
 const WHEEL_DONE_WIDTH: f32 = 260.0;
+/// Stapel-Bühne (`show_piles`): Abstand der Stapel, Kartengröße, Höhe der Beschriftung.
+const PILE_SPACING: f32 = 1.7;
+const PILE_CARD_SCALE: f32 = 0.75;
+const PILE_CAPTION_Y: f32 = 0.62;
 /// Knopf-Spalte (`show_option_buttons`): Lage der Quellkarte und der Knöpfe (links/rechts der
 /// Mitte), Abstand der Knöpfe untereinander, höchstens so viele Knöpfe je Spalte.
 const OPTION_CARD_X: f32 = 0.85;
@@ -4498,6 +4581,8 @@ enum StageKind {
     CardOptions,
     /// Drei und mehr Text-Möglichkeiten: Knopf-Spalte (neben der Quellkarte).
     Buttons,
+    /// Kartenstapel wählen (Fact or Fiction …): je Stapel ein Kartenfächer, Klick wählt den Stapel.
+    Piles,
 }
 
 /// Hellsicht-Bühne: Mitte und Größe des Kastens (Bühnen-Koordinaten).

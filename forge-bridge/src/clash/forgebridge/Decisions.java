@@ -820,6 +820,41 @@ final class Decisions {
         return i != null && i >= 0 && i < options.size() ? i : null;
     }
 
+    /** Ein Kartenstapel zur Wahl (Fact or Fiction …): Text, Karten, offen oder verdeckt. */
+    record Pile(String text, forge.game.card.CardCollectionView cards, boolean open) {}
+
+    /**
+     * Erweiterung {@code ChooseOption} mit {@code purpose = "Piles"}: je Stapel eine Option mit
+     * {@code cards} (IDs der offenen Karten, Daten in der Hülle {@code cards}) bzw. {@code hidden}
+     * (Anzahl verdeckter Karten). Antwort {@code Number(index)}.
+     */
+    static Integer piles(Game game, int seat, String prompt, SpellAbility sa, List<Pile> piles) {
+        JsonObject d = decision("ChooseOption", seat);
+        d.addProperty("prompt", prompt);
+        d.addProperty("purpose", "Piles");
+        JsonArray opts = new JsonArray();
+        List<Card> info = new ArrayList<>();
+        for (Pile p : piles) {
+            JsonObject o = new JsonObject();
+            o.addProperty("text", p.text());
+            JsonArray ids = new JsonArray();
+            if (p.open()) {
+                for (Card c : p.cards()) {
+                    ids.add(c.getId());
+                    info.add(c);
+                }
+            } else {
+                o.addProperty("hidden", p.cards().size());
+            }
+            o.add("cards", ids);
+            opts.add(o);
+        }
+        d.add("options", opts);
+        JsonElement a = askRaw(game, seat, d, prompt, sa, null, false, null, info);
+        Integer i = a != null && a.isJsonObject() ? number(a.getAsJsonObject()) : null;
+        return i != null && i >= 0 && i < piles.size() ? i : null;
+    }
+
     /**
      * Mehrfachwahl wie {@link #cardOption}: {@code min}–{@code max} Möglichkeiten, je eine Karte
      * ({@code ChooseOptions} mit {@code purpose} und {@code options[].card}); Antwort {@code Modes}.

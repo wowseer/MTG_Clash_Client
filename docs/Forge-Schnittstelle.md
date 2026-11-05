@@ -104,11 +104,11 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 | `playSaFromPlayEffect` (Kaskade, „you may cast“, Wunder …) | über Forges menschlichen Ablauf (Ziele, Modi, Kosten fragt der Spieler) | – |
 | `payCombatCost` (Angriffs-/Blockkosten, CR 508.1h) | `Confirm`, dann Bezahlen wie beim Wirken | `Yes`/`No` |
 | `confirmPayment` | `Confirm` | `Yes`/`No` |
-| `chooseCardsPile` (Fact or Fiction u. a.) | `ChooseOption` „Stapel 1: …“ / „Stapel 2: …“ (verdeckte Stapel nur mit Anzahl) | `Number` |
+| `chooseCardsPile` (Fact or Fiction u. a.) | `ChooseOption { purpose: "Piles" }`, je Stapel `cards` (IDs der offenen Karten, Daten in der Hülle `cards`) bzw. `hidden` (Anzahl verdeckter); Forges Parameter `FaceDown` („False“, „One“ = Stapel 1 verdeckt, „True“) | `Number` |
 | `orderCosts` | `OrderTriggers` mit Kostentexten | `Order` |
 | `chooseCardsForCost` (Kosten während des Auflösens) | `ChooseCards` mit Grund nach Kostenart (`DiscardCost`, `SacrificeCost`, `ExileCost`, `TapCost`, `ReturnCost`, sonst `Choose`) | `Cards` |
 | `chooseCardsToDiscardUnlessType` | `ChooseCards { reason: "Discard", min: 1, max: n }`: n Karten oder eine Karte des Typs | `Cards` |
-| `chooseSaToActivateFromOpeningHand` (Leylines …) | `ChooseOptions` (0 bis alle) | `Modes` |
+| `chooseSaToActivateFromOpeningHand` (Leylines …) | `ChooseOptions { purpose: "OpeningHand", min: 0 }` mit `options[].card` | `Modes` |
 | `getAbilityToPlay` | `ChooseOption { purpose: "AbilityToPlay" }`, jede Option mit `card` = die Karte, abbrechbar | `Number` |
 | `chooseManaFromPool` (mehrere passende Mana im Pool) | `ChooseOption` mit Mana und Quelle (**Erweiterung**: das Basismodell (`PayAction`) kennt keine Pool-Zahlung) | `Number` |
 | `chooseCardsForSplice` (CR 702.47) | `ChooseCards { reason: "Choose", min: 0 }` aus der Hand | `Cards` |
