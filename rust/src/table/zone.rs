@@ -30,16 +30,14 @@ const STACK_TURN_DEGREES: f32 = 3.5;
 const STACK_MAX_SHOWN: f32 = 6.0;
 /// Drehung getappter Karten im Uhrzeigersinn (Grad) – nur leicht schräg statt quer.
 pub const TAP_ANGLE_DEGREES: f32 = 15.0;
-/// Automatische Anordnung: Abstand zwischen Karten (Anteil der Kartenbreite), Beginn der hinteren
-/// Reihe rechts neben dem Medaillon (lokal x) und kleinste Verkleinerung (Anteil von
-/// [member card_scale]), bevor Karten sich überlappen.
+/// Automatische Anordnung (Aufteilung wie `mtg_arena_spielfeld.png`): Abstand zwischen Karten
+/// (Anteil der Kartenbreite), Beginn der hinteren Reihe (Artefakte, Verzauberungen …) rechts vom
+/// Medaillon (lokal x) und kleinste Verkleinerung (Anteil von [member card_scale]), bevor Karten
+/// sich überlappen.
 const AUTO_GAP: f32 = 0.12;
-const BACK_ROW_START: f32 = 2.4;
-/// Abstand zwischen Kreaturen-Reihe und hinterer Reihe (Artefakte, Verzauberungen …).
-const BACK_ROW_GAP: f32 = 0.25;
-/// Lage der hinteren Reihe, wenn Platz ist: Anteil der halben Feldtiefe vor der Feldmitte (zur
-/// Mittellinie hin) – etwa die Mitte der eigenen Seite.
-const BACK_ROW_MID: f32 = 0.15;
+const BACK_ROW_START: f32 = 2.0;
+/// Abstand zwischen Kreaturen-Reihe und hinterer Reihe.
+const BACK_ROW_GAP: f32 = 0.12;
 const MIN_SHRINK: f32 = 0.45;
 /// Ressourcen-Reihe: gleiche Länder überlappen um diesen Anteil der Kartenbreite versetzt;
 /// Abstand zwischen den Gruppen.
@@ -163,6 +161,10 @@ pub struct Zone {
     /// Länder liegen in einer eigenen Ressourcen-Zone (hinten links).
     #[export]
     auto_arrange: bool,
+    /// Automatische Anordnung seitenverkehrt (lokal x gespiegelt): für die um 180° gedrehte Zone des
+    /// Gegners, damit seine Artefakte von uns aus wie unsere rechts und Planeswalker links liegen.
+    #[export]
+    mirror_x: bool,
     /// Größe der Karten in dieser Zone (1 = normal). Spielfeld und Ressourcen verkleinern sie
     /// automatisch, wenn sonst nicht alle in eine Reihe passen.
     #[export]
@@ -217,6 +219,7 @@ impl IArea3D for Zone {
             grid_spacing: Vector2::new(0.78, 1.02),
             free_placement: false,
             auto_arrange: false,
+            mirror_x: false,
             show_area: false,
             show_costs: false,
             tail: 0,
@@ -537,7 +540,13 @@ impl Zone {
         let nb = base.len();
         // Ressourcen-Spalten nur aus freien Karten (Auren auf Ressourcen hängen darunter)
         let resource_slots = if self.kind == ZoneKind::Resources { self.resource_slots(&base) } else { Vec::new() };
-        let auto_slots = if self.auto_arrange && self.kind == ZoneKind::Battlefield { self.auto_slots(&base) } else { Vec::new() };
+        let mut auto_slots = if self.auto_arrange && self.kind == ZoneKind::Battlefield { self.auto_slots(&base) } else { Vec::new() };
+        if self.mirror_x {
+            // gespiegelt (Gegner): Artefakte bleiben von uns aus rechts, Planeswalker links
+            for xf in auto_slots.iter_mut() {
+                xf.origin.x = -xf.origin.x;
+            }
+        }
         let mut targets: HashMap<InstanceId, Transform3D> = HashMap::new();
         for (bi, &i) in base.iter().enumerate() {
             let card = &self.cards[i];
@@ -696,13 +705,18 @@ impl Zone {
         // daneben in der Mitte der eigenen Seite – die größte gemeinsame Größe, bei der beides
         // nebeneinander passt (höchstens bis MIN_SHRINK)
         let wall = half_x - 0.1;
-        let back_start = |s: f32| {
-            if n_front == 0 { BACK_ROW_START } else { (units_front * CARD_WIDTH * s * 0.5 + BACK_ROW_GAP).max(BACK_ROW_START) }
-        };
+        // hintere Reihe immer ab BACK_ROW_START (rechts vom Medaillon), unten in der Zone
+        let back_start = |_: f32| BACK_ROW_START;
+        // höchster Kreaturen-Stapel (Karten übereinander, höchstens STACK_MAX)
+        let tallest = groups.iter().filter(|g| g.1 == 0).map(|g| g.2.min(STACK_MAX)).max().unwrap_or(0);
         let fits = |s: f32| {
+            let front_h = if n_front == 0 { 0.0 } else { len * s * (1.0 + (tallest as f32 - 1.0) * CREATURE_STACK_STEP) };
+            let back_h = if n_back + n_left == 0 { 0.0 } else { len * s + BACK_ROW_GAP };
             units_front * CARD_WIDTH * s * 0.5 <= wall
                 && (n_back == 0 || back_start(s) + units_back * CARD_WIDTH * s <= wall)
-                && (n_left == 0 || units_left * CARD_WIDTH * s <= wall - units_front * CARD_WIDTH * s * 0.5 - BACK_ROW_GAP)
+                && (n_left == 0 || units_left * CARD_WIDTH * s <= wall * 0.5)
+                // Kreaturen und hintere Reihe übereinander in der Zonentiefe
+                && front_h + back_h <= 2.0 * half_z - 0.1
         };
         let min_s = self.card_scale * MIN_SHRINK;
         let mut shared = self.card_scale;
@@ -713,7 +727,7 @@ impl Zone {
             let s = shared;
             let w = CARD_WIDTH * s;
             let top = -half_z + len * s * 0.5 + 0.05;
-            let back_z = -half_z * BACK_ROW_MID;
+            let back_z = half_z - len * s * 0.5 - 0.05;
             // linke Kante (Mitte der ersten Karte) jeder Gruppe: vorn mittig, hinten ab back_start
             let mut starts = vec![0.0f32; groups.len()];
             let mut x_front = -units_front * w * 0.5 + w * 0.5 + AUTO_GAP * w * 0.5;
@@ -775,18 +789,8 @@ impl Zone {
         let back_avail = half_x - BACK_ROW_START - 0.1;
         let s_back = self.fit_scale(n_back, back_avail);
         let step_b = (CARD_WIDTH * s_back * (1.0 + AUTO_GAP)).min(if n_back > 1 { (back_avail - CARD_WIDTH * s_back) / (n_back - 1) as f32 } else { f32::MAX });
-        // in der Mitte der eigenen Seite direkt hinter der Kreaturen-Reihe; brauchen die
-        // Kreaturen zwei Reihen, ganz nach hinten (sonst überlappten sie sich)
-        // Reicht die Kreaturen-Reihe nicht bis zur hinteren Reihe rechts, liegt diese in der
-        // Mitte der eigenen Seite; sonst direkt hinter den Kreaturen, bei zwei Reihen ganz hinten
-        let front_half = per_row as f32 * step_f * 0.5;
-        let back_z = if rows == 1 && (n_front == 0 || front_half + 0.1 < BACK_ROW_START) {
-            -half_z * BACK_ROW_MID
-        } else if rows == 1 {
-            (top + len * s_front * 0.5 + BACK_ROW_GAP + len * s_back * 0.5).min(half_z - len * s_back * 0.5 - 0.05)
-        } else {
-            half_z - len * s_back * 0.5 - 0.05
-        };
+        // hintere Reihe unten in der Zone (zum Spieler hin)
+        let back_z = half_z - len * s_back * 0.5 - 0.05;
         let back_x0 = BACK_ROW_START + CARD_WIDTH * s_back * 0.5;
         // Planeswalker links, gespiegelt
         let s_left = self.fit_scale(n_left, back_avail);

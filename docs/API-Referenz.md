@@ -834,6 +834,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `grid_spacing` | `Vector2` | Spielfeld im Rastermodus: Abstand der Karten (x, z). |
 | `free_placement` | `bool` | Karten bleiben dort liegen, wo sie abgelegt werden (statt Raster). |
 | `auto_arrange` | `bool` | Automatische Anordnung nach Kartenart (hat Vorrang vor Raster und freier Ablage), aus Sicht der Seite (lokal −z = zur Tischmitte = „oben“): Kreaturen vorn mittig an der Mittellinie, alle anderen bleibenden Karten hinten rechts neben dem Medaillon. Länder liegen in einer eigenen Ressourcen-Zone (hinten links). |
+| `mirror_x` | `bool` | Automatische Anordnung seitenverkehrt (lokal x gespiegelt): für die um 180° gedrehte Zone des Gegners, damit seine Artefakte von uns aus wie unsere rechts und Planeswalker links liegen. |
 | `card_scale` | `float` | Größe der Karten in dieser Zone (1 = normal). Spielfeld und Ressourcen verkleinern sie automatisch, wenn sonst nicht alle in eine Reihe passen. |
 | `tile_cards` | `bool` | Karten als Kachel zeigen (nur Name und Bild, Stärke/Widerstand unten rechts; siehe `Card3D.set_tile()`) – Form der Karten auf dem Spielfeld. |
 | `zoom_cards` | `bool` | Karten dieser Zone beim Hovern selbst groß vor die Kamera holen (eigene Hand); sonst zeigt die Kartenansicht eine Kopie. |

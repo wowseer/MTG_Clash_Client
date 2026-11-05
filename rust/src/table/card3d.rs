@@ -1256,6 +1256,15 @@ impl Card3D {
         let tokens = cost_symbols::cost_tokens(&text);
         let width = cost_symbols::row_width(tokens.len(), HAND_COST_SIZE);
         let mut row = cost_symbols::cost_row(&tokens, HAND_COST_SIZE);
+        // eine Ebene unter den Knöpfen und Bühnen-Beschriftungen (Priorität 1/2): Kosten über
+        // den Handkarten dürfen nie über einem Knopf liegen
+        for child in row.get_children().iter_shared() {
+            if let Ok(mut sprite) = child.clone().try_cast::<godot::classes::Sprite3D>() {
+                sprite.set_render_priority(0);
+            } else if let Ok(mut label) = child.try_cast::<godot::classes::Label3D>() {
+                label.set_render_priority(0);
+            }
+        }
         // flach auf der Kartenebene (Vorderseite +Y, oben −Z), rechtsbündig über der Oberkante
         row.set_transform(Transform3D::new(
             Basis::from_axis_angle(Vector3::RIGHT, -std::f32::consts::FRAC_PI_2),
