@@ -88,7 +88,8 @@ final class CardImages {
         if (c.getCurrentStateName() == forge.card.CardStateName.PreparedSpell) {
             ip = forge.StaticData.instance().getCommonCards()
                     .getCard(c.getState(forge.card.CardStateName.Original).getName());
-        } else if (c.isToken()) {
+        } else if (c.isToken() || ip instanceof forge.item.PaperToken) {
+            // Spielsteine und Spielsteine-artige Karten (Dungeons, CR 309) mit Token-Druck
             String t = tokenImage(c);
             return t.isEmpty() ? Info.NONE : new Info(t, "", "");
         }
@@ -122,9 +123,31 @@ final class CardImages {
      * bzw. NeoForge, sonst im Hintergrund geladen; "" = (noch) keins.
      */
     private static String tokenImage(Card c) {
-        if (!(c.getPaperCard() instanceof forge.item.PaperToken pt)) {
+        return c.getPaperCard() instanceof forge.item.PaperToken pt ? tokenImage(pt) : "";
+    }
+
+    /**
+     * Bild eines Dungeons (bzw. anderen Token-Skripts) nach seinem Namen, z. B. für „Dungeon
+     * wählen“, wo es die Karte noch nicht gibt; "" = (noch) keins.
+     */
+    static String tokenImageByName(String name) {
+        if (name == null || name.isEmpty()) {
             return "";
         }
+        try {
+            for (var e : StaticData.instance().getAllTokens().getRules().entrySet()) {
+                if (e.getValue().getMainPart() != null && name.equals(e.getValue().getMainPart().getName())) {
+                    forge.item.PaperToken pt = StaticData.instance().getAllTokens().getToken(e.getKey());
+                    return pt == null ? "" : tokenImage(pt);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // keine Token-Datenbank
+        }
+        return "";
+    }
+
+    private static String tokenImage(forge.item.PaperToken pt) {
         String file;
         try {
             file = pt.getImageFilename(1);

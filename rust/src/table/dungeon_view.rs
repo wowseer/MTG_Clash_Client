@@ -1,9 +1,10 @@
 //! Dungeons wie in Arena (CR 309, Venture CR 701.49):
 //!
-//! - **Dungeon-Karte** ([`dungeon_texture`]): selbst gezeichnet aus den Engine-Daten – dunkle
-//!   Steinkarte mit dem Namen oben, darunter die Räume als Pergament-Felder in Ebenen (Eingang
-//!   oben, letzter Raum unten), Wege als Linien; der aktuelle Raum golden umrandet mit einer
-//!   Spielfigur. Sie ist die Vorderseite des Dungeons in der Kommandozone (über
+//! - **Dungeon-Karte** ([`dungeon_texture`]): das echte Kartenbild (Scryfall) mit dem aktuellen
+//!   Raum golden umrandet und einer Spielfigur darin – die Räume findet [`Dungeon::room_rects`]
+//!   auf dem Bild. Ohne Bild (bzw. im Modus „nur eigene Grafik“) selbst gezeichnet aus den
+//!   Engine-Daten: dunkle Steinkarte, Räume als Pergament-Felder in Ebenen (Eingang oben), Wege
+//!   als Linien, aktueller Raum golden mit Spielfigur. Sie ist die Vorderseite des Dungeons in der Kommandozone (über
 //!   `placeholder::card_face`).
 //! - **[`DungeonView`]**: Ansicht vor der Kamera (Tisch abgedunkelt) für drei Fälle:
 //!   *Dungeon wählen* (alle Dungeons groß nebeneinander, Klick wählt), *Raum wählen* (der Dungeon
@@ -27,7 +28,7 @@ use godot::classes::sprite_base_3d::DrawFlags as SpriteFlags;
 use godot::classes::sub_viewport::UpdateMode;
 use godot::classes::control::MouseFilter;
 use godot::classes::{
-    Area3D, BoxShape3D, CanvasItem, CollisionShape3D, Control, Engine, IControl, INode3D, Label3D, MeshInstance3D, QuadMesh,
+    Area3D, BoxShape3D, CanvasItem, Image, ImageTexture, CollisionShape3D, Control, Engine, IControl, INode3D, Label3D, MeshInstance3D, QuadMesh,
     SceneTree, Sprite3D, StandardMaterial3D, SubViewport, Texture2D, ThemeDb,
 };
 use godot::global::HorizontalAlignment;
@@ -47,6 +48,8 @@ const TEX_H: i32 = 896;
 #[class(base=Control, init)]
 pub struct DungeonCanvas {
     dungeon: Dungeon,
+    /// Geladenes Kartenbild (bleibt am Leben, solange die Zeichnung steht).
+    printed: Option<Gd<Texture2D>>,
     base: Base<Control>,
 }
 
@@ -54,8 +57,16 @@ pub struct DungeonCanvas {
 impl IControl for DungeonCanvas {
     fn draw(&mut self) {
         let d = self.dungeon.clone();
+        // echtes Kartenbild (Scryfall), darauf der aktuelle Raum; sonst selbst gezeichnet
+        if self.printed.is_none() && !d.image.is_empty() {
+            self.printed = Image::load_from_file(&d.image).and_then(|i| ImageTexture::create_from_image(&i)).map(|t| t.upcast());
+        }
+        let printed = self.printed.clone();
         let mut b = self.base_mut();
-        draw_dungeon(&mut b, &d);
+        match printed {
+            Some(tex) => draw_printed(&mut b, &d, &tex),
+            None => draw_dungeon(&mut b, &d),
+        }
     }
 }
 
@@ -65,6 +76,27 @@ const GOLD: Color = Color::from_rgb(0.86, 0.68, 0.32);
 const PARCHMENT: Color = Color::from_rgb(0.88, 0.84, 0.74);
 const INK: Color = Color::from_rgb(0.12, 0.1, 0.08);
 const PATH: Color = Color::from_rgb(0.62, 0.52, 0.36);
+
+/// Gedruckte Dungeon-Karte mit dem aktuellen Raum: goldener Rahmen um den Raum und die
+/// Spielfigur rechts oben darin (Lage aus [`Dungeon::room_rects`]).
+fn draw_printed(b: &mut CanvasItem, d: &Dungeon, tex: &Gd<Texture2D>) {
+    let (w, h) = (TEX_W as f32, TEX_H as f32);
+    b.draw_texture_rect(tex, Rect2::new(Vector2::ZERO, Vector2::new(w, h)), false);
+    let Some(i) = d.index_of(&d.current) else { return };
+    let Some(r) = d.room_rects().get(i).copied() else { return };
+    let r = Rect2::new(Vector2::new(r[0] * w, r[1] * h), Vector2::new(r[2] * w, r[3] * h));
+    b.draw_rect_ex(r, Color::from_rgba(1.0, 0.85, 0.4, 0.22)).filled(true).done();
+    b.draw_rect_ex(r, GOLD).filled(false).width(6.0).done();
+    draw_marker(b, r.position + Vector2::new(r.size.x - 22.0, 24.0));
+}
+
+/// Spielfigur (Dungeon-Marker) an Stelle `c`.
+fn draw_marker(b: &mut CanvasItem, c: Vector2) {
+    b.draw_circle(c + Vector2::new(0.0, 3.0), 19.0, Color::from_rgba(0.0, 0.0, 0.0, 0.5));
+    b.draw_circle(c, 18.0, Color::from_rgb(0.85, 0.28, 0.12));
+    b.draw_circle(c - Vector2::splat(5.0), 7.0, Color::from_rgb(1.0, 0.6, 0.4));
+    b.draw_arc_ex(c, 18.0, 0.0, std::f32::consts::TAU, 32, GOLD).width(3.0).antialiased(true).done();
+}
 
 fn draw_dungeon(b: &mut CanvasItem, d: &Dungeon) {
     let (w, h) = (TEX_W as f32, TEX_H as f32);
@@ -132,11 +164,7 @@ fn draw_dungeon(b: &mut CanvasItem, d: &Dungeon) {
             .done();
         if current {
             // Spielfigur auf dem aktuellen Raum (rechts oben am Feld)
-            let c = r.position + Vector2::new(r.size.x - 4.0, 4.0);
-            b.draw_circle(c + Vector2::new(0.0, 3.0), 19.0, Color::from_rgba(0.0, 0.0, 0.0, 0.5));
-            b.draw_circle(c, 18.0, Color::from_rgb(0.85, 0.28, 0.12));
-            b.draw_circle(c - Vector2::splat(5.0), 7.0, Color::from_rgb(1.0, 0.6, 0.4));
-            b.draw_arc_ex(c, 18.0, 0.0, std::f32::consts::TAU, 32, GOLD).width(3.0).antialiased(true).done();
+            draw_marker(b, r.position + Vector2::new(r.size.x - 4.0, 4.0));
         }
     }
 }
@@ -169,7 +197,7 @@ thread_local! {
 /// Textur der Dungeon-Karte (einmal je Dungeon und aktuellem Raum gezeichnet, danach aus dem
 /// Zwischenspeicher). None, wenn kein Szenenbaum da ist.
 pub fn dungeon_texture(d: &Dungeon) -> Option<Gd<Texture2D>> {
-    let key = format!("{}|{}|{}", d.name, d.current, d.rooms.len());
+    let key = format!("{}|{}|{}|{}", d.name, d.current, d.rooms.len(), d.image);
     if let Some(vp) = CACHE.with(|c| c.borrow().get(&key).cloned()).filter(|v| v.is_instance_valid()) {
         return vp.get_texture().map(|t| t.upcast::<Texture2D>());
     }
@@ -228,6 +256,8 @@ struct RoomMark {
     rect: Rect2,
     option: i64,
     rim: Gd<StandardMaterial3D>,
+    /// leichte Füllung des Raums (blau, unter der Maus golden)
+    fill: Gd<StandardMaterial3D>,
     hover: f32,
 }
 
@@ -318,6 +348,7 @@ impl INode3D for DungeonView {
             m.hover += (target - m.hover) * (1.0 - (-HOVER_SPEED * dt).exp());
             let c = Color::from_rgb(0.3, 0.75, 1.0).lerp(Color::from_rgb(1.0, 0.82, 0.35), f64::from(m.hover));
             m.rim.set_albedo(Color::from_rgba(c.r, c.g, c.b, alpha * (0.45 + 0.4 * pulse * (1.0 - m.hover) + 0.55 * m.hover)));
+            m.fill.set_albedo(Color::from_rgba(c.r, c.g, c.b, alpha * (0.08 + 0.1 * pulse * (1.0 - m.hover) + 0.22 * m.hover)));
         }
         self.place();
     }
@@ -458,7 +489,7 @@ impl DungeonView {
             content.add_child(&sprite);
             let top_left = center - size * 0.5;
             let rooms: Vec<Rect2> = d
-                .layout()
+                .room_rects()
                 .iter()
                 .map(|r| Rect2::new(top_left + Vector2::new(r[0] * panel_w, r[1] * panel_h), Vector2::new(r[2] * panel_w, r[3] * panel_h)))
                 .collect();
@@ -479,7 +510,10 @@ impl DungeonView {
                     ] {
                         content.add_child(&Self::quad(Vector2::new(w, h), &mat, Vector3::new(cx, -cy, 0.02)));
                     }
-                    self.marks.push(RoomMark { rect: r, option: *option, rim: mat, hover: 0.0 });
+                    let fill = Self::material(Color::from_rgba(0.3, 0.75, 1.0, 0.0), 40);
+                    let c = r.position + r.size * 0.5;
+                    content.add_child(&Self::quad(r.size, &fill, Vector3::new(c.x, -c.y, 0.015)));
+                    self.marks.push(RoomMark { rect: r, option: *option, rim: mat, fill, hover: 0.0 });
                 }
             }
             self.panels.push(Panel { center, size, rim, sprite, hover: 0.0 });

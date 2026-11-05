@@ -1835,8 +1835,12 @@ public class RemotePlayerController extends PlayerControllerAi {
                     f.getPower(), f.getToughness());
             if (dungeons) {
                 fj.add("dungeon", StateJson.dungeonJson(f.getOracleText(), ""));
+                String dimg = CardImages.tokenImageByName(f.getName());
+                if (!dimg.isEmpty()) {
+                    fj.addProperty("image", dimg);
+                }
             }
-            String img = CardImages.faceImage(sa == null ? null : sa.getHostCard(), f.getName());
+            String img = dungeons ? "" : CardImages.faceImage(sa == null ? null : sa.getHostCard(), f.getName());
             if (!img.isEmpty()) {
                 fj.addProperty("image", img);
             }

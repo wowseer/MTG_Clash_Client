@@ -3,6 +3,10 @@
 //! (letzter Raum), Räume einer Ebene nebeneinander. Engine-neutral; gezeichnet wird in
 //! `table::dungeon_view`.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+use godot::classes::Image;
 use godot::prelude::*;
 
 /// Ein Raum: Name, Effekt-Text und die Namen der Räume, zu denen er führt (CR 309.4).
@@ -19,6 +23,8 @@ pub struct Dungeon {
     pub name: String,
     pub rooms: Vec<DungeonRoom>,
     pub current: String,
+    /// Kartenbild von Scryfall (leer = keins bzw. Modus „nur eigene Grafik“).
+    pub image: String,
 }
 
 /// Bildbereich der Karte über den Räumen (Titel), Rand und Abstände (Anteile der Kartengröße).
@@ -54,7 +60,12 @@ impl Dungeon {
         }
         let name = card.get("name").map(|v| v.to_string()).unwrap_or_default();
         let current = d.get("current").map(|v| v.to_string()).unwrap_or_default();
-        Some(Dungeon { name, rooms, current })
+        let image = if crate::assets::protected_enabled() {
+            card.get("image").filter(|v| !v.is_nil()).map(|v| v.to_string()).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        Some(Dungeon { name, rooms, current, image })
     }
 
     /// Index des Raums `name`.
@@ -108,6 +119,120 @@ impl Dungeon {
     }
 }
 
+thread_local! {
+    /// Erkannte Räume je Kartenbild (None = Erkennung passte nicht zur Raumstruktur).
+    static DETECTED: RefCell<HashMap<String, Option<Vec<[f32; 4]>>>> = RefCell::new(HashMap::new());
+}
+
+impl Dungeon {
+    /// Lage der Räume für die Anzeige: auf dem echten Kartenbild die dort erkannten Räume
+    /// ([`detect_rooms`]), sonst die berechnete Anordnung ([`Dungeon::layout`]).
+    pub fn room_rects(&self) -> Vec<[f32; 4]> {
+        if self.image.is_empty() {
+            return self.layout();
+        }
+        let key = format!("{}|{}", self.image, self.rooms.len());
+        let found = DETECTED.with(|m| m.borrow().get(&key).cloned());
+        let found = match found {
+            Some(f) => f,
+            None => {
+                let f = detect_rooms(&self.image, self);
+                DETECTED.with(|m| m.borrow_mut().insert(key, f.clone()));
+                f
+            }
+        };
+        found.unwrap_or_else(|| self.layout())
+    }
+}
+
+/// Räume auf einem gedruckten Dungeon-Bild finden: Die Räume sind durch dunkle Mauern getrennt.
+/// Waagerechte Mauerlinien (Zeilen, die im Raumbereich überwiegend dunkel sind) teilen die
+/// Ebenen, senkrechte innerhalb einer Ebene die Räume. Passt die Zahl der gefundenen Ebenen und
+/// Räume je Ebene zur Raumstruktur der Engine, kommen die Rechtecke daraus, sonst None.
+fn detect_rooms(path: &str, d: &Dungeon) -> Option<Vec<[f32; 4]>> {
+    let mut img = Image::load_from_file(path)?;
+    let (w, h) = (200i32, 280i32);
+    img.resize(w, h);
+    let lum = |x: i32, y: i32| {
+        let c = img.get_pixel(x, y);
+        0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+    };
+    const DARK: f32 = 0.3;
+    let (x0, x1) = ((w as f32 * 0.07) as i32, (w as f32 * 0.93) as i32);
+    let (y0, y1) = ((h as f32 * 0.11) as i32, (h as f32 * 0.9) as i32);
+    let dark_row = |y: i32| (x0..x1).filter(|&x| lum(x, y) < DARK).count() as f32 / (x1 - x0) as f32;
+    // Ebenen: Zeilenbereiche zwischen Mauerzeilen
+    let mut bands: Vec<(i32, i32)> = Vec::new();
+    let mut start: Option<i32> = None;
+    for y in y0..=y1 {
+        let wall = y == y1 || dark_row(y) > 0.5;
+        match (wall, start) {
+            (false, None) => start = Some(y),
+            (true, Some(s)) => {
+                if y - s >= (h as f32 * 0.035) as i32 {
+                    bands.push((s, y - 1));
+                }
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    let level = d.levels();
+    let depth = level.iter().copied().max().unwrap_or(0) + 1;
+    if bands.len() != depth {
+        return None;
+    }
+    // Räume, die über mehrere Ebenen reichen: ihr nächster Raum liegt mehr als eine Ebene tiefer
+    // (z. B. Oubliette in Tomb of Annihilation) – sie belegen in den Ebenen dazwischen eine Spalte
+    let reach: Vec<usize> = (0..d.rooms.len())
+        .map(|i| {
+            d.rooms[i].next.iter().filter_map(|n| d.index_of(n)).map(|j| level[j]).min().map_or(level[i], |m| m.saturating_sub(1).max(level[i]))
+        })
+        .collect();
+    let mut out = vec![[0.0f32; 4]; d.rooms.len()];
+    for (l, &(by0, by1)) in bands.iter().enumerate() {
+        let members: Vec<usize> = (0..d.rooms.len()).filter(|&i| level[i] == l).collect();
+        let spanning: Vec<usize> = (0..d.rooms.len()).filter(|&i| level[i] < l && reach[i] >= l).collect();
+        // Raumgrenzen: Spalten, die über die Ebene überwiegend dunkel sind
+        let dark_col = |x: i32| (by0..=by1).filter(|&y| lum(x, y) < DARK).count() as f32 / (by1 - by0 + 1) as f32;
+        let mut cols: Vec<(i32, i32)> = Vec::new();
+        let mut cs: Option<i32> = None;
+        for x in x0..=x1 {
+            let wall = x == x1 || dark_col(x) > 0.6;
+            match (wall, cs) {
+                (false, None) => cs = Some(x),
+                (true, Some(s)) => {
+                    if x - s >= (w as f32 * 0.08) as i32 {
+                        cols.push((s, x - 1));
+                    }
+                    cs = None;
+                }
+                _ => {}
+            }
+        }
+        if cols.len() != members.len() + spanning.len() {
+            return None;
+        }
+        let mut free = members.iter();
+        for &(cx0, cx1) in &cols {
+            let mid = (cx0 + cx1) as f32 * 0.5 / w as f32;
+            // Spalte unter einem durchgehenden Raum: dessen Rechteck nach unten verlängern
+            if let Some(&i) = spanning.iter().find(|&&i| out[i][0] <= mid && mid <= out[i][0] + out[i][2]) {
+                out[i][3] = (by1 + 1) as f32 / h as f32 - out[i][1];
+                continue;
+            }
+            let Some(&i) = free.next() else { return None };
+            out[i] = [
+                cx0 as f32 / w as f32,
+                by0 as f32 / h as f32,
+                (cx1 - cx0 + 1) as f32 / w as f32,
+                (by1 - by0 + 1) as f32 / h as f32,
+            ];
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +256,7 @@ mod tests {
                 room("Temple", &[]),
             ],
             current: String::new(),
+            image: String::new(),
         };
         assert_eq!(d.levels(), vec![0, 1, 1, 2, 2, 2, 3]);
         let l = d.layout();
