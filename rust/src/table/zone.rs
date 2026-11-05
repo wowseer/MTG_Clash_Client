@@ -47,6 +47,8 @@ const LAND_STACK_STEP: f32 = 0.3;
 const LAND_GROUP_GAP: f32 = 0.12;
 /// Spielfeld: Versatz gleicher Karten auf einem Stapel (Kartenbreiten).
 const BATTLE_STACK_STEP: f32 = 0.3;
+/// Spielfeld: Versatz gleicher Kreaturen untereinander (Anteil der Kartenlänge).
+const CREATURE_STACK_STEP: f32 = 0.2;
 /// Größe verschluckter Karten ([member Zone.swallow_cards]).
 const SWALLOWED_SCALE: f32 = 0.02;
 /// Cover-Flow ([member Zone.coverflow]): ab diesem seitlichen Abstand (Zonen-Einheiten) von der
@@ -588,9 +590,10 @@ impl Zone {
         };
         groups.sort_by_key(|g| rank(g));
         // Breite einer Gruppe in Kartenbreiten (ohne Abstand) und je Reihe in Einheiten
-        let group_units = |n: usize| 1.0 + (n as f32 - 1.0) * BATTLE_STACK_STEP;
+        // Kreaturen-Stapel liegen untereinander (eine Kartenbreite), die anderen nebeneinander
+        let group_units = |n: usize, front: bool| if front { 1.0 } else { 1.0 + (n as f32 - 1.0) * BATTLE_STACK_STEP };
         let row_units = |f: bool| -> f32 {
-            groups.iter().filter(|g| g.1 == f).map(|g| group_units(g.2) + AUTO_GAP).sum::<f32>()
+            groups.iter().filter(|g| g.1 == f).map(|g| group_units(g.2, g.1) + AUTO_GAP).sum::<f32>()
         };
         let (units_front, units_back) = (row_units(true), row_units(false));
 
@@ -621,7 +624,7 @@ impl Zone {
             for (g, (_, f, n)) in groups.iter().enumerate() {
                 let x = if *f { &mut x_front } else { &mut x_back };
                 starts[g] = *x;
-                *x += (group_units(*n) + AUTO_GAP) * w;
+                *x += (group_units(*n, *f) + AUTO_GAP) * w;
             }
             let mut in_group = vec![0usize; groups.len()];
             return keys
@@ -632,8 +635,13 @@ impl Zone {
                     let g = groups.iter().position(|(gk, gf, _)| gk == k && gf == f).unwrap_or(0);
                     let row = in_group[g];
                     in_group[g] += 1;
-                    let x = starts[g] + row as f32 * BATTLE_STACK_STEP * w;
-                    let z = if *f { top } else { back_z };
+                    // Kreaturen: jede weitere etwas weiter zum Spieler hin und obenauf, die
+                    // Kopfzeilen darunter bleiben sichtbar; andere: nach rechts versetzt
+                    let (x, z) = if *f {
+                        (starts[g], top + row as f32 * CREATURE_STACK_STEP * len * s)
+                    } else {
+                        (starts[g] + row as f32 * BATTLE_STACK_STEP * w, back_z)
+                    };
                     let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
                     Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
                 })
