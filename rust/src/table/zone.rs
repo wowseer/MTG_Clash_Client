@@ -635,12 +635,12 @@ impl Zone {
     /// - **hintere Reihe rechts**: Schlachten, Artefakte, Ausrüstung, Verzauberungen … – in der
     ///   Mitte der eigenen Seite direkt hinter den Kreaturen, rechts von der Mitte (bei zwei
     ///   Kreaturen-Reihen ganz hinten); bei Platzmangel kleiner, zuletzt überlappend;
-    /// - **hintere Reihe links**: Planeswalker – wie in Arena ganz links am Feldrand über dem
-    ///   Deck, auf derselben Höhe wie die Reihe rechts, weitere zur Mitte hin.
+    /// - **Planeswalker**: links in der Kreaturen-Reihe (am linken Feldrand), weitere zur Mitte
+    ///   hin; die Kreaturen rücken bei Bedarf nach rechts.
     ///
     /// Länder liegen in der eigenen Ressourcen-Zone (hinten links).
     fn auto_slots(&self, base: &[usize]) -> Vec<Transform3D> {
-        // Reihe je Karte: 0 = Kreaturen vorn, 1 = hinten rechts, 2 = Planeswalker hinten links
+        // Reihe je Karte: 0 = Kreaturen vorn, 1 = hinten rechts, 2 = Planeswalker vorn links
         let front: Vec<u8> = base
             .iter()
             .map(|&i| match self.cards[i].bind().kind() {
@@ -711,10 +711,10 @@ impl Zone {
         let tallest = groups.iter().filter(|g| g.1 == 0).map(|g| g.2.min(STACK_MAX)).max().unwrap_or(0);
         let fits = |s: f32| {
             let front_h = if n_front == 0 { 0.0 } else { len * s * (1.0 + (tallest as f32 - 1.0) * CREATURE_STACK_STEP) };
-            let back_h = if n_back + n_left == 0 { 0.0 } else { len * s + BACK_ROW_GAP };
-            units_front * CARD_WIDTH * s * 0.5 <= wall
+            let back_h = if n_back == 0 { 0.0 } else { len * s + BACK_ROW_GAP };
+            // Planeswalker links in der Kreaturen-Reihe: beide zusammen in die Breite
+            (units_front + units_left) * CARD_WIDTH * s <= 2.0 * wall
                 && (n_back == 0 || back_start(s) + units_back * CARD_WIDTH * s <= wall)
-                && (n_left == 0 || units_left * CARD_WIDTH * s <= wall * 0.5)
                 // Kreaturen und hintere Reihe übereinander in der Zonentiefe
                 && front_h + back_h <= 2.0 * half_z - 0.1
         };
@@ -730,7 +730,9 @@ impl Zone {
             let back_z = half_z - len * s * 0.5 - 0.05;
             // linke Kante (Mitte der ersten Karte) jeder Gruppe: vorn mittig, hinten ab back_start
             let mut starts = vec![0.0f32; groups.len()];
-            let mut x_front = -units_front * w * 0.5 + w * 0.5 + AUTO_GAP * w * 0.5;
+            // Kreaturen mittig, aber rechts von den Planeswalkern (die links in derselben Reihe liegen)
+            let left_end = -wall + units_left * w;
+            let mut x_front = (-units_front * w * 0.5).max(left_end) + w * 0.5 + AUTO_GAP * w * 0.5;
             let mut x_back = back_start(s) + w * 0.5;
             // links: am linken Feldrand (über dem Deck), Gruppen wachsen zur Mitte
             let mut x_left = -wall + w * 0.5;
@@ -765,7 +767,8 @@ impl Zone {
                     let (x, z) = match f {
                         0 => (starts[g], top + row as f32 * CREATURE_STACK_STEP * len * s),
                         1 => (starts[g] + row as f32 * BATTLE_STACK_STEP * w, back_z),
-                        _ => (starts[g] + row as f32 * BATTLE_STACK_STEP * w, back_z),
+                        // Planeswalker: links in der Kreaturen-Reihe
+                        _ => (starts[g] + row as f32 * BATTLE_STACK_STEP * w, top),
                     };
                     let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
                     Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
@@ -805,7 +808,7 @@ impl Zone {
                 let (x, z, s) = if *row_kind == 2 {
                     let k = k_left;
                     k_left += 1;
-                    (left_x0 + k as f32 * step_l, back_z, s_left)
+                    (left_x0 + k as f32 * step_l, top + (len * s_left - len * s_front) * 0.5, s_left)
                 } else if *row_kind == 0 {
                     let k = k_front;
                     k_front += 1;
