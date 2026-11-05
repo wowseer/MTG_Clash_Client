@@ -15,4 +15,3 @@ pub mod phase_timeline;
 pub mod phases;
 pub mod seat;
 pub mod seat_badge;
-pub mod stack_view;

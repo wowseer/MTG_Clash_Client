@@ -18,10 +18,8 @@ use super::bridge::ForgeBridge;
 use crate::game::cards::{CardDef, CardKind};
 use crate::game::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::decision_view;
-use crate::game::card_text;
 use crate::game::counters;
 use crate::game::hud::HudView;
-use crate::game::stack_view::HudStackEntry;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, PlayerId, Request, RulesEngine, Target};
 use crate::table::mana_wheel::{ManaWheel, WheelSegment};
@@ -2482,7 +2480,6 @@ impl ForgeTable {
                 && self.winner.is_empty()
                 && self.auto_pass_turn.is_none()
                 && st.is_some_and(|s| get_int(s, "active_player") == 0),
-            stack: self.hud_stack(),
             pool_clickable: (0..6)
                 .map(|m| match self.pending.as_ref().map(|r| &r.decision) {
                     Some(Decision::PayMana { options, .. }) => {
@@ -2499,33 +2496,6 @@ impl ForgeTable {
             targetable_seats: seat_state(false),
             selected_seats: seat_state(true),
         }
-    }
-
-    /// Stack-Liste für das HUD, oberster Eintrag zuerst.
-    fn hud_stack(&self) -> Vec<HudStackEntry> {
-        self.stack_items()
-            .iter()
-            .rev()
-            .map(|item| {
-                let source = get_int(item, "source");
-                let name = self
-                    .card_data(source)
-                    .map(|c| get_str(&c, "name"))
-                    .or_else(|| item.get("card").and_then(|v| v.try_to::<VarDictionary>().ok()).map(|c| get_str(&c, "name")))
-                    .unwrap_or_default();
-                let kind = match get_str(item, "kind").as_str() {
-                    "Spell" => tr!("Zauber", "Spell"),
-                    "Trigger" => tr!("Ausgelöste Fähigkeit", "Triggered ability"),
-                    "Casting" => tr!("wird gewirkt", "being cast"),
-                    _ => tr!("Aktivierte Fähigkeit", "Activated ability"),
-                };
-                HudStackEntry {
-                    title: format!("{name} · {kind}"),
-                    text: card_text::with_symbols(&get_str(item, "text")),
-                    seat: get_int(item, "controller"),
-                }
-            })
-            .collect()
     }
 
     /// Zeile unter dem Spielernamen: Monarch, Initiative, Stadtsegen, Ring-Stufe und Marken.

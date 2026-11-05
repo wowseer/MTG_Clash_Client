@@ -111,7 +111,7 @@ Angezeigt:
 - [x] Hand, Spielfeld, Länder-Reihe, Friedhof, verdeckte Gegnerhand, getappt
 - [x] Bibliothek als Deck-Stapel; Ziehen gleitet animiert vom Deck auf die Hand
 - [x] Phase, Leben, Runde, Spieler am Zug, Spielende
-- [x] Stack: Zauber und Fähigkeiten in der Tischmitte, Ziele als violette Pfeile, Liste im HUD
+- [x] Stack: Zauber und Fähigkeiten in der Tischmitte, Ziele als violette Pfeile, nur als 3D-Stapel (keine 2D-Liste)
 - [x] Spielprotokoll oben rechts
 - [x] Kommandozone, Monarch/Initiative/Stadtsegen/Ring, Tag/Nacht, doppelseitige Karten (Umdreh-Animation), verdeckte Karten
 - [x] Kartenbild aus Engine-Daten: Regeltext mit Symbolen, Typzeile, Farben, Stärke/Widerstand, Loyalität, Verteidigung
@@ -132,7 +132,7 @@ Die vollständige Liste mit Zuordnung zu Bedienmustern steht in `docs/Kartenabde
 7. ~~`AssignCombatDamage`, `PayUnlessCost`, `PayLifeForPhyrexian`, Kosten, Trigger-Ziele, Erschöpfen/Rekrutieren, Kopien, neue Ziele~~ ✔
 
 **Zustand, der noch fehlt:**
-- ~~Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile~~ ✔ (Zone `Stack`, Liste im HUD)
+- ~~Stack mit Zaubern und Fähigkeiten, Ziele als Pfeile~~ ✔ (Zone `Stack`, 3D-Stapel)
 - ~~Exil, Marken (Counter), angelegte Karten (Auren, Ausrüstung), Spielsteine~~ ✔
 - ~~Regeltext auf dem Kartenbild; Kartenmodell verschlankt~~ ✔ (`CardDef::from_state`, `card_text.rs`)
 - ~~Spielprotokoll~~ ✔ (Nachricht `log` aus Forges `GameLog`, oben rechts im HUD)

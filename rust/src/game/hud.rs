@@ -14,7 +14,6 @@
 //!   „Blocken (n)“) und darunter klein „»»“ (Sofort beenden) – beide als orange animierte
 //!   [`Button3D`] in der 3D-Szene, an die Bildschirmstelle geheftet
 //! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
-//! - linker Bildrand, Mitte: Stack-Liste ([`StackList`]) mit Quelle, Art und Text jedes Eintrags
 //!
 //! Das HUD liest den Zustand jedes Frame vom [`ForgeTable`] (keine Signal-Kopplung nötig).
 //! Alle 2D-Flächen lassen Mausklicks durch; die 3D-Knöpfe klickt der `TableController` an.
@@ -36,7 +35,6 @@ use super::mana_view::ManaPoolView;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::choice_panel::ChoicePanel;
-use super::stack_view::{HudStackEntry, StackList};
 pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
 use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY, WIDE_BODY};
@@ -115,8 +113,6 @@ pub struct TurnHud {
     root: Option<Gd<Control>>,
     /// Auswahlfenster in der Bildschirmmitte (alle allgemeinen Forge-Entscheidungen).
     choice: Option<ChoicePanel>,
-    /// Stack-Liste am linken Bildrand.
-    stack: Option<StackList>,
 
     base: Base<CanvasLayer>,
 }
@@ -147,7 +143,6 @@ impl ICanvasLayer for TurnHud {
             button_hint: None,
             root: None,
             choice: None,
-            stack: None,
             base,
         }
     }
@@ -336,7 +331,6 @@ impl TurnHud {
         self.base_mut().add_child(&end_turn);
 
         self.choice = Some(ChoicePanel::new(&mut root));
-        self.stack = Some(StackList::new(&mut root));
         // Medaillon-Klicks (Spieler als Ziel) an den ForgeTable melden
         for (seat, badge) in [(0i64, &me_badge), (1, &opp_badge)] {
             let cb = Callable::from_object_method(&self.to_gd(), "on_badge_clicked").bind(&[seat.to_variant()]);
@@ -525,9 +519,6 @@ impl TurnHud {
         if let Some(mut ft) = self.forge_table.clone() {
             ft.bind_mut().set_choice_selection(selection);
         }
-        if let Some(stack) = self.stack.as_mut() {
-            stack.show(if view.stage_covers { &[] } else { &view.stack });
-        }
     }
 }
 
@@ -558,10 +549,8 @@ pub struct HudView {
     /// Eine 3D-Bühne (Startspieler, Mulligan) ist offen: Medaillons und Namen ausgrauen.
     pub stage_open: bool,
     /// Die offene Bühne deckt den Tisch ab (abgedunkelt): Medaillons, Namen, Phasen-Zeitstrahl
-    /// und Stack-Liste ganz ausblenden, damit nichts über Titel, Karten und Knöpfen der Bühne liegt.
+    /// ganz ausblenden, damit nichts über Titel, Karten und Knöpfen der Bühne liegt.
     pub stage_covers: bool,
-    /// Stack-Liste, oberster Eintrag zuerst (leer = ausgeblendet).
-    pub stack: Vec<HudStackEntry>,
     /// Manapool des Spielers (je [ManaType] eine Menge; leer = keine Anzeige).
     pub player_pool: PackedInt64Array,
     /// Je Manaart: beim Bezahlen anklickbar (schwebendes Mana einsetzen).

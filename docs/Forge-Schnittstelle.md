@@ -382,7 +382,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 | `exile`, `attached_to`, `counters`, `token` | Exil-Stapel je Seite (`PlayerSeat.exile`); angelegte Karten versetzt unter dem Träger in dessen Zone; Marken und „Spielstein“ als Plaketten auf der Karte; Spieler-Marken unter dem Namen im HUD |
 | `command`, `face`, `face_down`, `monarch`, `initiative`, `day`, `ring_level` | Kommandozone je Seite als Spalte (Spieler rechts unten, Gegner rechts oben); Seitenwechsel als Umdreh-Animation, verdeckte Karten mit Rückseitenmuster; Plaketten „Commander“, „Ringträger“, „Raum: …“, „↺ andere Seite“; Monarch, Initiative, Stadtsegen, Ring-Stufe unter dem Namen, Tag/Nacht neben der Rundenzahl |
 | `log` | wird zurzeit nicht angezeigt (das Protokoll-Fenster oben rechts ist auf Wunsch entfernt; geplant: aufklappbare 3D-Schriftrolle) |
-| `stack` | Zone `Stack` rechts als Kartenstapel (neuester Eintrag vorn, ältere versetzt dahinter): Zauber (auch `Casting`) als ihre Karte, Fähigkeiten als Karte ihrer Quelle; Pfeile zu den Zielen in der Farbe der Quellkarte, auf Einträge darunter als Bogen; Liste im HUD (linker Rand) mit Quelle, Art, Text |
+| `stack` | Zone `Stack` rechts als Kartenstapel (neuester Eintrag vorn, ältere versetzt dahinter): Zauber (auch `Casting`) als ihre Karte, Fähigkeiten als Karte ihrer Quelle; Pfeile zu den Zielen in der Farbe der Quellkarte, auf Einträge darunter als Bogen; keine eigene Liste im HUD, der 3D-Stapel zeigt alle Einträge |
 | `phase`, `life`, `turn`, `game_over` | Zeitstrahl, Medaillons, Rundenzahl, Spielende-Meldung im `TurnHud` |
 
 ## Stand und nächste Schritte
@@ -416,7 +416,7 @@ Drag-and-Drop, HUD). Der Knoten `ForgeTable` (`rust/src/forge/table.rs`) überse
 - Stack getestet mit `testdecks/kosten.dck` gegen `testdecks/gegner_counter.dck`: Zauber beider
   Seiten in der Stack-Zone, Mana Leak auf Flametongue Kavu (2 Einträge, Ziel = Zauber im Stack);
   ausgelöste Fähigkeit (Trigger von Flametongue Kavu mit Ziel) als Karte der Quelle, Priorität mit
-  belegtem Stack. Optik (Liste im HUD, Pfeile) noch nicht im Fenster geprüft.
+  belegtem Stack. Optik (Pfeile) noch nicht im Fenster geprüft.
 - Exil, Marken, Spielsteine und angelegte Karten getestet mit einem Testdeck (Dragon Fodder,
   Bonesplitter, Chandra, Torch of Defiance, Magma Spray) gegen `testdecks/gegner.dck` (Rancor):
   Spielsteine, `LOYALTY`, Exil beider Seiten, Rancor an der Gegnerkreatur, Ausrüstung am Träger.
