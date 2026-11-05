@@ -71,6 +71,7 @@ impl IControl for CostSymbolCanvas {
             let rim_color = match rim.as_str() {
                 "green" => Color::from_rgb(0.35, 0.85, 0.4),
                 "red" => Color::from_rgb(0.95, 0.35, 0.3),
+                "blue" => Color::from_rgb(0.35, 0.6, 1.0),
                 _ => Color::from_rgb(0.9, 0.75, 0.4),
             };
             b.draw_circle(c + Vector2::new(0.0, size * 0.03), r + size * 0.02, Color::from_rgba(0.0, 0.0, 0.0, 0.5));
@@ -200,15 +201,18 @@ fn symbol_sprite(token: &str, height: f32) -> Gd<Sprite3D> {
 
 /// Marken-Münze als `Sprite3D` (Durchmesser `size`, Fläche in der XY-Ebene, Vorderseite +Z):
 /// silbern mit der Anzahl, Rand je Markenart (+1/+1 grün, −1/−1 rot, sonst golden) – wie im
-/// Video „Choose One + Marke“.
+/// Video „Choose One + Marke“. Sonderfälle: `CLASS_LEVEL` („L2“), `DOORS` („1/2“), `PREPARED`
+/// (blauer Rand, „V“ – die Kreatur ist vorbereitet und ihr Zauber liegt als Kopie neben der Hand).
 pub fn counter_coin(kind: &str, count: u32, size: f32) -> Gd<Sprite3D> {
     let rim = match kind {
         "P1P1" => "green",
         "M1M1" => "red",
+        "PREPARED" => "blue",
         _ => "gold",
     };
-    // Klassen-Stufe „L2“, offene Türen „1/2“, sonst die Anzahl
+    // Klassen-Stufe „L2“, offene Türen „1/2“, vorbereitet „V“/„P“, sonst die Anzahl
     let label = match kind {
+        "PREPARED" => crate::tr!("V", "P").to_string(),
         "CLASS_LEVEL" => format!("L{count}"),
         "DOORS" => format!("{count}/2"),
         _ => count.to_string(),

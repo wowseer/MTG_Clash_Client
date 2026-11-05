@@ -82,11 +82,16 @@ final class CardImages {
         if (c == null || c.isFaceDown()) {
             return Info.NONE;
         }
-        if (c.isToken()) {
+        IPaperCard ip = c.getPaperCard();
+        // Zauber-Kopie einer vorbereiteten Kreatur (Prepare): die gedruckte Kreaturenkarte, auf der
+        // der Zauber mit abgedruckt ist (wie Forges eigener Bildschlüssel für diese Seite)
+        if (c.getCurrentStateName() == forge.card.CardStateName.PreparedSpell) {
+            ip = forge.StaticData.instance().getCommonCards()
+                    .getCard(c.getState(forge.card.CardStateName.Original).getName());
+        } else if (c.isToken()) {
             String t = tokenImage(c);
             return t.isEmpty() ? Info.NONE : new Info(t, "", "");
         }
-        IPaperCard ip = c.getPaperCard();
         if (!(ip instanceof PaperCard pc)) {
             return Info.NONE;
         }

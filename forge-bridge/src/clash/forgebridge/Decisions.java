@@ -393,7 +393,7 @@ final class Decisions {
     /**
      * Wie {@link #priority}, mit Erweiterung {@code elsewhere}: Karten, die gerade aus einer
      * anderen Zone als Hand und Spielfeld gespielt werden können (Friedhof, Exil, Kommandozone,
-     * Sideboard/Companion, Bibliothek) – je {@code {"card": id, "zone": "Graveyard", "cost": "2 R"}}
+     * Sideboard/Companion, Bibliothek; {@code "Prepared"} = Zauber-Kopie einer vorbereiteten Kreatur) – je {@code {"card": id, "zone": "Graveyard", "cost": "2 R"}}
      * ({@code cost} = Manakosten der Spielweise aus dieser Zone, z. B. Flashback), ihre Daten in der
      * Hülle {@code cards}. Die UI zeigt sie rechts neben dem Handfächer.
      */
@@ -406,7 +406,9 @@ final class Decisions {
             JsonObject o = new JsonObject();
             o.addProperty("card", c.getId());
             forge.game.zone.Zone z = game.getZoneOf(c);
-            o.addProperty("zone", z == null ? "" : z.getZoneType().name());
+            // Zauber einer vorbereiteten Kreatur (Prepare): liegt intern im Exil, gemeldet als "Prepared"
+            boolean prepared = c.getCurrentStateName() == forge.card.CardStateName.PreparedSpell;
+            o.addProperty("zone", prepared ? "Prepared" : z == null ? "" : z.getZoneType().name());
             int i = elsewhere.indexOf(c);
             o.addProperty("cost", i >= 0 && i < costs.size() ? costs.get(i) : "");
             other.add(o);

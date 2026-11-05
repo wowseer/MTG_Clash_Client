@@ -4257,6 +4257,10 @@ impl ForgeTable {
                 if let Some(doors) = get_array(data, "unlocked_doors") {
                     coins.push(("DOORS".to_string(), doors.len() as u32));
                 }
+                // Vorbereitet (Prepare): ihr Zauber ist als Kopie wirkbar (Proxy neben der Hand)
+                if get_bool(data, "prepared") {
+                    coins.push(("PREPARED".to_string(), 1));
+                }
                 card.bind_mut().set_counters(&coins);
                 let tapped = get_bool(data, "tapped");
                 if card.bind().is_tapped() != tapped {
@@ -4460,6 +4464,7 @@ fn zone_label(zone: &str) -> String {
     match zone {
         "Graveyard" => tr!("aus dem Friedhof", "from graveyard").to_string(),
         "Exile" => tr!("aus dem Exil", "from exile").to_string(),
+        "Prepared" => tr!("vorbereitet", "prepared").to_string(),
         "Command" => tr!("aus der Kommandozone", "from command zone").to_string(),
         "Sideboard" => tr!("Begleiter", "Companion").to_string(),
         "Library" => tr!("aus der Bibliothek", "from library").to_string(),

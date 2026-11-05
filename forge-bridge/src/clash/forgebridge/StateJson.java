@@ -339,6 +339,10 @@ final class StateJson {
         if (c.getType().hasSubtype("Class")) {
             o.addProperty("class_level", c.getClassLevel());
         }
+        // Vorbereitet (Prepare): eine Kopie ihres Zaubers kann gewirkt werden
+        if (c.isPrepared()) {
+            o.addProperty("prepared", true);
+        }
         // Räume (CR 709.5): aufgeschlossene Türen
         if (c.isRoom() && c.isInPlay()) {
             JsonArray doors = new JsonArray();
