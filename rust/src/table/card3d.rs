@@ -241,6 +241,9 @@ pub struct Card3D {
     /// Marken als Münzen rechts oben am Rand (`set_counters`): Markenart, Anzahl, Münze,
     /// Zeit seit dem Zuwachs (für Aufspringen und blaues Leuchten; ≥ COIN_POP_TIME = ruhig).
     coins: Vec<(String, u32, Gd<godot::classes::Sprite3D>, f32)>,
+    /// Kachel-Textur für das Spielfeld (`placeholder::tile_face`), sonst None (dann der obere
+    /// Teil der Vorderseite).
+    tile_texture: Option<Gd<Texture2D>>,
     /// Regeltext mit eingebetteten Manasymbolen (`set_rich_text`), statt der Beschriftung.
     rich_text: Option<Gd<godot::classes::Sprite3D>>,
     /// Feld über dem gedruckten Textfeld für eigenen Text einer Bühne (`set_text_panel`).
@@ -316,6 +319,7 @@ impl IArea3D for Card3D {
             cost_row: None,
             text_panel: None,
             rich_text: None,
+            tile_texture: None,
             coins: Vec::new(),
             base,
         }
@@ -416,9 +420,7 @@ impl Card3D {
     #[func]
     pub fn set_face_texture(&mut self, tex: Option<Gd<Texture2D>>) {
         self.face_texture = tex;
-        if let Some(mat) = self.face_material.as_mut() {
-            apply_texture(mat, self.face_texture.as_ref(), Color::from_rgb(0.9, 0.9, 0.9));
-        }
+        self.apply_face_material();
         self.apply_tapped_look();
     }
 
@@ -649,6 +651,10 @@ impl Card3D {
         self.card_name = def.name.as_str().into();
         self.card_kind = def.kind;
         self.def = def.clone();
+        self.tile_texture = placeholder::tile_face(def);
+        if self.tile_shown {
+            self.apply_face_material();
+        }
         self.refresh_labels();
     }
 
@@ -808,9 +814,10 @@ impl Card3D {
             let quad = Vector2::new(CARD_WIDTH, len) + Vector2::splat(2.0 * GLOW_MARGIN);
             r.marker.set_size(quad);
         }
-        for m in [self.face_material.as_mut(), self.back_material.as_mut()].into_iter().flatten() {
+        if let Some(m) = self.back_material.as_mut() {
             m.set_uv1_scale(Vector3::new(1.0, frac, 1.0));
         }
+        self.apply_face_material();
         if let Some(m) = self.marker_material.as_mut() {
             let quad = Vector2::new(CARD_WIDTH, len) + Vector2::splat(2.0 * GLOW_MARGIN);
             m.set_shader_parameter("quad_size", &quad.to_variant());
@@ -824,6 +831,23 @@ impl Card3D {
             i.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.003, icon_z));
         }
         self.refresh_labels();
+    }
+
+    /// Vorderseite: als Kachel die eigene Kachel-Textur (ganz), sonst die Kartenvorderseite (als
+    /// Kachel nur ihr oberer Teil).
+    fn apply_face_material(&mut self) {
+        let tile_tex = self.tile_shown.then(|| self.tile_texture.clone()).flatten();
+        let frac = self.length() / CARD_HEIGHT;
+        let tex = tile_tex.clone().or_else(|| self.face_texture.clone());
+        if let Some(m) = self.face_material.as_mut() {
+            apply_texture(m, tex.as_ref(), Color::from_rgb(0.9, 0.9, 0.9));
+            m.set_uv1_scale(Vector3::new(1.0, if tile_tex.is_some() { 1.0 } else { frac }, 1.0));
+        }
+    }
+
+    /// Zeigt die Karte gerade ihre Kachel-Textur?
+    fn tile_textured(&self) -> bool {
+        self.tile_shown && self.tile_texture.is_some()
     }
 
     /// Versatz des Schlags im Kampf (lokal) für dieses Frame.
@@ -892,6 +916,7 @@ impl Card3D {
         FaceTexts {
             printed,
             custom_text: self.def.custom_text,
+            tile_textured: self.tile_textured(),
             name,
             name_x,
             name_width,
@@ -986,11 +1011,12 @@ impl Card3D {
         let printed = t.printed;
         // eigener Text auf echtem Bild: nur der Text, auf einem Feld über dem gedruckten Textfeld
         let custom = printed && t.custom_text && !tile;
-        l.name.set_visible(!printed);
+        let tiled = t.tile_textured;
+        l.name.set_visible(!printed || tiled);
         l.kind.set_visible(!tile && !printed);
         l.text.set_visible(!tile && (!printed || custom));
         l.cost.set_visible(!tile && !printed && !t.cost.is_empty());
-        l.stats.set_visible(!printed || t.stats_color != Color::WHITE);
+        l.stats.set_visible(!printed || tiled || t.stats_color != Color::WHITE);
         l.kind.set_position(px(128.0, zs[0]));
         l.text.set_position(px(128.0, zs[1]));
         l.badges.set_position(px(128.0, zs[2]));
@@ -1002,6 +1028,13 @@ impl Card3D {
         l.name.set_text(&t.name);
         l.name.set_font_size(card_text::fit_line(&t.name, t.name_width * per_px, 16, 36));
         l.name.set_position(px(t.name_x, ty));
+        if tiled {
+            // Kachel: Name in der Namensleiste (dunkel, links), Werte im Kästchen unten mittig
+            let tz = |y: i32| (y as f32 / placeholder::TILE_H as f32 - 0.5) * len;
+            l.name.set_font_size(card_text::fit_line(&t.name, 230.0 * per_px, 20, 54));
+            l.name.set_position(px(128.0, tz(placeholder::TILE_NAME_Y)));
+            l.stats.set_position(px(128.0, tz(placeholder::TILE_STATS_Y)));
+        }
         l.kind.set_font_size(card_text::fit_line(&t.kind, 216.0 * per_px, 14, 34));
         // Textfeld: 0,52 m breit (Umbruch), ca. 90 Texturpixel hoch
         let area = (0.52 / LABEL_PIXEL) * (TEXT_BOX_HEIGHT * per_px);
@@ -1025,7 +1058,26 @@ impl Card3D {
         l.stats.set_text(&t.stats);
         l.colors[4] = t.stats_color;
         let tint = if self.tapped || self.attacked { TAPPED_TINT } else { Color::WHITE };
-        l.stats.set_modulate(t.stats_color * tint);
+        if tiled {
+            // dunkle Schrift im hellen Kästchen; verändert: blau (höher) bzw. rot (niedriger)
+            let c = if t.stats_color == Color::WHITE {
+                Color::from_rgb(0.1, 0.1, 0.12)
+            } else if t.stats_color.g > t.stats_color.r {
+                Color::from_rgb(0.15, 0.3, 0.95)
+            } else {
+                Color::from_rgb(0.85, 0.15, 0.12)
+            };
+            l.colors[4] = c;
+            l.stats.set_font_size(card_text::fit_line(&t.stats, 76.0 * per_px, 30, 70));
+            l.colors[0] = Color::from_rgb(0.08, 0.08, 0.09);
+            l.stats.set_modulate(c * tint);
+            l.stats.set_outline_size(0);
+            l.name.set_modulate(l.colors[0] * tint);
+        } else {
+            l.stats.set_font_size(44);
+            l.colors[0] = Color::from_rgb(0.97, 0.93, 0.85);
+            l.stats.set_modulate(t.stats_color * tint);
+        }
         // Regeltext mit Manasymbolen: als Bild mit den Symbolen aus dem Bogen statt als Schrift
         let shown = l.text.is_visible();
         let (pos, font) = (l.text.get_position(), l.text.get_font_size());
@@ -1445,6 +1497,8 @@ pub struct FaceTexts {
     pub printed: bool,
     /// Eigener Text einer Bühne (`CardDef::custom_text`).
     pub custom_text: bool,
+    /// Karte zeigt ihre Kachel-Textur (Name und Werte auf die Kachel).
+    pub tile_textured: bool,
 }
 
 /// Verstärkung des Aufleuchtens `t` Sekunden nach [`Card3D::flash`].

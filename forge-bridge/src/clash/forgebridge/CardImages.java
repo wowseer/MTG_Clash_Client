@@ -60,11 +60,12 @@ final class CardImages {
     private static final long REQUEST_GAP_MS = 120;
 
     /**
-     * Bilder einer Karte: {@code image} = ganzes Kartenbild, {@code art} = nur der Bildausschnitt
-     * (Scryfall {@code art_crop}), nur bei Karten ohne Druck mit normalem Rahmen (sonst leer).
+     * Bilder einer Karte: {@code image} = ganzes Kartenbild, {@code art} = Bildausschnitt (Scryfall
+     * {@code art_crop}) nur bei Karten ohne Druck mit normalem Rahmen (sonst leer), {@code crop} =
+     * Bildausschnitt immer (für die Kacheln auf dem Spielfeld).
      */
-    record Info(String image, String art) {
-        static final Info NONE = new Info("", "");
+    record Info(String image, String art, String crop) {
+        static final Info NONE = new Info("", "", "");
     }
 
     /** Gewählter Anzeige-Druck je Kartenname und Druck (normaler Rahmen bevorzugt). */
@@ -83,7 +84,7 @@ final class CardImages {
         }
         if (c.isToken()) {
             String t = tokenImage(c);
-            return t.isEmpty() ? Info.NONE : new Info(t, "");
+            return t.isEmpty() ? Info.NONE : new Info(t, "", "");
         }
         IPaperCard ip = c.getPaperCard();
         if (!(ip instanceof PaperCard pc)) {
@@ -93,8 +94,10 @@ final class CardImages {
         PaperCard shown = DISPLAY.computeIfAbsent(pc.getName() + "|" + pc.getEdition() + "|" + pc.getArtIndex(),
                 k -> displayPrinting(pc));
         String image = resolve(shown, face, false);
-        String art = regular(shown) ? "" : resolve(shown, face, true);
-        return new Info(image, art);
+        // Bildausschnitt: immer (Kacheln auf dem Spielfeld); `art` nur bei Sonderrahmen
+        String crop = resolve(shown, face, true);
+        String art = regular(shown) ? "" : crop;
+        return new Info(image, art, crop);
     }
 
     /** Bild einer Seite (Name) der Karte {@code host}, z. B. für „Seite wählen“; sonst "". */

@@ -110,6 +110,7 @@ pub fn printed_face(path: &str) -> Option<Gd<Texture2D>> {
 pub fn clear_printed() {
     CLOSED.with(|c| c.set(true));
     PRINTED.with(|c| c.borrow_mut().clear());
+    TILES.with(|c| c.borrow_mut().clear());
 }
 
 /// Zwischenspeicher wieder öffnen (der Tisch wird neu aufgebaut).
@@ -306,4 +307,99 @@ fn back_image() -> Gd<Image> {
         img.fill_rect(rect(m, m, W - 2 * m, H - 2 * m), *c);
     }
     img
+}
+
+/// Größe der Kachel-Textur (Pixel): Breite wie das Kartenbild, Höhe im Seitenverhältnis der Kachel.
+pub const TILE_W: i32 = 256;
+pub const TILE_H: i32 = 215;
+/// Kachel: Namensleiste (Mitte y), Wertekästchen (Mitte y, Breite, Höhe), runder Knopf links unten
+/// (Mitte x, y, Radius) – Pixel der Kachel-Textur.
+pub const TILE_NAME_Y: i32 = 20;
+pub const TILE_STATS_Y: i32 = 192;
+const TILE_STATS_W: i32 = 84;
+const TILE_STATS_H: i32 = 30;
+const TILE_ICON: (i32, i32, i32) = (26, 190, 21);
+
+thread_local! {
+    /// Kachel-Texturen je Aufbau (Rahmenfarbe, Bildausschnitt, Werte, Knopf).
+    static TILES: RefCell<HashMap<String, Gd<Texture2D>>> = RefCell::new(HashMap::new());
+}
+
+/// Hat die Karte eine Fähigkeit mit {T} in den Kosten (Knopf ↷), sonst ◎?
+fn has_tap_ability(def: &CardDef) -> bool {
+    def.text.lines().any(|l| l.split(':').next().is_some_and(|cost| l.contains(':') && cost.contains("{T}")))
+}
+
+/// Kachel einer Karte auf dem Spielfeld wie in `Cratzuren icons.png`: Rahmen in Kartenfarbe,
+/// dunkle Namensleiste oben, der Bildausschnitt (Scryfall `art_crop`) in der Mitte, unten eine
+/// Leiste mit hellem, abgerundetem Wertekästchen (Stärke/Widerstand, Loyalität, Verteidigung;
+/// Text per Label3D) und links unten ein runder schwarzer Knopf mit weißem Symbol (↷ bei einer
+/// Tapp-Fähigkeit, sonst ◎). Name und Werte kommen per Label3D dazu. None ohne Bildausschnitt.
+pub fn tile_face(def: &CardDef) -> Option<Gd<Texture2D>> {
+    if def.face_down || def.crop.is_empty() || CLOSED.with(|c| c.get()) {
+        return None;
+    }
+    let stats = matches!(def.kind, CardKind::Creature | CardKind::Planeswalker | CardKind::Battle) || def.stats.is_some();
+    let tap = has_tap_ability(def);
+    let base = def.frame_color();
+    let key = format!("{}|{}|{}|{}", def.crop, base.to_html(), stats, tap);
+    if let Some(t) = TILES.with(|m| m.borrow().get(&key).cloned()) {
+        return Some(t);
+    }
+    let mut art = Image::load_from_file(&def.crop)?;
+    art.convert(Format::RGBA8);
+    let (w, h) = (TILE_W, TILE_H);
+    let frame = base.darkened(0.25);
+    let dark = Color::from_rgb(0.08, 0.08, 0.09);
+    let mut img = Image::create_empty(w, h, false, Format::RGBA8)?;
+    img.fill(dark);
+    img.fill_rect(rect(4, 4, w - 8, h - 8), frame);
+    // Namensleiste
+    img.fill_rect(rect(10, 9, w - 20, 22), base.lightened(0.55));
+    img.fill_rect(rect(10, 30, w - 20, 2), dark);
+    // Bild: auf Feldbreite skaliert, mittig beschnitten
+    let (fx, fy, fw, fh) = (10, 34, w - 20, h - 34 - 34);
+    let (aw, ah) = (art.get_width().max(1) as f32, art.get_height().max(1) as f32);
+    let scale = (fw as f32 / aw).max(fh as f32 / ah);
+    let (nw, nh) = ((aw * scale).ceil() as i32, (ah * scale).ceil() as i32);
+    art.resize_ex(nw, nh).interpolation(godot::classes::image::Interpolation::LANCZOS).done();
+    img.blit_rect(&art, rect((nw - fw) / 2, (nh - fh) / 2, fw, fh), Vector2i::new(fx, fy));
+    // untere Leiste
+    img.fill_rect(rect(10, h - 32, w - 20, 22), base.lightened(0.35));
+    if stats {
+        // helles, abgerundetes Wertekästchen
+        let (cx, cy) = (w / 2, TILE_STATS_Y);
+        let (bw, bh) = (TILE_STATS_W, TILE_STATS_H);
+        img.fill_rect(rect(cx - bw / 2 - 2, cy - bh / 2 - 2, bw + 4, bh + 4), Color::from_rgb(0.35, 0.36, 0.38));
+        img.fill_rect(rect(cx - bw / 2 + 4, cy - bh / 2, bw - 8, bh), Color::from_rgb(0.9, 0.9, 0.88));
+        circle(&mut img, cx - bw / 2 + 4, cy, bh / 2, Color::from_rgb(0.9, 0.9, 0.88));
+        circle(&mut img, cx + bw / 2 - 4, cy, bh / 2, Color::from_rgb(0.9, 0.9, 0.88));
+    }
+    // runder Knopf links unten: schwarz mit weißem Rand, Symbol ↷ bzw. ◎
+    let (ix, iy, ir) = TILE_ICON;
+    circle(&mut img, ix, iy, ir + 2, Color::from_rgb(0.95, 0.95, 0.95));
+    circle(&mut img, ix, iy, ir - 1, dark);
+    if tap {
+        if let Some(mut sym) = crate::game::mana_symbols::image("T") {
+            // Tapp-Symbol aus dem Bogen (grauer Kreis, schwarzer Pfeil) → weißer Pfeil auf Schwarz
+            let s = (ir as f32 * 1.6) as i32;
+            sym.resize_ex(s, s).interpolation(godot::classes::image::Interpolation::LANCZOS).done();
+            for y in 0..s {
+                for x in 0..s {
+                    let c = sym.get_pixel(x, y);
+                    let ink = c.a * (1.0 - (c.r + c.g + c.b) / 3.0).clamp(0.0, 1.0);
+                    if ink > 0.35 {
+                        img.set_pixel(ix - s / 2 + x, iy - s / 2 + y, Color::from_rgb(0.97, 0.97, 0.97));
+                    }
+                }
+            }
+        }
+    } else {
+        circle(&mut img, ix, iy, ir - 6, Color::from_rgb(0.95, 0.95, 0.95));
+        circle(&mut img, ix, iy, ir - 9, dark);
+        circle(&mut img, ix, iy, ir - 13, Color::from_rgb(0.95, 0.95, 0.95));
+    }
+    let tex = finish(img);
+    TILES.with(|m| m.borrow_mut().insert(key, tex.clone()));
+    Some(tex)
 }

@@ -316,6 +316,10 @@ final class StateJson {
         if (!images.art().isEmpty()) {
             o.addProperty("art", images.art());
         }
+        // Bildausschnitt für die Kachel auf dem Spielfeld (Rahmen, Name, Bild, Werte)
+        if (!images.crop().isEmpty()) {
+            o.addProperty("crop", images.crop());
+        }
         // Verdeckt (Morph, Manifest …, CR 708): Forge liefert dann die Werte der verdeckten Seite
         if (c.isFaceDown()) {
             o.addProperty("face_down", true);

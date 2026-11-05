@@ -76,6 +76,8 @@ pub struct CardDef {
     /// Nur bei Karten ohne Druck mit normalem Rahmen: Pfad des Bildausschnitts (Scryfall
     /// `art_crop`); Bühnenkopien mit eigenem Text zeigen ihn im gezeichneten Rahmen.
     pub art: String,
+    /// Bildausschnitt (Scryfall `art_crop`) für die Kachel auf dem Spielfeld, leer = keiner.
+    pub crop: String,
     /// Regeltext wurde für eine Bühne ersetzt (ein Modus, ein Ersatzeffekt): auf dem echten
     /// Kartenbild steht dann nur dieser Text, auf einem Feld über dem gedruckten Textfeld.
     pub custom_text: bool,
@@ -151,6 +153,7 @@ impl CardDef {
             cost_text: s("cost"),
             image: s("image"),
             art: s("art"),
+            crop: s("crop"),
             // Stack: nur die gewählten Modi stehen im Text (auf dem echten Bild auf einem Feld)
             custom_text: card.get("chosen_modes").is_some_and(|v| v.booleanize()),
             sick: card.get("sick").is_some_and(|v| v.booleanize()),
