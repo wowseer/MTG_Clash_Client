@@ -361,8 +361,8 @@ impl ManaWheel {
             colors.push(s.color);
             icons.push(s.icon);
         }
-        // Symbole aus dem Symbolbogen (farblos fehlt dort: gezeichnete Raute)
-        let letters = ['W', 'U', 'B', 'R', 'G'];
+        // Symbole aus dem Symbolbogen (farblos aus Colorless.svg)
+        let letters = ['W', 'U', 'B', 'R', 'G', 'C'];
         let mut uvs = PackedVector4Array::new();
         for i in 0..MAX_SEGMENTS {
             let icon = self.segments.get(i).map_or(5, |s| s.icon);

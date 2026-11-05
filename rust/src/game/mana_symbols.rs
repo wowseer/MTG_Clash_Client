@@ -5,8 +5,8 @@
 //!
 //! Raster (Spalte, Zeile): Zeile 0 = 0–9, Zeile 1 = 10–19, Zeile 2 = 20, X, Y, Z, W, U, B, R, G,
 //! Schnee; Zeile 3 = Hybride W/U, W/B, U/B, U/R, B/R, B/G, R/W, R/G, G/W, G/U; Zeile 4 = 2/W … 2/G,
-//! W/P … G/P (phyrexianisch); Zeile 5 = Tappen, Enttappen, ∞, ½. Ein farbloses Symbol {C} gibt es
-//! im Bogen nicht – dafür bleibt die gezeichnete graue Raute.
+//! W/P … G/P (phyrexianisch); Zeile 5 = Tappen, Enttappen, ∞, ½. Farbloses Mana {C} fehlt im
+//! Bogen: es kommt aus `Assets/Mana/Colorless.svg` und wird beim Laden in Zelle (8, 5) kopiert.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,6 +17,10 @@ use godot::prelude::*;
 
 /// Der Symbolbogen (in die Bibliothek eingebaut, keine Import-Einstellung nötig).
 const SHEET: &[u8] = include_bytes!("../../../Assets/Mana/Mana.svg");
+/// Farbloses Mana {C} (fehlt im Bogen, eigene Datei vom User); wird beim Laden in die freie Zelle
+/// [`COLORLESS_CELL`] des Bogens kopiert. Quelle: 600 × 600 SVG-Pixel.
+const COLORLESS: &[u8] = include_bytes!("../../../Assets/Mana/Colorless.svg");
+const COLORLESS_CELL: (i32, i32) = (8, 5);
 /// Abstand und Größe der Symbole im Bogen (SVG-Pixel) und Render-Maßstab (Symbol = 120 px).
 const STEP: f32 = 105.0;
 const SIZE: f32 = 100.0;
@@ -41,6 +45,7 @@ pub fn cell(token: &str) -> Option<(i32, i32)> {
     }
     let single = |c: &str| "WUBRG".find(c).map(|i| i as i32);
     match t.as_str() {
+        "C" => return Some(COLORLESS_CELL),
         "X" => return Some((1, 2)),
         "Y" => return Some((2, 2)),
         "Z" => return Some((3, 2)),
@@ -77,7 +82,24 @@ fn sheet() -> Option<Gd<Image>> {
             .get_or_insert_with(|| {
                 let mut img = Image::new_gd();
                 let bytes = PackedByteArray::from(SHEET);
-                (img.load_svg_from_buffer_ex(&bytes).scale(SCALE).done() == godot::global::Error::OK).then_some(img)
+                if img.load_svg_from_buffer_ex(&bytes).scale(SCALE).done() != godot::global::Error::OK {
+                    return None;
+                }
+                if img.get_format() != Format::RGBA8 {
+                    img.convert(Format::RGBA8);
+                }
+                // farbloses Symbol in die freie Zelle einsetzen
+                let mut c = Image::new_gd();
+                let cb = PackedByteArray::from(COLORLESS);
+                let px = SIZE * SCALE;
+                if c.load_svg_from_buffer_ex(&cb).scale(px / 600.0).done() == godot::global::Error::OK {
+                    c.convert(Format::RGBA8);
+                    let (cx, cy) = COLORLESS_CELL;
+                    let at = Vector2i::new((cx as f32 * STEP * SCALE).round() as i32, (cy as f32 * STEP * SCALE).round() as i32);
+                    let size = Vector2i::new(c.get_width(), c.get_height());
+                    img.blit_rect(&c, Rect2i::new(Vector2i::ZERO, size), at);
+                }
+                Some(img)
             })
             .clone()
     })
@@ -192,6 +214,6 @@ mod tests {
         assert_eq!(cell("2/B"), Some((2, 4)));
         assert_eq!(cell("r/p"), Some((8, 4)));
         assert_eq!(cell("T"), Some((0, 5)));
-        assert_eq!(cell("C"), None);
+        assert_eq!(cell("C"), Some((8, 5)));
     }
 }

@@ -196,8 +196,8 @@ impl ManaPoolView {
 /// dem Symbolbogen `Assets/Mana/Mana.svg` (`game::mana_symbols`); farblos (fehlt im Bogen) als
 /// grauer Kreis mit goldenem Rand und Raute.
 pub fn draw_mana_symbol(b: &mut CanvasItem, t: ManaType, c: Vector2, r: f32) {
-    // Symbol aus dem Symbolbogen (`mana_symbols`); farblos gibt es dort nicht → gezeichnete Raute
-    if t != ManaType::Colorless {
+    // Symbol aus dem Symbolbogen (`mana_symbols`, farblos aus Colorless.svg); ohne Bogen gezeichnet
+    {
         let wubrg = match t {
             ManaType::White => "W",
             ManaType::Blue => "U",
