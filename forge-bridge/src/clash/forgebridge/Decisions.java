@@ -98,6 +98,15 @@ final class Decisions {
      */
     static JsonElement askRaw(Game game, int seat, JsonObject decision, String prompt, SpellAbility sa, Card card,
             boolean cancelable, List<String> labels, List<Card> cardInfo) {
+        return askRaw(game, seat, decision, prompt, sa, card, cancelable, labels, cardInfo, null);
+    }
+
+    /**
+     * Wie {@link #askRaw}, mit zusätzlichen Kartendaten {@code extra} in der Hülle {@code cards}
+     * (z. B. die Seiten einer Karte mit eigenen IDs, die es im Spiel nicht als Karte gibt).
+     */
+    static JsonElement askRaw(Game game, int seat, JsonObject decision, String prompt, SpellAbility sa, Card card,
+            boolean cancelable, List<String> labels, List<Card> cardInfo, JsonArray extra) {
         Card src = source(sa, card);
         JsonObject env = new JsonObject();
         env.add("decision", decision);
@@ -117,9 +126,14 @@ final class Decisions {
             labels.forEach(l -> arr.add(withName(l, src)));
             env.add("labels", arr);
         }
-        if (cardInfo != null) {
+        if (cardInfo != null || extra != null) {
             JsonArray cards = new JsonArray();
-            cardInfo.forEach(c -> cards.add(StateJson.card(c)));
+            if (cardInfo != null) {
+                cardInfo.forEach(c -> cards.add(StateJson.card(c)));
+            }
+            if (extra != null) {
+                extra.forEach(cards::add);
+            }
             env.add("cards", cards);
         }
         env.add("state", StateJson.snapshot(game, seat));
@@ -765,19 +779,47 @@ final class Decisions {
      */
     static Integer cardOption(Game game, int seat, String prompt, List<Opt> options, List<Card> cards,
             String purpose) {
+        return cardOption(game, seat, prompt, options, cards, null, purpose, null, false);
+    }
+
+    /**
+     * Wie {@link #cardOption}, mit Quelle {@code sa}, zusätzlichen Kartendaten {@code extra} und
+     * Abbrechen ({@code cancelable}; abgebrochen → {@code null}).
+     */
+    static Integer cardOption(Game game, int seat, String prompt, List<Opt> options, List<Card> cards,
+            JsonArray extra, String purpose, SpellAbility sa, boolean cancelable) {
         if (options.isEmpty()) {
             return null;
         }
-        if (options.size() == 1) {
+        if (options.size() == 1 && !cancelable) {
             return 0;
         }
         JsonObject d = decision("ChooseOption", seat);
         d.addProperty("prompt", prompt);
         d.add("options", optionsJson(options, null));
         d.addProperty("purpose", purpose);
-        JsonElement a = askRaw(game, seat, d, prompt, null, null, false, null, cards);
+        JsonElement a = askRaw(game, seat, d, prompt, sa, null, cancelable, null, cards, extra);
         Integer i = a != null && a.isJsonObject() ? number(a.getAsJsonObject()) : null;
         return i != null && i >= 0 && i < options.size() ? i : null;
+    }
+
+    /**
+     * Mehrfachwahl wie {@link #cardOption}: {@code min}–{@code max} Möglichkeiten, je eine Karte
+     * ({@code ChooseOptions} mit {@code purpose} und {@code options[].card}); Antwort {@code Modes}.
+     */
+    static List<Integer> cardOptions(Game game, int seat, String prompt, List<Opt> options, List<Card> cards,
+            int min, int max, String purpose, SpellAbility sa) {
+        max = Math.min(max, options.size());
+        min = Math.max(0, Math.min(min, max));
+        JsonObject d = decision("ChooseOptions", seat);
+        d.addProperty("prompt", prompt);
+        d.add("options", optionsJson(options, null));
+        d.addProperty("min", min);
+        d.addProperty("max", max);
+        d.addProperty("purpose", purpose);
+        JsonElement a = askRaw(game, seat, d, prompt, sa, null, false, null, cards);
+        List<Integer> chosen = a != null && a.isJsonObject() ? intList(a.getAsJsonObject(), "Modes", "modes") : null;
+        return valid(chosen, options.size(), min, max, false) ? chosen : null;
     }
 
     /**

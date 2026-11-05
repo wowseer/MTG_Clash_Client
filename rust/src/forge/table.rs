@@ -813,6 +813,15 @@ impl ForgeTable {
     /// Modus-Bühne: „Fertig“ (mehrere Modi) – gewählte Modi an Forge.
     #[func]
     fn on_modes_done(&mut self) {
+        if let Some(Decision::ChooseOptions { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) {
+            let n = self.mode_pick.len() as u32;
+            if n >= min && n <= max {
+                let mut pick = std::mem::take(&mut self.mode_pick);
+                pick.sort_unstable();
+                self.answer(Choice::Modes(pick));
+            }
+            return;
+        }
         if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseOption { .. })) {
             // Karten-Optionen: die gewählte Möglichkeit (Index) an Forge
             if let Some(i) = self.mode_pick.first().copied() {
@@ -1599,6 +1608,9 @@ impl ForgeTable {
             }
             Decision::ChooseOption { options, .. } if options.len() == 2 => Some(StageKind::Binary),
             Decision::ChooseOptions { purpose, .. } if purpose == "OptionalCost" => Some(StageKind::OptionalCost),
+            Decision::ChooseOptions { options, .. } if options.len() >= 2 && options.iter().all(|o| o.card.is_some()) => {
+                Some(StageKind::CardOptions)
+            }
             Decision::Scry { .. } => Some(StageKind::Scry),
             Decision::OrderTriggers { .. } => Some(StageKind::Order),
             _ => None,
@@ -1739,6 +1751,16 @@ impl ForgeTable {
     /// Klick auf eine Modus-Karte.
     fn mode_click(&mut self, mode: usize) {
         let Some(decision) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        if let Decision::ChooseOptions { max, .. } = decision {
+            // Karten-Optionen mit Mehrfachwahl: Klick wählt bzw. hebt auf (höchstens max)
+            if self.mode_pick.contains(&mode) {
+                self.mode_pick.retain(|m| *m != mode);
+            } else if self.mode_pick.len() < max as usize {
+                self.mode_pick.push(mode);
+            }
+            self.refresh_mode_cards();
+            return;
+        }
         if matches!(decision, Decision::ChooseOption { .. }) {
             // Karten-Optionen: Klick wählt genau eine (erneuter Klick hebt auf)
             let again = self.mode_pick.contains(&mode);
@@ -1784,6 +1806,16 @@ impl ForgeTable {
             let n = self.mode_pick.iter().filter(|m| *m == mode).count();
             card.bind_mut().set_marker(if n > 0 { CardMarker::Selected } else { CardMarker::None });
             card.bind_mut().set_badges(&if n > 1 { format!("×{n}") } else { String::new() });
+        }
+        if let Some(Decision::ChooseOptions { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) {
+            let n = self.mode_pick.len() as u32;
+            for mut b in self.stage_buttons() {
+                if b.bind().get_text().to_string().starts_with(tr!("Fertig", "Done")) {
+                    b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
+                    b.bind_mut().set_enabled(n >= min && n <= max);
+                }
+            }
+            return;
         }
         if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseOption { .. })) {
             let chosen = !self.mode_pick.is_empty();
@@ -1845,20 +1877,43 @@ impl ForgeTable {
         }
     }
 
-    /// Eine von mehreren Möglichkeiten, die je zu einer Karte gehören, wie die Spree-Bühne: je
-    /// Möglichkeit eine Kopie ihrer Karte mit nur dem Text dieser Möglichkeit (z. B. der
-    /// Ersatzeffekt), Klick wählt (orange) bzw. hebt auf, orange „Anwenden“ erst mit Wahl aktiv.
+    /// Eine (bzw. bei `ChooseOptions` mehrere) von Möglichkeiten, die je zu einer Karte gehören,
+    /// wie die Spree-Bühne: je Möglichkeit eine Kopie ihrer Karte mit nur dem Text dieser
+    /// Möglichkeit (Ersatzeffekt, statische Fähigkeit, Zauber/Fähigkeit für einen Effekt,
+    /// Spielweise; bei Kartenseiten die ganze Seite), Klick wählt (orange) bzw. hebt auf, orange
+    /// „Anwenden“ (Mehrfachwahl: „Fertig (n/…)“) erst mit gültiger Wahl aktiv.
     /// Ersatzeffekte (CR 616.1): Titel „Ersatzeffekt wählen“, darunter „Welcher Ersatzeffekt gilt
     /// zuerst?“; über der Kopie der Kartenname, falls mehrere Möglichkeiten dieselbe Karte haben.
     fn show_card_options(&mut self, req: &Request) {
-        let Decision::ChooseOption { options, purpose, prompt, .. } = &req.decision else { return };
+        let (options, purpose, prompt, multi) = match &req.decision {
+            Decision::ChooseOption { options, purpose, prompt, .. } => (options, purpose, prompt, None),
+            Decision::ChooseOptions { options, purpose, prompt, min, max, .. } => (options, purpose, prompt, Some((*min, *max))),
+            _ => return,
+        };
+        let engine_prompt = if prompt.is_empty() { String::new() } else { prompt.clone() };
         let (title, subtitle) = match purpose.as_str() {
             "ReplacementEffect" => (
                 tr!("Ersatzeffekt wählen", "Choose a replacement effect").to_string(),
                 tr!("Welcher Ersatzeffekt gilt zuerst?", "Which replacement effect applies first?").to_string(),
             ),
-            _ => (if prompt.is_empty() { tr!("Wähle eins", "Choose one").to_string() } else { prompt.clone() }, String::new()),
+            // CR 613.8 (Abhängigkeit/Zeitstempel): der Spieler legt die Reihenfolge fest
+            "StaticAbility" => (
+                tr!("Statische Fähigkeit wählen", "Choose a static ability").to_string(),
+                tr!("Welche statische Fähigkeit gilt zuerst?", "Which static ability applies first?").to_string(),
+            ),
+            "CardFace" => (tr!("Seite wählen", "Choose a face").to_string(), engine_prompt),
+            "AbilityToPlay" => (
+                tr!("Wähle eins", "Choose one").to_string(),
+                tr!("Wie soll die Karte gespielt werden?", "How should the card be played?").to_string(),
+            ),
+            "SpellsForEffect" => {
+                let n = multi.map_or(1, |(_, max)| max);
+                (trf!("Wähle {n}", "Choose {n}"), engine_prompt)
+            }
+            _ => (tr!("Wähle eins", "Choose one").to_string(), engine_prompt),
         };
+        // Seiten: die ganze Seite; sonst nur der Text dieser Möglichkeit
+        let whole_face = purpose == "CardFace";
         let Some(mut showcase) = self.open_stage(&title, &subtitle) else { return };
         let mut cards = Vec::new();
         for (i, o) in options.iter().enumerate() {
@@ -1870,10 +1925,11 @@ impl ForgeTable {
                 .cloned()
                 .or_else(|| self.card_data(i64::from(id)))
                 .unwrap_or_default();
-            let mut copy = Self::stage_card(&data, Some(&o.text));
+            let mut copy = Self::stage_card(&data, (!whole_face).then_some(o.text.as_str()));
             copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
             // gleiche Karte mehrfach: Nummer darüber, sonst keine Beschriftung (der Name steht auf der Karte)
-            let same = options.iter().filter(|p| p.card == o.card).count() > 1;
+            let same = matches!(purpose.as_str(), "ReplacementEffect" | "StaticAbility")
+                && options.iter().filter(|p| p.card == o.card).count() > 1;
             let caption = if same { trf!("Effekt {}", "Effect {}", i + 1) } else { String::new() };
             cards.push((copy.clone(), caption));
             self.mode_cards.push((copy, i));
@@ -1886,8 +1942,12 @@ impl ForgeTable {
         } else {
             showcase.bind_mut().enable_scroll();
         }
-        let mut apply = Button3D::create(ButtonStyle::Orange, tr!("Anwenden", "Apply"), Showcase::button_width() * 1.2);
-        apply.bind_mut().set_enabled(false);
+        let label = match multi {
+            Some((min, max)) => pick_label(0, min, max),
+            None => tr!("Anwenden", "Apply").to_string(),
+        };
+        let mut apply = Button3D::create(ButtonStyle::Orange, &label, Showcase::button_width() * 1.2);
+        apply.bind_mut().set_enabled(multi.is_some_and(|(min, _)| min == 0));
         let cb = Callable::from_object_method(&self.to_gd(), "on_modes_done");
         apply.connect("pressed", &cb);
         showcase.bind_mut().add_button(apply);

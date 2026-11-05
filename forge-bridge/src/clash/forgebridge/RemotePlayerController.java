@@ -640,9 +640,11 @@ public class RemotePlayerController extends PlayerControllerAi {
         if (spells.size() <= 1) {
             return super.chooseSingleSpellForEffect(spells, sa, title, params);
         }
+        // je Zauber/Fähigkeit eine Kopie ihrer Karte mit nur ihrem Text (Karten-Optionen-Bühne)
         List<Decisions.Opt> opts = new ArrayList<>();
-        spells.forEach(s -> opts.add(new Decisions.Opt(spellLabel(s), null)));
-        Integer i = Decisions.option(getGame(), seat, title, sa, null, opts, false);
+        List<Card> hosts = new ArrayList<>();
+        spells.forEach(s -> addSpellOption(s, opts, hosts));
+        Integer i = Decisions.cardOption(getGame(), seat, title, opts, hosts, null, "SpellForEffect", sa, false);
         return i != null ? spells.get(i) : super.chooseSingleSpellForEffect(spells, sa, title, params);
     }
 
@@ -655,14 +657,35 @@ public class RemotePlayerController extends PlayerControllerAi {
             return super.chooseSpellAbilitiesForEffect(spells, sa, title, num, params);
         }
         List<Decisions.Opt> opts = new ArrayList<>();
-        spells.forEach(s -> opts.add(new Decisions.Opt(spellLabel(s), null)));
-        List<Integer> chosen = Decisions.options(getGame(), seat, title, sa, null, opts, n, n, false);
+        List<Card> hosts = new ArrayList<>();
+        spells.forEach(s -> addSpellOption(s, opts, hosts));
+        List<Integer> chosen = Decisions.cardOptions(getGame(), seat, title, opts, hosts, n, n, "SpellsForEffect", sa);
         if (chosen == null) {
             return super.chooseSpellAbilitiesForEffect(spells, sa, title, num, params);
         }
         List<SpellAbility> result = new ArrayList<>();
         chosen.forEach(i -> result.add(spells.get(i)));
         return result;
+    }
+
+    /**
+     * Option für die Karten-Optionen-Bühne: Text der Fähigkeit (ohne Kartennamen davor) und die
+     * Karte, zu der sie gehört; ohne Karte der Text mit Kartennamen.
+     */
+    private static void addSpellOption(SpellAbility s, List<Decisions.Opt> opts, List<Card> hosts) {
+        Card host = s.getHostCard();
+        if (host == null) {
+            opts.add(new Decisions.Opt(spellLabel(s), null));
+            return;
+        }
+        String text = s.getStackDescription();
+        if (text == null || text.isBlank()) {
+            text = describe(s);
+        }
+        opts.add(new Decisions.Opt(Decisions.withName(text, host), null, host.getId()));
+        if (!hosts.contains(host)) {
+            hosts.add(host);
+        }
     }
 
     private static String spellLabel(SpellAbility s) {
@@ -847,10 +870,13 @@ public class RemotePlayerController extends PlayerControllerAi {
         if (abilities.size() <= 1) {
             return abilities.isEmpty() ? null : abilities.get(0);
         }
+        // je Spielweise eine Kopie der Karte mit nur ihrem Text (Karten-Optionen-Bühne)
         List<Decisions.Opt> opts = new ArrayList<>();
-        abilities.forEach(sa -> opts.add(new Decisions.Opt(sa.toUnsuppressedString(), null)));
-        Integer i = Decisions.option(getGame(), seat, "Fähigkeit von " + hostCard.getName() + " wählen", null,
-                hostCard, opts, true);
+        for (SpellAbility sa : abilities) {
+            opts.add(new Decisions.Opt(Decisions.withName(describe(sa), hostCard), null, hostCard.getId()));
+        }
+        Integer i = Decisions.cardOption(getGame(), seat, "Fähigkeit von " + hostCard.getName() + " wählen", opts,
+                List.of(hostCard), null, "AbilityToPlay", null, true);
         return i != null ? abilities.get(i) : null;
     }
 
@@ -1713,8 +1739,20 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     @Override
     public StaticAbility chooseSingleStaticAbility(List<StaticAbility> possible) {
-        StaticAbility r = pick(possible, Decisions.option(g(), seat, "Welche statische Fähigkeit gilt zuerst?",
-                null, null, Decisions.opts(possible), false));
+        // je statische Fähigkeit ihre Quellkarte mit dem Text der Fähigkeit (Karten-Optionen-Bühne)
+        List<Decisions.Opt> opts = new ArrayList<>();
+        List<Card> hosts = new ArrayList<>();
+        for (StaticAbility st : possible) {
+            Card host = st.getHostCard();
+            opts.add(new Decisions.Opt(Decisions.withName(String.valueOf(st), host), null, host == null ? -1 : host.getId()));
+            if (host != null && !hosts.contains(host)) {
+                hosts.add(host);
+            }
+        }
+        boolean allCards = opts.stream().allMatch(o -> o.card() >= 0);
+        StaticAbility r = pick(possible, allCards
+                ? Decisions.cardOption(g(), seat, "Welche statische Fähigkeit gilt zuerst?", opts, hosts, "StaticAbility")
+                : Decisions.option(g(), seat, "Welche statische Fähigkeit gilt zuerst?", null, null, opts, false));
         return r != null ? r : super.chooseSingleStaticAbility(possible);
     }
 
@@ -1738,11 +1776,18 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     @Override
     public ICardFace chooseSingleCardFace(SpellAbility sa, List<ICardFace> faces, String message) {
+        // je Seite eine große Kopie mit Name, Typ, Kosten und Text dieser Seite (eigene IDs)
         List<Decisions.Opt> opts = new ArrayList<>();
-        for (ICardFace f : faces) {
-            opts.add(new Decisions.Opt(f.getName(), null));
+        com.google.gson.JsonArray extra = new com.google.gson.JsonArray();
+        for (int k = 0; k < faces.size(); k++) {
+            ICardFace f = faces.get(k);
+            int id = FACE_ID_BASE + k;
+            opts.add(new Decisions.Opt(f.getName(), null, id));
+            extra.add(faceJson(id, f.getName(), String.valueOf(f.getType()),
+                    f.getManaCost() == null ? "" : f.getManaCost().getShortString(), f.getOracleText(),
+                    f.getPower(), f.getToughness()));
         }
-        ICardFace r = pick(faces, Decisions.option(g(), seat, message, sa, null, opts, false));
+        ICardFace r = pick(faces, Decisions.cardOption(g(), seat, message, opts, null, extra, "CardFace", sa, false));
         return r != null ? r : super.chooseSingleCardFace(sa, faces, message);
     }
 
@@ -1750,11 +1795,40 @@ public class RemotePlayerController extends PlayerControllerAi {
     public CardState chooseSingleCardState(SpellAbility sa, List<CardState> states, String message,
             Map<String, Object> params) {
         List<Decisions.Opt> opts = new ArrayList<>();
-        for (CardState st : states) {
-            opts.add(new Decisions.Opt(st.getName(), null));
+        com.google.gson.JsonArray extra = new com.google.gson.JsonArray();
+        for (int k = 0; k < states.size(); k++) {
+            CardState st = states.get(k);
+            int id = FACE_ID_BASE + k;
+            opts.add(new Decisions.Opt(st.getName(), null, id));
+            extra.add(faceJson(id, st.getName(), String.valueOf(st.getType()),
+                    st.getManaCost() == null ? "" : st.getManaCost().getShortString(), st.getOracleText(),
+                    st.getBasePowerString(), st.getBaseToughnessString()));
         }
-        CardState r = pick(states, Decisions.option(g(), seat, message, sa, null, opts, false));
+        CardState r = pick(states, Decisions.cardOption(g(), seat, message, opts, null, extra, "CardFace", sa, false));
         return r != null ? r : super.chooseSingleCardState(sa, states, message, params);
+    }
+
+    /** Erste ID der Kartendaten für Seiten einer Karte (weit über allen Forge-IDs). */
+    private static final int FACE_ID_BASE = 1_900_000_000;
+
+    /** Kartendaten einer Seite (Name, Typ, Kosten, Text, Werte) wie {@code StateJson.card}. */
+    private static com.google.gson.JsonObject faceJson(int id, String name, String type, String cost, String text,
+            String power, String toughness) {
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("id", id);
+        o.addProperty("name", name == null ? "" : name);
+        o.addProperty("type", type == null ? "" : type);
+        o.addProperty("cost", cost == null ? "" : cost);
+        o.addProperty("text", text == null ? "" : text.replace("\\n", "\n"));
+        try {
+            if (power != null && !power.isBlank() && toughness != null && !toughness.isBlank()) {
+                o.addProperty("power", Integer.parseInt(power.trim()));
+                o.addProperty("toughness", Integer.parseInt(toughness.trim()));
+            }
+        } catch (NumberFormatException e) {
+            // „*“ o. Ä.: ohne Werte
+        }
+        return o;
     }
 
     @Override
