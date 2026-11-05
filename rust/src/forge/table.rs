@@ -218,6 +218,9 @@ pub struct ForgeTable {
     /// Kartenansicht beim Hovern und die Karte, die sie gerade zeigt.
     inspector: Option<Gd<CardInspector>>,
     inspected: Option<InstanceId>,
+    /// Inhalt der gezeigten Kartenansicht (Kartendaten + Engine-Daten); ändert er sich – z. B.
+    /// Loyalität nach einer Fähigkeit, neue Marken –, wird die Ansicht neu aufgebaut.
+    inspected_sig: String,
     /// Von Skripten erzwungene Kartenansicht (statt der Karte unter der Maus).
     inspect_override: Option<Gd<Card3D>>,
     /// Zuletzt empfangener Spielzustand.
@@ -295,6 +298,7 @@ impl INode for ForgeTable {
             clock: 0.0,
             inspector: None,
             inspected: None,
+            inspected_sig: String::new(),
             inspect_override: None,
             state: None,
             dirty: false,
@@ -3781,10 +3785,16 @@ impl ForgeTable {
             if busy { None } else { controller.bind().get_hovered_card().filter(|c| c.is_instance_valid()) }
         });
         let id = hovered.as_ref().map(|c| c.instance_id());
-        if id == self.inspected {
+        // gleiche Karte mit gleichem Inhalt: nichts zu tun; geänderter Inhalt baut neu auf
+        let sig = hovered.as_ref().map_or_else(String::new, |c| {
+            let data = self.forge_id(c).and_then(|fid| self.card_data(fid)).map(|d| d.to_string()).unwrap_or_default();
+            format!("{:?}|{data}", c.bind().def())
+        });
+        if id == self.inspected && sig == self.inspected_sig {
             return;
         }
         self.inspected = id;
+        self.inspected_sig = sig;
         let Some(card) = hovered else {
             inspector.bind_mut().hide_card();
             return;

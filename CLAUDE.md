@@ -195,6 +195,12 @@ Signal-Handler antworten. Start:
 `godot --headless --path godot -s res://_probe.gd`. Forge braucht ca. 5 s zum Laden; das
 Brücken-Log steht in `~/.local/share/godot/app_userdata/MTG Clash/forge-bridge.log`.
 
+Lange Spiel- und Belastungstests immer mit `--headless`: Ein verdecktes Testfenster kann die
+Bildausgabe (Vulkan, vsync) blockieren, dann steht der Hauptthread scheinbar „eingefroren“ – das
+ist kein Fehler im Spiel. Ausgaben von Testskripten mit `printerr` (ungepuffert); in Shell-Befehlen
+nie `pkill -f <muster>` mit einem Muster, das im eigenen Befehl steht (beendet die eigene Shell) –
+z. B. `pkill -f "[B]ridgeMain"`.
+
 Fenster-Renders (`--write-movie`) öffnen sich auf dem Desktop des Users und bekommen dessen echte
 Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp_mouse`.
 

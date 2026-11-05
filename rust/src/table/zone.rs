@@ -271,6 +271,9 @@ impl Zone {
     /// Verbindung. Beide Karten müssen in dieser Zone liegen; ordnet nur bei Änderung neu an.
     #[func]
     pub fn set_attached(&mut self, card: Gd<Card3D>, host: Option<Gd<Card3D>>) {
+        if !card.is_instance_valid() {
+            return;
+        }
         let id = card.instance_id();
         let host = host.filter(|h| h != &card && self.cards.contains(h));
         if self.attachments.get(&id) == host.as_ref() {
@@ -287,6 +290,10 @@ impl Zone {
     /// `delay` verzögert nur die Animation der neuen Karte (z. B. zum Austeilen).
     #[func]
     pub fn add_card(&mut self, mut card: Gd<Card3D>, index: i64, delay: f64) {
+        self.prune_freed();
+        if !card.is_instance_valid() {
+            return;
+        }
         if let Some(old) = self.cards.iter().position(|c| c == &card) {
             if old >= self.cards.len() - self.tail {
                 self.tail -= 1;
@@ -305,6 +312,10 @@ impl Zone {
     /// die aus einer anderen Zone spielbar sind); neue Handkarten kommen immer davor.
     #[func]
     pub fn add_tail_card(&mut self, mut card: Gd<Card3D>) {
+        self.prune_freed();
+        if !card.is_instance_valid() {
+            return;
+        }
         if let Some(old) = self.cards.iter().position(|c| c == &card) {
             if old >= self.cards.len() - self.tail {
                 self.tail -= 1;
@@ -356,6 +367,12 @@ impl Zone {
     /// Entfernt eine Karte; gibt ihren bisherigen Index zurück (-1 falls nicht enthalten).
     #[func]
     pub fn remove_card(&mut self, mut card: Gd<Card3D>) -> i64 {
+        if !card.is_instance_valid() {
+            // schon freigegeben: nur aufräumen
+            self.prune_freed();
+            self.layout();
+            return -1;
+        }
         let Some(idx) = self.cards.iter().position(|c| c == &card) else {
             return -1;
         };
@@ -395,13 +412,13 @@ impl Zone {
     /// Oberste/letzte Karte der Zone.
     #[func]
     pub fn get_top_card(&self) -> Option<Gd<Card3D>> {
-        self.cards.last().cloned()
+        self.cards.iter().rev().find(|c| c.is_instance_valid()).cloned()
     }
 
     /// Alle Karten der Zone, unterste bzw. erste zuerst.
     #[func]
     pub fn get_cards(&self) -> Array<Gd<Card3D>> {
-        self.cards.iter().cloned().collect()
+        self.cards.iter().filter(|c| c.is_instance_valid()).cloned().collect()
     }
 
     /// Dürfen hier Karten abgelegt werden?
@@ -476,7 +493,33 @@ impl Zone {
         Color::from_rgba(0.4, 1.0, 0.6, 0.22)
     }
 
+    /// Karten, die freigegeben wurden, ohne die Zone zu verlassen (z. B. Bühnen- oder
+    /// Handkopien beim schnellen Schließen), aus Liste, Endgruppe und Anlagen entfernen – sonst
+    /// griffe das Anordnen auf freigegebene Objekte zu.
+    fn prune_freed(&mut self) {
+        if self.cards.iter().all(|c| c.is_instance_valid()) && self.attachments.values().all(|h| h.is_instance_valid()) {
+            return;
+        }
+        let tail_start = self.cards.len() - self.tail;
+        let mut kept = Vec::with_capacity(self.cards.len());
+        let mut tail = 0;
+        for (i, c) in self.cards.drain(..).enumerate() {
+            if c.is_instance_valid() {
+                if i >= tail_start {
+                    tail += 1;
+                }
+                kept.push(c);
+            }
+        }
+        self.cards = kept;
+        self.tail = tail;
+        let live: std::collections::HashSet<InstanceId> = self.cards.iter().map(|c| c.instance_id()).collect();
+        self.attachments.retain(|id, host| live.contains(id) && host.is_instance_valid());
+        self.free_positions.retain(|id, _| live.contains(id));
+    }
+
     fn layout_with_delay(&mut self, delayed: Option<(&Gd<Card3D>, f64)>) {
+        self.prune_freed();
         let zone_xf = self.base().get_global_transform();
         let n = self.cards.len();
 
