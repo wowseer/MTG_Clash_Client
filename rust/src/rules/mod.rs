@@ -1,22 +1,25 @@
-//! Engine-Grenze der UI: Protokoll-Modell ([`decision`]) und die Schnittstelle
-//! [`RulesEngine`], über die die UI Antworten an die Regel-Engine schickt.
+//! Engine-Grenze der UI: das Protokoll-Modell kommt aus dem godot-freien Crate
+//! `clash-protocol` (Decision, Choice, Action, …, [`RulesEngine`]); hier liegt nur die
+//! Godot-Hülle – [`Request`] mit den Kartendaten als `Dictionary` und die Umwandlung
+//! Godot ↔ JSON ([`json`]).
 //!
 //! Die UI (`ForgeTable`, HUD) kennt nur diese Typen, keine Details der Java-Engine. Heute setzt
-//! [`ForgeBridge`](crate::forge::bridge::ForgeBridge) die Schnittstelle um (Java-Prozess,
-//! Protokoll v3) – eigenständig per Java-Prozess oder eingebettet in NeoForge (lokaler Socket).
+//! [`ForgeBridge`](crate::forge::bridge::ForgeBridge) die Schnittstelle um (über
+//! `clash-forge-client`: Java-Prozess oder eingebettet in NeoForge per lokalem Socket).
 
-pub mod decision;
+pub mod json;
 
 use godot::prelude::*;
 
-pub use decision::{Action, CardId, Choice, Color, Decision, ElsewhereCard, OptionText, PlayerId, Target};
+pub use clash_protocol::{Action, CardId, Choice, Color, Decision, ElsewhereCard, OptionText, PlayerId, RulesEngine, Target};
 
-/// Eine offene Entscheidung mit allem, was die UI zur Anzeige braucht.
-///
-/// `decision` ist die eigentliche Entscheidung. Die übrigen Felder sind Anzeigehilfen
-/// (Erweiterung der Hülle, nicht Teil von `Decision`): Fragetext, Quellkarte, ob
-/// abgebrochen werden darf, und `labels` = Anzeigetext je Eintrag der Hauptliste der
-/// Entscheidung (Priority: `actions`, ChooseTargets: `candidates`, ChooseCards: `options`, …).
+/// Die decision-Typen unter ihrem gewohnten Pfad (`crate::rules::decision::…`).
+pub mod decision {
+    pub use clash_protocol::decision::*;
+}
+
+/// Eine offene Entscheidung (siehe [`clash_protocol::Request`]) mit den Kartendaten als Godot-
+/// `Dictionary` für die Anzeige.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Request {
     /// Kennung der Anfrage (für die Antwort).
@@ -35,32 +38,20 @@ pub struct Request {
 }
 
 impl Request {
-    /// Liest eine Anfrage (`{"type":"request","id":…,"decision":{…},…}`). `None` bei
-    /// unbekannter Entscheidung.
+    /// Liest eine Anfrage aus der Nachricht `request` (wie sie das Signal
+    /// `decision_requested` liefert). `None` bei unbekannter Entscheidung.
     pub fn from_var(msg: &VarDictionary) -> Option<Request> {
-        let get = |k: &str| msg.get(k).filter(|v| !v.is_nil());
-        let decision = Decision::from_var(&get("decision")?)?;
-        let source = get("source").and_then(|v| v.try_to::<VarDictionary>().ok());
+        let r = clash_protocol::Request::from_json(&json::from_variant(&msg.to_variant()))?;
         Some(Request {
-            id: get("id").and_then(|v| v.try_to::<i64>().ok()).unwrap_or(0),
-            decision,
-            prompt: get("prompt").map(|v| v.to_string()).unwrap_or_default(),
-            source: source
-                .as_ref()
-                .and_then(|s| s.get("id"))
-                .and_then(|v| v.try_to::<i64>().ok())
-                .map(|i| i.max(0) as CardId),
-            source_name: source.as_ref().and_then(|s| s.get("name")).map(|v| v.to_string()).unwrap_or_default(),
-            ability: get("ability").map(|v| v.to_string()).unwrap_or_default(),
-            cancelable: get("cancelable").is_some_and(|v| v.booleanize()),
-            labels: get("labels")
-                .and_then(|v| v.try_to::<VarArray>().ok())
-                .map(|a| a.iter_shared().map(|v| v.to_string()).collect())
-                .unwrap_or_default(),
-            cards: get("cards")
-                .and_then(|v| v.try_to::<VarArray>().ok())
-                .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
-                .unwrap_or_default(),
+            id: r.id,
+            decision: r.decision,
+            prompt: r.prompt,
+            source: r.source,
+            source_name: r.source_name,
+            ability: r.ability,
+            cancelable: r.cancelable,
+            labels: r.labels,
+            cards: r.cards.iter().filter_map(|c| c.as_object()).map(json::to_dictionary).collect(),
         })
     }
 
@@ -70,11 +61,7 @@ impl Request {
     }
 }
 
-/// Was die UI von einer Regel-Engine braucht. Antworten gehen immer auf eine offene
-/// [`Request`]; der Spielzustand kommt über [`RulesEngine::request_state`] (asynchron).
-pub trait RulesEngine {
-    /// Antwortet auf die Anfrage `request_id`. false = Engine nicht erreichbar.
-    fn submit(&mut self, request_id: i64, choice: &Choice) -> bool;
-    /// Fordert den aktuellen Spielzustand an (aus Sicht von `viewer`).
-    fn request_state(&mut self, viewer: PlayerId) -> bool;
+/// Ziel (`{"card": id}` / `{"player": id}`) aus einem Godot-Wert, z. B. aus dem Spielzustand.
+pub fn target_from_var(v: &Variant) -> Option<Target> {
+    Target::from_json(&json::from_variant(v))
 }

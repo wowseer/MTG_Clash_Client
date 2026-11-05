@@ -27,7 +27,8 @@
 
 - **Protokoll-Modell** (angelehnt an `forge-engine/src/decision.rs` aus forge-rules-rs):
   `Decision` (was die Engine fragt), `Choice` (Antwort), `Action` (Prioritäts-Aktion), `Target`,
-  `PayAction`, `CardChoiceReason` – in Rust in `rust/src/rules/decision.rs`.
+  `PayAction`, `CardChoiceReason` – in Rust im godot-freien Crate `rust/crates/clash-protocol/`
+  (`decision.rs`); `rust/src/rules/` ist nur die Godot-Hülle (`Request` mit Dictionaries, `json.rs`).
 - Das Protokoll zur Java-Brücke bildet diese Typen **1:1** ab (Variantenname als `decision` /
   `choice`, Felder mit denselben Namen). Die Java-Brücke übersetzt Forges `PlayerController`-Aufrufe
   in `Decision`s und die `Choice`s zurück.
@@ -73,13 +74,17 @@ Godot mit `-- --clash-port=N` und hängt den menschlichen Sitz (`RemoteLobbyPlay
 
 | Ort | Inhalt |
 |---|---|
-| `rust/src/forge/bridge.rs` | `ForgeBridge`: startet den Java-Prozess, Signale je Nachricht, `answer()` |
+| `rust/src/forge/bridge.rs` | `ForgeBridge`: Godot-Knoten, Signale je Nachricht, `answer()`; Prozess/Socket über `clash-forge-client` |
 | `rust/src/forge/table.rs` | `ForgeTable`: gleicht den Tisch mit `state` ab (Karten-ID → `Card3D`), Deck-Stapel, Leuchten spielbarer Karten, Drops → Optionen, `hud_view()` |
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController` (regelfrei), Kulisse |
 | `rust/src/game/` | Anzeige-Bausteine: HUD, Medaillons, Phasen-Zeitstrahl, Mana-Typen, Kartendaten für das Kartenbild |
-| `rust/src/rules/` | Engine-Grenze: Protokoll-Modell (`Decision`, `Choice` …), `Request`, `RulesEngine` |
+| `rust/src/rules/` | Engine-Grenze der UI: Godot-Hülle um `clash-protocol` (`Request` mit Dictionaries, `target_from_var`, `json.rs` Variant ↔ JSON) |
+| `rust/crates/clash-protocol/` | Protokoll-Modell (`Decision`, `Choice` …), JSON-Form, Befehle (`command`), `RulesEngine` – ohne Godot, wiederverwendbar |
+| `rust/crates/clash-forge-client/` | `ForgeClient`: Java-Brücke starten oder mit Gastgeber verbinden (`--clash-port`), Lesethread – ohne Godot; Beispiel `examples/autoplay.rs` |
 | `rust/src/game/decision_view.rs` | `Decision` → Auswahlfenster → `Choice` (engine-neutral) |
-| `forge-bridge/src/clash/forgebridge/` | `RemotePlayerController` (Forge-Aufrufe), `Decisions` (→ `Decision`, Antwort-`Choice` lesen), `StateJson` (Zustand → JSON), `LogForwarder` (Spielprotokoll), `ForgeBridge` (Befehle, Partie, Anfragen) |
+| `forge-bridge/src/clash/forgebridge/` | öffentlich: `ClashBridge` (Fassade), `TableLauncher` (Tisch starten + Socket); `engine/` intern: `RemotePlayerController` (Forge-Aufrufe), `Decisions` (→ `Decision`, Antwort-`Choice` lesen), `StateJson` (Zustand → JSON), `LogForwarder` (Spielprotokoll), `BridgeCore` (Befehle, Partie, Anfragen); `app/BridgeMain` (eigenständiger Prozess) |
+| `integrations/neoforge/` | NeoForge-Anbindung, getrennt mitgebbar: `ClashTable.java` (maßgeblich hier) und `neoforge-host.patch` (NeoForges Klassen) |
+| `docs/Einbau.md` | Einbau der Bausteine in andere Projekte (Rust-UIs, andere Sprachen, Java-Gastgeber, NeoForge) |
 | `forge-bridge/forge/` | lokale Kopie von Forge (Jar + `res/`), **nicht im Git** (GPL, Kartendaten von WotC) |
 | `docs/Forge-Schnittstelle.md` | Protokoll (Befehle, Nachrichten, `state`-Aufbau). **Bei jeder Protokolländerung pflegen** |
 
@@ -87,7 +92,7 @@ Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Fo
 
 ## Stand
 
-**Protokoll v3 steht:** `Decision`/`Choice` in `rust/src/rules/` (Engine-Grenze,
+**Protokoll v3 steht:** `Decision`/`Choice` in `rust/crates/clash-protocol/` (Engine-Grenze,
 `RulesEngine`), Java-Übersetzer `forge-bridge/.../Decisions.java`, UI-Abbildung
 `rust/src/game/decision_view.rs`. Jedes weitere Bedienmuster direkt gegen die passende
 `Decision`-Variante bauen. Fertig: `ChooseTargets` per Klick/Pfeil, Aktivieren per Klick,
@@ -170,9 +175,11 @@ Deckauswahl und Formate übernimmt NeoForge.
 |---|---|
 | Rust bauen | `cd rust && cargo build` |
 | Unit-Tests | `cd rust && cargo test` |
-| Brücke bauen | `forge-bridge/build.sh` (nutzt `forge-bridge/forge/`, sonst `~/Games/Forge`) |
+| Brücke bauen | `forge-bridge/build.sh` (nutzt `forge-bridge/forge/`, sonst `~/Games/Forge`) → `build/forge-bridge.jar` (Programm) + `build/forge-bridge-core.jar` (Bibliothek) |
 | Brücke von Hand | `forge-bridge/run.sh`, dann JSON-Zeilen tippen, z. B. `{"cmd":"ping"}` |
-| Brücken-Code nach NeoForge kopieren | `tools/sync_neoforge.sh` und danach `tools/neoforge_patch.sh` (nach jeder Änderung an `forge-bridge/src/` – sonst spielt NeoForge mit der alten Brücke) |
+| Brücken-Code nach NeoForge kopieren | `tools/sync_neoforge.sh` und danach `tools/neoforge_patch.sh` (nach jeder Änderung an `forge-bridge/src/` oder `integrations/neoforge/src/` – sonst spielt NeoForge mit der alten Brücke) |
+| NeoForge-Klassen geändert (im NeoForge-Repo, lokal committet) | `tools/neoforge_export_patch.sh` → `integrations/neoforge/neoforge-host.patch` neu (Änderungen an NeoForge immer dort festhalten) |
+| Crates ohne Godot testen | `cd rust && cargo test -p clash-protocol -p clash-forge-client`; Beispiel `cargo run -p clash-forge-client --example autoplay -- <forge> <bridge.jar> <deck1> <deck2>` |
 | NeoForge-Patch bauen (ohne Maven) | `tools/neoforge_patch.sh` → `forge-bridge/build/neoforge/neoforge-clash-patch.jar` |
 | NeoForge-Partie mit 3D-Tisch | `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` (Testkopie der Installation, eigene Spielstände bleiben unberührt) |
 | Godot | `~/.appimages/Godot_v4.7.2-stable_mono_linux_x86_64/Godot_v4.7.2-stable_mono_linux.x86_64` (nicht im PATH) |
@@ -211,8 +218,12 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
 - Shell ist zsh: Platzhalter ohne Treffer (`rm godot/_probe*.uid`) brechen den ganzen Befehl ab.
   Doku-Skripte in einem eigenen Aufruf ausführen und ihre Ausgabe prüfen, nie an `rm` & Co. hängen.
 - Rust-Build ohne Warnungen halten; toten Code löschen statt mit `allow` zu verstecken. Einzige
-  Ausnahme: noch ungenutzte Teile des Protokoll-Modells (`rules/decision.rs`) mit
-  `#[expect(dead_code, reason = …)]` – `expect` meldet sich, sobald sie benutzt werden.
+  Das Protokoll-Modell (`clash-protocol`) ist eine Bibliothek: ihre öffentlichen Teile gelten
+  nicht als tot, auch wenn die UI sie (noch) nicht nutzt.
+- **Modular halten:** `clash-protocol` und `clash-forge-client` bleiben ohne Godot (nur
+  `serde_json`); Godot-Typen nur in `rust/src/`. In Java ist nur `clash.forgebridge.ClashBridge`
+  und `TableLauncher` öffentliche Schnittstelle, Forge-Details bleiben in `engine/`. Eingriffe in
+  Gastgeber (NeoForge) nie in der Brücke, sondern in `integrations/<gastgeber>/` bzw. als Patch.
 - Texte im Spiel zweisprachig: `tr!("Deutsch", "English")` / `trf!` aus `rust/src/i18n.rs`.
 - **Kosten immer als Mana-Symbole:** Jedes UI-Element, das Kosten zeigt, nimmt den Baustein
   `rust/src/table/cost_symbols.rs` (`cost_row`, `rich_label`; in `Button3D`-Texten und Bühnen-Beschriftungen

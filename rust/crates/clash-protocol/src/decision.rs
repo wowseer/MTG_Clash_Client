@@ -9,9 +9,10 @@
 //!
 //! JSON-Form (Protokoll v3): jede Variante als Objekt mit `"type": "<Variantenname>"` und den
 //! Feldern in `snake_case`; IDs als Zahlen, [`Target`] als `{"card": id}` / `{"player": id}`,
-//! [`Color`] als `"W" "U" "B" "R" "G"`.
+//! [`Color`] als `"W" "U" "B" "R" "G"`. Lesen mit `from_json`, Schreiben mit `to_json`
+//! (`serde_json::Value`).
 
-use godot::prelude::*;
+use serde_json::{json, Map, Value};
 
 /// Karte (heute: Forge-Karten-ID).
 pub type CardId = u32;
@@ -227,7 +228,6 @@ pub enum Choice {
 
 impl Decision {
     /// Spieler, der entscheiden muss.
-    #[expect(dead_code, reason = "für Mehrspieler-Ansichten (mehrere Sitzplätze) vorgesehen")]
     pub fn player(&self) -> PlayerId {
         use Decision::*;
         match self {
@@ -263,6 +263,7 @@ impl Decision {
 // ====================================================================== JSON (Protokoll v3)
 
 impl Color {
+    /// Buchstabe der Farbe im Protokoll (`"W"` … `"G"`).
     pub fn letter(self) -> &'static str {
         match self {
             Color::White => "W",
@@ -273,6 +274,7 @@ impl Color {
         }
     }
 
+    /// Farbe aus ihrem Buchstaben; `None` bei allem anderen (auch `"C"` = farblos).
     pub fn from_letter(s: &str) -> Option<Color> {
         Some(match s {
             "W" => Color::White,
@@ -286,7 +288,8 @@ impl Color {
 }
 
 impl CardChoiceReason {
-    fn from_name(s: &str) -> CardChoiceReason {
+    /// Grund aus seinem Namen im Protokoll; Unbekanntes wird zu [`CardChoiceReason::Choose`].
+    pub fn from_name(s: &str) -> CardChoiceReason {
         use CardChoiceReason::*;
         match s {
             "DiscardToHandSize" => DiscardToHandSize,
@@ -310,44 +313,54 @@ impl CardChoiceReason {
     }
 }
 
-/// Lesehilfe für ein JSON-Objekt (Godot-Dictionary).
-struct Obj<'a>(&'a VarDictionary);
+/// Lesehilfe für ein JSON-Objekt (fehlende Felder und `null` = Standardwert).
+pub(crate) struct Obj<'a>(pub(crate) &'a Map<String, Value>);
 
 impl Obj<'_> {
-    fn get(&self, k: &str) -> Option<Variant> {
-        self.0.get(k).filter(|v| !v.is_nil())
+    pub(crate) fn get(&self, k: &str) -> Option<&Value> {
+        self.0.get(k).filter(|v| !v.is_null())
     }
-    fn str(&self, k: &str) -> String {
-        self.get(k).map(|v| v.to_string()).unwrap_or_default()
+    pub(crate) fn str(&self, k: &str) -> String {
+        self.get(k).map(text).unwrap_or_default()
     }
-    fn int(&self, k: &str) -> i64 {
-        self.get(k).and_then(|v| v.try_to::<i64>().ok()).unwrap_or(0)
+    pub(crate) fn int(&self, k: &str) -> i64 {
+        self.get(k).and_then(int).unwrap_or(0)
     }
-    fn u32(&self, k: &str) -> u32 {
+    pub(crate) fn u32(&self, k: &str) -> u32 {
         self.int(k).clamp(0, u32::MAX as i64) as u32
     }
-    fn bool(&self, k: &str) -> bool {
-        self.get(k).is_some_and(|v| v.booleanize())
+    pub(crate) fn bool(&self, k: &str) -> bool {
+        self.get(k).is_some_and(|v| v.as_bool().unwrap_or_else(|| int(v).is_some_and(|i| i != 0)))
     }
-    fn arr(&self, k: &str) -> Vec<Variant> {
-        self.get(k).and_then(|v| v.try_to::<VarArray>().ok()).map(|a| a.iter_shared().collect()).unwrap_or_default()
+    pub(crate) fn arr(&self, k: &str) -> &[Value] {
+        self.get(k).and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[])
     }
     fn ids(&self, k: &str) -> Vec<CardId> {
-        self.arr(k).iter().filter_map(|v| v.try_to::<i64>().ok()).map(|i| i.max(0) as CardId).collect()
+        self.arr(k).iter().filter_map(int).map(|i| i.max(0) as CardId).collect()
     }
     fn strings(&self, k: &str) -> Vec<String> {
-        self.arr(k).iter().map(|v| v.to_string()).collect()
+        self.arr(k).iter().map(text).collect()
     }
 }
 
-fn dict(v: &Variant) -> Option<VarDictionary> {
-    v.try_to::<VarDictionary>().ok()
+/// Ganzzahl aus einer JSON-Zahl (auch `3.0`).
+pub(crate) fn int(v: &Value) -> Option<i64> {
+    v.as_i64().or_else(|| v.as_f64().filter(|f| f.fract() == 0.0).map(|f| f as i64))
+}
+
+/// Text eines JSON-Werts (Zeichenkette ohne Anführungszeichen, sonst seine JSON-Form).
+pub(crate) fn text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
+    }
 }
 
 impl Target {
-    pub fn from_var(v: &Variant) -> Option<Target> {
-        let d = dict(v)?;
-        let o = Obj(&d);
+    /// `{"card": id}` bzw. `{"player": id}`.
+    pub fn from_json(v: &Value) -> Option<Target> {
+        let o = Obj(v.as_object()?);
         if o.get("card").is_some() {
             Some(Target::Card(o.int("card").max(0) as CardId))
         } else if o.get("player").is_some() {
@@ -357,20 +370,17 @@ impl Target {
         }
     }
 
-    pub fn to_var(self) -> Variant {
-        let mut d = VarDictionary::new();
+    pub fn to_json(self) -> Value {
         match self {
-            Target::Card(c) => d.set("card", c as i64),
-            Target::Player(p) => d.set("player", p as i64),
+            Target::Card(c) => json!({ "card": c }),
+            Target::Player(p) => json!({ "player": p }),
         }
-        d.to_variant()
     }
 }
 
 impl Action {
-    pub fn from_var(v: &Variant) -> Option<Action> {
-        let d = dict(v)?;
-        let o = Obj(&d);
+    pub fn from_json(v: &Value) -> Option<Action> {
+        let o = Obj(v.as_object()?);
         let card = o.u32("card");
         let index = o.int("index").max(0) as usize;
         Some(match o.str("type").as_str() {
@@ -389,8 +399,7 @@ impl Action {
         })
     }
 
-    pub fn to_var(self) -> Variant {
-        let mut d = VarDictionary::new();
+    pub fn to_json(self) -> Value {
         let (name, card, index): (&str, Option<CardId>, Option<usize>) = match self {
             Action::Pass => ("Pass", None, None),
             Action::PlayLand(c) => ("PlayLand", Some(c), None),
@@ -404,14 +413,15 @@ impl Action {
             Action::ActivateMana(c, i) => ("ActivateMana", Some(c), Some(i)),
             Action::UndoMana(c) => ("UndoMana", Some(c), None),
         };
-        d.set("type", name);
+        let mut m = Map::new();
+        m.insert("type".into(), name.into());
         if let Some(c) = card {
-            d.set("card", c as i64);
+            m.insert("card".into(), c.into());
         }
         if let Some(i) = index {
-            d.set("index", i as i64);
+            m.insert("index".into(), i.into());
         }
-        d.to_variant()
+        Value::Object(m)
     }
 
     /// Karte, die die Aktion betrifft (`None` bei `Pass`).
@@ -433,9 +443,8 @@ impl Action {
 }
 
 impl PayAction {
-    pub fn from_var(v: &Variant) -> Option<PayAction> {
-        let d = dict(v)?;
-        let o = Obj(&d);
+    pub fn from_json(v: &Value) -> Option<PayAction> {
+        let o = Obj(v.as_object()?);
         Some(match o.str("type").as_str() {
             "ActivateMana" => PayAction::ActivateMana(o.u32("card"), o.int("index").max(0) as usize),
             "UsePool" => PayAction::UsePool(Color::from_letter(&o.str("color"))),
@@ -445,34 +454,25 @@ impl PayAction {
         })
     }
 
-    pub fn to_var(self) -> Variant {
-        let mut d = VarDictionary::new();
+    pub fn to_json(self) -> Value {
         match self {
-            PayAction::ActivateMana(c, i) => {
-                d.set("type", "ActivateMana");
-                d.set("card", c as i64);
-                d.set("index", i as i64);
-            }
-            PayAction::UsePool(c) => {
-                d.set("type", "UsePool");
-                d.set("color", c.map_or("C", Color::letter));
-            }
-            PayAction::AutoPay => d.set("type", "AutoPay"),
-            PayAction::Cancel => d.set("type", "Cancel"),
+            PayAction::ActivateMana(c, i) => json!({ "type": "ActivateMana", "card": c, "index": i }),
+            PayAction::UsePool(c) => json!({ "type": "UsePool", "color": c.map_or("C", Color::letter) }),
+            PayAction::AutoPay => json!({ "type": "AutoPay" }),
+            PayAction::Cancel => json!({ "type": "Cancel" }),
         }
-        d.to_variant()
     }
 }
 
 fn options_from(o: &Obj) -> Vec<OptionText> {
     o.arr("options")
         .iter()
-        .map(|v| match dict(v) {
-            Some(d) => {
-                let oo = Obj(&d);
+        .map(|v| match v.as_object() {
+            Some(m) => {
+                let oo = Obj(m);
                 let c = oo.str("color");
-                let card = u32::try_from(oo.int("card")).ok().filter(|_| d.contains_key("card"));
-                let pile = oo.arr("cards").iter().filter_map(|v| v.try_to::<i64>().ok()).filter_map(|i| u32::try_from(i).ok()).collect();
+                let card = oo.get("card").and_then(int).and_then(|i| u32::try_from(i).ok());
+                let pile = oo.arr("cards").iter().filter_map(int).filter_map(|i| u32::try_from(i).ok()).collect();
                 OptionText {
                     text: oo.str("text"),
                     color: Color::from_letter(&c),
@@ -483,28 +483,27 @@ fn options_from(o: &Obj) -> Vec<OptionText> {
                     hidden: oo.u32("hidden"),
                 }
             }
-            None => OptionText { text: v.to_string(), color: None, colorless: false, card: None, key: String::new(), pile: Vec::new(), hidden: 0 },
+            None => OptionText { text: text(v), color: None, colorless: false, card: None, key: String::new(), pile: Vec::new(), hidden: 0 },
         })
         .collect()
 }
 
 impl Decision {
     /// Liest eine Entscheidung aus dem `decision`-Objekt einer Anfrage. `None` bei unbekanntem Typ.
-    pub fn from_var(v: &Variant) -> Option<Decision> {
-        let d = dict(v)?;
-        let o = Obj(&d);
+    pub fn from_json(v: &Value) -> Option<Decision> {
+        let o = Obj(v.as_object()?);
         let player = o.int("player").clamp(0, 255) as PlayerId;
-        let targets = |k: &str| o.arr(k).iter().filter_map(Target::from_var).collect::<Vec<_>>();
+        let targets = |k: &str| o.arr(k).iter().filter_map(Target::from_json).collect::<Vec<_>>();
         Some(match o.str("type").as_str() {
             "ChooseModes" => Decision::ChooseModes {
                 player,
                 modes: o
                     .arr("modes")
                     .iter()
-                    .filter_map(|m| m.try_to::<VarArray>().ok())
+                    .filter_map(Value::as_array)
                     .map(|m| {
-                        let i = m.get(0).and_then(|v| v.try_to::<i64>().ok()).unwrap_or(0).max(0) as usize;
-                        (i, m.get(1).map(|v| v.to_string()).unwrap_or_default())
+                        let i = m.first().and_then(int).unwrap_or(0).max(0) as usize;
+                        (i, m.get(1).map(text).unwrap_or_default())
                     })
                     .collect(),
                 min: o.u32("min"),
@@ -517,18 +516,18 @@ impl Decision {
             "Mulligan" => Decision::Mulligan {
                 player,
                 mulligans_taken: o.u32("mulligans_taken"),
-                first_player: o.get("first_player").and_then(|v| v.try_to::<i64>().ok()).filter(|p| *p >= 0).map(|p| p as PlayerId),
+                first_player: o.get("first_player").and_then(int).filter(|p| *p >= 0).map(|p| p as PlayerId),
             },
             "MulliganBottom" => Decision::MulliganBottom { player, hand: o.ids("hand"), count: o.u32("count") },
             "Priority" => Decision::Priority {
                 player,
-                actions: o.arr("actions").iter().filter_map(Action::from_var).collect(),
+                actions: o.arr("actions").iter().filter_map(Action::from_json).collect(),
                 elsewhere: o
                     .arr("elsewhere")
                     .iter()
-                    .filter_map(dict)
+                    .filter_map(Value::as_object)
                     .filter_map(|e| {
-                        let e = Obj(&e);
+                        let e = Obj(e);
                         Some(ElsewhereCard { card: u32::try_from(e.int("card")).ok()?, zone: e.str("zone"), cost: e.str("cost") })
                     })
                     .collect(),
@@ -546,7 +545,7 @@ impl Decision {
             "PayMana" => Decision::PayMana {
                 player,
                 remaining: o.str("remaining"),
-                options: o.arr("options").iter().filter_map(PayAction::from_var).collect(),
+                options: o.arr("options").iter().filter_map(PayAction::from_json).collect(),
             },
             "PayLifeForPhyrexian" => Decision::PayLifeForPhyrexian { player, symbol: o.str("symbol") },
             "ChooseColor" => Decision::ChooseColor {
@@ -567,7 +566,7 @@ impl Decision {
                 amount: o.u32("amount"),
                 blockers: o.ids("blockers"),
                 lethal: o.ids("lethal"),
-                trample_to: o.get("trample_to").as_ref().and_then(Target::from_var),
+                trample_to: o.get("trample_to").and_then(Target::from_json),
             },
             "ChooseCards" => Decision::ChooseCards {
                 player,
@@ -579,7 +578,7 @@ impl Decision {
             "OrderTriggers" => Decision::OrderTriggers {
                 player,
                 descriptions: o.strings("descriptions"),
-                sources: o.arr("sources").iter().map(|v| v.try_to::<i64>().ok().filter(|i| *i >= 0).map(|i| i as CardId)).collect(),
+                sources: o.arr("sources").iter().map(|v| int(v).filter(|i| *i >= 0).map(|i| i as CardId)).collect(),
             },
             "Scry" => Decision::Scry { player, cards: o.ids("cards"), graveyard: o.bool("graveyard") },
             "PayUnlessCost" => Decision::PayUnlessCost { player, cost: o.str("cost") },
@@ -615,86 +614,66 @@ impl Decision {
 
 impl Choice {
     /// JSON-Form der Antwort (Feld `choice` im Befehl `answer`).
-    pub fn to_var(&self) -> Variant {
-        let mut d = VarDictionary::new();
-        let ids = |v: &[CardId]| v.iter().map(|c| (*c as i64).to_variant()).collect::<VarArray>();
-        let nums = |v: &[usize]| v.iter().map(|c| (*c as i64).to_variant()).collect::<VarArray>();
+    pub fn to_json(&self) -> Value {
+        let mut m = Map::new();
         let name = match self {
             Choice::Keep => "Keep",
             Choice::Mulligan => "Mulligan",
             Choice::Action(a) => {
-                d.set("action", &a.to_var());
+                m.insert("action".into(), a.to_json());
                 "Action"
             }
             Choice::Targets(t) => {
-                d.set("targets", &t.iter().map(|t| t.to_var()).collect::<VarArray>());
+                m.insert("targets".into(), t.iter().map(|t| t.to_json()).collect());
                 "Targets"
             }
             Choice::Number(n) => {
-                d.set("value", *n as i64);
+                m.insert("value".into(), (*n).into());
                 "Number"
             }
             Choice::Pay(p) => {
-                d.set("pay", &p.to_var());
+                m.insert("pay".into(), p.to_json());
                 "Pay"
             }
             Choice::Yes => "Yes",
             Choice::No => "No",
             Choice::Color(c) => {
-                d.set("color", c.letter());
+                m.insert("color".into(), c.letter().into());
                 "Color"
             }
             Choice::Attackers(list) => {
-                let arr: VarArray = list
-                    .iter()
-                    .map(|(c, t)| {
-                        let mut pair = VarArray::new();
-                        pair.push(&(*c as i64).to_variant());
-                        pair.push(&t.to_var());
-                        pair.to_variant()
-                    })
-                    .collect();
-                d.set("attackers", &arr);
+                m.insert("attackers".into(), list.iter().map(|(c, t)| json!([c, t.to_json()])).collect());
                 "Attackers"
             }
             Choice::Blocks(list) => {
-                let arr: VarArray = list
-                    .iter()
-                    .map(|(b, a)| {
-                        let mut pair = VarArray::new();
-                        pair.push(&(*b as i64).to_variant());
-                        pair.push(&(*a as i64).to_variant());
-                        pair.to_variant()
-                    })
-                    .collect();
-                d.set("blocks", &arr);
+                m.insert("blocks".into(), list.iter().map(|(b, a)| json!([b, a])).collect());
                 "Blocks"
             }
             Choice::Damage(v) => {
-                d.set("amounts", &v.iter().map(|n| (*n as i64).to_variant()).collect::<VarArray>());
+                m.insert("amounts".into(), json!(v));
                 "Damage"
             }
             Choice::Cards(v) => {
-                d.set("cards", &ids(v));
+                m.insert("cards".into(), json!(v));
                 "Cards"
             }
             Choice::Order(v) => {
-                d.set("order", &nums(v));
+                m.insert("order".into(), json!(v));
                 "Order"
             }
             Choice::Modes(v) => {
-                d.set("modes", &nums(v));
+                m.insert("modes".into(), json!(v));
                 "Modes"
             }
             Choice::Arrange { top, bottom } => {
-                d.set("top", &ids(top));
-                d.set("bottom", &ids(bottom));
+                m.insert("top".into(), json!(top));
+                m.insert("bottom".into(), json!(bottom));
                 "Arrange"
             }
             Choice::Cancel => "Cancel",
         };
-        d.set("type", name);
-        d.to_variant()
+        m.insert("type".into(), name.into());
+        Value::Object(m)
     }
 }
 
@@ -715,5 +694,27 @@ mod tests {
         assert_eq!(Action::Pass.card(), None);
         assert_eq!(Action::Activate(7, 1).card(), Some(7));
         assert_eq!(Action::ActivateMana(9, 2).card(), Some(9));
+    }
+
+    #[test]
+    fn action_json_roundtrip() {
+        for a in [Action::Pass, Action::Cast(4), Action::Activate(7, 2), Action::UndoMana(3)] {
+            assert_eq!(Action::from_json(&a.to_json()), Some(a));
+        }
+    }
+
+    #[test]
+    fn parses_priority() {
+        let v = json!({"type": "Priority", "player": 0, "actions": [{"type": "Pass"}, {"type": "Cast", "card": 12}],
+            "elsewhere": [{"card": 5, "zone": "Graveyard", "cost": "{R}"}]});
+        let Some(Decision::Priority { actions, elsewhere, .. }) = Decision::from_json(&v) else { panic!() };
+        assert_eq!(actions, vec![Action::Pass, Action::Cast(12)]);
+        assert_eq!(elsewhere[0].zone, "Graveyard");
+    }
+
+    #[test]
+    fn choice_json() {
+        assert_eq!(Choice::Action(Action::Pass).to_json(), json!({"type": "Action", "action": {"type": "Pass"}}));
+        assert_eq!(Choice::Attackers(vec![(3, Target::Player(1))]).to_json(), json!({"type": "Attackers", "attackers": [[3, {"player": 1}]]}));
     }
 }

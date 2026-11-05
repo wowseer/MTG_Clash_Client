@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import java.util.List;
 import java.util.Observable;
@@ -31,14 +31,14 @@ final class LogForwarder implements Observer {
         List<GameLogEntry> all = game.getGameLog().getAllEntries();
         for (int i = sent; i < all.size(); i++) {
             GameLogEntry e = all.get(i);
-            JsonObject m = ForgeBridge.message("log");
+            JsonObject m = BridgeCore.message("log");
             m.addProperty("kind", e.type().name());
             m.addProperty("text", e.message());
             if (e.sourceCard() != null) {
                 m.addProperty("card", e.sourceCard().getId());
             }
             m.addProperty("turn", game.getPhaseHandler().getTurn());
-            ForgeBridge.send(m);
+            BridgeCore.send(m);
         }
         sent = Math.max(sent, all.size());
     }

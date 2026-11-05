@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -142,7 +142,7 @@ final class Decisions {
             env.add("cards", cards);
         }
         env.add("state", StateJson.snapshot(game, seat));
-        return ForgeBridge.request(seat, env);
+        return BridgeCore.request(seat, env);
     }
 
     static String type(JsonObject o) {

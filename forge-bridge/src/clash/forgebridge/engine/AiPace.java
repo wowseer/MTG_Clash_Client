@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import forge.game.Game;
 import forge.game.event.GameEvent;

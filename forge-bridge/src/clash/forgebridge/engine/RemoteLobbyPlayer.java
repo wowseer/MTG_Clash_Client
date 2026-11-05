@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import com.google.gson.JsonObject;
 
@@ -30,9 +30,9 @@ public class RemoteLobbyPlayer extends LobbyPlayer implements IGameEntitiesFacto
     public Player createIngamePlayer(Game game, int id) {
         Player player = new Player(getName(), game, id);
         player.setFirstController(new RemotePlayerController(game, player, this));
-        if (ForgeBridge.isEmbedded()) {
+        if (BridgeCore.isEmbedded()) {
             // Eingebettet (NeoForge): die Partie startet der Gastgeber, hier erfährt die Brücke davon
-            ForgeBridge.gameStarted(game);
+            BridgeCore.gameStarted(game);
         }
         return player;
     }
@@ -45,9 +45,9 @@ public class RemoteLobbyPlayer extends LobbyPlayer implements IGameEntitiesFacto
 
     @Override
     public void hear(LobbyPlayer player, String message) {
-        JsonObject m = ForgeBridge.message("chat");
+        JsonObject m = BridgeCore.message("chat");
         m.addProperty("from", player == null ? null : player.getName());
         m.addProperty("text", message);
-        ForgeBridge.send(m);
+        BridgeCore.send(m);
     }
 }

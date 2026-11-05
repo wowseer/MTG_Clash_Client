@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -35,9 +35,10 @@ import forge.player.GamePlayerUtil;
 import forge.util.MyRandom;
 
 /**
- * Brücke zwischen MTG Clash (Godot/Rust) und der Forge-Regel-Engine.
+ * Kern der Brücke zwischen MTG Clash (Godot/Rust) und der Forge-Regel-Engine (intern – Gastgeber
+ * und andere Projekte benutzen die Fassade {@link clash.forgebridge.ClashBridge}).
  *
- * <p>Läuft als eigener Prozess ({@link BridgeMain}, stdin/stdout) oder eingebettet in einen
+ * <p>Läuft als eigener Prozess ({@link clash.forgebridge.app.BridgeMain}, stdin/stdout) oder eingebettet in einen
  * Gastgeber wie NeoForge ({@link #attach}, lokaler Socket). Protokoll: JSON Lines (UTF-8), eine
  * Nachricht pro Zeile. Im eigenen Prozess werden alle sonstigen Ausgaben von Forge nach stderr
  * umgeleitet, damit stdout sauber bleibt.
@@ -46,7 +47,7 @@ import forge.util.MyRandom;
  * <p>Muss mit dem Forge-Installationsordner als Arbeitsverzeichnis gestartet werden
  * (Forge lädt {@code res/} relativ dazu).
  */
-public final class ForgeBridge {
+public final class BridgeCore {
     /** Version des Protokolls; wird in "ready" gemeldet. */
     public static final int PROTOCOL_VERSION = 3;
 
@@ -72,22 +73,22 @@ public final class ForgeBridge {
     /** Eingebettet in einen Gastgeber (NeoForge) statt eigener Prozess. */
     private static volatile boolean embedded;
 
-    private ForgeBridge() {}
+    private BridgeCore() {}
 
     /**
      * Eigenständiger Betrieb, vor dem Laden von Forge: Protokoll-Ausgabe auf das echte stdout,
      * alle übrigen Ausgaben ({@code System.out} von Forge) nach stderr.
      */
-    static void prepareStandalone() {
+    public static void prepareStandalone() {
         out = new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8);
         System.setOut(System.err);
     }
 
     /**
      * Eigenständiger Betrieb (Prozess, gestartet von Godot): Nachrichten auf stdout, Befehle von
-     * stdin. Forge muss vorher initialisiert sein (siehe {@link BridgeMain}).
+     * stdin. Forge muss vorher initialisiert sein (siehe {@link clash.forgebridge.app.BridgeMain}).
      */
-    static void runStandalone() throws Exception {
+    public static void runStandalone() throws Exception {
         sendReady();
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         readCommands(in);
@@ -351,7 +352,7 @@ public final class ForgeBridge {
         }
     }
 
-    static void sendError(String code, Object detail) {
+    public static void sendError(String code, Object detail) {
         JsonObject e = message("error");
         e.addProperty("code", code);
         if (detail instanceof Throwable t) {

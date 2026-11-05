@@ -1,16 +1,20 @@
 #!/bin/sh
-# Kopiert den Brücken-Code (forge-bridge/src/clash/forgebridge, ohne den eigenständigen Einstieg
-# BridgeMain) in das NeoForge-Repo, wo er eingebettet läuft (forge.neo.clash.ClashTable).
+# Bringt die NeoForge-Anbindung in ein NeoForge-Repo (Standard ~/Entwicklung/Java/NeoForge):
+#   1. Brücken-Bibliothek: forge-bridge/src/clash/forgebridge (ohne den Programmstart app/)
+#   2. NeoForge-Hülle:     integrations/neoforge/src/forge/neo/clash/ClashTable.java
+# Die Änderungen an NeoForges eigenen Klassen (NeoGame, SafeAi, NeoMain, SettingsPanel,
+# Sprachdateien) stehen als Patch in integrations/neoforge/neoforge-host.patch; einmalig anwenden mit
+#   git -C "$NEOFORGE" apply integrations/neoforge/neoforge-host.patch
 # Maßgeblich ist immer die Fassung in MTG Clash; in NeoForge nicht von Hand ändern.
-# NEOFORGE = NeoForge-Repo (Standard ~/Entwicklung/Java/NeoForge)
 set -e
 cd "$(dirname "$0")/.."
 NEOFORGE="${NEOFORGE:-$HOME/Entwicklung/Java/NeoForge}"
-DEST="$NEOFORGE/forge-gui-neo/src/main/java/clash/forgebridge"
+JAVA="$NEOFORGE/forge-gui-neo/src/main/java"
+DEST="$JAVA/clash/forgebridge"
+rm -rf "$DEST"
 mkdir -p "$DEST"
-rm -f "$DEST"/*.java
-for f in forge-bridge/src/clash/forgebridge/*.java; do
-  [ "$(basename "$f")" = "BridgeMain.java" ] && continue
-  cp "$f" "$DEST/"
-done
-echo "OK: $(ls "$DEST" | wc -l) Dateien nach $DEST"
+cp -r forge-bridge/src/clash/forgebridge/. "$DEST/"
+rm -rf "$DEST/app"
+mkdir -p "$JAVA/forge/neo/clash"
+cp integrations/neoforge/src/forge/neo/clash/*.java "$JAVA/forge/neo/clash/"
+echo "OK: $(find "$DEST" -name '*.java' | wc -l) Brücken-Dateien und ClashTable nach $JAVA"

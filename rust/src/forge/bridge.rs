@@ -1,25 +1,21 @@
-//! `ForgeBridge`: startet die Java-Brücke zu Forge und übersetzt das JSON-Lines-Protokoll
-//! in Godot-Signale und -Methoden.
+//! `ForgeBridge`: Godot-Knoten für die Forge-Brücke. Übersetzt das JSON-Lines-Protokoll in
+//! Godot-Signale und -Methoden; Prozess bzw. Socket und Lesethread kommen aus dem godot-freien
+//! Crate `clash-forge-client` ([`ForgeClient`]), die Befehle aus `clash-protocol`.
 //!
-//! - Ein Lesethread liest stdout des Java-Prozesses zeilenweise und schickt die Zeilen über
-//!   einen Kanal an den Hauptthread; `process()` parst sie (Godot-`JSON`) und sendet Signale.
-//! - Befehle werden als eine JSON-Zeile auf stdin geschrieben.
-//! - stderr (Forge-Logausgaben) landet in `user://forge-bridge.log`.
-//! - Eingebettet (Godot von NeoForge gestartet mit `-- --clash-port=N`): statt des Java-Prozesses
-//!   eine TCP-Verbindung zu `127.0.0.1:N`, gleiches Protokoll; die Partie startet der Gastgeber.
+//! - Eigenständig: startet die Java-Brücke (`forge-bridge/`) als eigenen Prozess; stderr
+//!   (Forge-Logausgaben) landet in `user://forge-bridge.log`.
+//! - Eingebettet (Godot von einem Gastgeber wie NeoForge gestartet mit `-- --clash-port=N`):
+//!   statt des Java-Prozesses eine TCP-Verbindung zu `127.0.0.1:N`, gleiches Protokoll; die
+//!   Partie startet der Gastgeber.
 
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::net::TcpStream;
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::thread;
-use std::time::Duration;
 
-use godot::classes::{INode, Json, Node, ProjectSettings};
+use clash_forge_client::{ForgeClient, Incoming, LaunchConfig};
+use clash_protocol::{command, Value};
+use godot::classes::{INode, Node, ProjectSettings};
 use godot::prelude::*;
 
+use crate::rules::json;
 use crate::rules::{Choice, PlayerId, RulesEngine};
 
 /// Höchstens so viele Nachrichten werden pro Frame verarbeitet (Forge sendet in Spitzen
@@ -28,13 +24,9 @@ const MAX_MESSAGES_PER_FRAME: usize = 400;
 /// Eingebettet: so lange (Sekunden) bleibt der Tisch nach dem Ende der Verbindung offen.
 const HOSTED_CLOSE_DELAY: f64 = 4.0;
 
-enum Incoming {
-    Line(String),
-    Closed,
-}
-
 /// Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) als eigenen
-/// Prozess und spricht mit ihr über JSON-Zeilen (Protokoll: `docs/Forge-Schnittstelle.md`).
+/// Prozess bzw. verbindet sich mit einem Gastgeber und spricht mit ihr über JSON-Zeilen
+/// (Protokoll: `docs/Forge-Schnittstelle.md`).
 ///
 /// Ablauf: [method start_bridge] → Signal [signal bridge_ready] → [method start_match] →
 /// Signale [signal forge_event] (jedes Spielereignis) und [signal decision_requested]
@@ -43,7 +35,7 @@ enum Incoming {
 /// spielt die Forge-KI.
 ///
 /// Zahlen in empfangenen Dictionaries sind ganzzahlig (int), wenn sie keinen Nachkommaanteil
-/// haben (Godots JSON liefert sonst immer float).
+/// haben.
 #[derive(GodotClass)]
 #[class(base=Node)]
 pub struct ForgeBridge {
@@ -76,14 +68,8 @@ pub struct ForgeBridge {
     #[export]
     log_messages: bool,
 
-    child: Option<Child>,
-    stdin: Option<ChildStdin>,
-    /// Eingebettet: Verbindung zum Gastgeber (NeoForge), der die Partie startet.
-    socket: Option<TcpStream>,
-    rx: Option<Receiver<Incoming>>,
-    /// Lese-Thread (stdout bzw. Socket); beim Stoppen wird auf sein Ende gewartet, damit er nicht
-    /// mehr läuft, wenn Godot die Erweiterung entlädt.
-    reader: Option<thread::JoinHandle<()>>,
+    /// Verbindung (Java-Prozess oder Gastgeber), None = keine.
+    client: Option<ForgeClient>,
     ready: bool,
     base: Base<Node>,
 }
@@ -100,11 +86,7 @@ impl INode for ForgeBridge {
             ai_pace: 1.0,
             autostart: false,
             log_messages: false,
-            child: None,
-            stdin: None,
-            socket: None,
-            rx: None,
-            reader: None,
+            client: None,
             ready: false,
             base,
         }
@@ -117,22 +99,26 @@ impl INode for ForgeBridge {
     }
 
     fn process(&mut self, _delta: f64) {
-        let mut lines = Vec::new();
+        let mut messages = Vec::new();
         let mut closed = false;
-        if let Some(rx) = &self.rx {
-            while lines.len() < MAX_MESSAGES_PER_FRAME {
-                match rx.try_recv() {
-                    Ok(Incoming::Line(l)) => lines.push(l),
-                    Ok(Incoming::Closed) | Err(TryRecvError::Disconnected) => {
+        if let Some(client) = self.client.as_mut() {
+            while messages.len() < MAX_MESSAGES_PER_FRAME {
+                match client.poll() {
+                    Some(Incoming::Closed) => {
                         closed = true;
                         break;
                     }
-                    Err(TryRecvError::Empty) => break,
+                    Some(m) => messages.push(m),
+                    None => break,
                 }
             }
         }
-        for line in lines {
-            self.dispatch(&line);
+        for m in messages {
+            match m {
+                Incoming::Message(v) => self.dispatch(&v),
+                Incoming::Invalid(line) => self.emit_error("bad_message", &line),
+                Incoming::Closed => {}
+            }
         }
         if closed {
             self.on_closed();
@@ -206,167 +192,55 @@ impl ForgeBridge {
     /// [signal bridge_ready] (Forge braucht einige Sekunden zum Laden).
     #[func]
     pub fn start_bridge(&mut self) -> bool {
-        if self.child.is_some() || self.socket.is_some() {
+        if self.client.is_some() {
             return false;
         }
         // Gestartet von einem Gastgeber (NeoForge) mit `-- --clash-port=N`: dorthin verbinden
-        if let Some(port) = host_port() {
-            return self.connect_host(port);
+        let result = if let Some(port) = host_port() {
+            ForgeClient::connect(port)
+        } else {
+            let mut cfg = LaunchConfig::new(self.resolved_forge_dir(), globalize(&self.bridge_jar));
+            cfg.java = self.java_path.to_string();
+            cfg.forge_jar = (!self.forge_jar.is_empty()).then(|| PathBuf::from(globalize(&self.forge_jar)));
+            cfg.max_memory_mb = self.java_max_memory_mb.max(256) as u32;
+            cfg.stderr_log = Some(PathBuf::from(globalize(&GString::from("user://forge-bridge.log"))));
+            ForgeClient::spawn(&cfg)
+        };
+        match result {
+            Ok(c) => {
+                self.client = Some(c);
+                self.ready = false;
+                true
+            }
+            Err(e) => {
+                self.emit_error(e.code(), &e.to_string());
+                false
+            }
         }
-        let forge_dir = self.resolved_forge_dir();
-        let forge_jar = match self.resolved_forge_jar(&forge_dir) {
-            Some(j) => j,
-            None => {
-                self.emit_error("forge_jar_not_found", &format!("Kein Forge-Jar in {}", forge_dir.display()));
-                return false;
-            }
-        };
-        let bridge_jar = PathBuf::from(globalize(&self.bridge_jar));
-        if !bridge_jar.is_file() {
-            self.emit_error(
-                "bridge_jar_not_found",
-                &format!("{} fehlt – forge-bridge/build.sh ausführen", bridge_jar.display()),
-            );
-            return false;
-        }
-        let log_path = globalize(&GString::from("user://forge-bridge.log"));
-        let stderr = File::create(&log_path).map(Stdio::from).unwrap_or_else(|_| Stdio::null());
-
-        let sep = if cfg!(windows) { ";" } else { ":" };
-        let classpath = format!("{}{}{}", bridge_jar.display(), sep, forge_jar.display());
-        let spawned = Command::new(self.java_path.to_string())
-            .arg(format!("-Xmx{}m", self.java_max_memory_mb))
-            .arg("-Dfile.encoding=UTF-8")
-            .arg("-Djava.awt.headless=true")
-            .arg("-cp")
-            .arg(classpath)
-            .arg("clash.forgebridge.BridgeMain")
-            .current_dir(&forge_dir)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(stderr)
-            .spawn();
-        let mut child = match spawned {
-            Ok(c) => c,
-            Err(e) => {
-                self.emit_error("spawn_failed", &format!("{}: {e}", self.java_path));
-                return false;
-            }
-        };
-
-        let stdout = child.stdout.take().expect("stdout ist gepiped");
-        let (tx, rx) = mpsc::channel();
-        self.reader = Some(thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                match line {
-                    Ok(l) => {
-                        if tx.send(Incoming::Line(l)).is_err() {
-                            return;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            let _ = tx.send(Incoming::Closed);
-        }));
-
-        self.stdin = child.stdin.take();
-        self.child = Some(child);
-        self.rx = Some(rx);
-        self.ready = false;
-        true
-    }
-
-    /// Verbindet sich mit dem Gastgeber auf `127.0.0.1:port` (eingebetteter Betrieb). Der
-    /// Gastgeber startet die Partie selbst; Nachrichten und Befehle wie beim Java-Prozess.
-    fn connect_host(&mut self, port: u16) -> bool {
-        let stream = match TcpStream::connect(("127.0.0.1", port)) {
-            Ok(s) => s,
-            Err(e) => {
-                self.emit_error("connect_failed", &format!("Gastgeber auf Port {port}: {e}"));
-                return false;
-            }
-        };
-        let reader = match stream.try_clone() {
-            Ok(r) => r,
-            Err(e) => {
-                self.emit_error("connect_failed", &e.to_string());
-                return false;
-            }
-        };
-        let (tx, rx) = mpsc::channel();
-        self.reader = Some(thread::spawn(move || {
-            for line in BufReader::new(reader).lines() {
-                match line {
-                    Ok(l) => {
-                        if tx.send(Incoming::Line(l)).is_err() {
-                            return;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            let _ = tx.send(Incoming::Closed);
-        }));
-        self.socket = Some(stream);
-        self.rx = Some(rx);
-        self.ready = false;
-        true
     }
 
     /// Läuft die Brücke eingebettet in einem Gastgeber (NeoForge startet die Partie)?
     #[func]
     pub fn is_hosted(&self) -> bool {
-        self.socket.is_some() || host_port().is_some()
+        self.client.as_ref().is_some_and(ForgeClient::is_hosted) || host_port().is_some()
     }
 
-    /// Beendet die Brücke (Befehl "quit", nach 2 s hart beendet). Sendet
+    /// Beendet die Brücke (Befehl "quit", nach 1 s hart beendet). Sendet
     /// [signal bridge_stopped] mit -1, falls sie lief.
     #[func]
     fn stop_bridge(&mut self) {
-        if let Some(mut socket) = self.socket.take() {
-            let _ = socket.write_all(b"{\"cmd\":\"quit\"}\n");
-            let _ = socket.shutdown(std::net::Shutdown::Both);
-            if let Some(r) = self.reader.take() {
-                let _ = r.join();
-            }
-            self.rx = None;
-            self.ready = false;
-            self.signals().bridge_stopped().emit(-1);
-            return;
-        }
-        let Some(mut child) = self.child.take() else {
-            return;
-        };
-        if let Some(mut stdin) = self.stdin.take() {
-            let _ = stdin.write_all(b"{\"cmd\":\"quit\"}\n");
-            let _ = stdin.flush();
-        }
-        self.rx = None;
+        // im Hauptthread warten: ein losgelöster Warte-Thread liefe beim Beenden von Godot noch,
+        // wenn die Erweiterung schon entladen ist (Absturz)
+        let Some(client) = self.client.take() else { return };
+        client.stop();
         self.ready = false;
-        // Kurz auf das Ende warten, dann hart beenden – im Hauptthread: ein losgelöster Warte-Thread
-        // liefe beim Beenden von Godot noch, wenn die Erweiterung schon entladen ist (Absturz).
-        for _ in 0..20 {
-            if matches!(child.try_wait(), Ok(Some(_))) {
-                break;
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-        if !matches!(child.try_wait(), Ok(Some(_))) {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        // Prozess beendet → stdout geschlossen → der Lese-Thread endet sofort
-        if let Some(r) = self.reader.take() {
-            let _ = r.join();
-        }
         self.signals().bridge_stopped().emit(-1);
     }
 
-    /// Läuft der Java-Prozess?
+    /// Läuft der Java-Prozess bzw. die Verbindung zum Gastgeber?
     #[func]
     pub fn is_running(&self) -> bool {
-        self.child.is_some() || self.socket.is_some()
+        self.client.is_some()
     }
 
     /// Hat Forge fertig geladen ([signal bridge_ready] empfangen)?
@@ -379,27 +253,13 @@ impl ForgeBridge {
     /// false, wenn die Brücke nicht läuft.
     #[func]
     fn send_command(&mut self, command: VarDictionary) -> bool {
-        let line = Json::stringify(&command.to_variant());
-        let ok = if let Some(socket) = self.socket.as_mut() {
-            writeln!(socket, "{line}").and_then(|_| socket.flush()).is_ok()
-        } else if let Some(stdin) = self.stdin.as_mut() {
-            writeln!(stdin, "{line}").and_then(|_| stdin.flush()).is_ok()
-        } else {
-            return false;
-        };
-        if !ok {
-            self.emit_error("write_failed", "Befehl konnte nicht gesendet werden");
-        }
-        ok
+        self.send_value(&json::from_variant(&command.to_variant()))
     }
 
     /// Verbindungstest; Antwort kommt als Nachricht `{type: "pong", nonce}`.
     #[func]
     fn ping(&mut self, nonce: i64) -> bool {
-        let mut d = VarDictionary::new();
-        d.set("cmd", "ping");
-        d.set("nonce", nonce);
-        self.send_command(d)
+        self.send_value(&command::ping(nonce))
     }
 
     /// Startet eine Partie. `decks`: Pfade zu Forge-`.dck`-Dateien (`res://` erlaubt) oder
@@ -414,31 +274,22 @@ impl ForgeBridge {
         names: PackedStringArray,
         seed: i64,
     ) -> bool {
-        let mut deck_arr = VarArray::new();
-        let mut remote_arr = VarArray::new();
-        for (i, d) in decks.as_slice().iter().enumerate() {
-            let path = if d.to_string().starts_with("res://") || d.to_string().starts_with("user://") {
-                GString::from(globalize(d).as_str())
-            } else {
-                d.clone()
-            };
-            deck_arr.push(&path.to_variant());
-            remote_arr.push(&remote_seats.as_slice().contains(&(i as i32)).to_variant());
-        }
-        let mut name_arr = VarArray::new();
-        for n in names.as_slice() {
-            name_arr.push(&n.to_variant());
-        }
-        let mut d = VarDictionary::new();
-        d.set("cmd", "start_match");
-        d.set("decks", &deck_arr);
-        d.set("remote", &remote_arr);
-        d.set("names", &name_arr);
-        if seed >= 0 {
-            d.set("seed", seed);
-        }
-        d.set("ai_pace", self.ai_pace);
-        self.send_command(d)
+        let start = command::StartMatch {
+            decks: decks
+                .as_slice()
+                .iter()
+                .map(|d| {
+                    let s = d.to_string();
+                    if s.starts_with("res://") || s.starts_with("user://") { globalize(d) } else { s }
+                })
+                .collect(),
+            remote: remote_seats.as_slice().iter().filter_map(|s| PlayerId::try_from(*s).ok()).collect(),
+            names: names.as_slice().iter().map(|n| n.to_string()).collect(),
+            seed: (seed >= 0).then_some(seed),
+            ai_pace: self.ai_pace,
+            game_type: None,
+        };
+        self.send_value(&start.to_json())
     }
 
     /// Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im
@@ -446,55 +297,49 @@ impl ForgeBridge {
     /// Aufbau siehe `docs/Forge-Schnittstelle.md`.
     #[func]
     pub fn answer(&mut self, request_id: i64, choice: Variant) -> bool {
-        let mut d = VarDictionary::new();
-        d.set("cmd", "answer");
-        d.set("id", request_id);
-        d.set("choice", &normalize_numbers(choice));
-        self.send_command(d)
+        self.send_value(&command::answer_json(request_id, json::from_variant(&choice)))
     }
 
     /// Fragt den aktuellen Spielzustand ab → [signal state_received]. `viewer` = Sitzplatz,
     /// dessen Handkarten mitgeschickt werden (-1 = keiner).
     #[func]
     pub fn request_state(&mut self, viewer: i64) -> bool {
-        let mut d = VarDictionary::new();
-        d.set("cmd", "state");
-        d.set("viewer", viewer);
-        self.send_command(d)
+        self.send_value(&command::request_state(PlayerId::try_from(viewer).ok()))
     }
 
     /// Debug: alle Kartennamen anfordern → [signal debug_card_names_received].
     #[func]
     pub fn debug_request_card_names(&mut self) -> bool {
-        let mut d = VarDictionary::new();
-        d.set("cmd", "debug_card_names");
-        self.send_command(d)
+        self.send_value(&command::debug_card_names())
     }
 
     /// Debug: Karte `name` neu erzeugen und Sitzplatz `seat` auf die Hand legen. Danach kommt
     /// der neue Zustand; eine offene Priorität wird neu gestellt.
     #[func]
     pub fn debug_add_card(&mut self, seat: i64, name: GString) -> bool {
-        let mut d = VarDictionary::new();
-        d.set("cmd", "debug_add_card");
-        d.set("seat", seat);
-        d.set("name", &name);
-        self.send_command(d)
+        self.send_value(&command::debug_add_card(seat.clamp(0, 255) as PlayerId, &name.to_string()))
     }
 
     /// Debug: unendliches Mana für Sitzplatz `seat` an/aus (Pool wird bei jedem Phasenwechsel
     /// und Zauber auf 50 je Manaart aufgefüllt).
     #[func]
     pub fn debug_infinite_mana(&mut self, seat: i64, on: bool) -> bool {
-        let mut d = VarDictionary::new();
-        d.set("cmd", "debug_infinite_mana");
-        d.set("seat", seat);
-        d.set("on", on);
-        self.send_command(d)
+        self.send_value(&command::debug_infinite_mana(seat.clamp(0, 255) as PlayerId, on))
     }
 }
 
 impl ForgeBridge {
+    /// Befehl senden; false (und [signal bridge_error]), wenn die Brücke nicht läuft bzw. das
+    /// Schreiben scheitert.
+    fn send_value(&mut self, cmd: &Value) -> bool {
+        let Some(client) = self.client.as_mut() else { return false };
+        let ok = client.send(cmd).is_ok();
+        if !ok {
+            self.emit_error("write_failed", "Befehl konnte nicht gesendet werden");
+        }
+        ok
+    }
+
     fn resolved_forge_dir(&self) -> PathBuf {
         if !self.forge_dir.is_empty() {
             return PathBuf::from(globalize(&self.forge_dir));
@@ -510,92 +355,64 @@ impl ForgeBridge {
         Path::new(&home).join("Games").join("Forge")
     }
 
-    fn resolved_forge_jar(&self, forge_dir: &Path) -> Option<PathBuf> {
-        if !self.forge_jar.is_empty() {
-            let p = PathBuf::from(globalize(&self.forge_jar));
-            return p.is_file().then_some(p);
-        }
-        let mut jars: Vec<PathBuf> = std::fs::read_dir(forge_dir)
-            .ok()?
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| {
-                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                    n.starts_with("forge-gui-desktop-") && n.ends_with("-jar-with-dependencies.jar")
-                })
-            })
-            .collect();
-        jars.sort();
-        jars.pop()
-    }
-
     fn emit_error(&mut self, code: &str, message: &str) {
         godot_warn!("ForgeBridge: {code}: {message}");
         self.signals().bridge_error().emit(&GString::from(code), &GString::from(message));
     }
 
-    fn dispatch(&mut self, line: &str) {
-        let parsed = Json::parse_string(line);
-        let Ok(dict) = normalize_numbers(parsed).try_to::<VarDictionary>() else {
-            self.emit_error("bad_message", line);
-            return;
-        };
+    fn dispatch(&mut self, msg: &Value) {
+        let Some(obj) = msg.as_object() else { return };
+        let dict = json::to_dictionary(obj);
         if self.log_messages {
-            godot_print!("ForgeBridge <- {line}");
+            godot_print!("ForgeBridge <- {msg}");
         }
         self.signals().message_received().emit(&dict);
-        let get_dict = |key: &str| {
-            dict.get(key).and_then(|v| v.try_to::<VarDictionary>().ok()).unwrap_or_default()
-        };
-        let kind = dict.get("type").map(|v| v.to_string()).unwrap_or_default();
-        match kind.as_str() {
+        let sub = |key: &str| obj.get(key).and_then(Value::as_object).map(json::to_dictionary).unwrap_or_default();
+        match clash_protocol::message_type(msg) {
             "ready" => {
                 self.ready = true;
-                let protocol = dict.get("protocol").and_then(|v| v.try_to::<i64>().ok()).unwrap_or(0);
+                let protocol = msg.get("protocol").and_then(Value::as_i64).unwrap_or(0);
                 self.signals().bridge_ready().emit(protocol);
             }
             "event" => self.signals().forge_event().emit(&dict),
             "log" => self.signals().log_entry().emit(&dict),
             "request" => self.signals().decision_requested().emit(&dict),
             "rejected" => self.signals().decision_rejected().emit(&dict),
-            "match_started" => self.signals().match_started().emit(&get_dict("state")),
-            "state" => self.signals().state_received().emit(&get_dict("state")),
+            "match_started" => self.signals().match_started().emit(&sub("state")),
+            "state" => self.signals().state_received().emit(&sub("state")),
             "game_over" => self.signals().game_over().emit(&dict),
             "debug_card_names" => {
-                let names: PackedStringArray = dict
+                let names: PackedStringArray = msg
                     .get("names")
-                    .and_then(|v| v.try_to::<VarArray>().ok())
-                    .map(|a| a.iter_shared().map(|v| GString::from(v.to_string().as_str())).collect())
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().map(|v| GString::from(v.as_str().unwrap_or_default())).collect())
                     .unwrap_or_default();
                 self.signals().debug_card_names_received().emit(&names);
             }
             "error" => {
-                let s = |k: &str| dict.get(k).map(|v| v.to_string()).unwrap_or_default();
-                let (code, msg) = (s("code"), s("message"));
-                self.emit_error(&code, &msg);
+                let s = |k: &str| msg.get(k).map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string)).unwrap_or_default();
+                let (code, text) = (s("code"), s("message"));
+                self.emit_error(&code, &text);
             }
             _ => {}
         }
     }
 
     fn on_closed(&mut self) {
-        self.rx = None;
-        self.stdin = None;
         self.ready = false;
-        if self.socket.take().is_some() {
+        let Some(mut client) = self.client.take() else { return };
+        if client.is_hosted() {
             // Eingebettet: der Gastgeber hat die Partie beendet → Spieltisch nach kurzer Zeit
             // schließen (die Spielende-Meldung bleibt so lange sichtbar)
+            drop(client);
             self.signals().bridge_stopped().emit(0);
             let mut tree = self.base().get_tree();
             let quit = Callable::from_object_method(&tree, "quit");
             tree.create_timer(HOSTED_CLOSE_DELAY).connect("timeout", &quit);
             return;
         }
-        let code = self
-            .child
-            .take()
-            .and_then(|mut c| c.wait().ok())
-            .and_then(|s| s.code())
-            .map_or(-1, i64::from);
+        let code = client.exit_code().map_or(-1, i64::from);
+        drop(client);
         self.signals().bridge_stopped().emit(code);
     }
 }
@@ -605,54 +422,20 @@ fn globalize(path: &GString) -> String {
     ProjectSettings::singleton().globalize_path(path).to_string()
 }
 
-/// Wandelt ganzzahlige floats (Godot-JSON kennt nur float) rekursiv in int um.
-fn normalize_numbers(v: Variant) -> Variant {
-    match v.get_type() {
-        VariantType::FLOAT => {
-            let f = v.to::<f64>();
-            if f.fract() == 0.0 && f.abs() < 9.0e15 {
-                (f as i64).to_variant()
-            } else {
-                v
-            }
-        }
-        VariantType::DICTIONARY => {
-            let src = v.to::<VarDictionary>();
-            let mut out = VarDictionary::new();
-            for (k, val) in src.iter_shared() {
-                out.set(&k, &normalize_numbers(val));
-            }
-            out.to_variant()
-        }
-        VariantType::ARRAY => {
-            let src = v.to::<VarArray>();
-            let mut out = VarArray::new();
-            for val in src.iter_shared() {
-                out.push(&normalize_numbers(val));
-            }
-            out.to_variant()
-        }
-        _ => v,
-    }
-}
-
 /// Die Java-Brücke als Regel-Engine der UI (Protokoll v3).
-impl RulesEngine for Gd<ForgeBridge> {
+impl RulesEngine for ForgeBridge {
     fn submit(&mut self, request_id: i64, choice: &Choice) -> bool {
-        self.bind_mut().answer(request_id, choice.to_var())
+        self.send_value(&command::answer(request_id, choice))
     }
 
     fn request_state(&mut self, viewer: PlayerId) -> bool {
-        self.bind_mut().request_state(viewer as i64)
+        self.send_value(&command::request_state(Some(viewer)))
     }
 }
 
 /// Port des Gastgebers aus den Programmargumenten nach `--` (`--clash-port=N`), falls Godot von
-/// NeoForge als Spieltisch gestartet wurde.
+/// einem Gastgeber wie NeoForge als Spieltisch gestartet wurde.
 fn host_port() -> Option<u16> {
-    godot::classes::Os::singleton()
-        .get_cmdline_user_args()
-        .as_slice()
-        .iter()
-        .find_map(|a| a.to_string().strip_prefix("--clash-port=").and_then(|p| p.parse().ok()))
+    let args = godot::classes::Os::singleton().get_cmdline_user_args();
+    clash_forge_client::host_port(args.as_slice().iter().map(|a| a.to_string()))
 }

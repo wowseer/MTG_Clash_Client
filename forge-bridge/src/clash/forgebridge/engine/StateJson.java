@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;

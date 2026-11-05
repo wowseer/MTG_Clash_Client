@@ -7,24 +7,28 @@ Protokoll:
 
 ```
 Godot (Rust)                                  Java-Prozess (forge-bridge/)
-ForgeBridge-Node  ── JSON-Zeile auf stdin ──▶  clash.forgebridge.BridgeMain → ForgeBridge
-  Signale        ◀── JSON-Zeile auf stdout ──    └─ Forge (forge-game, forge-ai, …)
+ForgeBridge-Node (clash-forge-client)         clash.forgebridge.app.BridgeMain
+          ── JSON-Zeile auf stdin ──▶           → ClashBridge → engine.BridgeCore
+  Signale ◀── JSON-Zeile auf stdout ──            └─ Forge (forge-game, forge-ai, …)
                        stderr ──▶ user://forge-bridge.log
 ```
+
+Andere Oberflächen und Gastgeber binden dieselben Bausteine ein – siehe [Einbau.md](Einbau.md).
 
 **Eingebettet in NeoForge:** NeoForge (JavaFX-Oberfläche für Forge) startet die Partie und
 Godot als Spieltisch. Godot verbindet sich über einen lokalen Socket.
 
 ```
 NeoForge (JVM)                                              Godot (gestartet von NeoForge)
-NeoGame.play ── ClashTable.open(): Port öffnen, Godot starten ──▶ godot --path … -- --clash-port=N
-   │            ForgeBridge.attach(Socket)  ◀── JSON-Zeilen über TCP 127.0.0.1:N ──▶ ForgeBridge-Node
-   └─ HostedMatch: menschlicher Sitz = RemoteLobbyPlayer (RemotePlayerController)
+NeoGame.play ── ClashTable.open() → TableLauncher.launch(): Port öffnen, Godot starten ──▶ godot --path … -- --clash-port=N
+   │            ClashBridge.attach(Socket)  ◀── JSON-Zeilen über TCP 127.0.0.1:N ──▶ ForgeBridge-Node
+   └─ HostedMatch: menschlicher Sitz = ClashBridge.remotePlayer(…) (RemotePlayerController)
 ```
 
-- NeoForge-Seite: `forge.neo.clash.ClashTable` und ein kleiner Eingriff in `forge.neo.match.NeoGame`
-  (NeoForge-Repo). Der Brücken-Code wird mit `tools/sync_neoforge.sh` nach
-  `forge-gui-neo/src/main/java/clash/forgebridge/` kopiert; maßgeblich ist die Fassung hier.
+- NeoForge-Seite (getrennt mitgebbar, `integrations/neoforge/`): `forge.neo.clash.ClashTable` und
+  der Patch `neoforge-host.patch` (Eingriffe in `NeoGame`, `SafeAi`, `NeoMain`, `SettingsPanel`,
+  Sprachdateien). `tools/sync_neoforge.sh` kopiert die Brücke (ohne `app/`) und `ClashTable` nach
+  `forge-gui-neo/src/main/java/`; maßgeblich ist die Fassung hier.
 - Eingeschaltet über `neo.clash=true` (oder Umgebung `NEOFORGE_CLASH=true`); Godot-Programm
   `neo.clash.godot` / `CLASH_GODOT`, Projektordner `neo.clash.project` / `CLASH_PROJECT`.
   Befehl zum Testen: `NeoMain clash [--deck=NAME] [--opponents=N] [--timeout=SEK]` bzw. `tools/neoforge_clash.sh`.
@@ -59,7 +63,8 @@ mit dem Spiel ausgeliefert, sondern aus der lokalen Forge-Installation gelesen.
    Weggelassen werden Adventure-Modus, Musik und fremde Sprachdateien – für Partien über die
    Brücke nicht nötig.
 2. Java 17 oder neuer (`java`, `javac`, `jar` im PATH).
-3. Brücke bauen: `forge-bridge/build.sh` → `forge-bridge/build/forge-bridge.jar` (ca. 1–2 s).
+3. Brücke bauen: `forge-bridge/build.sh` → `forge-bridge/build/forge-bridge.jar` (Programm) und
+   `forge-bridge-core.jar` (Bibliothek zum Einbetten), ca. 2–5 s.
    Anderer Forge-Pfad: `FORGE_JAR=/pfad/zum/forge.jar forge-bridge/build.sh`.
 4. In Godot einen Knoten `ForgeBridge` anlegen und ggf. `forge_dir` / `forge_jar` setzen
    (leer = `FORGE_DIR`, sonst `forge-bridge/forge/`, sonst `~/Games/Forge`; Jar wird automatisch gesucht).
@@ -71,7 +76,7 @@ Manueller Test ohne Godot: `forge-bridge/run.sh` starten und JSON-Zeilen eintipp
 
 Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Choice`, Vorbild:
 `forge-engine/src/decision.rs` aus forge-rules-rs, `~/Entwicklung/Java/forge/rust/` – nicht NeoForge). Die Java-Brücke übersetzt Forges
-`PlayerController`-Aufrufe in `Decision`s (`Decisions.java`, `RemotePlayerController.java`).
+`PlayerController`-Aufrufe in `Decision`s (`engine/Decisions.java`, `engine/RemotePlayerController.java`).
 
 | Forge-Methode(n) | `Decision` | Antwort (`Choice`) |
 |---|---|---|

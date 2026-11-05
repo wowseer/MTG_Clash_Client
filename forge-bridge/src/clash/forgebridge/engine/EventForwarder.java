@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import com.google.common.eventbus.Subscribe;
 import com.google.gson.JsonObject;
@@ -28,19 +28,19 @@ final class EventForwarder {
 
     @Subscribe
     public void onEvent(GameEvent ev) {
-        JsonObject m = ForgeBridge.message("event");
+        JsonObject m = BridgeCore.message("event");
         m.addProperty("event", ev.getClass().getSimpleName());
         m.addProperty("text", String.valueOf(ev));
         var ph = game.getPhaseHandler();
         m.addProperty("turn", ph.getTurn());
         m.addProperty("phase", ph.getPhase() == null ? null : ph.getPhase().name());
         addDetails(m, ev);
-        ForgeBridge.send(m);
+        BridgeCore.send(m);
         // KI-Züge sichtbar machen: nach Aktionen der KI kurz warten (siehe AiPace)
         AiPace.after(game, ev);
         // Eingebettet startet der Gastgeber die Partie, also meldet sie hier ihr Ende
-        if (ForgeBridge.isEmbedded() && ev instanceof forge.game.event.GameEventGameOutcome) {
-            ForgeBridge.sendGameOver(game);
+        if (BridgeCore.isEmbedded() && ev instanceof forge.game.event.GameEventGameOutcome) {
+            BridgeCore.sendGameOver(game);
         }
     }
 

@@ -42,7 +42,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 
 *Erbt von `Node` · Quelle: `rust/src/forge/bridge.rs`*
 
-Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) als eigenen Prozess und spricht mit ihr über JSON-Zeilen (Protokoll: `docs/Forge-Schnittstelle.md`). Ablauf: `start_bridge()` → Signal [signal bridge_ready] → `start_match()` → Signale [signal forge_event] (jedes Spielereignis) und [signal decision_requested] (ferngesteuerter Spieler hat Priorität / Mulligan) → Antwort mit `answer()` → [signal game_over]. Ferngesteuert sind die Sitzplätze aus `remote_seats`; alle anderen spielt die Forge-KI. Zahlen in empfangenen Dictionaries sind ganzzahlig (int), wenn sie keinen Nachkommaanteil haben (Godots JSON liefert sonst immer float).
+Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) als eigenen Prozess bzw. verbindet sich mit einem Gastgeber und spricht mit ihr über JSON-Zeilen (Protokoll: `docs/Forge-Schnittstelle.md`). Ablauf: `start_bridge()` → Signal [signal bridge_ready] → `start_match()` → Signale [signal forge_event] (jedes Spielereignis) und [signal decision_requested] (ferngesteuerter Spieler hat Priorität / Mulligan) → Antwort mit `answer()` → [signal game_over]. Ferngesteuert sind die Sitzplätze aus `remote_seats`; alle anderen spielt die Forge-KI. Zahlen in empfangenen Dictionaries sind ganzzahlig (int), wenn sie keinen Nachkommaanteil haben.
 
 ### Eigenschaften
 
@@ -63,8 +63,8 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 |---|---|---|
 | `start_bridge()` | `bool` | Startet den Java-Prozess. Gibt false zurück, wenn er schon läuft oder nicht starten konnte (dann zusätzlich [signal bridge_error]). Fertig ist er erst mit [signal bridge_ready] (Forge braucht einige Sekunden zum Laden). |
 | `is_hosted()` | `bool` | Läuft die Brücke eingebettet in einem Gastgeber (NeoForge startet die Partie)? |
-| `stop_bridge()` | `void` | Beendet die Brücke (Befehl "quit", nach 2 s hart beendet). Sendet [signal bridge_stopped] mit -1, falls sie lief. |
-| `is_running()` | `bool` | Läuft der Java-Prozess? |
+| `stop_bridge()` | `void` | Beendet die Brücke (Befehl "quit", nach 1 s hart beendet). Sendet [signal bridge_stopped] mit -1, falls sie lief. |
+| `is_running()` | `bool` | Läuft der Java-Prozess bzw. die Verbindung zum Gastgeber? |
 | `is_ready()` | `bool` | Hat Forge fertig geladen ([signal bridge_ready] empfangen)? |
 | `send_command(command: Dictionary)` | `bool` | Schickt einen beliebigen Befehl (Dictionary mit "cmd", siehe Protokoll). false, wenn die Brücke nicht läuft. |
 | `ping(nonce: int)` | `bool` | Verbindungstest; Antwort kommt als Nachricht `{type: "pong", nonce}`. |

@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import java.io.File;
 import java.io.IOException;
@@ -169,7 +169,7 @@ final class CardImages {
         DOWNLOADER.submit(() -> {
             download(url, target, key);
             if (QUEUED.decrementAndGet() == 0) {
-                ForgeBridge.imagesChanged();
+                BridgeCore.imagesChanged();
             }
         });
         return "";
@@ -266,7 +266,7 @@ final class CardImages {
                 download(url, target, key);
                 // nach dem letzten Bild einer Reihe einmal den neuen Zustand schicken
                 if (QUEUED.decrementAndGet() == 0) {
-                    ForgeBridge.imagesChanged();
+                    BridgeCore.imagesChanged();
                 }
             });
         }

@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import java.util.Map;
 import java.util.Set;
@@ -34,7 +34,7 @@ import forge.model.FModel;
  * {@link #MANA_PER_TYPE} je Manaart (WUBRG und farblos) auffüllen.</li>
  * </ul>
  * Änderungen laufen im Spiel-Thread, sobald er auf eine Antwort des Spielers wartet
- * ({@link ForgeBridge#runOnGameThread}). Nach jeder Änderung schickt die Brücke den neuen Zustand; wartet der Spieler gerade auf
+ * ({@link BridgeCore#runOnGameThread}). Nach jeder Änderung schickt die Brücke den neuen Zustand; wartet der Spieler gerade auf
  * Priorität, wird sie neu gestellt (damit die neue Karte bzw. das Mana sofort nutzbar ist).
  */
 final class DebugTools {
@@ -59,27 +59,27 @@ final class DebugTools {
         }
         JsonArray arr = new JsonArray();
         names.forEach(arr::add);
-        JsonObject m = ForgeBridge.message("debug_card_names");
+        JsonObject m = BridgeCore.message("debug_card_names");
         m.add("names", arr);
-        ForgeBridge.send(m);
+        BridgeCore.send(m);
     }
 
     /** Karte {@code name} neu erzeugen und Sitzplatz {@code seat} auf die Hand legen. */
     static void addCardToHand(Game game, int seat, String name) {
         PaperCard pc = FModel.getMagicDb().getCommonCards().getCard(name);
         if (pc == null) {
-            ForgeBridge.sendError("unknown_card", "Unbekannte Karte: " + name);
+            BridgeCore.sendError("unknown_card", "Unbekannte Karte: " + name);
             return;
         }
         Player p = player(game, seat);
         if (p == null) {
-            ForgeBridge.sendError("bad_seat", "Kein Spieler an Sitzplatz " + seat);
+            BridgeCore.sendError("bad_seat", "Kein Spieler an Sitzplatz " + seat);
             return;
         }
-        ForgeBridge.runOnGameThread(() -> {
+        BridgeCore.runOnGameThread(() -> {
             Card c = Card.fromPaperCard(pc, p);
             game.getAction().moveToHand(c, null);
-            ForgeBridge.debugChanged(game);
+            BridgeCore.debugChanged(game);
         });
     }
 
@@ -91,9 +91,9 @@ final class DebugTools {
             INFINITE.remove(seat);
         }
         if (game != null && on) {
-            ForgeBridge.runOnGameThread(() -> {
+            BridgeCore.runOnGameThread(() -> {
                 refill(game);
-                ForgeBridge.debugChanged(game);
+                BridgeCore.debugChanged(game);
             });
         }
     }

@@ -373,7 +373,7 @@ impl INode for ForgeTable {
             self.dirty = false;
             self.since_refresh = 0.0;
             if let Some(mut b) = self.bridge.clone() {
-                b.request_state(LOCAL_SEAT as u8);
+                RulesEngine::request_state(&mut *b.bind_mut(), LOCAL_SEAT as u8);
             }
         }
     }
@@ -1241,7 +1241,7 @@ impl ForgeTable {
             godot_warn!("ForgeTable: unbekannte Entscheidung {}", request.get("decision").unwrap_or_default());
             let id = get_int(&request, "id");
             if let Some(mut b) = self.bridge.clone() {
-                b.submit(id, &Choice::Cancel);
+                b.bind_mut().submit(id, &Choice::Cancel);
             }
             return;
         };
@@ -3176,7 +3176,7 @@ impl ForgeTable {
         self.set_marked(None);
         self.update_glow();
         if let Some(mut b) = self.bridge.clone() {
-            b.submit(req.id, &choice);
+            b.bind_mut().submit(req.id, &choice);
         }
     }
 
@@ -3725,7 +3725,7 @@ impl ForgeTable {
                     for a in get_array(&combat, "attackers").unwrap_or_default().iter_shared() {
                         let Ok(a) = a.try_to::<VarDictionary>() else { continue };
                         let attacker = u32::try_from(get_int(&a, "card")).ok();
-                        let target = a.get("target").and_then(|t| Target::from_var(&t));
+                        let target = a.get("target").and_then(|t| crate::rules::target_from_var(&t));
                         // Angriff auf einen Spieler: Kampfansicht genügt; auf Planeswalker/Schlacht: Pfeil
                         if let (Some(c), Some(t @ Target::Card(_))) = (attacker, target) {
                             push(c, t, ArrowColor::Orange, 1.0);
@@ -4582,7 +4582,7 @@ fn stack_targets(item: &VarDictionary) -> Vec<Target> {
     let mut out = Vec::new();
     for part in get_array(item, "targets").unwrap_or_default().iter_shared() {
         let Ok(part) = part.try_to::<VarArray>() else { continue };
-        for t in part.iter_shared().filter_map(|t| Target::from_var(&t)) {
+        for t in part.iter_shared().filter_map(|t| crate::rules::target_from_var(&t)) {
             if !out.contains(&t) {
                 out.push(t);
             }

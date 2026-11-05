@@ -1,4 +1,4 @@
-package clash.forgebridge;
+package clash.forgebridge.engine;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -327,12 +327,12 @@ public class RemotePlayerController extends PlayerControllerAi {
     private JsonObject lastAction;
 
     private void sendRejected(int option, JsonObject action, String reason) {
-        JsonObject rejected = ForgeBridge.message("rejected");
+        JsonObject rejected = BridgeCore.message("rejected");
         rejected.addProperty("player", seat);
         rejected.addProperty("option", option);
         rejected.add("action", action);
         rejected.addProperty("reason", reason);
-        ForgeBridge.send(rejected);
+        BridgeCore.send(rejected);
     }
 
     /**
@@ -1022,7 +1022,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     /** Mitteilung (z. B. „Forge-KI wählt Rot“): als Eintrag im Spielprotokoll ({@code log}, Art INFORMATION). */
     @Override
     public void notifyOfValue(SpellAbility saSource, GameObject realtedTarget, String value) {
-        com.google.gson.JsonObject m = ForgeBridge.message("log");
+        com.google.gson.JsonObject m = BridgeCore.message("log");
         m.addProperty("kind", "INFORMATION");
         Card host = saSource == null ? null : saSource.getHostCard();
         m.addProperty("text", (host == null ? "" : host.getName() + ": ") + value);
@@ -1030,7 +1030,7 @@ public class RemotePlayerController extends PlayerControllerAi {
             m.addProperty("card", host.getId());
         }
         m.addProperty("turn", getGame().getPhaseHandler().getTurn());
-        ForgeBridge.send(m);
+        BridgeCore.send(m);
     }
 
     /**

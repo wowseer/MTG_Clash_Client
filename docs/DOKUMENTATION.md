@@ -132,7 +132,9 @@ Kamera oder Hand verschiebt, muss die `HeroAnchor`-Marker mitziehen.
 |---|---|
 | `rust/src/table/` | Darstellung: `Card3D`, `Zone`, `TableCamera`, `TableController`, Ziel- und Kampfpfeile `TargetArrows` (`target_arrows.rs`), Kulissen `Arena` (`arena.rs`) und `Tavern` (`tavern.rs`), prozedurale Texturen (`textures.rs`), Kartenbilder (`placeholder.rs`) |
 | `rust/src/game/` | Anzeige-Bausteine: `PlayerSeat`, Kartenmodell aus den Kartendaten der Engine (`cards.rs`: `CardDef::from_state`, Kartenart, Wertefeld), Regeltext-Symbole und Schriftgrößen (`card_text.rs`), Markennamen (`counters.rs`), Mana-Typen und -Pool (`mana.rs`), Phasen-Liste (`phases.rs`), HUD (`hud.rs`), Spieler-Medaillon (`seat_badge.rs`), Sanduhr (`hourglass.rs`), Manapool-Anzeige (`mana_view.rs`), Phasen-Zeitstrahl (`phase_timeline.rs`), Kartenvorschau (`card_preview.rs`), Auswahlfenster (`choice_panel.rs`), 3D-Bühnen für Kartenwahl in `table/showcase.rs`, Engine-Entscheidung → Auswahlfenster → Antwort (`decision_view.rs`), Karten-Aussparung der Medaillons (`card_cutout.rs`) |
-| `rust/src/rules/` | Engine-Grenze: Protokoll-Modell (`Decision`, `Choice`, `Action`, `Target` …, `decision.rs`), offene Anfrage `Request` und Schnittstelle `RulesEngine` (`mod.rs`). Die UI kennt nur diese Typen |
+| `rust/src/rules/` | Engine-Grenze der UI: das Protokoll-Modell (`Decision`, `Choice`, `Action`, `Target` …, `RulesEngine`) kommt aus dem godot-freien Crate `rust/crates/clash-protocol/`; hier nur `Request` mit Kartendaten als `Dictionary` und die Umwandlung Godot ↔ JSON (`json.rs`). Die UI kennt nur diese Typen |
+| `rust/crates/clash-protocol/` | Protokoll-Modell + JSON-Form (Protokoll v3) und Befehle (`command`), ohne Godot – wiederverwendbar ([Einbau.md](Einbau.md)) |
+| `rust/crates/clash-forge-client/` | Verbindung zur Brücke: Java-Prozess starten oder mit Gastgeber verbinden, Lesethread, `ForgeClient`; Beispiel `examples/autoplay.rs` (Tisch ohne Grafik) |
 | `rust/src/forge/` | `ForgeBridge` (Java-Prozess mit Forge, setzt `RulesEngine` um) und `ForgeTable` (Partie auf dem 3D-Tisch) |
 | `forge-bridge/` | Java-Brücke zu Forge (GPL-3.0): Quellcode, `build.sh`, `run.sh`, Testdecks; `forge/` = lokale Forge-Kopie (nicht im Git) |
 | `rust/src/i18n.rs` | Zweisprachigkeit: Sprache, `tr!`/`trf!`-Makros, Namenstabelle |
@@ -283,9 +285,9 @@ Das Spiel selbst prüft nichts: Es zeigt Forges Spielzustand an und schickt dein
 
 **Ziel ist NeoForge** (JavaFX-Oberfläche für Forge, `~/Entwicklung/Java/NeoForge`): Dort soll
 der 3D-Tisch die Partien spielen, die NeoForge startet. Die UI spricht das Protokoll-Modell
-(`rust/src/rules/`, angelehnt an forge-rules-rs); die Java-Brücke übersetzt Forge dorthin
+(`clash-protocol`, angelehnt an forge-rules-rs); die Java-Brücke übersetzt Forge dorthin
 (Protokoll v3). Forge läuft als eigener Java-Prozess (`forge-bridge/`, GPL-3.0). Der Godot-Knoten `ForgeBridge`
-(`rust/src/forge/bridge.rs`) startet ihn und tauscht JSON-Zeilen über stdin/stdout aus.
+(`rust/src/forge/bridge.rs`, Transport aus `clash-forge-client`) startet ihn und tauscht JSON-Zeilen über stdin/stdout aus. Wie andere Projekte diese Bausteine nutzen: [Einbau.md](Einbau.md).
 Entscheidungen des Spielers (Priorität, Mulligan, allgemeine Auswahl) kommen als Signal
 `decision_requested` und werden mit `answer()` beantwortet; alle Forge-Spielereignisse kommen als `forge_event`.
 
@@ -335,9 +337,13 @@ mitten in der Partie geschlossen, gibt der eigene Sitz auf.
 
 **Entwickeln und Testen ohne Maven:** NeoForges Quellen bauen nur in einem Forge-Checkout mit
 Maven. Für die Integration reicht die installierte NeoForge (`~/Games/NeoForge`):
-- `tools/sync_neoforge.sh` kopiert den Brücken-Code nach NeoForge (`clash/forgebridge/`),
-- `tools/neoforge_patch.sh` kompiliert ihn mit den geänderten NeoForge-Klassen (`ClashTable`,
+- Die NeoForge-Anbindung liegt getrennt in `integrations/neoforge/` (`ClashTable.java` und
+  `neoforge-host.patch` für NeoForges Klassen, Anleitung im README dort); einmalig
+  `git -C <neoforge> apply integrations/neoforge/neoforge-host.patch`,
+- `tools/sync_neoforge.sh` kopiert die Brücke (ohne `app/`) und `ClashTable` nach NeoForge,
+- `tools/neoforge_patch.sh` kompiliert sie mit den geänderten NeoForge-Klassen (`ClashTable`,
   `NeoGame`, `SafeAi`, `NeoMain`, `SettingsPanel`, Sprachdateien) zu einem Patch-Jar,
+- `tools/neoforge_export_patch.sh` schreibt `neoforge-host.patch` aus dem NeoForge-Repo neu,
 - `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` spielt eine Commander-Partie mit dem
   3D-Tisch in einer Testkopie (eigene NeoForge-Daten bleiben unberührt; Befehl `NeoMain clash`).
   Mit `CLASH_CMD=ui tools/neoforge_clash.sh` startet stattdessen NeoForges normales Menü (Testkopie,
