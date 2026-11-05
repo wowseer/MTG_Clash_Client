@@ -192,10 +192,26 @@ impl ManaPoolView {
     }
 }
 
-/// Mana-Symbol zeichnen (auch für die 3D-Kostensymbole, `table::cost_symbols`): Kreis in der
-/// Manafarbe mit goldenem Rand und eigenem Motiv – Grün = Nadelbaum, Blau = Wassertropfen,
-/// Schwarz = Totenkopf, Weiß = Sonne, Rot = Flamme, Farblos = Raute.
+/// Mana-Symbol zeichnen (auch für die 3D-Kostensymbole, `table::cost_symbols`): das Symbol aus
+/// dem Symbolbogen `Assets/Mana/Mana.svg` (`game::mana_symbols`); farblos (fehlt im Bogen) als
+/// grauer Kreis mit goldenem Rand und Raute.
 pub fn draw_mana_symbol(b: &mut CanvasItem, t: ManaType, c: Vector2, r: f32) {
+    // Symbol aus dem Symbolbogen (`mana_symbols`); farblos gibt es dort nicht → gezeichnete Raute
+    if t != ManaType::Colorless {
+        let wubrg = match t {
+            ManaType::White => "W",
+            ManaType::Blue => "U",
+            ManaType::Black => "B",
+            ManaType::Red => "R",
+            ManaType::Green => "G",
+            ManaType::Colorless => "C",
+        };
+        if let Some(tex) = super::mana_symbols::texture(wubrg) {
+            b.draw_circle(c + Vector2::new(0.0, 1.5), r + 1.0, Color::from_rgba(0.0, 0.0, 0.0, 0.45));
+            b.draw_texture_rect(&tex, Rect2::new(c - Vector2::splat(r), Vector2::splat(2.0 * r)), false);
+            return;
+        }
+    }
     let fill = t.color().lerp(Color::WHITE, 0.15);
     let lum = 0.299 * fill.r + 0.587 * fill.g + 0.114 * fill.b;
     let ink = if lum < 0.45 { Color::from_rgb(0.93, 0.9, 0.85) } else { Color::from_rgb(0.12, 0.1, 0.08) };

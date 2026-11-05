@@ -216,8 +216,8 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
 - Texte im Spiel zweisprachig: `tr!("Deutsch", "English")` / `trf!` aus `rust/src/i18n.rs`.
 - **Kosten immer als Mana-Symbole:** Jedes UI-Element, das Kosten zeigt, nimmt den Baustein
   `rust/src/table/cost_symbols.rs` (`cost_row`, `rich_label`; in `Button3D`-Texten und Bühnen-Beschriftungen
-  reicht „{1}{U}“ im Text). Motive wie im Manapool (Sonne, Tropfen, Totenkopf, Flamme, Wald, graue Raute),
-  nie „{…}“ als Text.
+  reicht „{1}{U}“ im Text). Symbole aus dem Symbolbogen `Assets/Mana/Mana.svg`
+  (`game/mana_symbols.rs`; farblos {C} als graue Raute), nie „{…}“ als Text und keine eigenen Motive.
 - Godot-Logik in Rust (gdext), kein GDScript im Spiel (nur temporäre Testskripte).
 - Lizenz: `forge-bridge/` ist GPL-3.0 und läuft als getrennter Prozess; keinen Forge-Code in
   `rust/` übernehmen. `forge-bridge/forge/` (Jar + Kartendaten) nie committen.

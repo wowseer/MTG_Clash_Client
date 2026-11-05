@@ -2,10 +2,10 @@
 //! (Kosten über den Handkarten wie im Video „Spree und Stack“, Knöpfe wie „Bezahlen {1}{U}“,
 //! Beschriftungen wie „+ {3}“).
 //!
-//! Die Motive sind dieselben wie im Manapool ([`draw_mana_symbol`]): Weiß = Sonne, Blau =
-//! Wassertropfen, Schwarz = Totenkopf, Rot = Flamme, Grün = Nadelbaum (Wald), Farblos = graue
-//! Raute. Generische Kosten (Zahlen), X und andere Symbole (Hybrid, phyrexianisch) stehen als
-//! Text in einem grauen Kreis. Jedes Symbol wird einmal in eine kleine `SubViewport` gezeichnet
+//! Die Symbole stammen aus dem Symbolbogen `Assets/Mana/Mana.svg` (`game::mana_symbols`):
+//! Farben, Zahlen, X, Hybride, phyrexianische Symbole, Tappen. Was dort fehlt (farblos {C},
+//! Hybrid-phyrexianisch), wird gezeichnet: farblos als graue Raute ([`draw_mana_symbol`]),
+//! anderes als Text in einem grauen Kreis. Jedes Symbol wird einmal in eine kleine `SubViewport` gezeichnet
 //! und als Textur zwischengespeichert; in der Szene ist es ein `Sprite3D`.
 
 use std::cell::RefCell;
@@ -118,6 +118,12 @@ thread_local! {
 /// Textur eines Symbols (einmal gezeichnet, danach aus dem Zwischenspeicher). Die
 /// `SubViewport` hängt unsichtbar an der Wurzel des Szenenbaums.
 pub fn symbol_texture(token: &str) -> Option<Gd<Texture2D>> {
+    // Symbolbogen (`game::mana_symbols`) für alle Manasymbole, Zahlen, X, Hybride …
+    if !token.starts_with('#') {
+        if let Some(t) = crate::game::mana_symbols::texture(token) {
+            return Some(t);
+        }
+    }
     if let Some(vp) = CACHE.with(|c| c.borrow().get(token).cloned()).filter(|v| v.is_instance_valid()) {
         return vp.get_texture().map(|t| t.upcast::<Texture2D>());
     }

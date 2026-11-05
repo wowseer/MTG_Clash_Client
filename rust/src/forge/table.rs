@@ -339,6 +339,7 @@ impl INode for ForgeTable {
     fn exit_tree(&mut self) {
         // geladene Kartenbilder freigeben (sonst meldet Godot beim Beenden übrige Texturen)
         placeholder::clear_printed();
+        crate::game::mana_symbols::clear();
     }
 
     fn process(&mut self, delta: f64) {

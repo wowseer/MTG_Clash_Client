@@ -37,6 +37,35 @@ pub fn pip_centers(count: usize) -> Vec<f32> {
         .collect()
 }
 
+/// Kostensymbole eines Kartenbilds in Reihenfolge: generische Zahl (falls > 0), dann je
+/// farbiges Mana sein Buchstabe (W U B R G C).
+pub fn pip_tokens(def: &CardDef) -> Vec<String> {
+    let mut out = Vec::new();
+    if def.cost.generic > 0 {
+        out.push(def.cost.generic.to_string());
+    }
+    for t in ManaType::ALL {
+        let letter = match t {
+            ManaType::White => "W",
+            ManaType::Blue => "U",
+            ManaType::Black => "B",
+            ManaType::Red => "R",
+            ManaType::Green => "G",
+            ManaType::Colorless => "C",
+        };
+        for _ in 0..def.cost.specific.get(t) {
+            out.push(letter.to_string());
+        }
+    }
+    out
+}
+
+/// Zeigt das Kartenbild die generische Zahl selbst (Symbol aus dem Bogen)? Dann braucht es
+/// keine Beschriftung darüber.
+pub fn draws_generic(def: &CardDef) -> bool {
+    def.cost.generic > 0 && crate::game::mana_symbols::cell(&def.cost.generic.to_string()).is_some()
+}
+
 /// Pixelmitte (y) der Titelleiste.
 pub fn title_center_y() -> f32 {
     TITLE_Y as f32
@@ -136,19 +165,20 @@ pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
             circle(&mut img, W / 2 - 14, 116, 14, c.lightened(0.45));
         }
         kind => {
-            // Kostensymbole: zuerst generisch (grau, Zahl per Label3D), dann farbig
-            let mut pips: Vec<Color> = Vec::new();
-            if def.cost.generic > 0 {
-                pips.push(ManaType::Colorless.color());
-            }
-            for t in ManaType::ALL {
-                for _ in 0..def.cost.specific.get(t) {
-                    pips.push(t.color());
-                }
-            }
-            for (x, c) in pip_centers(pips.len()).into_iter().zip(pips) {
+            // Kostensymbole aus dem Symbolbogen (`game::mana_symbols`): zuerst die generische
+            // Zahl, dann die farbigen; ohne Bogen (bzw. farblos) Farbkreise, die Zahl per Label3D
+            for (x, token) in pip_centers(pip_tokens(def).len()).into_iter().zip(pip_tokens(def)) {
                 circle(&mut img, x as i32, TITLE_Y, PIP / 2 + 1, Color::from_rgb(0.05, 0.04, 0.03));
-                circle(&mut img, x as i32, TITLE_Y, PIP / 2 - 1, c);
+                match crate::game::mana_symbols::image(&token) {
+                    Some(mut sym) => {
+                        sym.resize_ex(PIP, PIP).interpolation(godot::classes::image::Interpolation::LANCZOS).done();
+                        img.blend_rect(&sym, rect(0, 0, PIP, PIP), Vector2i::new(x as i32 - PIP / 2, TITLE_Y - PIP / 2));
+                    }
+                    None => {
+                        let c = token.chars().next().and_then(ManaType::from_wubrg).unwrap_or(ManaType::Colorless).color();
+                        circle(&mut img, x as i32, TITLE_Y, PIP / 2 - 1, c);
+                    }
+                }
             }
             // Bildfeld: Bildausschnitt der Karte, sonst Typsymbol
             match art_image.clone() {

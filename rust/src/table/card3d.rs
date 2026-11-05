@@ -879,7 +879,8 @@ impl Card3D {
             let pips = c.specific.total() as usize + usize::from(c.generic > 0);
             let centers = placeholder::pip_centers(pips);
             let left_pip = centers.first().copied().unwrap_or(256.0 - 20.0);
-            let cost = if c.generic > 0 { c.generic.to_string() } else { String::new() };
+            // die Zahl steht schon als Symbol im Kartenbild (Symbolbogen) – dann keine Beschriftung
+            let cost = if c.generic > 0 && !placeholder::draws_generic(&self.def) { c.generic.to_string() } else { String::new() };
             (cost, centers.first().copied().unwrap_or(0.0), (26.0 + left_pip - 16.0) * 0.5, left_pip - 16.0 - 26.0)
         };
         FaceTexts {

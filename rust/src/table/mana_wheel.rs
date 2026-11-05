@@ -47,6 +47,8 @@ uniform vec4 seg_color[6];
 uniform int seg_icon[6];
 uniform float seg_hover[6];
 uniform float seg_selected[6];
+uniform sampler2D symbols : source_color, filter_linear_mipmap;
+uniform vec4 seg_uv[6];
 uniform bool multi = false;
 uniform float inner = 0.42;
 uniform float alpha = 1.0;
@@ -136,9 +138,18 @@ void fragment() {
         float ca = float(i) * seg;
         vec2 c = mid * vec2(sin(ca), cos(ca));
         vec2 q = (p - c) / 0.2;
-        float d = icon(seg_icon[i], q);
-        float ink = 1.0 - smoothstep(-0.04, 0.04, d);
-        col = mix(col, vec3(0.06, 0.06, 0.07), ink * 0.92);
+        vec4 suv = seg_uv[i];
+        if (suv.z > 0.0) {
+            // Symbol aus dem Symbolbogen (Kreis mit Motiv)
+            if (length(q) < 1.0) {
+                vec4 t = texture(symbols, suv.xy + vec2(q.x * 0.5 + 0.5, 0.5 - q.y * 0.5) * suv.zw);
+                col = mix(col, t.rgb, t.a);
+            }
+        } else {
+            float d = icon(seg_icon[i], q);
+            float ink = 1.0 - smoothstep(-0.04, 0.04, d);
+            col = mix(col, vec3(0.06, 0.06, 0.07), ink * 0.92);
+        }
         // weicher Innenrand
         col *= mix(0.55, 1.0, smoothstep(inner, inner + 0.06, r));
     }
@@ -349,6 +360,21 @@ impl ManaWheel {
             let s = self.segments.get(i).copied().unwrap_or(WheelSegment { color: Color::GRAY, icon: 5 });
             colors.push(s.color);
             icons.push(s.icon);
+        }
+        // Symbole aus dem Symbolbogen (farblos fehlt dort: gezeichnete Raute)
+        let letters = ['W', 'U', 'B', 'R', 'G'];
+        let mut uvs = PackedVector4Array::new();
+        for i in 0..MAX_SEGMENTS {
+            let icon = self.segments.get(i).map_or(5, |s| s.icon);
+            let uv = letters
+                .get(icon as usize)
+                .and_then(|l| crate::game::mana_symbols::uv_rect(&l.to_string()))
+                .unwrap_or(Vector4::ZERO);
+            uvs.push(uv);
+        }
+        mat.set_shader_parameter("seg_uv", &uvs.to_variant());
+        if let Some(sheet) = crate::game::mana_symbols::sheet_texture() {
+            mat.set_shader_parameter("symbols", &sheet.to_variant());
         }
         mat.set_shader_parameter("count", &(n.max(1) as i32).to_variant());
         mat.set_shader_parameter("seg_color", &colors.to_variant());
