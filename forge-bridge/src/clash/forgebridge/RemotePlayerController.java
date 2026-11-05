@@ -1598,9 +1598,10 @@ public class RemotePlayerController extends PlayerControllerAi {
             // „Pay for Casualty? …“ → „Casualty“
             name = prompt.replaceFirst("^Pay for ", "").replaceFirst("\\?.*$", "");
         }
-        // „Casualty 1 – Sacrifice a creature …“; steht die Kostenangabe schon im Titel
-        // („Offspring {2}“), nur der Titel
-        String costText = cost != null ? cost.toSimpleString() : "";
+        // Knopftext kurz wie „Kicker – {R}“: reine Manakosten dahinter („X – {2}“), steht die
+        // Angabe schon im Titel („Offspring {2}“) oder sind es andere Kosten (Opfern, Tappen –
+        // erklärt der Erinnerungstext auf der Karte), nur der Titel („Casualty 1“)
+        String costText = cost != null && cost.isOnlyManaCost() ? cost.toSimpleString() : "";
         String text = costText.isEmpty() || name.endsWith(costText) ? name : name + " – " + costText;
         List<Integer> chosen = Decisions.options(g(), seat, prompt, sa, null,
                 List.of(new Decisions.Opt(text, null)), 0, 1, false, "OptionalCost");
