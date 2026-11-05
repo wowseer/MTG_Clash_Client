@@ -24,7 +24,7 @@ use godot::prelude::*;
 use super::card3d::Card3D;
 use super::button3d::Button3D;
 use super::slider3d::Slider3D;
-use super::loyalty_bar::LoyaltyBar;
+use super::loyalty_view::LoyaltyView;
 use super::mana_wheel::ManaWheel;
 use super::exile_portal::ZONE_CLICK_GROUP;
 use super::layers::{CARD_LAYER, CONTROL_LAYER, ZONE_LAYER};
@@ -86,9 +86,9 @@ pub struct TableController {
     slider_drag: Option<Gd<Slider3D>>,
     /// Farbrad unter der Maus bzw. gedrückt (Klick beim Loslassen, wenn noch darauf).
     hovered_wheel: Option<Gd<ManaWheel>>,
-    /// Loyalitäts-Leiste unter der Maus und die, auf der die Maustaste gedrückt wurde.
-    hovered_bar: Option<Gd<LoyaltyBar>>,
-    bar_press: Option<Gd<LoyaltyBar>>,
+    /// Planeswalker-Ansicht unter der Maus und die, auf der die Maustaste gedrückt wurde.
+    hovered_bar: Option<Gd<LoyaltyView>>,
+    bar_press: Option<Gd<LoyaltyView>>,
     wheel_press: Option<Gd<ManaWheel>>,
     /// Anklickbare Zonen-Fläche (z. B. Exil-Strudel) unter der Maus bzw. gedrückt.
     hovered_zone_hit: Option<Gd<Area3D>>,
@@ -369,10 +369,10 @@ impl TableController {
         if let (Some(mut w), Some(h)) = (wheel.clone(), control_hit.as_ref()) {
             w.bind_mut().update_pointer(h.position);
         }
-        // Loyalitäts-Leiste: Trefferfläche hängt unter `content` der Leiste; Trefferpunkt wählt die Zeile
+        // Planeswalker-Ansicht: Trefferfläche hängt unter `content` der Ansicht; Trefferpunkt wählt das Feld
         let bar = control_hit
             .as_ref()
-            .and_then(|h| h.collider.clone().try_cast::<Node>().ok()?.get_parent()?.get_parent()?.try_cast::<LoyaltyBar>().ok());
+            .and_then(|h| h.collider.clone().try_cast::<Node>().ok()?.get_parent()?.get_parent()?.try_cast::<LoyaltyView>().ok());
         if bar != self.hovered_bar {
             if let Some(mut old) = self.hovered_bar.take().filter(|b| b.is_instance_valid()) {
                 old.bind_mut().set_hovered(false);
