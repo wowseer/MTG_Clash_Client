@@ -1585,9 +1585,10 @@ impl ForgeTable {
     fn stage_card(data: &VarDictionary, text: Option<&str>) -> Gd<Card3D> {
         let mut def = CardDef::from_state(data);
         if let Some(t) = text {
-            // eigener Text (ein Modus, ein Effekt): Platzhalter, damit nur dieser Text darauf steht
+            // eigener Text (ein Modus, ein Effekt): echtes Kartenbild, aber nur dieser Text auf
+            // einem Feld über dem gedruckten Textfeld (wie im Video „Spree und Stack“)
             def.text = t.to_string();
-            def.image.clear();
+            def.custom_text = true;
         }
         let mut copy = Card3D::new_alloc();
         {

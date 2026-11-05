@@ -52,6 +52,8 @@ final class CardImages {
             .followRedirects(HttpClient.Redirect.NORMAL)
             .connectTimeout(Duration.ofSeconds(10))
             .build();
+    /** Wartende Downloads (für die Zustandsmeldung nach dem letzten). */
+    private static final java.util.concurrent.atomic.AtomicInteger QUEUED = new java.util.concurrent.atomic.AtomicInteger();
     /** Abstand zwischen zwei Scryfall-Anfragen (Millisekunden). */
     private static final long REQUEST_GAP_MS = 120;
 
@@ -94,7 +96,14 @@ final class CardImages {
             } catch (RuntimeException e) {
                 return "";
             }
-            DOWNLOADER.submit(() -> download(url, target, key));
+            QUEUED.incrementAndGet();
+            DOWNLOADER.submit(() -> {
+                download(url, target, key);
+                // nach dem letzten Bild einer Reihe einmal den neuen Zustand schicken
+                if (QUEUED.decrementAndGet() == 0) {
+                    ForgeBridge.imagesChanged();
+                }
+            });
         }
         return "";
     }

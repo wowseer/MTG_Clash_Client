@@ -73,6 +73,9 @@ pub struct CardDef {
     /// Pfad des Kartenbilds (JPG von Scryfall im Forge-Bildordner, leer = keins): ersetzt den
     /// gezeichneten Platzhalter (`table::placeholder::card_face`).
     pub image: String,
+    /// Regeltext wurde für eine Bühne ersetzt (ein Modus, ein Ersatzeffekt): auf dem echten
+    /// Kartenbild steht dann nur dieser Text, auf einem Feld über dem gedruckten Textfeld.
+    pub custom_text: bool,
     /// Farben der Karte (CR 105), leer = farblos.
     pub colors: Vec<ManaType>,
     /// Regeltext (Symbole wie `{T}` noch nicht ersetzt).
@@ -140,6 +143,7 @@ impl CardDef {
             cost: parse_cost(&s("cost")),
             cost_text: s("cost"),
             image: s("image"),
+            custom_text: false,
             colors,
             text: s("text"),
             base_stats: pair("base_power", "base_toughness").or(stats),

@@ -235,6 +235,8 @@ pub struct Card3D {
     marker_material: Option<Gd<ShaderMaterial>>,
     tap_icon: Option<Gd<MeshInstance3D>>,
     visual: Option<Gd<Node3D>>,
+    /// Feld über dem gedruckten Textfeld für eigenen Text einer Bühne (`set_text_panel`).
+    text_panel: Option<Gd<MeshInstance3D>>,
     /// Kostensymbole über der Oberkante (nur in Zonen mit `show_costs`): Kosten-Text und Reihe.
     cost_row: Option<(String, Gd<Node3D>)>,
     meshes: Vec<Gd<MeshInstance3D>>,
@@ -304,6 +306,7 @@ impl IArea3D for Card3D {
             tween: None,
             zone: None,
             cost_row: None,
+            text_panel: None,
             base,
         }
     }
@@ -856,6 +859,7 @@ impl Card3D {
         };
         FaceTexts {
             printed,
+            custom_text: self.def.custom_text,
             name,
             name_x,
             name_width,
@@ -893,9 +897,11 @@ impl Card3D {
         // Echtes Kartenbild: Name, Kosten, Typzeile und Text stehen im Bild; Stärke/Widerstand nur,
         // wenn sie vom Aufdruck abweichen (grün/rot) – sonst verdeckten sie die gedruckten Werte.
         let printed = t.printed;
+        // eigener Text auf echtem Bild: nur der Text, auf einem Feld über dem gedruckten Textfeld
+        let custom = printed && t.custom_text && !tile;
         l.name.set_visible(!printed);
         l.kind.set_visible(!tile && !printed);
-        l.text.set_visible(!tile && !printed);
+        l.text.set_visible(!tile && (!printed || custom));
         l.cost.set_visible(!tile && !printed && !t.cost.is_empty());
         l.stats.set_visible(!printed || t.stats_color != Color::WHITE);
         l.kind.set_position(px(128.0, zs[0]));
@@ -923,6 +929,31 @@ impl Card3D {
         l.colors[4] = t.stats_color;
         let tint = if self.tapped || self.attacked { TAPPED_TINT } else { Color::WHITE };
         l.stats.set_modulate(t.stats_color * tint);
+        self.set_text_panel(custom);
+    }
+
+    /// Feld über dem gedruckten Textfeld eines echten Kartenbilds (für eigenen Text einer Bühne,
+    /// `CardDef::custom_text`), in Pergamentfarbe; nur bei Bedarf angelegt.
+    fn set_text_panel(&mut self, shown: bool) {
+        if self.text_panel.is_none() && shown {
+            let Some(visual) = self.visual.as_mut() else { return };
+            let mut mesh = PlaneMesh::new_gd();
+            mesh.set_size(Vector2::new(CARD_WIDTH * TEXT_PANEL_WIDTH, CARD_HEIGHT * TEXT_PANEL_HEIGHT));
+            let mut mat = StandardMaterial3D::new_gd();
+            mat.set_shading_mode(ShadingMode::UNSHADED);
+            mat.set_albedo(Color::from_rgb(0.94, 0.91, 0.84));
+            mesh.set_material(&mat);
+            let mut panel = MeshInstance3D::new_alloc();
+            panel.set_name("TextPanel");
+            panel.set_mesh(&mesh);
+            panel.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+            panel.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.0008, (TEXT_PANEL_CENTER - 0.5) * CARD_HEIGHT));
+            visual.add_child(&panel);
+            self.text_panel = Some(panel);
+        }
+        if let Some(p) = self.text_panel.as_mut() {
+            p.set_visible(shown);
+        }
     }
 
     fn build_labels(&mut self, visual: &mut Gd<Node3D>) {
@@ -1225,6 +1256,11 @@ impl CardLabels {
 /// Wertefeld frei).
 const TEXT_BOX_CENTER: f32 = 276.0;
 const TEXT_BOX_HEIGHT: f32 = 72.0;
+/// Textfeld eines echten Kartenbilds (Scryfall, moderner Rahmen): Mitte (Anteil der Höhe von
+/// oben), Breite und Höhe (Anteile der Karte) des Feldes für eigenen Text.
+const TEXT_PANEL_CENTER: f32 = 0.765;
+const TEXT_PANEL_WIDTH: f32 = 0.86;
+const TEXT_PANEL_HEIGHT: f32 = 0.27;
 
 /// Größe eines Schriftpunkts der Kartenbeschriftung (m).
 const LABEL_PIXEL: f32 = 0.0008;
@@ -1267,6 +1303,8 @@ pub struct FaceTexts {
     pub stats_color: Color,
     /// Echtes Kartenbild statt Platzhalter: Name, Kosten, Typzeile und Text stehen im Bild.
     pub printed: bool,
+    /// Eigener Text einer Bühne (`CardDef::custom_text`).
+    pub custom_text: bool,
 }
 
 /// Verstärkung des Aufleuchtens `t` Sekunden nach [`Card3D::flash`].

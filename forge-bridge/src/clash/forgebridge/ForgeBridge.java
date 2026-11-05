@@ -403,6 +403,21 @@ public final class ForgeBridge {
     }
 
     /**
+     * Neue Kartenbilder sind fertig heruntergeladen ({@link CardImages}): neuen Zustand schicken,
+     * damit die UI sie zeigt, auch wenn im Spiel gerade nichts passiert (Sitzplatz 0 wie bei den
+     * Debug-Werkzeugen).
+     */
+    static void imagesChanged() {
+        Game g = currentGame;
+        if (g == null) {
+            return;
+        }
+        JsonObject st = message("state");
+        st.add("state", StateJson.snapshotFromOtherThread(g, 0));
+        send(st);
+    }
+
+    /**
      * Debug-Werkzeug hat den Spielzustand geändert: neuen Zustand schicken; offene
      * Priorität mit {@code {"type":"Refresh"}} beantworten, damit sie mit den neuen Karten bzw.
      * neuem Mana neu gestellt wird.

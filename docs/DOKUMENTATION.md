@@ -206,8 +206,11 @@ Die Brücke sucht sie im Bildordner von Forge (`~/.cache/forge/pics/cards/`) und
 `CLASH_EXTRA_PICS`) und lädt fehlende im Hintergrund von Scryfall in den Forge-Bildordner (beim
 ersten Spiel mit einem Deck erscheinen die Bilder nach und nach). Mit Bild blendet die Karte Name,
 Kosten, Typzeile und Text aus (stehen im Bild); Stärke/Widerstand nur, wenn sie vom Aufdruck
-abweichen. Ohne Bild, bei verdeckten Karten, Spielsteinen und Bühnenkopien mit eigenem Text (ein
-Modus, ein Ersatzeffekt) bleibt der gezeichnete Platzhalter (`placeholder::card_face`). Die Bilder
+abweichen. Bühnenkopien mit eigenem Text (ein Modus, ein Ersatzeffekt) zeigen das echte Bild mit
+einem hellen Feld über dem gedruckten Textfeld, auf dem nur dieser Text steht (wie im Video „Spree
+und Stack“). Ohne Bild, bei verdeckten Karten und Spielsteinen bleibt der gezeichnete Platzhalter
+(`placeholder::card_face`). Wird ein Bild erst während des Wartens fertig, schickt die Brücke
+danach einen neuen Zustand, damit es sofort erscheint. Die Bilder
 gehören Wizards of the Coast und kommen nie ins Git.
 
 **Platzhalter-Kartenbild:** Name, Kostensymbole, Typzeile und Regeltext kommen von der Engine. Symbole im
