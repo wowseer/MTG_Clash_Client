@@ -53,12 +53,15 @@ fn circle(img: &mut Gd<Image>, cx: i32, cy: i32, r: i32, color: Color) {
 thread_local! {
     /// Geladene Kartenbilder je Pfad (None = nicht ladbar).
     static PRINTED: RefCell<HashMap<String, Option<Gd<Texture2D>>>> = RefCell::new(HashMap::new());
+    /// Nach [`clear_printed`] (Tisch wird abgebaut): nichts mehr laden und zwischenspeichern,
+    /// sonst hielte der Speicher Texturen über das Ende der Engine hinaus (Absturz beim Beenden).
+    static CLOSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Kartenbild aus einer Datei (JPG/PNG von Scryfall, Pfad aus dem Zustand), einmal geladen und
 /// zwischengespeichert; None, wenn die Datei fehlt oder nicht lesbar ist.
 pub fn printed_face(path: &str) -> Option<Gd<Texture2D>> {
-    if path.is_empty() {
+    if path.is_empty() || CLOSED.with(|c| c.get()) {
         return None;
     }
     if let Some(t) = PRINTED.with(|c| c.borrow().get(path).cloned()) {
@@ -76,7 +79,13 @@ pub fn printed_face(path: &str) -> Option<Gd<Texture2D>> {
 /// Zwischenspeicher der Kartenbilder leeren (beim Verlassen des Tisches, damit beim Beenden
 /// keine Texturen übrig bleiben).
 pub fn clear_printed() {
+    CLOSED.with(|c| c.set(true));
     PRINTED.with(|c| c.borrow_mut().clear());
+}
+
+/// Zwischenspeicher wieder öffnen (der Tisch wird neu aufgebaut).
+pub fn open_printed() {
+    CLOSED.with(|c| c.set(false));
 }
 
 /// Bühnenkopie mit eigenem Text einer Karte ohne Druck mit normalem Rahmen: dann gezeichneter

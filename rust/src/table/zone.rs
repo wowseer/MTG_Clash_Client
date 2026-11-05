@@ -593,16 +593,18 @@ impl Zone {
 
     /// Slots der Ressourcen-Reihe (Länder) wie im Video: von links nach rechts, gleichnamige
     /// Länder überlappend übereinander (je [`LAND_STACK_STEP`] Kartenbreite versetzt), Gruppen
-    /// in Manafarben-Reihenfolge. Passen sie nicht, werden sie kleiner, zuletzt enger.
+    /// in Manafarben-Reihenfolge. Getappte Länder bilden einen eigenen Stapel direkt rechts neben
+    /// den ungetappten gleichen Namens (sie liegen nie zwischen ungetappten). Passen sie nicht,
+    /// werden sie kleiner, zuletzt enger.
     fn resource_slots(&self, base: &[usize]) -> Vec<Transform3D> {
-        let keys: Vec<(usize, String)> = base
+        let keys: Vec<(usize, String, bool)> = base
             .iter()
             .map(|&i| {
                 let c = self.cards[i].bind();
-                (c.produced_mana().index(), c.card_name().to_string())
+                (c.produced_mana().index(), c.card_name().to_string(), c.is_tapped())
             })
             .collect();
-        let mut groups: Vec<(usize, String)> = Vec::new();
+        let mut groups: Vec<(usize, String, bool)> = Vec::new();
         for k in &keys {
             if !groups.contains(k) {
                 groups.push(k.clone());

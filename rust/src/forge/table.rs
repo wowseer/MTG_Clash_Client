@@ -279,6 +279,7 @@ impl INode for ForgeTable {
     }
 
     fn ready(&mut self) {
+        placeholder::open_printed();
         let this = self.to_gd();
         let cb = |name: &str| Callable::from_object_method(&this, name);
         if let Some(mut bridge) = self.bridge.clone() {
@@ -3123,7 +3124,8 @@ impl ForgeTable {
         // gleichzeitig getappte Länder starten leicht versetzt
         let delay = 0.08 * self.mana_fx.iter().filter(|(fx, _)| fx.is_instance_valid()).count().min(6) as f32;
         let target = self.stack_top_card_of(seat);
-        let fallback = u8::try_from(seat).ok().and_then(|s| self.hero_node(s));
+        // ohne Zauber im Wirken (Mana vorab getappt): zum Manapool des Spielers, nicht zum Medaillon
+        let fallback = u8::try_from(seat).ok().and_then(|s| self.mana_node(s).or_else(|| self.hero_node(s)));
         let fx = ManaFx::mana(source.upcast(), target, fallback, mana_color(&letter), delay);
         if let Some(mut parent) = self.controller.clone() {
             parent.add_child(&fx);
@@ -3257,6 +3259,12 @@ impl ForgeTable {
     }
 
     /// Medaillon-Anker eines Sitzplatzes als Knoten.
+    /// Anker der Manapool-Anzeige eines Sitzplatzes (`ManaAnchor`), falls vorhanden.
+    fn mana_node(&self, seat: u8) -> Option<Gd<Node3D>> {
+        let seat = if seat == 0 { self.player_seat.as_ref() } else { self.opponent_seat.as_ref() }?;
+        seat.get_node_or_null("ManaAnchor").and_then(|n| n.try_cast::<Node3D>().ok())
+    }
+
     fn hero_node(&self, seat: u8) -> Option<Gd<Node3D>> {
         let seat = if seat == 0 { self.player_seat.as_ref() } else { self.opponent_seat.as_ref() }?;
         seat.get_node_or_null("HeroAnchor").and_then(|n| n.try_cast::<Node3D>().ok())

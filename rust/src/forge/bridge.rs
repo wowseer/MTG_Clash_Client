@@ -76,6 +76,9 @@ pub struct ForgeBridge {
     /// Eingebettet: Verbindung zum Gastgeber (NeoForge), der die Partie startet.
     socket: Option<TcpStream>,
     rx: Option<Receiver<Incoming>>,
+    /// Lese-Thread (stdout bzw. Socket); beim Stoppen wird auf sein Ende gewartet, damit er nicht
+    /// mehr läuft, wenn Godot die Erweiterung entlädt.
+    reader: Option<thread::JoinHandle<()>>,
     ready: bool,
     base: Base<Node>,
 }
@@ -95,6 +98,7 @@ impl INode for ForgeBridge {
             stdin: None,
             socket: None,
             rx: None,
+            reader: None,
             ready: false,
             base,
         }
@@ -246,7 +250,7 @@ impl ForgeBridge {
 
         let stdout = child.stdout.take().expect("stdout ist gepiped");
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
+        self.reader = Some(thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 match line {
                     Ok(l) => {
@@ -258,7 +262,7 @@ impl ForgeBridge {
                 }
             }
             let _ = tx.send(Incoming::Closed);
-        });
+        }));
 
         self.stdin = child.stdin.take();
         self.child = Some(child);
@@ -285,7 +289,7 @@ impl ForgeBridge {
             }
         };
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
+        self.reader = Some(thread::spawn(move || {
             for line in BufReader::new(reader).lines() {
                 match line {
                     Ok(l) => {
@@ -297,7 +301,7 @@ impl ForgeBridge {
                 }
             }
             let _ = tx.send(Incoming::Closed);
-        });
+        }));
         self.socket = Some(stream);
         self.rx = Some(rx);
         self.ready = false;
@@ -317,6 +321,9 @@ impl ForgeBridge {
         if let Some(mut socket) = self.socket.take() {
             let _ = socket.write_all(b"{\"cmd\":\"quit\"}\n");
             let _ = socket.shutdown(std::net::Shutdown::Both);
+            if let Some(r) = self.reader.take() {
+                let _ = r.join();
+            }
             self.rx = None;
             self.ready = false;
             self.signals().bridge_stopped().emit(-1);
@@ -331,16 +338,22 @@ impl ForgeBridge {
         }
         self.rx = None;
         self.ready = false;
-        thread::spawn(move || {
-            for _ in 0..20 {
-                if matches!(child.try_wait(), Ok(Some(_))) {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(100));
+        // Kurz auf das Ende warten, dann hart beenden – im Hauptthread: ein losgelöster Warte-Thread
+        // liefe beim Beenden von Godot noch, wenn die Erweiterung schon entladen ist (Absturz).
+        for _ in 0..20 {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                break;
             }
+            thread::sleep(Duration::from_millis(50));
+        }
+        if !matches!(child.try_wait(), Ok(Some(_))) {
             let _ = child.kill();
             let _ = child.wait();
-        });
+        }
+        // Prozess beendet → stdout geschlossen → der Lese-Thread endet sofort
+        if let Some(r) = self.reader.take() {
+            let _ = r.join();
+        }
         self.signals().bridge_stopped().emit(-1);
     }
 
