@@ -170,7 +170,9 @@ public class RemotePlayerController extends PlayerControllerAi {
             }
             // Spielbar aus einer anderen Zone (Flashback, Foretell, Commander, Companion …):
             // die UI zeigt diese Karten zusätzlich im Handfächer
+            // je Karte die Manakosten der Spielweise aus dieser Zone (Flashback, Escape …)
             List<Card> elsewhere = new ArrayList<>();
+            List<String> elsewhereCosts = new ArrayList<>();
             for (SpellAbility sa : options) {
                 Card host = sa.getHostCard();
                 forge.game.zone.Zone z = host == null ? null : getGame().getZoneOf(host);
@@ -180,9 +182,14 @@ public class RemotePlayerController extends PlayerControllerAi {
                 ZoneType zt = z.getZoneType();
                 if (zt != ZoneType.Hand && zt != ZoneType.Battlefield && zt != ZoneType.Stack) {
                     elsewhere.add(host);
+                    String cost = "";
+                    if (sa.getPayCosts() != null && sa.getPayCosts().getTotalMana() != null) {
+                        cost = sa.getPayCosts().getTotalMana().getShortString();
+                    }
+                    elsewhereCosts.add(cost == null ? "" : cost);
                 }
             }
-            JsonObject action = Decisions.priority(getGame(), seat, actions, labels, elsewhere);
+            JsonObject action = Decisions.priority(getGame(), seat, actions, labels, elsewhere, elsewhereCosts);
             if (action != null && action.has("type") && "Refresh".equals(action.get("type").getAsString())) {
                 continue; // Debug-Werkzeug hat etwas geändert: neu fragen
             }

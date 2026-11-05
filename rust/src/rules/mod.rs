@@ -9,7 +9,7 @@ pub mod decision;
 
 use godot::prelude::*;
 
-pub use decision::{Action, CardId, Choice, Color, Decision, OptionText, PlayerId, Target};
+pub use decision::{Action, CardId, Choice, Color, Decision, ElsewhereCard, OptionText, PlayerId, Target};
 
 /// Eine offene Entscheidung mit allem, was die UI zur Anzeige braucht.
 ///

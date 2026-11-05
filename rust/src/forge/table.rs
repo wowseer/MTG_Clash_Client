@@ -21,7 +21,7 @@ use crate::game::decision_view;
 use crate::game::counters;
 use crate::game::hud::HudView;
 use crate::rules::decision::{CardChoiceReason, PayAction};
-use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, PlayerId, Request, RulesEngine, Target};
+use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, ElsewhereCard, PlayerId, Request, RulesEngine, Target};
 use crate::table::mana_wheel::{ManaWheel, WheelSegment};
 use crate::table::exile_portal::{attach_exile_portal, set_exile_portal_open};
 use crate::game::debug_panel::DebugPanel;
@@ -1359,6 +1359,7 @@ impl ForgeTable {
             }
         }
         let hand = self.zones(0).hand;
+        // in die Hand zurück (auch eine Kopie aus anderen Zonen): kein Zug
         let back_to_hand = hand.as_ref() == Some(&from_zone) && hand.as_ref() == Some(&to_zone);
         let id = self.forge_id(&card);
         if !back_to_hand {
@@ -1390,9 +1391,9 @@ impl ForgeTable {
         if !self.hand_proxies.iter().any(|(_, _, c, _)| c == card) {
             return;
         }
-        let Some(mut hand) = self.zones(LOCAL_SEAT as usize).hand else { return };
+        let Some(mut hand) = self.elsewhere_zone() else { return };
         if card.bind().get_zone().as_ref() != Some(&hand) {
-            hand.bind_mut().add_card(card.clone(), -1, 0.0);
+            hand.bind_mut().add_tail_card(card.clone());
         } else {
             hand.bind_mut().layout();
         }
@@ -2783,17 +2784,19 @@ impl ForgeTable {
         self.cards.iter().find(|(_, c)| *c == card).map(|(id, _)| *id)
     }
 
-    /// Kopien im Handfächer abgleichen (wie in Arena): jede Karte, die gerade aus einer anderen
-    /// Zone als Hand und Spielfeld spielbar ist – Friedhof (Flashback …), Exil (Foretell,
+    /// Kopien rechts neben der Hand abgleichen (wie in Arena): jede Karte, die gerade aus einer
+    /// anderen Zone als Hand und Spielfeld spielbar ist – Friedhof (Flashback …), Exil (Foretell,
     /// Abenteuer, „you may play“), Kommandozone (Commander), Sideboard (Companion), Bibliothek –,
-    /// erscheint zusätzlich im eigenen Handfächer: sie fliegt von ihrer Zone in die Hand, leuchtet
-    /// violett und trägt eine Plakette mit der Zone. Zieht man sie auf den Tisch, spielt man die
-    /// Karte aus ihrer Zone. Nicht mehr spielbare Kopien verschwinden.
-    fn sync_hand_proxies(&mut self, list: &[(CardId, String)], cards: &[VarDictionary]) {
-        let Some(mut hand) = self.zones(LOCAL_SEAT as usize).hand else { return };
+    /// erscheint als Kopie fest rechts außen im Handfächer, mit Lücke zu den echten Handkarten
+    /// (`Zone::add_tail_card`): sie fliegt aus ihrer Zone dorthin, ihr Rahmen leuchtet weiß, darüber stehen
+    /// die Kosten, mit denen sie aus dieser Zone gespielt wird (z. B. Flashback), und eine Plakette
+    /// mit der Zone. Zieht man sie auf den Tisch, spielt man die Karte aus ihrer Zone. Nicht mehr
+    /// spielbare Kopien verschwinden.
+    fn sync_hand_proxies(&mut self, list: &[ElsewhereCard], cards: &[VarDictionary]) {
+        let Some(mut hand) = self.elsewhere_zone() else { return };
         let turn = self.state.as_ref().map_or(0, |s| get_int(s, "turn"));
         // weg: nicht mehr in der Liste
-        let keep: Vec<CardId> = list.iter().map(|(c, _)| *c).collect();
+        let keep: Vec<CardId> = list.iter().map(|e| e.card).collect();
         for (id, zone, mut proxy, born) in std::mem::take(&mut self.hand_proxies) {
             if keep.contains(&id) && proxy.is_instance_valid() {
                 self.hand_proxies.push((id, zone, proxy, born));
@@ -2802,7 +2805,8 @@ impl ForgeTable {
                 proxy.queue_free();
             }
         }
-        for (id, zone) in list {
+        for e in list {
+            let (id, zone) = (&e.card, &e.zone);
             if self.hand_proxies.iter().any(|(c, ..)| c == id) {
                 continue;
             }
@@ -2811,7 +2815,11 @@ impl ForgeTable {
                 .find(|c| get_int(c, "id") == i64::from(*id))
                 .cloned()
                 .or_else(|| self.card_data(i64::from(*id)));
-            let Some(data) = data else { continue };
+            let Some(mut data) = data else { continue };
+            // Kosten der Spielweise aus dieser Zone (Flashback …) statt der aufgedruckten
+            if !e.cost.is_empty() {
+                data.set("cost", e.cost.as_str());
+            }
             let mut proxy = Self::stage_card(&data, None);
             proxy.bind_mut().set_ready_color(Some(ELSEWHERE_GLOW));
             proxy.bind_mut().set_badges(&zone_label(zone));
@@ -2828,7 +2836,7 @@ impl ForgeTable {
             if let Some(xf) = from {
                 proxy.set_global_transform(xf);
             }
-            hand.bind_mut().add_card(proxy.clone(), -1, 0.0);
+            hand.bind_mut().add_tail_card(proxy.clone());
             self.hand_proxies.push((*id, zone.clone(), proxy, turn));
         }
     }
@@ -2838,11 +2846,17 @@ impl ForgeTable {
         let Some(pos) = self.hand_proxies.iter().position(|(c, ..)| *c == id) else { return };
         let (_, _, mut proxy, _) = self.hand_proxies.remove(pos);
         if proxy.is_instance_valid() {
-            if let Some(mut hand) = self.zones(LOCAL_SEAT as usize).hand {
-                hand.bind_mut().remove_card(proxy.clone());
+            if let Some(mut zone) = self.elsewhere_zone() {
+                zone.bind_mut().remove_card(proxy.clone());
             }
             proxy.queue_free();
         }
+    }
+
+    /// Zone der Kopien von Karten aus anderen Zonen: der eigene Handfächer (dort als Endgruppe
+    /// rechts außen mit Lücke, `Zone::add_tail_card`).
+    fn elsewhere_zone(&self) -> Option<Gd<Zone>> {
+        self.zones(LOCAL_SEAT as usize).hand
     }
 
     /// Leuchten: mit Priorität die Karten, die eine Aktion haben; bei der Zielwahl alle gültigen
@@ -3954,8 +3968,8 @@ fn card_badges(data: &VarDictionary, ring_bearers: &[i64]) -> String {
     lines.join("\n")
 }
 
-/// Leuchten der Handkarten-Kopien von Karten aus anderen Zonen (violett).
-const ELSEWHERE_GLOW: Color = Color::from_rgb(0.75, 0.45, 1.0);
+/// Leuchten des Rahmens der Kopien von Karten aus anderen Zonen (weiß).
+const ELSEWHERE_GLOW: Color = Color::from_rgb(1.0, 1.0, 1.0);
 
 /// Plakette einer Handkarten-Kopie: aus welcher Zone sie gespielt wird.
 fn zone_label(zone: &str) -> String {

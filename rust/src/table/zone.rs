@@ -47,6 +47,8 @@ const LAND_STACK_STEP: f32 = 0.3;
 const LAND_GROUP_GAP: f32 = 0.12;
 /// Spielfeld: Versatz gleicher Karten auf einem Stapel (Kartenbreiten).
 const BATTLE_STACK_STEP: f32 = 0.3;
+/// Handfächer: Lücke vor der Endgruppe (in Kartenabständen).
+const TAIL_GAP: f32 = 1.5;
 /// Spielfeld: Versatz gleicher Kreaturen untereinander (Anteil der Kartenlänge).
 const CREATURE_STACK_STEP: f32 = 0.2;
 /// Größe verschluckter Karten ([member Zone.swallow_cards]).
@@ -110,6 +112,9 @@ pub struct Zone {
     /// Video „Spree und Stack“; `table::cost_symbols`).
     #[export]
     show_costs: bool,
+    /// Handfächer: so viele Karten am rechten Ende bilden eine eigene Gruppe mit Lücke davor
+    /// (Karten aus anderen Zonen, [method add_tail_card]).
+    tail: usize,
 
     /// Hand: Radius des Fächerbogens.
     #[export_group(name = "Hand")]
@@ -211,6 +216,7 @@ impl IArea3D for Zone {
             auto_arrange: false,
             show_area: false,
             show_costs: false,
+            tail: 0,
             cards: Vec::new(),
             free_positions: HashMap::new(),
             attachments: HashMap::new(),
@@ -278,15 +284,34 @@ impl Zone {
     /// `delay` verzögert nur die Animation der neuen Karte (z. B. zum Austeilen).
     #[func]
     pub fn add_card(&mut self, mut card: Gd<Card3D>, index: i64, delay: f64) {
-        self.cards.retain(|c| c != &card);
-        let idx = if index < 0 {
-            self.cards.len()
-        } else {
-            (index as usize).min(self.cards.len())
-        };
+        if let Some(old) = self.cards.iter().position(|c| c == &card) {
+            if old >= self.cards.len() - self.tail {
+                self.tail -= 1;
+            }
+            self.cards.remove(old);
+        }
+        // vor der Endgruppe einfügen (sie bleibt immer rechts außen)
+        let end = self.cards.len() - self.tail;
+        let idx = if index < 0 { end } else { (index as usize).min(end) };
         self.cards.insert(idx, card.clone());
         card.bind_mut().set_zone(Some(self.to_gd()));
         self.layout_with_delay(Some((&card, delay)));
+    }
+
+    /// Handfächer: Karte ans rechte Ende in die eigene Gruppe mit Lücke davor legen (z. B. Karten,
+    /// die aus einer anderen Zone spielbar sind); neue Handkarten kommen immer davor.
+    #[func]
+    pub fn add_tail_card(&mut self, mut card: Gd<Card3D>) {
+        if let Some(old) = self.cards.iter().position(|c| c == &card) {
+            if old >= self.cards.len() - self.tail {
+                self.tail -= 1;
+            }
+            self.cards.remove(old);
+        }
+        self.cards.push(card.clone());
+        self.tail += 1;
+        card.bind_mut().set_zone(Some(self.to_gd()));
+        self.layout_with_delay(Some((&card, 0.0)));
     }
 
     /// Legt eine Karte frei am Weltpunkt ab (nur mit `free_placement`,
@@ -331,6 +356,9 @@ impl Zone {
         let Some(idx) = self.cards.iter().position(|c| c == &card) else {
             return -1;
         };
+        if idx >= self.cards.len() - self.tail {
+            self.tail -= 1;
+        }
         self.cards.remove(idx);
         card.bind_mut().set_zone(None);
         // Angelegt gewesen? Verbindung lösen. Träger entfernt? Seine Ausrüstung bleibt
@@ -788,7 +816,11 @@ impl Zone {
                 } else {
                     0.0
                 };
-                let a = (i as f32 - (n as f32 - 1.0) * 0.5) * step;
+                // Endgruppe (Karten aus anderen Zonen): nach einer Lücke von TAIL_GAP Kartenabständen
+                let tail = if n == self.cards.len() { self.tail.min(n) } else { 0 };
+                let gap = if tail > 0 && tail < n { TAIL_GAP } else { 0.0 };
+                let slot = i as f32 + if i >= n - tail { gap } else { 0.0 };
+                let a = (slot - (n as f32 - 1.0 + gap) * 0.5) * step;
                 let r = self.hand_radius;
                 // Mittlere Karte oben (-Z), äußere Karten sinken ab und drehen nach außen.
                 let pos = Vector3::new(r * a.sin(), half_t + i as f32 * 0.004, r * (1.0 - a.cos()));

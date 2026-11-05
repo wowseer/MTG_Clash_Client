@@ -786,6 +786,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 |---|---|---|
 | `set_attached(card: Card3D, host: Card3D)` | `void` | Legt `card` an `host` an (Aura, Ausrüstung, Befestigung; CR 301.5, 303.4): Sie liegt dann versetzt unter dem Träger und folgt ihm beim Anordnen. `host` = null löst die Verbindung. Beide Karten müssen in dieser Zone liegen; ordnet nur bei Änderung neu an. |
 | `add_card(card: Card3D, index: int, delay: float)` | `void` | Fügt eine Karte ein (index < 0 = ans Ende) und ordnet alle Karten neu an. `delay` verzögert nur die Animation der neuen Karte (z. B. zum Austeilen). |
+| `add_tail_card(card: Card3D)` | `void` | Handfächer: Karte ans rechte Ende in die eigene Gruppe mit Lücke davor legen (z. B. Karten, die aus einer anderen Zone spielbar sind); neue Handkarten kommen immer davor. |
 | `add_card_at(card: Card3D, world_point: Vector3, delay: float)` | `void` | Legt eine Karte frei am Weltpunkt ab (nur mit `free_placement`, sonst wie `add_card` ans Ende). Die Position wird in der Zone begrenzt. |
 | `is_free_placement()` | `bool` | Bleiben Karten dort liegen, wo sie abgelegt werden (statt Raster)? |
 | `is_hand()` | `bool` | Ist das ein Handfächer (eigene Hand, Gegnerhand, Fächer einer 3D-Bühne)? |

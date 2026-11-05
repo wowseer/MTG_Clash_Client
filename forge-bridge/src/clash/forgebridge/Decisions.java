@@ -365,16 +365,18 @@ final class Decisions {
 
     /** {@code Priority}: gibt das gewählte {@code Action}-Objekt zurück (null = unlesbar). */
     static JsonObject priority(Game game, int seat, JsonArray actions, List<String> labels) {
-        return priority(game, seat, actions, labels, List.of());
+        return priority(game, seat, actions, labels, List.of(), List.of());
     }
 
     /**
      * Wie {@link #priority}, mit Erweiterung {@code elsewhere}: Karten, die gerade aus einer
      * anderen Zone als Hand und Spielfeld gespielt werden können (Friedhof, Exil, Kommandozone,
-     * Sideboard/Companion, Bibliothek) – je {@code {"card": id, "zone": "Graveyard"}}, ihre Daten
-     * in der Hülle {@code cards}. Die UI zeigt sie zusätzlich im Handfächer.
+     * Sideboard/Companion, Bibliothek) – je {@code {"card": id, "zone": "Graveyard", "cost": "2 R"}}
+     * ({@code cost} = Manakosten der Spielweise aus dieser Zone, z. B. Flashback), ihre Daten in der
+     * Hülle {@code cards}. Die UI zeigt sie rechts neben dem Handfächer.
      */
-    static JsonObject priority(Game game, int seat, JsonArray actions, List<String> labels, List<Card> elsewhere) {
+    static JsonObject priority(Game game, int seat, JsonArray actions, List<String> labels, List<Card> elsewhere,
+            List<String> costs) {
         JsonObject d = decision("Priority", seat);
         d.add("actions", actions);
         JsonArray other = new JsonArray();
@@ -383,6 +385,8 @@ final class Decisions {
             o.addProperty("card", c.getId());
             forge.game.zone.Zone z = game.getZoneOf(c);
             o.addProperty("zone", z == null ? "" : z.getZoneType().name());
+            int i = elsewhere.indexOf(c);
+            o.addProperty("cost", i >= 0 && i < costs.size() ? costs.get(i) : "");
             other.add(o);
         }
         d.add("elsewhere", other);

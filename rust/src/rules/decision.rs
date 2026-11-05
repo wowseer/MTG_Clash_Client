@@ -105,6 +105,17 @@ pub struct OptionText {
     pub card: Option<CardId>,
 }
 
+/// Erweiterung von `Decision::Priority`: eine Karte, die gerade aus einer anderen Zone als Hand
+/// und Spielfeld spielbar ist.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElsewhereCard {
+    pub card: CardId,
+    /// Zone der Engine: `Graveyard`, `Exile`, `Command`, `Sideboard`, `Library` …
+    pub zone: String,
+    /// Manakosten der Spielweise aus dieser Zone (z. B. Flashback), Schreibweise der Engine.
+    pub cost: String,
+}
+
 /// Was die Engine vom Spieler wissen will.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decision {
@@ -128,9 +139,8 @@ pub enum Decision {
     /// Nach dem Behalten `count` Karten unter die Bibliothek legen.
     MulliganBottom { player: PlayerId, hand: Vec<CardId>, count: u32 },
     /// `elsewhere` (Erweiterung): Karten, die gerade aus einer anderen Zone als Hand und
-    /// Spielfeld gespielt werden können (Karte, Zone der Engine: `Graveyard`, `Exile`, `Command`,
-    /// `Sideboard`, `Library` …); ihre Daten stehen in `Request::cards`.
-    Priority { player: PlayerId, actions: Vec<Action>, elsewhere: Vec<(CardId, String)> },
+    /// Spielfeld gespielt werden können ([`ElsewhereCard`]); ihre Daten stehen in `Request::cards`.
+    Priority { player: PlayerId, actions: Vec<Action>, elsewhere: Vec<ElsewhereCard> },
     ChooseTargets {
         player: PlayerId,
         source: CardId,
@@ -504,7 +514,7 @@ impl Decision {
                     .filter_map(dict)
                     .filter_map(|e| {
                         let e = Obj(&e);
-                        Some((u32::try_from(e.int("card")).ok()?, e.str("zone")))
+                        Some(ElsewhereCard { card: u32::try_from(e.int("card")).ok()?, zone: e.str("zone"), cost: e.str("cost") })
                     })
                     .collect(),
             },
