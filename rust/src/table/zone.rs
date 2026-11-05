@@ -38,7 +38,14 @@ const AUTO_GAP: f32 = 0.12;
 const BACK_ROW_START: f32 = 3.2;
 /// Abstand zwischen Kreaturen-Reihe und hinterer Reihe.
 const BACK_ROW_GAP: f32 = 0.12;
-const MIN_SHRINK: f32 = 0.45;
+/// Kleinste Größe der Planeswalker (Anteil von [member card_scale]) bei vielen Planeswalkern.
+const PW_MIN_SCALE: f32 = 0.6;
+/// Tiefe der unteren Reihe (Länder in ihrer Zone, Artefakte im Spielfeld) – Kreaturen und
+/// Planeswalker bleiben darüber.
+const BACK_ROW_DEPTH: f32 = 1.35;
+/// Zweite Kreaturen-Reihe, sobald eine Reihe unter diesen Anteil von [member card_scale] schrumpfen müsste.
+const TWO_ROWS_BELOW: f32 = 0.6;
+const MIN_SHRINK: f32 = 0.32;
 /// Ressourcen-Reihe: gleiche Länder überlappen um diesen Anteil der Kartenbreite versetzt;
 /// Abstand zwischen den Gruppen.
 const LAND_STACK_STEP: f32 = 0.3;
@@ -52,6 +59,8 @@ const TAIL_GAP: f32 = 1.5;
 const STACK_MAX: usize = 6;
 /// Spielfeld: Versatz gleicher Kreaturen untereinander (Anteil der Kartenlänge).
 const CREATURE_STACK_STEP: f32 = 0.2;
+/// Höchste Zusatzhöhe eines Kreaturen-Stapels (Anteil der Kartenlänge).
+const CREATURE_STACK_MAX_EXTRA: f32 = 0.4;
 /// Größe verschluckter Karten ([member Zone.swallow_cards]).
 const SWALLOWED_SCALE: f32 = 0.02;
 /// Cover-Flow ([member Zone.coverflow]): ab diesem seitlichen Abstand (Zonen-Einheiten) von der
@@ -618,27 +627,16 @@ impl Zone {
         if self.tile_cards { TILE_HEIGHT } else { CARD_HEIGHT }
     }
 
-    /// Größe für `n` Karten nebeneinander auf `avail` Breite: höchstens [member card_scale],
-    /// höchstens bis [`MIN_SHRINK`] verkleinert.
-    fn fit_scale(&self, n: usize, avail: f32) -> f32 {
-        let need = n.max(1) as f32 * CARD_WIDTH * (1.0 + AUTO_GAP);
-        (avail / need).clamp(self.card_scale * MIN_SHRINK, self.card_scale)
-    }
-
     /// Slots der automatischen Anordnung (siehe [member auto_arrange]) für die freien Karten
-    /// `base`, in deren Reihenfolge – Aufbau wie im Video des Users. Wird es voll, werden
-    /// zuerst alle Karten gemeinsam kleiner (bis [`MIN_SHRINK`]), damit Kreaturen und die
-    /// anderen Karten nebeneinander in je einer Reihe bleiben; erst danach zwei Reihen. Lokal: −z = zur
+    /// `base`, in deren Reihenfolge – Aufteilung wie `mtg_arena_spielfeld.png`. Lokal: −z = zur
     /// Tischmitte, +x = rechts (aus Sicht der Seite):
-    /// - **vordere Reihe(n)**: Kreaturen mittig an der Mittellinie; passen sie nicht in eine
-    ///   Reihe, werden sie kleiner, dann zweireihig;
-    /// - **hintere Reihe rechts**: Schlachten, Artefakte, Ausrüstung, Verzauberungen … – in der
-    ///   Mitte der eigenen Seite direkt hinter den Kreaturen, rechts von der Mitte (bei zwei
-    ///   Kreaturen-Reihen ganz hinten); bei Platzmangel kleiner, zuletzt überlappend;
-    /// - **Planeswalker**: links in der Kreaturen-Reihe (am linken Feldrand), weitere zur Mitte
-    ///   hin, immer in voller Größe; die Kreaturen teilen sich den Platz rechts daneben.
-    ///
-    /// Länder liegen in der eigenen Ressourcen-Zone (hinten links).
+    /// - **untere Reihe** ([`BACK_ROW_DEPTH`] tief): links die Länder (eigene Zone), rechts ab
+    ///   [`BACK_ROW_START`] Artefakte, Verzauberungen, Schlachten … in eigener Größe;
+    /// - **darüber** Planeswalker ganz links (Größe nur nach ihrer Zahl, ab drei in zwei Reihen) und
+    ///   die Kreaturen mittig, rechts neben den Planeswalkern; gleiche Kreaturen untereinander
+    ///   gestapelt (hohe Stapel enger, [`stack_step`]). Passen sie nicht, werden sie kleiner; eine
+    ///   zweite Kreaturen-Reihe kommt, sobald eine Reihe unter [`TWO_ROWS_BELOW`] schrumpfen müsste
+    ///   und zwei Reihen größere Karten erlauben. Nichts reicht in die untere Reihe hinein.
     fn auto_slots(&self, base: &[usize]) -> Vec<Transform3D> {
         // Reihe je Karte: 0 = Kreaturen vorn, 1 = hinten rechts, 2 = Planeswalker vorn links
         let front: Vec<u8> = base
@@ -649,9 +647,6 @@ impl Zone {
                 _ => 1,
             })
             .collect();
-        let n_front = front.iter().filter(|f| **f == 0).count();
-        let n_back = front.iter().filter(|f| **f == 1).count();
-        let n_left = front.iter().filter(|f| **f == 2).count();
         let (half_x, half_z) = (self.size.x * 0.5, self.size.z * 0.5);
         let len = self.card_length();
 
@@ -699,145 +694,130 @@ impl Zone {
         let row_units = |f: u8| -> f32 {
             groups.iter().filter(|g| g.1 == f).map(|g| group_units(g.2, g.1) + AUTO_GAP).sum::<f32>()
         };
-        let (units_front, units_back, units_left) = (row_units(0), row_units(1), row_units(2));
-
-        // Zuerst alles gemeinsam kleiner: Kreaturen in einer Reihe mittig, die anderen rechts
-        // daneben in der Mitte der eigenen Seite – die größte gemeinsame Größe, bei der beides
-        // nebeneinander passt (höchstens bis MIN_SHRINK)
+        let units_back = row_units(1);
         let wall = half_x - 0.1;
-        // hintere Reihe immer ab BACK_ROW_START (rechts vom Medaillon), unten in der Zone
-        let back_start = |_: f32| BACK_ROW_START;
-        // Planeswalker behalten immer ihre volle Größe ([member card_scale]); Breite ihres Bereichs
-        let pw_s = self.card_scale;
-        let left_w = if n_left == 0 { 0.0 } else { units_left * CARD_WIDTH * pw_s };
-        // höchster Kreaturen-Stapel (Karten übereinander, höchstens STACK_MAX)
-        let tallest = groups.iter().filter(|g| g.1 == 0).map(|g| g.2.min(STACK_MAX)).max().unwrap_or(0);
-        let fits = |s: f32| {
-            let front_h = if n_front == 0 { 0.0 } else { len * s * (1.0 + (tallest as f32 - 1.0) * CREATURE_STACK_STEP) };
-            // die hintere Reihe zählt in der Höhe nur, wenn die Kreaturen bis über sie reichen
-            let w = CARD_WIDTH * s;
-            let front_right = (-units_front * w * 0.5).max(-wall + left_w) + units_front * w;
-            let back_h = if n_back == 0 || front_right <= back_start(s) { 0.0 } else { len * s + BACK_ROW_GAP };
-            // Planeswalker links in der Kreaturen-Reihe in voller Größe; die Kreaturen teilen
-            // sich den Rest der Breite
-            units_front * CARD_WIDTH * s <= 2.0 * wall - left_w
-                && (n_back == 0 || back_start(s) + units_back * CARD_WIDTH * s <= wall)
-                // Kreaturen und hintere Reihe übereinander in der Zonentiefe
-                && front_h + back_h <= 2.0 * half_z - 0.1
-        };
+        // Die untere Reihe der Zone gehört Ländern (eigene Zone daneben) und Artefakten:
+        // Kreaturen und Planeswalker liegen immer darüber, auch mit hohen Stapeln
+        let area_top = -half_z + 0.05;
+        let area_h = (2.0 * half_z - BACK_ROW_DEPTH - 0.05).max(len * self.card_scale * MIN_SHRINK);
         let min_s = self.card_scale * MIN_SHRINK;
-        let mut shared = self.card_scale;
-        while shared > min_s && !fits(shared) {
-            shared -= self.card_scale * 0.02;
-        }
-        if fits(shared) {
-            let s = shared;
-            let w = CARD_WIDTH * s;
-            let top = -half_z + len * s * 0.5 + 0.05;
-            let back_z = half_z - len * s * 0.5 - 0.05;
-            // linke Kante (Mitte der ersten Karte) jeder Gruppe: vorn mittig, hinten ab back_start
-            let mut starts = vec![0.0f32; groups.len()];
-            // Kreaturen mittig, aber rechts von den Planeswalkern (die links in derselben Reihe liegen)
-            let left_end = -wall + left_w;
-            let mut x_front = (-units_front * w * 0.5).max(left_end) + w * 0.5 + AUTO_GAP * w * 0.5;
-            let mut x_back = back_start(s) + w * 0.5;
-            // Planeswalker: am linken Feldrand in voller Größe, Gruppen wachsen zur Mitte
-            let pw_w = CARD_WIDTH * pw_s;
-            let mut x_left = -wall + pw_w * 0.5;
-            for (g, (_, f, n)) in groups.iter().enumerate() {
-                let step = (group_units(*n, *f) + AUTO_GAP) * w;
-                match f {
-                    0 => {
-                        starts[g] = x_front;
-                        x_front += step;
-                    }
-                    1 => {
-                        starts[g] = x_back;
-                        x_back += step;
-                    }
-                    _ => {
-                        starts[g] = x_left;
-                        x_left += (group_units(*n, *f) + AUTO_GAP) * pw_w;
-                    }
-                }
-            }
-            let mut in_group = vec![0usize; groups.len()];
-            return keys
-                .iter()
-                .zip(&front)
-                .enumerate()
-                .map(|(i, (k, f))| {
-                    let g = groups.iter().position(|(gk, gf, _)| gk == k && gf == f).unwrap_or(0);
-                    let row = in_group[g];
-                    in_group[g] += 1;
-                    // Kreaturen: jede weitere etwas weiter zum Spieler hin und obenauf, die
-                    // Kopfzeilen darunter bleiben sichtbar; andere: nach rechts versetzt
-                    let (x, z) = match f {
-                        0 => (starts[g], top + row as f32 * CREATURE_STACK_STEP * len * s),
-                        1 => (starts[g] + row as f32 * BATTLE_STACK_STEP * w, back_z),
-                        // Planeswalker: links in der Kreaturen-Reihe, volle Größe
-                        _ => (starts[g] + row as f32 * BATTLE_STACK_STEP * pw_w, -half_z + len * pw_s * 0.5 + 0.05),
-                    };
-                    let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
-                    let scale = if *f == 2 { pw_s } else { s };
-                    Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(scale)), Vector3::new(x, y, z))
-                })
-                .collect();
-        }
 
-        // zu viele Karten: vorn eine Reihe, wenn sie mit höchstens 75 % Verkleinerung passt, sonst zwei
-        // Platz rechts neben den Planeswalkern (die behalten ihre volle Größe)
-        let avail = 2.0 * half_x - 0.2 - left_w;
-        let one_row = (avail / (n_front.max(1) as f32 * CARD_WIDTH * (1.0 + AUTO_GAP))).min(self.card_scale);
-        let (rows, s_front) = if one_row >= self.card_scale * 0.75 || n_front <= 1 {
-            (1, one_row.max(self.card_scale * MIN_SHRINK))
-        } else {
-            (2, self.fit_scale(n_front.div_ceil(2), avail))
+        // Planeswalker: Größe nur nach ihrer Zahl (bis zwei voll, danach sanft kleiner), ab drei
+        // in zwei Reihen links in der Kreaturen-Reihe
+        let pw: Vec<usize> = (0..groups.len()).filter(|&g| groups[g].1 == 2).collect();
+        let pw_rows = if pw.len() > 2 { 2 } else { 1 };
+        let pw_cols = pw.len().div_ceil(pw_rows).max(1);
+        let pw_s = {
+            let by_count = if pw.len() <= 2 { 1.0 } else { (2.0 / pw.len() as f32).sqrt().max(PW_MIN_SCALE) };
+            let by_height = (area_h - BACK_ROW_GAP * (pw_rows as f32 - 1.0)) / (pw_rows as f32 * len);
+            (self.card_scale * by_count).min(by_height).max(min_s)
         };
-        let per_row = n_front.div_ceil(rows).max(1);
-        let step_f = CARD_WIDTH * s_front * (1.0 + AUTO_GAP);
-        let top = -half_z + len * s_front * 0.5 + 0.05;
+        let pw_w = CARD_WIDTH * pw_s;
+        let left_w = if pw.is_empty() { 0.0 } else { pw_cols as f32 * pw_w * (1.0 + AUTO_GAP) };
 
-        // hinten rechts
-        let back_avail = half_x - BACK_ROW_START - 0.1;
-        let s_back = self.fit_scale(n_back, back_avail);
-        let step_b = (CARD_WIDTH * s_back * (1.0 + AUTO_GAP)).min(if n_back > 1 { (back_avail - CARD_WIDTH * s_back) / (n_back - 1) as f32 } else { f32::MAX });
-        // hintere Reihe unten in der Zone (zum Spieler hin)
-        let back_z = half_z - len * s_back * 0.5 - 0.05;
-        let back_x0 = BACK_ROW_START + CARD_WIDTH * s_back * 0.5;
-        // Planeswalker links, gespiegelt
-        let s_left = pw_s;
-        let step_l = (CARD_WIDTH * s_left * (1.0 + AUTO_GAP)).min(if n_left > 1 { (back_avail - CARD_WIDTH * s_left) / (n_left - 1) as f32 } else { f32::MAX });
-        let left_x0 = -half_x + 0.1 + CARD_WIDTH * s_left * 0.5;
+        // Kreaturen: eine Reihe, bei vielen zwei – rechts neben den Planeswalkern, über der unteren Reihe
+        let cre: Vec<usize> = (0..groups.len()).filter(|&g| groups[g].1 == 0).collect();
+        let avail_w = (2.0 * wall - left_w).max(CARD_WIDTH * min_s);
+        let split = |rows: usize| -> Vec<Vec<usize>> {
+            if rows == 1 {
+                return vec![cre.clone()];
+            }
+            let first = cre.len().div_ceil(2);
+            vec![cre[..first].to_vec(), cre[first..].to_vec()]
+        };
+        let row_h = |r: &[usize], sc: f32| -> f32 {
+            let tall = r.iter().map(|&g| groups[g].2.min(STACK_MAX)).max().unwrap_or(1);
+            len * sc * (1.0 + (tall as f32 - 1.0) * stack_step(tall))
+        };
+        let fits = |rows: &[Vec<usize>], sc: f32| -> bool {
+            let step = CARD_WIDTH * sc * (1.0 + AUTO_GAP);
+            let widest = rows.iter().map(|r| r.len()).max().unwrap_or(0) as f32 * step;
+            let h: f32 = rows.iter().map(|r| row_h(r, sc)).sum::<f32>() + BACK_ROW_GAP * (rows.len() as f32 - 1.0);
+            widest <= avail_w && h <= area_h
+        };
+        let best = |rows: usize| -> (Vec<Vec<usize>>, f32) {
+            let rs = split(rows);
+            let mut sc = self.card_scale;
+            while sc > min_s && !fits(&rs, sc) {
+                sc -= self.card_scale * 0.02;
+            }
+            (rs, sc.max(min_s))
+        };
+        let (one, s1) = best(1);
+        let (rows, s) = if cre.len() >= 2 && s1 < self.card_scale * TWO_ROWS_BELOW {
+            let (two, s2) = best(2);
+            if s2 > s1 { (two, s2) } else { (one, s1) }
+        } else {
+            (one, s1)
+        };
+        let w = CARD_WIDTH * s;
 
-        let (mut k_front, mut k_back, mut k_left) = (0usize, 0usize, 0usize);
-        front
-            .iter()
+        // hintere Reihe (Artefakte, Verzauberungen …): eigene Größe, passt in die untere Reihe
+        let back_avail = (wall - BACK_ROW_START).max(CARD_WIDTH * min_s);
+        let mut back_s = self.card_scale.min((BACK_ROW_DEPTH - 0.1) / len);
+        while back_s > min_s && units_back * CARD_WIDTH * back_s > back_avail {
+            back_s -= self.card_scale * 0.02;
+        }
+        let back_s = back_s.max(min_s);
+        let back_w = CARD_WIDTH * back_s;
+        let back_squeeze = (back_avail / (units_back * back_w).max(0.001)).min(1.0);
+        let back_z = half_z - len * back_s * 0.5 - 0.05;
+
+        // Lage (x, z, Größe) der ersten Karte jeder Gruppe
+        let mut slot = vec![(0.0f32, 0.0f32, s); groups.len()];
+        for (j, &g) in pw.iter().enumerate() {
+            let (r, c) = (j / pw_cols, j % pw_cols);
+            let x = -wall + pw_w * 0.5 + c as f32 * pw_w * (1.0 + AUTO_GAP);
+            let z = area_top + len * pw_s * 0.5 + r as f32 * (len * pw_s + BACK_ROW_GAP);
+            slot[g] = (x, z, pw_s);
+        }
+        let left_end = -wall + left_w;
+        let mut z_row = area_top + len * s * 0.5;
+        for r in &rows {
+            let full = w * (1.0 + AUTO_GAP);
+            let step = if r.len() as f32 * full <= avail_w { full } else { avail_w / r.len().max(1) as f32 };
+            let width = r.len() as f32 * step;
+            // mittig; reicht der Platz nicht, rechts neben den Planeswalkern beginnen
+            let mut x = (-width * 0.5).max(left_end).min(wall - width) + step * 0.5;
+            for &g in r {
+                slot[g] = (x, z_row, s);
+                x += step;
+            }
+            z_row += row_h(r, s) + BACK_ROW_GAP;
+        }
+        let mut xb = BACK_ROW_START + back_w * 0.5;
+        for (g, grp) in groups.iter().enumerate() {
+            if grp.1 == 1 {
+                slot[g] = (xb, back_z, back_s);
+                xb += (group_units(grp.2, 1) + AUTO_GAP) * back_w * back_squeeze;
+            }
+        }
+
+        let mut in_group = vec![0usize; groups.len()];
+        keys.iter()
+            .zip(&front)
             .enumerate()
-            .map(|(i, row_kind)| {
-                let (x, z, s) = if *row_kind == 2 {
-                    let k = k_left;
-                    k_left += 1;
-                    (left_x0 + k as f32 * step_l, top + (len * s_left - len * s_front) * 0.5, s_left)
-                } else if *row_kind == 0 {
-                    let k = k_front;
-                    k_front += 1;
-                    let (row, col) = (k / per_row, k % per_row);
-                    let in_row = per_row.min(n_front - row * per_row);
-                    let x = (col as f32 - (in_row as f32 - 1.0) * 0.5) * step_f + left_w * 0.5;
-                    (x, top + row as f32 * (len * s_front + 0.1), s_front)
+            .map(|(i, (k, f))| {
+                let g = groups.iter().position(|(gk, gf, _)| gk == k && gf == f).unwrap_or(0);
+                let row = in_group[g];
+                in_group[g] += 1;
+                let (x0, z0, sc) = slot[g];
+                // Kreaturen: jede weitere etwas weiter zum Spieler hin und obenauf, die Kopfzeilen
+                // darunter bleiben sichtbar; andere: nach rechts versetzt
+                let (x, z) = if *f == 0 {
+                    (x0, z0 + row as f32 * stack_step(groups[g].2.min(STACK_MAX)) * len * sc)
                 } else {
-                    let k = k_back;
-                    k_back += 1;
-                    (back_x0 + k as f32 * step_b, back_z, s_back)
+                    let squeeze = if *f == 1 { back_squeeze } else { 1.0 };
+                    (x0 + row as f32 * BATTLE_STACK_STEP * CARD_WIDTH * sc * squeeze, z0)
                 };
-                let y = CARD_THICKNESS * 0.5 + i as f32 * 0.002;
-                Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
+                let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
+                Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(sc)), Vector3::new(x, y, z))
             })
             .collect()
     }
 
-    /// Slots der Ressourcen-Reihe (Länder) wie im Video: von links nach rechts, gleichnamige
+    /// Slots der Ressourcen-Reihe (Länder) wie im Video – bei vielen Ländergruppen in zwei Reihen
+    /// innerhalb der Zone (darunter liegt das Exil, die Zone wird nie verlassen): von links nach rechts, gleichnamige
     /// Länder überlappend übereinander (je [`LAND_STACK_STEP`] Kartenbreite versetzt), Gruppen
     /// in Manafarben-Reihenfolge. Getappte Länder bilden einen eigenen Stapel direkt rechts neben
     /// den ungetappten gleichen Namens (sie liegen nie zwischen ungetappten). Passen sie nicht,
@@ -859,17 +839,32 @@ impl Zone {
         groups.sort();
         let sizes: Vec<usize> = groups.iter().map(|g| keys.iter().filter(|k| *k == g).count()).collect();
         let avail = self.size.x - 0.1;
-        // Breite in Kartenbreiten bei Maßstab 1
-        let units: f32 = sizes.iter().map(|n| 1.0 + (*n as f32 - 1.0) * LAND_STACK_STEP).sum::<f32>()
-            + (groups.len().max(1) - 1) as f32 * LAND_GROUP_GAP;
-        let s = (avail / (units * CARD_WIDTH)).clamp(self.card_scale * MIN_SHRINK, self.card_scale);
-        let squeeze = (avail / (units * CARD_WIDTH * s)).min(1.0);
+        let len = self.card_length();
+        // Breite in Kartenbreiten bei Maßstab 1 für die Gruppen `range`
+        let units = |range: std::ops::Range<usize>| -> f32 {
+            let n = range.len();
+            sizes[range].iter().map(|n| 1.0 + (*n as f32 - 1.0) * LAND_STACK_STEP).sum::<f32>() + n.max(1).saturating_sub(1) as f32 * LAND_GROUP_GAP
+        };
+        let one_s = (avail / (units(0..groups.len()) * CARD_WIDTH)).clamp(self.card_scale * MIN_SHRINK, self.card_scale);
+        // zweite Reihe innerhalb der Zone (darunter liegt das Exil – die Zone wird nie verlassen),
+        // sobald eine Reihe deutlich kleiner würde
+        let split = groups.len().div_ceil(2);
+        let two_s = (avail / (units(0..split).max(units(split..groups.len())) * CARD_WIDTH))
+            .min((self.size.z - 0.1) * 0.5 / len)
+            .clamp(self.card_scale * MIN_SHRINK, self.card_scale);
+        let two_rows = groups.len() >= 2 && one_s < self.card_scale * TWO_ROWS_BELOW && two_s > one_s;
+        let s = if two_rows { two_s } else { one_s };
         let w = CARD_WIDTH * s;
-        let mut starts = Vec::new();
-        let mut x = -self.size.x * 0.5 + 0.05 + w * 0.5;
-        for n in &sizes {
-            starts.push(x);
-            x += (w + (*n as f32 - 1.0) * LAND_STACK_STEP * w + LAND_GROUP_GAP * w) * squeeze;
+        let row_ranges = if two_rows { vec![0..split, split..groups.len()] } else { vec![0..groups.len()] };
+        let mut starts = vec![(0.0f32, 0.0f32, 1.0f32); groups.len()];
+        for (r, range) in row_ranges.iter().enumerate() {
+            let squeeze = (avail / (units(range.clone()) * CARD_WIDTH * s)).min(1.0);
+            let z = if two_rows { (r as f32 - 0.5) * (len * s + 0.05) } else { 0.0 };
+            let mut x = -self.size.x * 0.5 + 0.05 + w * 0.5;
+            for g in range.clone() {
+                starts[g] = (x, z, squeeze);
+                x += (w + (sizes[g] as f32 - 1.0) * LAND_STACK_STEP * w + LAND_GROUP_GAP * w) * squeeze;
+            }
         }
         let mut in_group = vec![0usize; groups.len()];
         keys.iter()
@@ -878,9 +873,10 @@ impl Zone {
                 let g = groups.iter().position(|x| x == k).unwrap_or(0);
                 let row = in_group[g];
                 in_group[g] += 1;
-                let x = starts[g] + row as f32 * LAND_STACK_STEP * w * squeeze;
+                let (x0, z, squeeze) = starts[g];
+                let x = x0 + row as f32 * LAND_STACK_STEP * w * squeeze;
                 let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
-                Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, 0.0))
+                Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
             })
             .collect()
     }
@@ -970,3 +966,12 @@ impl Zone {
     }
 }
 
+/// Versatz je Karte in einem Kreaturen-Stapel aus `n` Karten (Anteil der Kartenlänge): normal
+/// [`CREATURE_STACK_STEP`], bei hohen Stapeln enger, damit ein Stapel höchstens
+/// 1 + [`CREATURE_STACK_MAX_EXTRA`] Kartenlängen hoch ist (die Kopfzeilen bleiben sichtbar).
+fn stack_step(n: usize) -> f32 {
+    if n <= 1 {
+        return CREATURE_STACK_STEP;
+    }
+    CREATURE_STACK_STEP.min(CREATURE_STACK_MAX_EXTRA / (n - 1) as f32)
+}
