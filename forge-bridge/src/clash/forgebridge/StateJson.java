@@ -331,13 +331,6 @@ final class StateJson {
             c.getUnlockedRoomNames().forEach(doors::add);
             o.add("unlocked_doors", doors);
         }
-        // Commander-Steuer (CR 903.8): {2} je bisherigem Wirken aus der Kommandozone
-        if (c.isCommander() && c.getOwner() != null) {
-            int casts = c.getOwner().getCommanderCast(c);
-            if (casts > 0) {
-                o.addProperty("commander_tax", 2 * casts);
-            }
-        }
         Card host = c.getAttachedTo();
         if (host != null) {
             o.addProperty("attached_to", host.getId());

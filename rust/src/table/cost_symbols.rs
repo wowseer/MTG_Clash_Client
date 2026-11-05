@@ -207,10 +207,9 @@ pub fn counter_coin(kind: &str, count: u32, size: f32) -> Gd<Sprite3D> {
         "M1M1" => "red",
         _ => "gold",
     };
-    // Klassen-Stufe „Lv2“, Commander-Steuer „+2“, sonst die Anzahl
+    // Klassen-Stufe „L2“, offene Türen „1/2“, sonst die Anzahl
     let label = match kind {
         "CLASS_LEVEL" => format!("L{count}"),
-        "COMMANDER_TAX" => format!("+{count}"),
         "DOORS" => format!("{count}/2"),
         _ => count.to_string(),
     };

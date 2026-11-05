@@ -277,7 +277,9 @@ public final class ForgeBridge {
             LobbyPlayer lobby = isRemote
                     ? new RemoteLobbyPlayer(playerName, i)
                     : GamePlayerUtil.createAiPlayer(playerName, 0);
-            RegisteredPlayer rp = new RegisteredPlayer(deck);
+            // Commander-Partie (CR 903): Deck mit Abschnitt [Commander], Startleben 40
+            boolean commander = cmd.has("game_type") && "Commander".equalsIgnoreCase(cmd.get("game_type").getAsString());
+            RegisteredPlayer rp = commander ? RegisteredPlayer.forCommander(deck) : new RegisteredPlayer(deck);
             rp.setPlayer(lobby);
             if (cmd.has("starting_life")) {
                 rp.setStartingLife(cmd.get("starting_life").getAsInt());
@@ -285,7 +287,11 @@ public final class ForgeBridge {
             players.add(rp);
         }
 
-        GameRules rules = new GameRules(GameType.Constructed);
+        boolean commanderGame = cmd.has("game_type") && "Commander".equalsIgnoreCase(cmd.get("game_type").getAsString());
+        GameRules rules = new GameRules(commanderGame ? GameType.Commander : GameType.Constructed);
+        if (commanderGame) {
+            rules.addAppliedVariant(GameType.Commander);
+        }
         rules.setGamesPerMatch(1);
         // Alte Regel „Kampfteilnehmer ordnen“ (Schadens-Reihenfolge der Blocker, vor CR-Änderung 2024)
         if (cmd.has("order_combatants")) {

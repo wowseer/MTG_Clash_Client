@@ -4237,15 +4237,11 @@ impl ForgeTable {
                     self.signatures.insert(key, sig);
                 }
                 card.bind_mut().set_badges(&card_badges(data, &ring_bearers));
-                // Marken als Münzen, dazu Klassen-Stufe (CR 716) und Commander-Steuer (CR 903.8)
+                // Marken als Münzen, dazu Klassen-Stufe (CR 716) und offene Türen (CR 709.5)
                 let mut coins = counter_list(data);
                 let level = get_int(data, "class_level");
                 if level > 0 {
                     coins.push(("CLASS_LEVEL".to_string(), level as u32));
-                }
-                let tax = get_int(data, "commander_tax");
-                if tax > 0 {
-                    coins.push(("COMMANDER_TAX".to_string(), tax as u32));
                 }
                 // Räume (CR 709.5): Zahl der aufgeschlossenen Türen von zwei
                 if let Some(doors) = get_array(data, "unlocked_doors") {
