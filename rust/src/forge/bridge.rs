@@ -64,6 +64,11 @@ pub struct ForgeBridge {
     /// Maximaler Java-Heap in MB (`-Xmx`).
     #[export(range = (256.0, 16384.0))]
     java_max_memory_mb: i32,
+    /// Tempo der Forge-KI: Faktor für die Pausen nach ihren Aktionen (Land, Zauber, Angriff,
+    /// Blocker, Phasenwechsel), damit man ihrem Zug zusehen kann. 1 = normal, 2 = doppelt so
+    /// langsam, 0 = ohne Pausen. Wird bei [method start_match] an die Brücke geschickt.
+    #[export(range = (0.0, 4.0))]
+    ai_pace: f64,
     /// Brücke automatisch in `ready()` starten.
     #[export]
     autostart: bool,
@@ -92,6 +97,7 @@ impl INode for ForgeBridge {
             forge_jar: GString::new(),
             bridge_jar: "res://../forge-bridge/build/forge-bridge.jar".into(),
             java_max_memory_mb: 2048,
+            ai_pace: 1.0,
             autostart: false,
             log_messages: false,
             child: None,
@@ -431,6 +437,7 @@ impl ForgeBridge {
         if seed >= 0 {
             d.set("seed", seed);
         }
+        d.set("ai_pace", self.ai_pace);
         self.send_command(d)
     }
 

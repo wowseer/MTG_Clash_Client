@@ -52,6 +52,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `forge_jar` | `String` | Forge-Jar mit allen Abhängigkeiten. Leer = erste Datei `forge-gui-desktop-*-jar-with-dependencies.jar` in `forge_dir`. |
 | `bridge_jar` | `String` | Gebaute Brücke (`forge-bridge/build.sh`). `res://`-Pfade werden umgerechnet. |
 | `java_max_memory_mb` | `int` | Maximaler Java-Heap in MB (`-Xmx`). |
+| `ai_pace` | `float` | Tempo der Forge-KI: Faktor für die Pausen nach ihren Aktionen (Land, Zauber, Angriff, Blocker, Phasenwechsel), damit man ihrem Zug zusehen kann. 1 = normal, 2 = doppelt so langsam, 0 = ohne Pausen. Wird bei `start_match()` an die Brücke geschickt. |
 | `autostart` | `bool` | Brücke automatisch in `ready()` starten. |
 | `log_messages` | `bool` | Jede empfangene Nachricht in die Godot-Konsole schreiben (zum Debuggen). |
 

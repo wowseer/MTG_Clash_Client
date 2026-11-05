@@ -255,6 +255,8 @@ public final class ForgeBridge {
         JsonArray decks = cmd.getAsJsonArray("decks");
         JsonArray remote = cmd.has("remote") ? cmd.getAsJsonArray("remote") : new JsonArray();
         JsonArray names = cmd.has("names") ? cmd.getAsJsonArray("names") : new JsonArray();
+        // Tempo der KI (1 = normal, 0 = ohne Pausen), siehe AiPace
+        AiPace.setFactor(cmd.has("ai_pace") ? cmd.get("ai_pace").getAsDouble() : 1.0);
         if (decks == null || decks.size() < 2) {
             sendError("bad_command", "start_match braucht mindestens zwei Decks");
             return;

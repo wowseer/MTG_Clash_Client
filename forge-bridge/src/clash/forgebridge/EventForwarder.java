@@ -36,6 +36,8 @@ final class EventForwarder {
         m.addProperty("phase", ph.getPhase() == null ? null : ph.getPhase().name());
         addDetails(m, ev);
         ForgeBridge.send(m);
+        // KI-Züge sichtbar machen: nach Aktionen der KI kurz warten (siehe AiPace)
+        AiPace.after(game, ev);
         // Eingebettet startet der Gastgeber die Partie, also meldet sie hier ihr Ende
         if (ForgeBridge.isEmbedded() && ev instanceof forge.game.event.GameEventGameOutcome) {
             ForgeBridge.sendGameOver(game);

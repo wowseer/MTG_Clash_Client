@@ -203,7 +203,7 @@ JSON Lines, UTF-8: genau eine JSON-Nachricht pro Zeile.
 | `cmd` | Felder | Wirkung |
 |---|---|---|
 | `ping` | `nonce` (optional) | Antwort `pong` mit gleichem `nonce` |
-| `start_match` | `decks`: Liste von `.dck`-Pfaden oder Forge-Decknamen (mind. 2) · `remote`: Liste bool je Sitzplatz (true = von MTG Clash gesteuert) · `names`: Spielernamen · `seed` (optional) · `starting_life` (optional) · `order_combatants` (optional, bool: Forges alte Regel „Kampfteilnehmer ordnen“, Schadens-Reihenfolge vor der CR-Änderung 2024) | startet eine Partie (Constructed, 1 Spiel) |
+| `start_match` | `decks`: Liste von `.dck`-Pfaden oder Forge-Decknamen (mind. 2) · `remote`: Liste bool je Sitzplatz (true = von MTG Clash gesteuert) · `names`: Spielernamen · `seed` (optional) · `starting_life` (optional) · `ai_pace` (optional, Zahl, Standard 1: Faktor für die Pausen der Forge-KI nach ihren Aktionen – Land 0,7 s, Zauber/Fähigkeit 1 s, Angreifer 0,9 s, Blocker 0,7 s, Phasenwechsel im KI-Zug 0,25 s; 0 = ohne Pausen; `AiPace.java`) · `order_combatants` (optional, bool: Forges alte Regel „Kampfteilnehmer ordnen“, Schadens-Reihenfolge vor der CR-Änderung 2024) | startet eine Partie (Constructed, 1 Spiel) |
 | `answer` | `id`: Anfrage-ID · `choice`: Antwort | beantwortet eine `request` |
 | `state` | `viewer`: Sitzplatz mit offener Hand (-1 = keiner) | Antwort `state` |
 | `debug_card_names` | – | Debug-Fenster: Antwort `debug_card_names` mit allen Kartennamen |
