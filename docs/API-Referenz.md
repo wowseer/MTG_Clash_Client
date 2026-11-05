@@ -658,7 +658,7 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 |---|---|---|
 | `open_at(point: Vector3, scale: float, lift: float)` | `void` | Die Bühne an einer Stelle auf dem Tisch statt vor der Kamera (z. B. am Stack), parallel zur Bildebene, um `scale` vergrößert, ohne Abdunkelung: `point` = Weltpunkt der Bühnenmitte, die Bühne rückt `lift` zur Kamera hin (vor die Karten dort). |
 | `open()` | `void` | Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene). |
-| `set_texts(title: String, subtitle: String, note: String)` | `void` | Titel, Untertitel und Hinweis setzen (leer = ausblenden). |
+| `set_texts(title: String, subtitle: String, note: String)` | `void` | Titel, Untertitel und Hinweis setzen (leer = ausblenden). Wie in Arena bleibt der Titel kurz: Ist er breiter als der Bildschirm ([`TITLE_MAX_WIDTH`]), wird er geteilt ([`split_title`]) – der Rest kommt vor den Untertitel. Der Untertitel bricht in Zeilen um und wird bei langem Text kleiner. |
 | `set_focus_layout()` | `void` | Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell in der Mitte, die Knöpfe untereinander darunter, der Titel direkt über der Karte, kein Untertitel (er läge auf der Karte). Vor `add_button()` aufrufen. |
 | `static focus_button_width()` | `float` | Breite eines Knopfes in der Fokus-Anordnung (Welteinheiten). |
 | `enable_scroll()` | `void` | Fächer nebeneinander statt überlappend legen; passt er nicht ganz ins Bild, erscheint unter ihm ein `Slider3D`, mit dem man ihn nach links und rechts schiebt (Start: Mitte). |

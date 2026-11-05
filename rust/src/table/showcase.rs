@@ -23,7 +23,10 @@
 use godot::classes::base_material_3d::{ShadingMode, Transparency};
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::label_3d::DrawFlags;
-use godot::classes::{Area3D, BoxShape3D, CollisionObject3D, CollisionShape3D, INode3D, Label3D, MeshInstance3D, QuadMesh, StandardMaterial3D};
+use godot::classes::sprite_base_3d::DrawFlags as SpriteFlags;
+use godot::classes::text_server::AutowrapMode;
+use godot::global::{HorizontalAlignment, VerticalAlignment};
+use godot::classes::{Area3D, BoxShape3D, CollisionObject3D, CollisionShape3D, INode3D, Label3D, MeshInstance3D, QuadMesh, Sprite3D, StandardMaterial3D};
 use godot::prelude::*;
 
 use super::cost_symbols;
@@ -31,7 +34,7 @@ use super::cost_symbols;
 use super::button3d::{Button3D, ButtonStyle};
 use super::layers::CARD_LAYER;
 use super::slider3d::Slider3D;
-use super::card3d::{Card3D, CARD_HEIGHT};
+use super::card3d::{Card3D, CARD_HEIGHT, CARD_WIDTH};
 use super::zone::{Zone, ZoneKind};
 
 /// Abstand der Bühne vor der Kamera (Welteinheiten).
@@ -42,6 +45,20 @@ const DIM_ALPHA: f32 = 0.62;
 const DIM_TIME: f32 = 0.15;
 const DIM_DEPTH: f32 = 1.6;
 const DIM_SIZE: Vector2 = Vector2::new(16.0, 9.0);
+/// Größte Breite des Titels bzw. eines Untertitels in einer Zeile (Welteinheiten auf der Bühne,
+/// etwa zwei Drittel der Bildbreite).
+const TITLE_MAX_WIDTH: f32 = 4.2;
+const SUBTITLE_MAX_WIDTH: f32 = 4.6;
+/// Oberkante des Untertitels und seine Schriftgrößen (normal, kleinste bei langem Text).
+const SUBTITLE_TOP: f32 = 0.8;
+const SUBTITLE_FONT: i32 = 64;
+const SUBTITLE_MIN_FONT: i32 = 44;
+/// Fokus-Anordnung: Untertitel rechts neben der großen Karte (Abstand, Breite).
+const FOCUS_SIDE_GAP: f32 = 0.25;
+const FOCUS_SIDE_WIDTH: f32 = 1.5;
+/// Schriftgröße neben der großen Karte (größte, kleinste bei langem Text).
+const FOCUS_SIDE_FONT: i32 = 46;
+const FOCUS_SIDE_MIN_FONT: i32 = 34;
 /// Cover-Flow ([`Showcase::enable_coverflow`]): Höhe der Fächermitte, Lage des Schiebereglers,
 /// Breite, ab der er erscheint, und Größe der Karte unter der Maus (Anteil der Bildhöhe).
 const COVERFLOW_CENTER_Y: f32 = 0.1;
@@ -96,6 +113,9 @@ pub struct Showcase {
     dimmer: Option<Gd<StandardMaterial3D>>,
     title: Option<Gd<Label3D>>,
     subtitle: Option<Gd<Label3D>>,
+    /// Zuletzt gesetzte Texte (Titel, Untertitel, Hinweis) – für das Neusetzen beim Wechsel
+    /// in die Fokus-Anordnung.
+    texts: (GString, GString, GString),
     note: Option<Gd<Label3D>>,
     buttons: Vec<Gd<Button3D>>,
     /// Schiebbarer Fächer: Überbreite (Welteinheiten) und Regler.
@@ -141,6 +161,7 @@ impl INode3D for Showcase {
             dimmer: None,
             title: None,
             subtitle: None,
+            texts: (GString::new(), GString::new(), GString::new()),
             note: None,
             buttons: Vec::new(),
             scroll_extra: 0.0,
@@ -180,6 +201,10 @@ impl INode3D for Showcase {
             let mut c = l.get_modulate();
             c.a = text_alpha;
             l.set_modulate(c);
+            // umbrochenes Textbild mit Symbolen blendet mit
+            if let Some(mut sprite) = l.get_node_or_null("RichLabel").and_then(|n| n.try_cast::<Sprite3D>().ok()) {
+                sprite.set_modulate(Color::from_rgba(1.0, 1.0, 1.0, text_alpha));
+            }
         }
         let done = if self.flying.is_empty() { k >= 1.0 } else { self.t >= FLY_TIME };
         if self.closing && done {
@@ -230,10 +255,28 @@ impl Showcase {
         self.closing = false;
     }
 
-    /// Titel, Untertitel und Hinweis setzen (leer = ausblenden).
+    /// Titel, Untertitel und Hinweis setzen (leer = ausblenden). Wie in Arena bleibt der Titel
+    /// kurz: Ist er breiter als der Bildschirm ([`TITLE_MAX_WIDTH`]), wird er geteilt
+    /// ([`split_title`]) – der Rest kommt vor den Untertitel. Der Untertitel bricht in Zeilen um
+    /// und wird bei langem Text kleiner.
     #[func]
     pub fn set_texts(&mut self, title: GString, subtitle: GString, note: GString) {
-        for (label, text) in [(&mut self.title, title), (&mut self.subtitle, subtitle), (&mut self.note, note)] {
+        self.texts = (title.clone(), subtitle.clone(), note.clone());
+        let (title, subtitle) = {
+            let (font, pixel) = self.title.as_ref().map_or((96, 0.0019), |l| (l.get_font_size(), l.get_pixel_size()));
+            let (t, rest) = split_title(&title.to_string(), |t| cost_symbols::rich_width(t, font, pixel) <= TITLE_MAX_WIDTH);
+            let sub = subtitle.to_string();
+            let sub = match (rest.is_empty(), sub.is_empty()) {
+                (true, _) => sub,
+                (false, true) => rest,
+                (false, false) => format!("{rest}\n{sub}"),
+            };
+            (GString::from(t.as_str()), GString::from(sub.as_str()))
+        };
+        self.fit_subtitle(&subtitle.to_string());
+        let sub_max_w = if self.focus { FOCUS_SIDE_WIDTH } else { SUBTITLE_MAX_WIDTH };
+        let sub_top = !self.focus;
+        for (row, (label, text)) in [(&mut self.title, title), (&mut self.subtitle, subtitle), (&mut self.note, note)].into_iter().enumerate() {
             if let Some(l) = label.as_mut() {
                 // alte Symbol-Beschriftung dieser Zeile entfernen
                 if let Some(mut old) = l.get_node_or_null("RichLabel") {
@@ -241,7 +284,28 @@ impl Showcase {
                     old.queue_free();
                 }
                 let text = text.to_string();
-                if cost_symbols::has_cost(&text) {
+                let (font, pixel) = (l.get_font_size(), l.get_pixel_size());
+                let long = text.contains('\n') || cost_symbols::rich_width(&text, font, pixel) > sub_max_w;
+                // Untertitel neben der großen Karte (Fokus) immer als Textbild: feste Breite, umbrochen
+                if row == 1 && !text.is_empty() && ((long && cost_symbols::has_cost(&text)) || !sub_top) {
+                    // langer Untertitel mit Manasymbolen: umbrochenes Textbild mit Symbolen
+                    l.set_text("");
+                    let lines = (cost_symbols::rich_width(&text, font, pixel) / sub_max_w).ceil() + text.matches('\n').count() as f32;
+                    let size = Vector2i::new((sub_max_w / pixel) as i32, (lines * font as f32 * 1.45 + font as f32 * 0.5) as i32);
+                    let c = l.get_modulate();
+                    if let Some(tex) = cost_symbols::rich_text_texture(&text, font, size, Color::from_rgb(c.r, c.g, c.b)) {
+                        let mut sprite = Sprite3D::new_alloc();
+                        sprite.set_name("RichLabel");
+                        sprite.set_texture(&tex);
+                        sprite.set_pixel_size(pixel);
+                        sprite.set_draw_flag(SpriteFlags::SHADED, false);
+                        sprite.set_modulate(Color::from_rgba(1.0, 1.0, 1.0, c.a));
+                        let half = size.y as f32 * pixel * 0.5;
+                        sprite.set_position(Vector3::new(0.0, if sub_top { -half } else { 0.0 }, 0.0));
+                        l.add_child(&sprite);
+                    }
+                    l.set_visible(true);
+                } else if cost_symbols::has_cost(&text) {
                     // Kosten im Text („Zahlen: {2}?“) als Manasymbole: Zeile mit Symbolen statt Schrift
                     l.set_text("");
                     let mut rich = cost_symbols::rich_label(&text, l);
@@ -361,9 +425,9 @@ impl Showcase {
             zone.set("card_scale", &FOCUS_SCALE.to_variant());
             zone.bind_mut().layout();
         }
-        if let Some(l) = self.subtitle.as_mut() {
-            l.set_visible(false);
-        }
+        // Untertitel (Einzelheiten der Frage) rechts neben die große Karte: Texte neu setzen
+        let (t, sub, n) = self.texts.clone();
+        self.set_texts(t, sub, n);
         // Titel über die große Karte rücken (sonst läge er hinter ihr)
         if let Some(l) = self.title.as_mut() {
             l.set_position(Vector3::new(0.0, FOCUS_CENTER.y + CARD_HEIGHT * FOCUS_SCALE * 0.5 + FOCUS_TITLE_GAP, 0.05));
@@ -746,8 +810,50 @@ impl Showcase {
         self.zone = Some(zone);
 
         self.title = Some(self.label(0.92, 96, 0.0019, Color::from_rgb(0.98, 0.86, 0.55)));
-        self.subtitle = Some(self.label(0.76, 64, 0.0013, Color::from_rgb(0.9, 0.86, 0.78)));
+        self.subtitle = Some(self.label(SUBTITLE_TOP, SUBTITLE_FONT, 0.0013, Color::from_rgb(0.9, 0.86, 0.78)));
         self.note = Some(self.label(-0.93, 56, 0.0012, Color::from_rgb(0.9, 0.86, 0.78)));
+    }
+
+    /// Untertitel: Zeilenumbruch bei [`SUBTITLE_MAX_WIDTH`], oben bündig unter dem Titel; bei mehr
+    /// als zwei Zeilen kleinere Schrift (höchstens vier Zeilen bleiben zwischen Titel und Karten).
+    fn fit_subtitle(&mut self, text: &str) {
+        let focus = self.focus;
+        let Some(l) = self.subtitle.as_mut() else { return };
+        let pixel = l.get_pixel_size();
+        let max_w = if focus { FOCUS_SIDE_WIDTH } else { SUBTITLE_MAX_WIDTH };
+        let max_lines = if focus { 6.0 } else { 2.0 };
+        let (mut font, min_font) = if focus { (FOCUS_SIDE_FONT, FOCUS_SIDE_MIN_FONT) } else { (SUBTITLE_FONT, SUBTITLE_MIN_FONT) };
+        while font > min_font {
+            let lines = (cost_symbols::rich_width(text, font, pixel) / max_w).ceil() + text.matches('\n').count() as f32;
+            if lines <= max_lines {
+                break;
+            }
+            font -= 4;
+        }
+        l.set_font_size(font);
+        l.set_outline_size(font / 6);
+        l.set_autowrap_mode(AutowrapMode::WORD_SMART);
+        self.place_subtitle();
+    }
+
+    /// Untertitel platzieren: normal mittig unter dem Titel (oben bündig, umbrochen), in der
+    /// Fokus-Anordnung linksbündig rechts neben der großen Karte, mittig zu ihr.
+    fn place_subtitle(&mut self) {
+        let focus = self.focus;
+        let Some(l) = self.subtitle.as_mut() else { return };
+        let pixel = l.get_pixel_size();
+        if focus {
+            let x0 = CARD_WIDTH * FOCUS_SCALE * 0.5 + FOCUS_SIDE_GAP;
+            l.set_width(FOCUS_SIDE_WIDTH / pixel);
+            l.set_horizontal_alignment(HorizontalAlignment::LEFT);
+            l.set_vertical_alignment(VerticalAlignment::CENTER);
+            l.set_position(Vector3::new(x0 + FOCUS_SIDE_WIDTH * 0.5, FOCUS_CENTER.y, 0.05));
+        } else {
+            l.set_width(SUBTITLE_MAX_WIDTH / pixel);
+            l.set_horizontal_alignment(HorizontalAlignment::CENTER);
+            l.set_vertical_alignment(VerticalAlignment::TOP);
+            l.set_position(Vector3::new(0.0, SUBTITLE_TOP, 0.05));
+        }
     }
 
     fn label(&mut self, y: f32, font: i32, pixel: f32, color: Color) -> Gd<Label3D> {
@@ -762,5 +868,72 @@ impl Showcase {
         l.set_visible(false);
         self.base_mut().add_child(&l);
         l
+    }
+}
+
+/// Titel kürzen wie in Arena: passt `title` nicht (`fits`), dann (1) am ersten „: “ teilen, wenn
+/// der Kopf passt („Zahlen, um den Effekt zu verhindern“ / „Discard a card …“), (2) sonst nach
+/// dem ersten Satz, wenn er passt, (3) sonst so viele Wörter wie passen mit „…“ und der ganze
+/// Text als Rest. Rückgabe: (Titel, Rest für den Untertitel; leer = nichts abgetrennt).
+pub fn split_title(title: &str, fits: impl Fn(&str) -> bool) -> (String, String) {
+    let title = title.trim();
+    if title.is_empty() || fits(title) {
+        return (title.to_string(), String::new());
+    }
+    if let Some((head, rest)) = title.split_once(": ") {
+        let head = head.trim();
+        if !head.is_empty() && fits(head) {
+            return (head.to_string(), rest.trim().to_string());
+        }
+    }
+    for sep in [". ", "? ", "! "] {
+        if let Some(i) = title.find(sep) {
+            let head = &title[..i + 1];
+            if fits(head) {
+                return (head.to_string(), title[i + 2..].trim().to_string());
+            }
+        }
+    }
+    let mut head = String::new();
+    for word in title.split_whitespace() {
+        let next = if head.is_empty() { word.to_string() } else { format!("{head} {word}") };
+        if !fits(&format!("{next} …")) {
+            break;
+        }
+        head = next;
+    }
+    if head.is_empty() {
+        return (title.to_string(), String::new());
+    }
+    (format!("{head} …"), title.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_title;
+
+    fn fits(n: usize) -> impl Fn(&str) -> bool {
+        move |t: &str| t.chars().count() <= n
+    }
+
+    #[test]
+    fn short_title_stays() {
+        assert_eq!(split_title("Wähle einen Modus", fits(30)), ("Wähle einen Modus".into(), String::new()));
+    }
+
+    #[test]
+    fn splits_at_colon() {
+        let (t, r) = split_title("Zahlen, um den Effekt zu verhindern: Discard a card and sacrifice a land.", fits(40));
+        assert_eq!(t, "Zahlen, um den Effekt zu verhindern");
+        assert_eq!(r, "Discard a card and sacrifice a land.");
+    }
+
+    #[test]
+    fn splits_after_sentence_or_words() {
+        let (t, r) = split_title("Exile target creature. Its controller gains life equal to its power.", fits(25));
+        assert_eq!((t.as_str(), r.as_str()), ("Exile target creature.", "Its controller gains life equal to its power."));
+        let (t, r) = split_title("Choose any number of target creatures you control and opponents control", fits(20));
+        assert!(t.ends_with('…') && t.chars().count() <= 20);
+        assert!(r.starts_with("Choose any number"));
     }
 }
