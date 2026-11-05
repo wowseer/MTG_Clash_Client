@@ -539,7 +539,9 @@ impl Zone {
     }
 
     /// Slots der automatischen Anordnung (siehe [member auto_arrange]) für die freien Karten
-    /// `base`, in deren Reihenfolge – Aufbau wie im Video des Users. Lokal: −z = zur
+    /// `base`, in deren Reihenfolge – Aufbau wie im Video des Users. Wird es voll, werden
+    /// zuerst alle Karten gemeinsam kleiner (bis [`MIN_SHRINK`]), damit Kreaturen und die
+    /// anderen Karten nebeneinander in je einer Reihe bleiben; erst danach zwei Reihen. Lokal: −z = zur
     /// Tischmitte, +x = rechts (aus Sicht der Seite):
     /// - **vordere Reihe(n)**: Kreaturen mittig an der Mittellinie; passen sie nicht in eine
     ///   Reihe, werden sie kleiner, dann zweireihig;
@@ -556,7 +558,48 @@ impl Zone {
         let (half_x, half_z) = (self.size.x * 0.5, self.size.z * 0.5);
         let len = self.card_length();
 
-        // vorn: eine Reihe, wenn sie mit höchstens 75 % Verkleinerung passt, sonst zwei
+        // Zuerst alles gemeinsam kleiner: Kreaturen in einer Reihe mittig, die anderen rechts
+        // daneben in der Mitte der eigenen Seite – die größte gemeinsame Größe, bei der beides
+        // nebeneinander passt (höchstens bis MIN_SHRINK)
+        let unit = CARD_WIDTH * (1.0 + AUTO_GAP);
+        let wall = half_x - 0.1;
+        let back_start = |s: f32| {
+            if n_front == 0 { BACK_ROW_START } else { (n_front as f32 * unit * s * 0.5 + BACK_ROW_GAP).max(BACK_ROW_START) }
+        };
+        let fits = |s: f32| {
+            n_front as f32 * unit * s * 0.5 <= wall && (n_back == 0 || back_start(s) + n_back as f32 * unit * s <= wall)
+        };
+        let min_s = self.card_scale * MIN_SHRINK;
+        let mut shared = self.card_scale;
+        while shared > min_s && !fits(shared) {
+            shared -= self.card_scale * 0.02;
+        }
+        if fits(shared) {
+            let s = shared;
+            let top = -half_z + len * s * 0.5 + 0.05;
+            let back_z = -half_z * BACK_ROW_MID;
+            let x0 = back_start(s) + CARD_WIDTH * s * 0.5;
+            let (mut k_front, mut k_back) = (0usize, 0usize);
+            return front
+                .iter()
+                .enumerate()
+                .map(|(i, is_front)| {
+                    let (x, z) = if *is_front {
+                        let k = k_front;
+                        k_front += 1;
+                        ((k as f32 - (n_front as f32 - 1.0) * 0.5) * unit * s, top)
+                    } else {
+                        let k = k_back;
+                        k_back += 1;
+                        (x0 + k as f32 * unit * s, back_z)
+                    };
+                    let y = CARD_THICKNESS * 0.5 + i as f32 * 0.002;
+                    Transform3D::new(Basis::IDENTITY.scaled(Vector3::splat(s)), Vector3::new(x, y, z))
+                })
+                .collect();
+        }
+
+        // zu viele Karten: vorn eine Reihe, wenn sie mit höchstens 75 % Verkleinerung passt, sonst zwei
         let avail = 2.0 * half_x - 0.2;
         let one_row = (avail / (n_front.max(1) as f32 * CARD_WIDTH * (1.0 + AUTO_GAP))).min(self.card_scale);
         let (rows, s_front) = if one_row >= self.card_scale * 0.75 || n_front <= 1 {
