@@ -536,6 +536,25 @@ impl ForgeTable {
                     (letter, Choice::Color(*c))
                 })
                 .collect(),
+            // Schutz vor einer Farbe (CR 702.16): nur Farben zur Wahl → Farbrad
+            Decision::ChooseOption { options, purpose, .. }
+                if purpose == "Protection" && !options.is_empty() && options.iter().all(|o| o.color.is_some()) =>
+            {
+                options
+                    .iter()
+                    .enumerate()
+                    .map(|(i, o)| {
+                        let letter = match o.color? {
+                            ManaColor::White => 'W',
+                            ManaColor::Blue => 'U',
+                            ManaColor::Black => 'B',
+                            ManaColor::Red => 'R',
+                            ManaColor::Green => 'G',
+                        };
+                        Some((letter, Choice::Number(i as u32)))
+                    })
+                    .collect::<Option<Vec<_>>>()?
+            }
             Decision::ChooseType { options, .. } if !options.is_empty() => options
                 .iter()
                 .enumerate()
@@ -1160,6 +1179,7 @@ impl ForgeTable {
                 StageKind::Scry => self.show_scry(&req),
                 StageKind::Order => self.show_order(&req),
                 StageKind::CardOptions => self.show_card_options(&req),
+                StageKind::Buttons => self.show_option_buttons(&req),
             }
         }
         if let Some(req) = library_pick {
@@ -1606,7 +1626,13 @@ impl ForgeTable {
             Decision::ChooseOption { options, .. } if options.len() >= 2 && options.iter().all(|o| o.card.is_some()) => {
                 Some(StageKind::CardOptions)
             }
-            Decision::ChooseOption { options, .. } if options.len() == 2 => Some(StageKind::Binary),
+            Decision::ChooseOption { options, .. } if options.len() == 2 && Self::wheel_entries(decision).is_none() => {
+                Some(StageKind::Binary)
+            }
+            // drei und mehr Texte (Markenart, Schlüsselwort, Schutz, Zahl aus Liste, Abstimmung …)
+            Decision::ChooseOption { options, .. } if options.len() >= 3 && Self::wheel_entries(decision).is_none() => {
+                Some(StageKind::Buttons)
+            }
             Decision::ChooseOptions { purpose, .. } if purpose == "OptionalCost" => Some(StageKind::OptionalCost),
             Decision::ChooseOptions { options, .. } if options.len() >= 2 && options.iter().all(|o| o.card.is_some()) => {
                 Some(StageKind::CardOptions)
@@ -2005,6 +2031,80 @@ impl ForgeTable {
         }
         if hud.cancelable {
             self.stage_button(&mut showcase, ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), width * 0.8, Choice::Cancel);
+        }
+    }
+
+    /// Drei und mehr Möglichkeiten als Text (Markenart, Schlüsselwort, Schutz-Art, Zahl aus einer
+    /// Liste, Abstimmung …): eine Knopf-Spalte wie bei der Spielerwahl, der erste Knopf orange,
+    /// die anderen blau; gibt es eine Quellkarte, steht sie groß links daneben. Markenarten tragen
+    /// ihre Münze („+1“ grün, „−1“ rot, sonst golden mit dem Anfangsbuchstaben), Zahlen stehen
+    /// groß. Bei mehr als sieben Möglichkeiten zwei Spalten. „Abbrechen“ darunter, wo erlaubt.
+    fn show_option_buttons(&mut self, req: &Request) {
+        let Decision::ChooseOption { options, purpose, prompt, .. } = &req.decision else { return };
+        let title = match purpose.as_str() {
+            "CounterType" => tr!("Marke wählen", "Choose a counter").to_string(),
+            "Keyword" => tr!("Fähigkeit wählen", "Choose an ability").to_string(),
+            "Protection" => tr!("Schutz wählen", "Choose protection").to_string(),
+            "NumberList" => tr!("Zahl wählen", "Choose a number").to_string(),
+            "Vote" => tr!("Abstimmen", "Vote").to_string(),
+            _ => tr!("Wähle eins", "Choose one").to_string(),
+        };
+        let subtitle = if prompt.is_empty() { req.source_name.clone() } else { prompt.clone() };
+        let data = self.source_data(req);
+        let Some(mut showcase) = self.open_stage(&title, &subtitle) else { return };
+        let with_card = data.is_some();
+        if let Some(data) = data {
+            if let Some(mut fan) = showcase.bind().fan_zone() {
+                let mut xf = fan.get_transform();
+                xf.origin = Vector3::new(-OPTION_CARD_X, 0.15, 0.0);
+                fan.set_transform(xf);
+                fan.set("card_scale", &1.2f32.to_variant());
+            }
+            showcase.bind_mut().show_options(vec![(Self::stage_card(&data, None), String::new())]);
+        }
+        let n = options.len();
+        let columns = if n > OPTION_COLUMN_MAX { 2 } else { 1 };
+        let per_col = n.div_ceil(columns);
+        let width = Showcase::focus_button_width() * if columns == 2 { 0.85 } else { 1.0 };
+        let x0 = if with_card { OPTION_BUTTON_X } else { 0.0 } - (columns as f32 - 1.0) * (width + 0.1) * 0.5;
+        // erste Reihe direkt unter dem Untertitel; viele Knöpfe rücken enger zusammen
+        let step = if per_col > 1 { OPTION_STEP.min(OPTION_SPAN / (per_col - 1) as f32) } else { OPTION_STEP };
+        let top = OPTION_TOP;
+        for (i, o) in options.iter().enumerate() {
+            let label = match purpose.as_str() {
+                "CounterType" if !o.key.is_empty() => {
+                    let (rim, short) = match o.key.as_str() {
+                        "P1P1" => ("green", "+1".to_string()),
+                        "M1M1" => ("red", "−1".to_string()),
+                        k => ("gold", k.chars().next().map(|c| c.to_string()).unwrap_or_default()),
+                    };
+                    let name = match o.key.as_str() {
+                        "P1P1" => "+1/+1".to_string(),
+                        "M1M1" => "−1/−1".to_string(),
+                        k => crate::game::counters::counter_name(k),
+                    };
+                    format!("{{#{rim}:{short}}} {name}")
+                }
+                _ => o.text.clone(),
+            };
+            let style = if i == 0 { ButtonStyle::Orange } else { ButtonStyle::Blue };
+            let k = self.stage_choices.len() as i64;
+            self.stage_choices.push(Choice::Number(i as u32));
+            let mut b = Button3D::create(style, &label, width);
+            let cb = Callable::from_object_method(&self.to_gd(), "on_stage_choice").bind(&[k.to_variant()]);
+            b.connect("pressed", &cb);
+            let (col, row) = (i / per_col, i % per_col);
+            let pos = Vector2::new(x0 + col as f32 * (width + 0.1), top - row as f32 * step);
+            showcase.bind_mut().add_button_at(b, pos);
+        }
+        if req.cancelable {
+            let k = self.stage_choices.len() as i64;
+            self.stage_choices.push(Choice::Cancel);
+            let mut b = Button3D::create(ButtonStyle::Grey, tr!("Abbrechen", "Cancel"), width * 0.8);
+            let cb = Callable::from_object_method(&self.to_gd(), "on_stage_choice").bind(&[k.to_variant()]);
+            b.connect("pressed", &cb);
+            let pos = Vector2::new(if with_card { OPTION_BUTTON_X } else { 0.0 }, top - per_col as f32 * step - 0.05);
+            showcase.bind_mut().add_button_at(b, pos);
         }
     }
 
@@ -4208,6 +4308,15 @@ fn number_label(x: u32, is_x: bool) -> String {
 /// X-Bühne am Stack: Mitte (lokal in der Stack-Zone, etwas unter der obersten Karte und ein
 /// Stück nach links, damit „+5“ nicht über den rechten Bildrand ragt), Größe der Bühne in der
 /// Szene und Abstand zur Kamera hin (vor den Stack-Karten).
+/// Knopf-Spalte (`show_option_buttons`): Lage der Quellkarte und der Knöpfe (links/rechts der
+/// Mitte), Abstand der Knöpfe untereinander, höchstens so viele Knöpfe je Spalte.
+const OPTION_CARD_X: f32 = 0.85;
+const OPTION_BUTTON_X: f32 = 0.85;
+const OPTION_STEP: f32 = 0.3;
+/// Knopf-Spalte: Höhe des obersten Knopfes und größte Spannweite bis zum untersten.
+const OPTION_TOP: f32 = 0.6;
+const OPTION_SPAN: f32 = 1.2;
+const OPTION_COLUMN_MAX: usize = 7;
 /// Karten-Optionen-Bühne mit bis zu drei Möglichkeiten: Kartenabstand und Bogenradius.
 const CARD_OPTION_STEP: f32 = 0.82;
 const CARD_OPTION_RADIUS: f32 = 60.0;
@@ -4243,6 +4352,8 @@ enum StageKind {
     /// Eine von mehreren Möglichkeiten, die je zu einer Karte gehören (Ersatzeffekte …):
     /// Kartenkopie je Möglichkeit, Klick wählt, „Anwenden“.
     CardOptions,
+    /// Drei und mehr Text-Möglichkeiten: Knopf-Spalte (neben der Quellkarte).
+    Buttons,
 }
 
 /// Hellsicht-Bühne: Mitte und Größe des Kastens (Bühnen-Koordinaten).

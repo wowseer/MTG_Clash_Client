@@ -67,7 +67,8 @@ impl IControl for CostSymbolCanvas {
         // Marken-Münze („#Rand:Anzahl“, siehe [`counter_coin`]): silbern mit farbigem Rand
         if let Some(rest) = token.strip_prefix('#') {
             let (rim, count) = rest.split_once(':').unwrap_or(("gold", rest));
-            let rim_color = match rim {
+            let rim = rim.to_lowercase();
+            let rim_color = match rim.as_str() {
                 "green" => Color::from_rgb(0.35, 0.85, 0.4),
                 "red" => Color::from_rgb(0.95, 0.35, 0.3),
                 _ => Color::from_rgb(0.9, 0.75, 0.4),

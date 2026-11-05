@@ -1711,7 +1711,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public String chooseKeywordForPump(List<String> options, SpellAbility sa, String prompt, Card tgtCard) {
         String r = pick(options, Decisions.option(g(), seat, prompt, sa, tgtCard,
-                Decisions.opts(options), false));
+                Decisions.opts(options), false, "Keyword"));
         return r != null ? r : super.chooseKeywordForPump(options, sa, prompt, tgtCard);
     }
 
@@ -1758,19 +1758,25 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     @Override
     public String chooseProtectionType(SpellAbility sa, List<String> choices) {
-        String r = pick(choices, Decisions.option(g(), seat, "Schutz wovor?", sa, null,
-                Decisions.opts(choices), false));
+        // Schutz vor einer Farbe: mit Farbbuchstaben, dann zeigt die UI das Farbrad
+        List<Decisions.Opt> opts = new ArrayList<>();
+        for (String ch : choices) {
+            opts.add(new Decisions.Opt(ch, protectionColor(ch)));
+        }
+        String r = pick(choices, Decisions.option(g(), seat, "Schutz wovor?", sa, null, opts, false, "Protection"));
         return r != null ? r : super.chooseProtectionType(sa, choices);
     }
 
     @Override
     public CounterType chooseCounterType(List<CounterType> options, SpellAbility sa, String prompt,
             Map<String, Object> params) {
+        // je Markenart ihr Engine-Name als Schlüssel (für die Münze in der UI, wie StateJson.counters)
         List<Decisions.Opt> opts = new ArrayList<>();
         for (CounterType c : options) {
-            opts.add(new Decisions.Opt(c.getName(), null));
+            String key = c instanceof Enum<?> e ? e.name() : c.getName();
+            opts.add(new Decisions.Opt(c.getName(), null, -1, key));
         }
-        CounterType r = pick(options, Decisions.option(g(), seat, prompt, sa, null, opts, false));
+        CounterType r = pick(options, Decisions.option(g(), seat, prompt, sa, null, opts, false, "CounterType"));
         return r != null ? r : super.chooseCounterType(options, sa, prompt, params);
     }
 
@@ -1806,6 +1812,18 @@ public class RemotePlayerController extends PlayerControllerAi {
         }
         CardState r = pick(states, Decisions.cardOption(g(), seat, message, opts, null, extra, "CardFace", sa, false));
         return r != null ? r : super.chooseSingleCardState(sa, states, message, params);
+    }
+
+    /** Farbbuchstabe einer Schutz-Art („white“ → W …), sonst {@code null} (z. B. „artifacts“). */
+    private static String protectionColor(String choice) {
+        return switch (choice == null ? "" : choice.trim().toLowerCase()) {
+            case "white" -> "W";
+            case "blue" -> "U";
+            case "black" -> "B";
+            case "red" -> "R";
+            case "green" -> "G";
+            default -> null;
+        };
     }
 
     /** Erste ID der Kartendaten für Seiten einer Karte (weit über allen Forge-IDs). */
@@ -1848,7 +1866,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     public Object vote(SpellAbility sa, String prompt, List<Object> options, ListMultimap<Object, Player> votes,
             Player forPlayer, boolean optional) {
         Object r = pick(options, Decisions.option(g(), seat, prompt, sa, null, Decisions.opts(options),
-                optional));
+                optional, "Vote"));
         return r != null ? r : optional ? null : super.vote(sa, prompt, options, votes, forPlayer, optional);
     }
 
@@ -1961,7 +1979,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public int chooseNumber(SpellAbility sa, String title, List<Integer> values, Player relatedPlayer) {
         Integer r = pick(values, Decisions.option(g(), seat, title, sa, null, Decisions.opts(values),
-                false));
+                false, "NumberList"));
         return r != null ? r : super.chooseNumber(sa, title, values, relatedPlayer);
     }
 

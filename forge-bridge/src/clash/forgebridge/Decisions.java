@@ -36,11 +36,16 @@ final class Decisions {
     /** Eine Option der Erweiterungs-Auswahlen: Text und optional Farbe (W U B R G, C = farblos). */
     /**
      * Option einer Auswahl: Text, Farbe (W U B R G C oder {@code null}) und – Erweiterung – die
-     * Karte, zu der sie gehört ({@code card}, −1 = keine; z. B. Quelle eines Ersatzeffekts).
+     * Karte, zu der sie gehört ({@code card}, −1 = keine; z. B. Quelle eines Ersatzeffekts) sowie
+     * ein Schlüssel der Engine ({@code key}, z. B. Markenart {@code P1P1}).
      */
-    record Opt(String text, String color, int card) {
+    record Opt(String text, String color, int card, String key) {
         Opt(String text, String color) {
-            this(text, color, -1);
+            this(text, color, -1, null);
+        }
+
+        Opt(String text, String color, int card) {
+            this(text, color, card, null);
         }
 
         static Opt of(Object o) {
@@ -172,6 +177,9 @@ final class Decisions {
             }
             if (o.card() >= 0) {
                 j.addProperty("card", o.card());
+            }
+            if (o.key() != null) {
+                j.addProperty("key", o.key());
             }
             arr.add(j);
         }
@@ -759,6 +767,12 @@ final class Decisions {
     /** Erweiterung {@code ChooseOption}: Index der Option. Eine Option ohne Abbrechen: nicht fragen. */
     static Integer option(Game game, int seat, String prompt, SpellAbility sa, Card card, List<Opt> options,
             boolean cancelable) {
+        return option(game, seat, prompt, sa, card, options, cancelable, null);
+    }
+
+    /** Wie {@link #option}, mit Erweiterung {@code purpose} (wofür die Wahl ist, für die UI). */
+    static Integer option(Game game, int seat, String prompt, SpellAbility sa, Card card, List<Opt> options,
+            boolean cancelable, String purpose) {
         if (options.isEmpty()) {
             return null;
         }
@@ -768,6 +782,9 @@ final class Decisions {
         JsonObject d = decision("ChooseOption", seat);
         d.addProperty("prompt", withName(prompt, source(sa, card)));
         d.add("options", optionsJson(options, source(sa, card)));
+        if (purpose != null) {
+            d.addProperty("purpose", purpose);
+        }
         Integer i = number(ask(game, seat, d, prompt, sa, card, cancelable, null));
         return i != null && i >= 0 && i < options.size() ? i : null;
     }

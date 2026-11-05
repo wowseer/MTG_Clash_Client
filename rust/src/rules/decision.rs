@@ -103,6 +103,8 @@ pub struct OptionText {
     pub colorless: bool,
     /// Erweiterung: Karte, zu der die Option gehört (z. B. Quelle eines Ersatzeffekts).
     pub card: Option<CardId>,
+    /// Erweiterung: Schlüssel der Engine (z. B. Markenart `P1P1`), leer = keiner.
+    pub key: String,
 }
 
 /// Erweiterung von `Decision::Priority`: eine Karte, die gerade aus einer anderen Zone als Hand
@@ -466,9 +468,9 @@ fn options_from(o: &Obj) -> Vec<OptionText> {
                 let oo = Obj(&d);
                 let c = oo.str("color");
                 let card = u32::try_from(oo.int("card")).ok().filter(|_| d.contains_key("card"));
-                OptionText { text: oo.str("text"), color: Color::from_letter(&c), colorless: c == "C", card }
+                OptionText { text: oo.str("text"), color: Color::from_letter(&c), colorless: c == "C", card, key: oo.str("key") }
             }
-            None => OptionText { text: v.to_string(), color: None, colorless: false, card: None },
+            None => OptionText { text: v.to_string(), color: None, colorless: false, card: None, key: String::new() },
         })
         .collect()
 }
