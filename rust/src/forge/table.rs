@@ -612,25 +612,26 @@ impl ForgeTable {
         if req.source_name.is_empty() { what.to_string() } else { format!("({}) {what}", req.source_name) }
     }
 
-    /// Farbrad öffnen (an der Bildschirmstelle der Karte `source`, sonst in der Bildmitte, mit
-    /// ihrem Bild in der Mitte). `voluntary` = ohne offene Frage (schließen ohne Antwort).
+    /// Farbrad öffnen, mit dem Bild der Karte `source` in der Radmitte: bei einer Frage der Engine
+    /// in der Mitte des Spielfelds, freiwillig (`voluntary` = ohne offene Frage, z. B. Land mit
+    /// mehreren Manafähigkeiten angeklickt) an der Bildschirmstelle der Karte.
     fn open_wheel(&mut self, entries: Vec<(char, Choice)>, source: Option<CardId>, prompt: &str, voluntary: bool) {
         self.close_wheel();
         let Some(mut parent) = self.controller.clone() else { return };
         let card = source.and_then(|id| self.cards.get(&i64::from(id))).filter(|c| c.is_instance_valid()).cloned();
         let viewport = self.base().get_viewport();
         let screen = viewport.as_ref().map_or(Vector2::new(1280.0, 720.0), |v| v.get_visible_rect().size);
-        // Mitte der Karte, wie sie gerade auf dem Bildschirm erscheint (auch angehoben)
-        let anchor = card
-            .as_ref()
-            .and_then(|c| {
-                let quad = c.bind().screen_quad();
-                (quad.len() == 4).then(|| quad.as_slice().iter().fold(Vector2::ZERO, |a, p| a + *p) * 0.25)
-            })
-            .unwrap_or(screen * 0.5);
+        // Frage der Engine: in der Mitte des Spielfelds; freiwillig (Manafähigkeit einer Karte
+        // auf dem Tisch): an der Karte, wie sie gerade auf dem Bildschirm erscheint
+        let at_card = card.as_ref().filter(|_| voluntary).and_then(|c| {
+            let quad = c.bind().screen_quad();
+            (quad.len() == 4).then(|| quad.as_slice().iter().fold(Vector2::ZERO, |a, p| a + *p) * 0.25)
+        });
+        let anchor = at_card.unwrap_or(Vector2::new(screen.x * 0.5, screen.y * WHEEL_CENTER_Y));
         let art = card.as_ref().and_then(|c| c.get("face_texture").try_to::<Gd<godot::classes::Texture2D>>().ok());
         let segments = entries.iter().filter_map(|(l, _)| WheelSegment::for_letter(*l)).collect();
-        let mut wheel = ManaWheel::create(segments, anchor, card.clone(), art, prompt);
+        let follow = if at_card.is_some() { card.clone() } else { None };
+        let mut wheel = ManaWheel::create(segments, anchor, follow, art, prompt);
         wheel.connect("picked", &Callable::from_object_method(&self.to_gd(), "on_wheel_picked"));
         parent.add_child(&wheel);
         self.wheel = Some((wheel, entries.into_iter().map(|(_, c)| c).collect(), voluntary));
@@ -4308,6 +4309,8 @@ fn number_label(x: u32, is_x: bool) -> String {
 /// X-Bühne am Stack: Mitte (lokal in der Stack-Zone, etwas unter der obersten Karte und ein
 /// Stück nach links, damit „+5“ nicht über den rechten Bildrand ragt), Größe der Bühne in der
 /// Szene und Abstand zur Kamera hin (vor den Stack-Karten).
+/// Farbrad bei Fragen der Engine: Höhe der Radmitte (Anteil der Bildhöhe, Mitte des Spielfelds).
+const WHEEL_CENTER_Y: f32 = 0.45;
 /// Knopf-Spalte (`show_option_buttons`): Lage der Quellkarte und der Knöpfe (links/rechts der
 /// Mitte), Abstand der Knöpfe untereinander, höchstens so viele Knöpfe je Spalte.
 const OPTION_CARD_X: f32 = 0.85;
