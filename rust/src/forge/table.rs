@@ -199,6 +199,10 @@ pub struct ForgeTable {
     drawn_arrows: HashSet<u64>,
     /// „Wähle eins“: Kartenkopien auf der Bühne und die Aktion, für die sie stehen.
     action_options: Vec<(Gd<Card3D>, Action)>,
+    /// „Wähle eins“: Kopie mit „Angreifen“ (Kreatur vor dem Kampf, statt eine Fähigkeit zu nutzen).
+    attack_option: Option<(Gd<Card3D>, CardId)>,
+    /// Vorgemerkter Angreifer: bis zur Angriffserklärung passen, dann greift diese Kreatur an.
+    attack_intent: Option<CardId>,
     /// Zuletzt getappte Karten (Forge-ID, Zeitpunkt in s) – Quelle des nächsten Manas.
     recent_taps: VecDeque<(i64, f64)>,
     /// Laufende Mana-Effekte, die noch ein Ziel (Karte auf dem Stack) bekommen können, mit Sitz.
@@ -279,6 +283,8 @@ impl INode for ForgeTable {
             auto_pass_turn: None,
             drawn_arrows: HashSet::new(),
             action_options: Vec::new(),
+            attack_option: None,
+            attack_intent: None,
             recent_taps: VecDeque::new(),
             mana_fx: Vec::new(),
             lunged: HashSet::new(),
@@ -1252,6 +1258,27 @@ impl ForgeTable {
             && self.table_pick(&req.decision).is_none()
             && self.hand_choice(&req.decision).is_none())
         .then(|| req.clone());
+        // vorgemerkter Angreifer: bis zur Angriffserklärung passen, dort eintragen
+        if let Some(intent) = self.attack_intent {
+            let phase = self.state.as_ref().map(|st| get_str(st, "phase")).unwrap_or_default();
+            match &req.decision {
+                Decision::Priority { .. } if matches!(phase.as_str(), "MAIN1" | "COMBAT_BEGIN") => {
+                    self.pending = Some(req);
+                    self.answer(Choice::Action(Action::Pass));
+                    return;
+                }
+                Decision::DeclareAttackers { candidates, defenders, .. } => {
+                    self.attack_intent = None;
+                    if candidates.contains(&intent) {
+                        if let Some(def) = defenders.iter().copied().find(|t| matches!(t, Target::Player(_))).or_else(|| defenders.first().copied()) {
+                            self.attack_plan.push((intent, def));
+                            self.combat_armed = Some(intent);
+                        }
+                    }
+                }
+                _ => self.attack_intent = None,
+            }
+        }
         let auto_pay = self.auto_pay(&req.decision);
         let elsewhere = match &req.decision {
             Decision::Priority { elsewhere, .. } => Some((elsewhere.clone(), req.cards.clone())),
@@ -1384,6 +1411,13 @@ impl ForgeTable {
             self.answer(Choice::Action(action));
             return;
         }
+        if let Some(id) = self.attack_option.as_ref().filter(|(c, _)| *c == card).map(|(_, id)| *id) {
+            // Angreifen statt Fähigkeit: bis zur Angriffserklärung passen, dort vorgemerkt
+            self.attack_intent = Some(id);
+            self.clear_choice_objects();
+            self.answer(Choice::Action(Action::Pass));
+            return;
+        }
         let Some(id) = self.forge_id(&card) else { return };
         let Ok(card_id) = u32::try_from(id) else { return };
         if self.hand_pick_click(card_id) {
@@ -1432,8 +1466,12 @@ impl ForgeTable {
             _ => return,
         };
         let all_actions = mine.iter().all(|(c, _)| matches!(c, Choice::Action(_)));
+        // eine Fähigkeit einer Karte auf dem Tisch (nicht Mana): erst „Wähle eins“ – ein Klick soll
+        // keine Kosten wie Abwerfen/Tappen auslösen, und eine Kreatur kann dort stattdessen angreifen
+        let single_ability = mine.len() == 1 && matches!(mine[0].0, Choice::Action(Action::Activate(..)));
         match mine.len() {
             0 => {}
+            1 if single_ability => self.show_action_choice(card_id),
             1 => self.answer(mine[0].0.clone()),
             // mehrere Fähigkeiten: „Wähle eins“ auf der 3D-Bühne (Manafähigkeiten: Menü)
             // mehrere Manafähigkeiten mit je einer Farbe: Farbrad an der Karte
@@ -2821,6 +2859,7 @@ impl ForgeTable {
         self.viewer_open = false;
         self.viewer_cards.clear();
         self.action_options.clear();
+        self.attack_option = None;
         self.stage_choices.clear();
         self.mode_cards.clear();
         self.mode_pick.clear();
@@ -3068,12 +3107,33 @@ impl ForgeTable {
             .collect()
     }
 
+    /// Kann die eigene Kreatur `card` in diesem Zug noch angreifen? Eigener Zug vor der
+    /// Angriffserklärung (Hauptphase 1, Beginn des Kampfes), Kreatur ungetappt auf dem eigenen
+    /// Spielfeld. Ob sie wirklich darf (Einsatzbereitschaft, CR 302.6), entscheidet Forge in der
+    /// Angriffserklärung.
+    fn could_attack_soon(&self, card: CardId) -> bool {
+        let Some(st) = self.state.as_ref() else { return false };
+        let phase = get_str(st, "phase");
+        if get_int(st, "active_player") != LOCAL_SEAT as i64 || !matches!(phase.as_str(), "MAIN1" | "COMBAT_BEGIN") {
+            return false;
+        }
+        let me = get_array(st, "players").and_then(|a| a.get(LOCAL_SEAT as usize)).and_then(|v| v.try_to::<VarDictionary>().ok());
+        let field = me.and_then(|p| get_array(&p, "battlefield")).unwrap_or_default();
+        field.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).any(|c| {
+            get_int(&c, "id") == i64::from(card) && !get_bool(&c, "tapped") && get_str(&c, "type").contains("Creature")
+        })
+    }
+
     /// „Wähle eins“ (wie im Video des Users): Bühne mit je einer Kopie der Karte pro Spielweise
     /// (Wirken, Cycling, Fähigkeiten …), Beschriftung darüber, blaues Leuchten, Hover vergrößert;
     /// Klick wählt die Aktion, „Abbrechen“ schließt die Bühne (Priorität bleibt offen).
     fn show_action_choice(&mut self, card: CardId) {
         let options = self.card_actions(card);
-        if options.len() < 2 {
+        let can_attack = self.could_attack_soon(card);
+        if options.len() + usize::from(can_attack) < 2 && !options.iter().all(|(a, _)| matches!(a, Action::Activate(..))) {
+            return;
+        }
+        if options.is_empty() {
             return;
         }
         let Some(data) = self.card_data(i64::from(card)) else { return };
@@ -3097,6 +3157,13 @@ impl ForgeTable {
             let caption = if whole { action_caption(action, &label) } else { String::new() };
             cards.push((copy.clone(), caption));
             self.action_options.push((copy, action));
+        }
+        if can_attack {
+            // Kreatur vor dem Kampf: angreifen statt die Fähigkeit nutzen
+            let mut copy = Self::stage_card(&data, None);
+            copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+            cards.insert(0, (copy.clone(), tr!("Angreifen", "Attack").to_string()));
+            self.attack_option = Some((copy, card));
         }
         let few = cards.len() <= 3;
         showcase.bind_mut().show_options(cards);

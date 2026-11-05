@@ -399,7 +399,13 @@ public class RemotePlayerController extends PlayerControllerAi {
                 continue;
             }
             if (pick.equals("AutoPay")) {
-                return ComputerUtilMana.payManaCost(toPay, sa, me, effect);
+                // automatisch: auch die Wahl des Pool-Manas trifft Forge (keine Rückfrage je Mana)
+                autoPaying = true;
+                try {
+                    return ComputerUtilMana.payManaCost(toPay, sa, me, effect);
+                } finally {
+                    autoPaying = false;
+                }
             }
             SpellAbility ma = mana.sources.get(Integer.parseInt(pick));
             if (activateMana(ma, effect)) {
@@ -890,7 +896,9 @@ public class RemotePlayerController extends PlayerControllerAi {
      */
     @Override
     public forge.game.mana.Mana chooseManaFromPool(List<forge.game.mana.Mana> manaChoices) {
-        if (manaChoices.size() <= 1) {
+        // Welches schwebende Mana bezahlt, entscheidet wie in Arena immer Forge selbst: die Frage kam
+        // bei jedem Symbol und jedem Zauber und hielt den Spieler nur auf
+        if (manaChoices.size() <= 1 || autoPaying || !ASK_POOL_CHOICE) {
             return super.chooseManaFromPool(manaChoices);
         }
         List<Decisions.Opt> opts = new ArrayList<>();
@@ -1829,6 +1837,12 @@ public class RemotePlayerController extends PlayerControllerAi {
             default -> null;
         };
     }
+
+    /** Pool-Mana selbst wählen lassen ({@code ChooseOption} „ManaPool“)? Aus: Forge wählt. */
+    private static final boolean ASK_POOL_CHOICE = false;
+
+    /** Läuft gerade das automatische Bezahlen ({@code AutoPay})? Dann keine Pool-Rückfragen. */
+    private boolean autoPaying;
 
     /** Erste ID der Kartendaten für Seiten einer Karte (weit über allen Forge-IDs). */
     private static final int FACE_ID_BASE = 1_900_000_000;
