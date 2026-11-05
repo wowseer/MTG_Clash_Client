@@ -87,7 +87,8 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 | `confirmTrigger` | `OptionalTrigger { description }` | `Yes` / `No` |
 | Startspieler, Abstimmung, Marken-Typ, Schutz, Schlüsselwort, Ersatzeffekt, statische Fähigkeit, Kartenseite/-zustand, Sektor, Würfel, Zahl aus Liste, Ja/Nein mit eigenen Beschriftungen (Kopf/Zahl, Tappen/Enttappen …), Farbe inkl. farblos | `ChooseOption` (**Erweiterung**) | `Number(index)` |
 | `chooseOptionalCosts`, `chooseColors` (mehrere), `chooseDiceToReroll` | `ChooseOptions` (**Erweiterung**) | `Modes([…])` |
-| `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost`, angesagte Werte ≠ X | `ChooseNumber` (**Erweiterung**) | `Number(n)` |
+| `addKeywordCost` (Schlüsselwort-Zusatzkosten beim Wirken, CR 601.2b: Casualty, Conspire, Offspring, Tappen bei Harmonize) | `ChooseOptions { options: [„Casualty 1 – Sacrifice …“], min: 0, max: 1, purpose: "OptionalCost" }` (wie Kicker; ohne Überschreiben fragte Forge über `chooseNumberForKeywordCost` mit Höchstwert 1) | `Modes([0])` = zahlen, `Modes([])` = normal |
+| `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost` (Multikicker, Replicate, Squad, „beliebig viel Mana zahlen“), angesagte Werte ≠ X | `ChooseNumber` (**Erweiterung**) | `Number(n)` |
 | `declareAttackers` | `DeclareAttackers { candidates, defenders }` | `Attackers([[karte, ziel], …])`; leer = kein Angriff |
 | `declareBlockers` | `DeclareBlockers { candidates, attackers }` | `Blocks([[blocker, angreifer], …])`; leer = nicht blocken |
 | `applyManaToCost` (über `payManaCost`) | `PayMana { remaining, options: [ActivateMana(karte, i), AutoPay, Cancel] }` | `Pay(ActivateMana(…))` → Quelle tappen, Mana einsetzen, erneut fragen bis bezahlt; `Pay(AutoPay)`; `Pay(Cancel)` = Wirken zurücknehmen |
@@ -180,7 +181,7 @@ Diese Teile gibt es im Vorbild (`decision.rs` aus forge-rules-rs) (noch) nicht:
 | `Action::UndoMana { card }` in `Priority.actions` | vorab aktivierte Manafähigkeit der Karte zurücknehmen, solange ihr Mana noch nicht ausgegeben ist (Forges Rückgängig-Stapel für Manafähigkeiten); das Basismodell kennt kein Rückgängig |
 | `OrderTriggers.sources` | Karten-ID der Quelle je Eintrag (−1 = keine), damit die UI Kartenkopien statt Texten zeigt |
 | `Action::ActivateMana { card, index }` in `Priority.actions` | Manafähigkeit mit Priorität aktivieren (CR 605.3a), z. B. Länder vorab tappen; `index` wie bei `PayAction::ActivateMana`. Das Basismodell kennt Manafähigkeiten nur beim Bezahlen |
-| `ChooseOptions.purpose` (`"OptionalCost"` bei `chooseOptionalCosts`) | wofür die Mehrfachwahl ist, damit die UI optionale Kosten (Kicker …) als eigene Bühne zeigt; sonst leer |
+| `ChooseOptions.purpose` (`"OptionalCost"` bei `chooseOptionalCosts` und `addKeywordCost`) | wofür die Mehrfachwahl ist, damit die UI optionale Kosten (Kicker …) als eigene Bühne zeigt; sonst leer |
 | `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
 | `ChooseCards` mit `reason: "Reveal"` und `max: 0` | Anzeige aufgedeckter Karten; im Basismodell fehlt ein `Decision::Reveal { cards }` bzw. Ereignis |
 | `Decision::ChooseStartingPlayer { player, players }` → `Choice::Number(index)` | wer beginnt die Partie (CR 103.1); `players` = Sitzplätze, `labels` = Spielernamen. Die UI zeigt dafür 3D-Knöpfe statt eines Fensters |

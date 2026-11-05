@@ -1585,6 +1585,31 @@ public class RemotePlayerController extends PlayerControllerAi {
         return result;
     }
 
+    /**
+     * Schlüsselwort-Zusatzkosten beim Wirken (CR 601.2b): Casualty (CR 702.153), Conspire
+     * (CR 702.78), Offspring (CR 702.175), Tappen bei Harmonize. Forge fragt sonst über
+     * {@link #chooseNumberForKeywordCost} mit Höchstwert 1 (Zahl 0–1); hier stattdessen als
+     * einzelne optionale Kosten wie Kicker ({@code ChooseOptions}, {@code purpose = "OptionalCost"}).
+     */
+    @Override
+    public boolean addKeywordCost(SpellAbility sa, Cost cost, KeywordInterface keyword, String prompt) {
+        String name = keyword != null && keyword.getTitle() != null ? keyword.getTitle() : "";
+        if (name.isEmpty() && prompt != null) {
+            // „Pay for Casualty? …“ → „Casualty“
+            name = prompt.replaceFirst("^Pay for ", "").replaceFirst("\\?.*$", "");
+        }
+        // „Casualty 1 – Sacrifice a creature …“; steht die Kostenangabe schon im Titel
+        // („Offspring {2}“), nur der Titel
+        String costText = cost != null ? cost.toSimpleString() : "";
+        String text = costText.isEmpty() || name.endsWith(costText) ? name : name + " – " + costText;
+        List<Integer> chosen = Decisions.options(g(), seat, prompt, sa, null,
+                List.of(new Decisions.Opt(text, null)), 0, 1, false, "OptionalCost");
+        if (chosen == null) {
+            return super.addKeywordCost(sa, cost, keyword, prompt);
+        }
+        return !chosen.isEmpty();
+    }
+
     /** Optionale Zusatzkosten (Kicker, Verstärkung …). */
     @Override
     public List<OptionalCostValue> chooseOptionalCosts(SpellAbility sa, List<OptionalCostValue> optionalCost) {
