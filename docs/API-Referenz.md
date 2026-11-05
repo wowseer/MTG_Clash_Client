@@ -25,6 +25,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [Button3D](#button3d) – erbt von `Area3D`
 - [Card3D](#card3d) – erbt von `Area3D`
 - [CardInspector](#cardinspector) – erbt von `Node3D`
+- [CostSymbolCanvas](#costsymbolcanvas) – erbt von `Control`
 - [ManaFx](#manafx) – erbt von `Node3D`
 - [ManaWheel](#manawheel) – erbt von `Node3D`
 - [Showcase](#showcase) – erbt von `Node3D`
@@ -545,6 +546,12 @@ Kartenansicht beim Hovern wie `Fähigkeiten.png`: helle Kopie der Karte am Bilds
 | `hide_card()` | `void` | Ansicht ausblenden. |
 | `is_showing()` | `bool` | Wird gerade eine Karte gezeigt? |
 
+## CostSymbolCanvas
+
+*Erbt von `Control` · Quelle: `rust/src/table/cost_symbols.rs`*
+
+Zeichenfläche eines einzelnen Kostensymbols (intern: liegt in einer unsichtbaren `SubViewport`, deren Textur die 3D-Kostensymbole nutzen).
+
 ## ManaFx
 
 *Erbt von `Node3D` · Quelle: `rust/src/table/fx.rs`*
@@ -755,6 +762,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `click_to_draw` | `bool` | Klick auf eine Karte zieht die oberste Karte auf die Hand (Deck). |
 | `face_up` | `bool` | Karten offen (true) oder verdeckt (false) anzeigen. |
 | `show_area` | `bool` | Zonenfläche sichtbar markieren und beim Drüberziehen hervorheben. |
+| `show_costs` | `bool` | Karten zeigen ihre Manakosten als Symbolreihe über der Oberkante (eigene Hand, wie im Video „Spree und Stack“; `table::cost_symbols`). |
 | `hand_radius` | `float` | Hand: Radius des Fächerbogens. |
 | `hand_card_angle_degrees` | `float` | Hand: Winkel zwischen zwei Karten (Grad). |
 | `hand_max_spread_degrees` | `float` | Hand: maximaler Gesamtwinkel des Fächers (Grad). |

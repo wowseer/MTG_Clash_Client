@@ -7,6 +7,7 @@ mod button_shader;
 mod shader_noise;
 pub mod card3d;
 pub mod card_inspector;
+pub mod cost_symbols;
 pub mod layers;
 pub mod mana_wheel;
 pub(crate) mod placeholder;

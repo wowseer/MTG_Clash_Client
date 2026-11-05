@@ -105,6 +105,7 @@ tile_cards = true
 
 [node name="Hand" type="Zone" parent="Player"]
 kind = 0
+show_costs = true
 size = Vector3(5, 0.3, 1.4)
 hand_card_angle_degrees = 4.6
 hand_max_spread_degrees = 32.0

@@ -26,6 +26,8 @@ use godot::classes::label_3d::DrawFlags;
 use godot::classes::{Area3D, BoxShape3D, CollisionObject3D, CollisionShape3D, INode3D, Label3D, MeshInstance3D, QuadMesh, StandardMaterial3D};
 use godot::prelude::*;
 
+use super::cost_symbols;
+
 use super::button3d::{Button3D, ButtonStyle};
 use super::layers::CARD_LAYER;
 use super::slider3d::Slider3D;
@@ -277,11 +279,20 @@ impl Showcase {
                 l.set_draw_flag(DrawFlags::SHADED, false);
                 l.set_draw_flag(DrawFlags::DOUBLE_SIDED, false);
                 // flach auf der Kartenebene, über der Oberkante (Karte: Vorderseite +Y, oben −Z)
-                l.set_transform(Transform3D::new(
+                let xf = Transform3D::new(
                     Basis::from_axis_angle(Vector3::RIGHT, -std::f32::consts::FRAC_PI_2),
                     Vector3::new(0.0, 0.01, -CARD_HEIGHT * 0.5 - CAPTION_GAP),
-                ));
-                card.add_child(&l);
+                );
+                if cost_symbols::has_cost(&caption) {
+                    // Kosten („+ {3}“) als Mana-Symbole
+                    let mut rich = cost_symbols::rich_label(&caption, &l);
+                    rich.set_transform(xf);
+                    card.add_child(&rich);
+                    l.queue_free();
+                } else {
+                    l.set_transform(xf);
+                    card.add_child(&l);
+                }
             }
             self.owned.push(card);
         }

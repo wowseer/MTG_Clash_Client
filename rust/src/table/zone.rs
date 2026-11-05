@@ -97,6 +97,10 @@ pub struct Zone {
     /// Zonenfläche sichtbar markieren und beim Drüberziehen hervorheben.
     #[export]
     show_area: bool,
+    /// Karten zeigen ihre Manakosten als Symbolreihe über der Oberkante (eigene Hand, wie im
+    /// Video „Spree und Stack“; `table::cost_symbols`).
+    #[export]
+    show_costs: bool,
 
     /// Hand: Radius des Fächerbogens.
     #[export_group(name = "Hand")]
@@ -197,6 +201,7 @@ impl IArea3D for Zone {
             free_placement: false,
             auto_arrange: false,
             show_area: false,
+            show_costs: false,
             cards: Vec::new(),
             free_positions: HashMap::new(),
             attachments: HashMap::new(),
@@ -293,6 +298,11 @@ impl Zone {
     #[func]
     pub fn is_free_placement(&self) -> bool {
         self.free_placement
+    }
+
+    /// Zeigen Karten in dieser Zone ihre Manakosten über der Oberkante ([member show_costs])?
+    pub fn shows_costs(&self) -> bool {
+        self.show_costs
     }
 
     /// Ist das ein Handfächer (eigene Hand, Gegnerhand, Fächer einer 3D-Bühne)?

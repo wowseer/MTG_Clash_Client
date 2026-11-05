@@ -11,7 +11,7 @@
 use std::f32::consts::{PI, TAU};
 
 use godot::classes::control::MouseFilter;
-use godot::classes::{Control, IControl, InputEvent, InputEventMouseButton};
+use godot::classes::{CanvasItem, Control, IControl, InputEvent, InputEventMouseButton};
 use godot::global::MouseButton;
 use godot::global::HorizontalAlignment;
 use godot::prelude::*;
@@ -170,88 +170,8 @@ impl ManaPoolView {
 
     /// Kreis in der Manafarbe mit goldenem Rand und Symbol.
     fn draw_mana(&mut self, t: ManaType, c: Vector2, r: f32) {
-        let fill = t.color().lerp(Color::WHITE, 0.15);
-        let lum = 0.299 * fill.r + 0.587 * fill.g + 0.114 * fill.b;
-        let ink = if lum < 0.45 { Color::from_rgb(0.93, 0.9, 0.85) } else { Color::from_rgb(0.12, 0.1, 0.08) };
         let mut b = self.base_mut();
-        b.draw_circle(c + Vector2::new(0.0, 1.5), r + 1.5, Color::from_rgba(0.0, 0.0, 0.0, 0.45));
-        b.draw_circle(c, r, fill);
-        b.draw_arc_ex(c, r, 0.0, TAU, 32, RIM).width(2.0).antialiased(true).done();
-        let s = r * 0.62;
-        let w = (s * 0.18).max(1.2);
-        let poly = |pts: &[Vector2]| PackedVector2Array::from(pts);
-        match t {
-            ManaType::Green => {
-                // Nadelbaum: drei gestapelte Dreiecke und ein Stamm
-                b.draw_rect(Rect2::new(c + Vector2::new(-s * 0.14, s * 0.45), Vector2::new(s * 0.28, s * 0.5)), ink);
-                for (top, half, bottom) in [(-0.95f32, 0.45f32, -0.2f32), (-0.6, 0.62, 0.15), (-0.25, 0.8, 0.5)] {
-                    b.draw_colored_polygon(
-                        &poly(&[c + Vector2::new(0.0, top) * s, c + Vector2::new(half, bottom) * s, c + Vector2::new(-half, bottom) * s]),
-                        ink,
-                    );
-                }
-            }
-            ManaType::Blue => {
-                // Wassertropfen: Spitze oben, unten rund; kleiner Glanzpunkt
-                let pts: Vec<Vector2> = (0..28)
-                    .map(|i| {
-                        let a = i as f32 / 28.0 * TAU;
-                        c + Vector2::new(0.72 * a.sin() * (a * 0.5).sin(), -0.95 * a.cos()) * s + Vector2::new(0.0, s * 0.12)
-                    })
-                    .collect();
-                b.draw_colored_polygon(&poly(&pts), ink);
-                b.draw_circle(c + Vector2::new(-s * 0.2, s * 0.3), s * 0.12, fill);
-            }
-            ManaType::Black => {
-                // Totenkopf: runder Schädel, Kiefer, zwei Augenhöhlen, Nasenloch, Zahnfugen
-                b.draw_circle(c + Vector2::new(0.0, -s * 0.15), s * 0.72, ink);
-                b.draw_rect(Rect2::new(c + Vector2::new(-s * 0.42, s * 0.2), Vector2::new(s * 0.84, s * 0.6)), ink);
-                for dx in [-0.3f32, 0.3] {
-                    b.draw_circle(c + Vector2::new(dx * s, -s * 0.12), s * 0.2, fill);
-                }
-                b.draw_colored_polygon(
-                    &poly(&[c + Vector2::new(0.0, s * 0.12), c + Vector2::new(s * 0.1, s * 0.3), c + Vector2::new(-s * 0.1, s * 0.3)]),
-                    fill,
-                );
-                for dx in [-0.14f32, 0.14] {
-                    b.draw_line_ex(c + Vector2::new(dx * s, s * 0.5), c + Vector2::new(dx * s, s * 0.8), fill).width(w * 0.7).done();
-                }
-            }
-            ManaType::White => {
-                // Sonne: Scheibe mit zwölf Strahlen
-                b.draw_circle(c, s * 0.45, ink);
-                for k in 0..12 {
-                    let a = k as f32 * TAU / 12.0;
-                    let d = Vector2::new(a.cos(), a.sin());
-                    let len = if k % 2 == 0 { 0.98 } else { 0.8 };
-                    b.draw_line_ex(c + d * (s * 0.6), c + d * (s * len), ink).width(w).antialiased(true).done();
-                }
-            }
-            ManaType::Red => {
-                // Flamme: drei Zungen (mittlere am höchsten) auf gemeinsamem rundem Fuß
-                let tongue = |x: f32, h: f32, width: f32| -> Vec<Vector2> {
-                    (0..20)
-                        .map(|i| {
-                            let a = i as f32 / 20.0 * TAU;
-                            let p = Vector2::new(width * a.sin() * (a * 0.5).sin(), -h * a.cos());
-                            c + Vector2::new(x, 0.35) * s + Vector2::new(p.x, if p.y < 0.0 { p.y } else { p.y * 0.45 }) * s
-                        })
-                        .collect()
-                };
-                b.draw_colored_polygon(&poly(&tongue(-0.32, 0.75, 0.4)), ink);
-                b.draw_colored_polygon(&poly(&tongue(0.32, 0.75, 0.4)), ink);
-                b.draw_colored_polygon(&poly(&tongue(0.0, 1.25, 0.55)), ink);
-                b.draw_colored_polygon(&poly(&tongue(0.0, 0.55, 0.25)), fill);
-            }
-            ManaType::Colorless => {
-                // Raute mit kleiner Raute innen
-                let d = |k: f32| {
-                    poly(&[c + Vector2::new(0.0, -k) * s, c + Vector2::new(k * 0.75, 0.0) * s, c + Vector2::new(0.0, k) * s, c + Vector2::new(-k * 0.75, 0.0) * s])
-                };
-                b.draw_colored_polygon(&d(0.95), ink);
-                b.draw_colored_polygon(&d(0.4), fill);
-            }
-        }
+        draw_mana_symbol(&mut b, t, c, r);
     }
 
     /// Kleine dunkle Plakette mit der Anzahl.
@@ -269,5 +189,92 @@ impl ManaPoolView {
             .font_size(11)
             .modulate(Color::WHITE)
             .done();
+    }
+}
+
+/// Mana-Symbol zeichnen (auch für die 3D-Kostensymbole, `table::cost_symbols`): Kreis in der
+/// Manafarbe mit goldenem Rand und eigenem Motiv – Grün = Nadelbaum, Blau = Wassertropfen,
+/// Schwarz = Totenkopf, Weiß = Sonne, Rot = Flamme, Farblos = Raute.
+pub fn draw_mana_symbol(b: &mut CanvasItem, t: ManaType, c: Vector2, r: f32) {
+    let fill = t.color().lerp(Color::WHITE, 0.15);
+    let lum = 0.299 * fill.r + 0.587 * fill.g + 0.114 * fill.b;
+    let ink = if lum < 0.45 { Color::from_rgb(0.93, 0.9, 0.85) } else { Color::from_rgb(0.12, 0.1, 0.08) };
+    b.draw_circle(c + Vector2::new(0.0, 1.5), r + 1.5, Color::from_rgba(0.0, 0.0, 0.0, 0.45));
+    b.draw_circle(c, r, fill);
+    b.draw_arc_ex(c, r, 0.0, TAU, 32, RIM).width(2.0).antialiased(true).done();
+    let s = r * 0.62;
+    let w = (s * 0.18).max(1.2);
+    let poly = |pts: &[Vector2]| PackedVector2Array::from(pts);
+    match t {
+        ManaType::Green => {
+            // Nadelbaum: drei gestapelte Dreiecke und ein Stamm
+            b.draw_rect(Rect2::new(c + Vector2::new(-s * 0.14, s * 0.45), Vector2::new(s * 0.28, s * 0.5)), ink);
+            for (top, half, bottom) in [(-0.95f32, 0.45f32, -0.2f32), (-0.6, 0.62, 0.15), (-0.25, 0.8, 0.5)] {
+                b.draw_colored_polygon(
+                    &poly(&[c + Vector2::new(0.0, top) * s, c + Vector2::new(half, bottom) * s, c + Vector2::new(-half, bottom) * s]),
+                    ink,
+                );
+            }
+        }
+        ManaType::Blue => {
+            // Wassertropfen: Spitze oben, unten rund; kleiner Glanzpunkt
+            let pts: Vec<Vector2> = (0..28)
+                .map(|i| {
+                    let a = i as f32 / 28.0 * TAU;
+                    c + Vector2::new(0.72 * a.sin() * (a * 0.5).sin(), -0.95 * a.cos()) * s + Vector2::new(0.0, s * 0.12)
+                })
+                .collect();
+            b.draw_colored_polygon(&poly(&pts), ink);
+            b.draw_circle(c + Vector2::new(-s * 0.2, s * 0.3), s * 0.12, fill);
+        }
+        ManaType::Black => {
+            // Totenkopf: runder Schädel, Kiefer, zwei Augenhöhlen, Nasenloch, Zahnfugen
+            b.draw_circle(c + Vector2::new(0.0, -s * 0.15), s * 0.72, ink);
+            b.draw_rect(Rect2::new(c + Vector2::new(-s * 0.42, s * 0.2), Vector2::new(s * 0.84, s * 0.6)), ink);
+            for dx in [-0.3f32, 0.3] {
+                b.draw_circle(c + Vector2::new(dx * s, -s * 0.12), s * 0.2, fill);
+            }
+            b.draw_colored_polygon(
+                &poly(&[c + Vector2::new(0.0, s * 0.12), c + Vector2::new(s * 0.1, s * 0.3), c + Vector2::new(-s * 0.1, s * 0.3)]),
+                fill,
+            );
+            for dx in [-0.14f32, 0.14] {
+                b.draw_line_ex(c + Vector2::new(dx * s, s * 0.5), c + Vector2::new(dx * s, s * 0.8), fill).width(w * 0.7).done();
+            }
+        }
+        ManaType::White => {
+            // Sonne: Scheibe mit zwölf Strahlen
+            b.draw_circle(c, s * 0.45, ink);
+            for k in 0..12 {
+                let a = k as f32 * TAU / 12.0;
+                let d = Vector2::new(a.cos(), a.sin());
+                let len = if k % 2 == 0 { 0.98 } else { 0.8 };
+                b.draw_line_ex(c + d * (s * 0.6), c + d * (s * len), ink).width(w).antialiased(true).done();
+            }
+        }
+        ManaType::Red => {
+            // Flamme: drei Zungen (mittlere am höchsten) auf gemeinsamem rundem Fuß
+            let tongue = |x: f32, h: f32, width: f32| -> Vec<Vector2> {
+                (0..20)
+                    .map(|i| {
+                        let a = i as f32 / 20.0 * TAU;
+                        let p = Vector2::new(width * a.sin() * (a * 0.5).sin(), -h * a.cos());
+                        c + Vector2::new(x, 0.35) * s + Vector2::new(p.x, if p.y < 0.0 { p.y } else { p.y * 0.45 }) * s
+                    })
+                    .collect()
+            };
+            b.draw_colored_polygon(&poly(&tongue(-0.32, 0.75, 0.4)), ink);
+            b.draw_colored_polygon(&poly(&tongue(0.32, 0.75, 0.4)), ink);
+            b.draw_colored_polygon(&poly(&tongue(0.0, 1.25, 0.55)), ink);
+            b.draw_colored_polygon(&poly(&tongue(0.0, 0.55, 0.25)), fill);
+        }
+        ManaType::Colorless => {
+            // Raute mit kleiner Raute innen
+            let d = |k: f32| {
+                poly(&[c + Vector2::new(0.0, -k) * s, c + Vector2::new(k * 0.75, 0.0) * s, c + Vector2::new(0.0, k) * s, c + Vector2::new(-k * 0.75, 0.0) * s])
+            };
+            b.draw_colored_polygon(&d(0.95), ink);
+            b.draw_colored_polygon(&d(0.4), fill);
+        }
     }
 }

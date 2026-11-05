@@ -41,9 +41,13 @@ use crate::game::cards::{CardDef, CardKind};
 use crate::game::mana::ManaType;
 use super::placeholder;
 use super::layers::CARD_LAYER;
+use super::cost_symbols;
 use super::zone::Zone;
 
 pub const CARD_WIDTH: f32 = 0.63;
+/// Kostensymbole über Handkarten: Durchmesser und Abstand vom rechten Rand (Welteinheiten).
+const HAND_COST_SIZE: f32 = 0.15;
+const HAND_COST_INSET: f32 = 0.03;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
 /// Kachel-Form auf dem Spielfeld (wie im Video des Users): nur der obere Teil der Karte – Name
@@ -231,6 +235,8 @@ pub struct Card3D {
     marker_material: Option<Gd<ShaderMaterial>>,
     tap_icon: Option<Gd<MeshInstance3D>>,
     visual: Option<Gd<Node3D>>,
+    /// Kostensymbole über der Oberkante (nur in Zonen mit `show_costs`): Kosten-Text und Reihe.
+    cost_row: Option<(String, Gd<Node3D>)>,
     meshes: Vec<Gd<MeshInstance3D>>,
     face_material: Option<Gd<StandardMaterial3D>>,
     back_material: Option<Gd<StandardMaterial3D>>,
@@ -297,6 +303,7 @@ impl IArea3D for Card3D {
             drag_sway: Vector2::ZERO,
             tween: None,
             zone: None,
+            cost_row: None,
             base,
         }
     }
@@ -349,6 +356,7 @@ impl IArea3D for Card3D {
             }
         }
 
+        self.update_cost_row();
         let dt = delta as f32;
         // Kachel auf dem Spielfeld, beim Zoomen und Ziehen die ganze Karte (lesbar)
         let want_tile = self.tile && !zoomed && !self.dragging;
@@ -932,6 +940,45 @@ impl Card3D {
         badges.set_text(&self.badges);
         self.labels = Some(labels);
         self.refresh_labels();
+    }
+
+    /// Kostensymbole über der Oberkante ein-/ausblenden: sichtbar in Zonen mit `show_costs`
+    /// (eigene Hand), wenn die Karte offen liegt, Kosten hat und kein Land ist. Rechts oben, zur
+    /// Hälfte über die Kante ragend, wie im Video „Spree und Stack“.
+    fn update_cost_row(&mut self) {
+        let want = self.zone.as_ref().is_some_and(|z| z.bind().shows_costs())
+            && !self.def.face_down
+            && self.card_kind != CardKind::Land
+            && !cost_symbols::cost_tokens(&self.def.cost_text).is_empty();
+        let text = self.def.cost_text.clone();
+        if let Some((shown, row)) = self.cost_row.as_mut() {
+            if *shown == text {
+                if row.is_visible() != want {
+                    row.set_visible(want);
+                }
+                return;
+            }
+            row.queue_free();
+            self.cost_row = None;
+        }
+        if !want {
+            return;
+        }
+        let Some(visual) = self.visual.as_mut() else { return };
+        let tokens = cost_symbols::cost_tokens(&text);
+        let width = cost_symbols::row_width(tokens.len(), HAND_COST_SIZE);
+        let mut row = cost_symbols::cost_row(&tokens, HAND_COST_SIZE);
+        // flach auf der Kartenebene (Vorderseite +Y, oben −Z), rechtsbündig über der Oberkante
+        row.set_transform(Transform3D::new(
+            Basis::from_axis_angle(Vector3::RIGHT, -std::f32::consts::FRAC_PI_2),
+            Vector3::new(
+                CARD_WIDTH * 0.5 - width * 0.5 - HAND_COST_INSET,
+                CARD_THICKNESS * 0.5 + 0.004,
+                -CARD_HEIGHT * 0.5 - HAND_COST_SIZE * 0.2,
+            ),
+        ));
+        visual.add_child(&row);
+        self.cost_row = Some((text, row));
     }
 
     pub(crate) fn set_zone(&mut self, zone: Option<Gd<Zone>>) {

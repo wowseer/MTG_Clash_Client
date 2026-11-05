@@ -19,6 +19,8 @@ use godot::classes::{
 };
 use godot::prelude::*;
 
+use super::cost_symbols;
+
 use super::button_shader::button_shader;
 use super::layers::CONTROL_LAYER;
 
@@ -152,6 +154,8 @@ pub struct Button3D {
 
     material: Option<Gd<ShaderMaterial>>,
     label: Option<Gd<Label3D>>,
+    /// Beschriftung mit Kostensymbolen statt „{…}“ (`cost_symbols::rich_label`), sonst None.
+    rich: Option<Gd<Node3D>>,
     visual: Option<Gd<Node3D>>,
     hovered: bool,
     /// 0 = nicht gehovert, 1 = gehovert (weich nachgeführt).
@@ -177,6 +181,7 @@ impl IArea3D for Button3D {
             body_half: WIDE_BODY,
             material: None,
             label: None,
+            rich: None,
             visual: None,
             hovered: false,
             hover_amount: 0.0,
@@ -399,16 +404,48 @@ impl Button3D {
     }
 
     /// Schriftgröße so wählen, dass der Text auf den Knopf passt (Höhe ca. 30 % des Knopfes).
+    /// Kosten im Text („Bezahlen {1}{U}“) erscheinen als Mana-Symbole (`cost_symbols`).
     fn fit_label(&mut self) {
         let height = self.width / aspect(self.body_half);
         let text_height = height * FACE_HEIGHT_FRACTION * 0.42;
         let max_width = self.width * face_width_fraction(self.body_half) * 0.86;
-        let chars = self.text.to_string().chars().count().max(1) as f32;
-        // Breite eines Zeichens ca. 0,55 Schriftgrößen
-        let size = text_height.min(max_width / (chars * 0.55));
+        let text = self.text.to_string();
+        let size = if cost_symbols::has_cost(&text) {
+            // Breite wächst linear mit der Pixelgröße: Breite bei Pixelgröße 1 ausrechnen
+            let unit = cost_symbols::rich_width(&text, 96, 1.0).max(0.001);
+            text_height.min(max_width / unit * 96.0)
+        } else {
+            let chars = text.chars().count().max(1) as f32;
+            // Breite eines Zeichens ca. 0,55 Schriftgrößen
+            text_height.min(max_width / (chars * 0.55))
+        };
         if let Some(l) = self.label.as_mut() {
             l.set_pixel_size(size / 96.0);
         }
+        self.refresh_rich();
+    }
+
+    /// Beschriftung mit Kostensymbolen neu aufbauen (bzw. entfernen, wenn der Text keine hat).
+    fn refresh_rich(&mut self) {
+        if let Some(mut old) = self.rich.take() {
+            old.queue_free();
+        }
+        let Some(mut label) = self.label.clone() else { return };
+        let text = self.text.to_string();
+        if !cost_symbols::has_cost(&text) {
+            label.set_visible(true);
+            return;
+        }
+        label.set_visible(false);
+        let mut rich = cost_symbols::rich_label(&text, &label);
+        for mut child in rich.get_children().iter_shared().filter_map(|c| c.try_cast::<Label3D>().ok()) {
+            child.set_visible(true);
+        }
+        rich.set_position(label.get_position());
+        if let Some(visual) = self.visual.as_mut() {
+            visual.add_child(&rich);
+        }
+        self.rich = Some(rich);
     }
 }
 
