@@ -46,6 +46,8 @@ uniform int count = 5;
 uniform vec4 seg_color[6];
 uniform int seg_icon[6];
 uniform float seg_hover[6];
+uniform float seg_selected[6];
+uniform bool multi = false;
 uniform float inner = 0.42;
 uniform float alpha = 1.0;
 uniform sampler2D art : source_color, filter_linear;
@@ -117,7 +119,14 @@ void fragment() {
         float seg = 6.28318 / float(count);
         int i = int(floor(mod(a + seg * 0.5, 6.28318) / seg));
         float h = seg_hover[i];
+        float sel = seg_selected[i];
         col = mix(seg_color[i].rgb, vec3(1.0), 0.6 * h) * (1.0 + 0.25 * h);
+        // Mehrfachwahl: nicht gewählte Segmente gedämpft, gewählte mit goldenem Außenring
+        if (multi) {
+            col = mix(col * 0.35, mix(col, vec3(1.0), 0.15) * 1.15, sel);
+            float ring = smoothstep(0.82, 0.88, r) * sel;
+            col = mix(col, vec3(1.0, 0.78, 0.25), ring);
+        }
         // dunkle Fugen zwischen den Segmenten
         float local = mod(a + seg * 0.5, seg);
         float gap = min(local, seg - local) * r;
@@ -280,6 +289,18 @@ impl ManaWheel {
         if self.hovered >= 0 && !self.closing {
             let i = self.hovered as i64;
             self.signals().picked().emit(i);
+        }
+    }
+
+    /// Mehrfachwahl: gewählte Segmente markieren (golden umrandet, die anderen gedämpft).
+    pub fn set_selected(&mut self, selected: &[bool]) {
+        let mut v = [0.0f32; MAX_SEGMENTS];
+        for (i, s) in selected.iter().enumerate().take(MAX_SEGMENTS) {
+            v[i] = if *s { 1.0 } else { 0.0 };
+        }
+        if let Some(m) = self.material.as_mut() {
+            m.set_shader_parameter("multi", &true.to_variant());
+            m.set_shader_parameter("seg_selected", &PackedFloat32Array::from(&v[..]).to_variant());
         }
     }
 

@@ -895,7 +895,7 @@ public class RemotePlayerController extends PlayerControllerAi {
             opts.add(new Decisions.Opt(m + (src == null ? "" : " (von " + src.getName() + ")"),
                     String.valueOf(forge.card.MagicColor.toShortString(m.getColor()))));
         }
-        Integer i = Decisions.option(getGame(), seat, "Mana aus dem Pool wählen", null, null, opts, false);
+        Integer i = Decisions.option(getGame(), seat, "Mana aus dem Pool wählen", null, null, opts, false, "ManaPool");
         return i != null ? manaChoices.get(i) : super.chooseManaFromPool(manaChoices);
     }
 

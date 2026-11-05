@@ -149,6 +149,15 @@ pub struct ForgeTable {
     /// Offenes Farbrad: Rad, Antwort je Segment, freiwillig (Manafähigkeit eines Landes mit
     /// Priorität – schließen ohne Antwort möglich) oder Antwort auf eine Frage der Engine.
     wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
+    /// Mehrfachwahl im Farbrad: gewählte Segmente, Mindest- und Höchstzahl.
+    wheel_multi: Option<(Vec<bool>, u32, u32)>,
+    /// „Fertig“-Knopf der Mehrfachwahl im Farbrad.
+    wheel_done: Option<Gd<Button3D>>,
+    /// Je Segment des offenen Rads: Farbe, die nach der Wahl für die Folgefrage gilt (Fähigkeit
+    /// „ein Mana beliebiger Farbe“), sonst None.
+    wheel_colors: Vec<Option<char>>,
+    /// Gemerkte Farbe für die nächste Farbfrage der Engine (siehe `wheel_colors`).
+    preferred_color: Option<char>,
     /// Friedhof bzw. Exil wird gerade auf der Bühne durchgesehen (keine Entscheidung).
     viewer_open: bool,
     /// Kartenkopien der Friedhof-/Exil-Ansicht mit ihrer Forge-ID (Klick = Aktion der Karte, z. B.
@@ -246,6 +255,10 @@ impl INode for ForgeTable {
             choice_prompt: None,
             cancel_badge: None,
             wheel: None,
+            wheel_multi: None,
+            wheel_done: None,
+            wheel_colors: Vec::new(),
+            preferred_color: None,
             viewer_open: false,
             viewer_cards: Vec::new(),
             showcase: None,
@@ -536,24 +549,16 @@ impl ForgeTable {
                     (letter, Choice::Color(*c))
                 })
                 .collect(),
-            // Schutz vor einer Farbe (CR 702.16): nur Farben zur Wahl → Farbrad
-            Decision::ChooseOption { options, purpose, .. }
-                if purpose == "Protection" && !options.is_empty() && options.iter().all(|o| o.color.is_some()) =>
+            // Auswahl, bei der jede Möglichkeit eine eigene Farbe bzw. farblos ist (Schutz vor einer
+            // Farbe CR 702.16, Mana aus dem Pool, Farbe einschließlich farblos, mehrere Farben)
+            Decision::ChooseOption { options, .. } | Decision::ChooseOptions { options, .. }
+                if !options.is_empty() && options.iter().all(|o| option_letter(o).is_some()) =>
             {
-                options
-                    .iter()
-                    .enumerate()
-                    .map(|(i, o)| {
-                        let letter = match o.color? {
-                            ManaColor::White => 'W',
-                            ManaColor::Blue => 'U',
-                            ManaColor::Black => 'B',
-                            ManaColor::Red => 'R',
-                            ManaColor::Green => 'G',
-                        };
-                        Some((letter, Choice::Number(i as u32)))
-                    })
-                    .collect::<Option<Vec<_>>>()?
+                let letters: Vec<char> = options.iter().filter_map(option_letter).collect();
+                if (1..letters.len()).any(|k| letters[..k].contains(&letters[k])) {
+                    return None;
+                }
+                letters.into_iter().enumerate().map(|(i, l)| (l, Choice::Number(i as u32))).collect()
             }
             Decision::ChooseType { options, .. } if !options.is_empty() => options
                 .iter()
@@ -594,9 +599,21 @@ impl ForgeTable {
                 .filter(|c| WHEEL_ORDER.contains(*c))
                 .collect();
             letters.dedup();
-            if letters.len() != 1 || entries.iter().any(|(l, _)| *l == letters[0]) {
+            let any = effect.to_lowercase().contains("any color") || effect.to_lowercase().contains("any one color");
+            if any && letters.is_empty() {
+                // „ein Mana beliebiger Farbe“: je Farbe ein Segment für diese Fähigkeit
+                for l in "WUBRG".chars() {
+                    if !entries.iter().any(|(e, _)| *e == l) {
+                        entries.push((l, choice.clone()));
+                    }
+                }
+                continue;
+            }
+            if letters.len() != 1 {
                 return None;
             }
+            // eine feste Farbe geht einem „beliebige Farbe“-Segment gleicher Farbe vor
+            entries.retain(|(l, _)| *l != letters[0]);
             entries.push((letters[0], choice.clone()));
         }
         entries.sort_by_key(|(l, _)| WHEEL_ORDER.find(*l).unwrap_or(9));
@@ -606,8 +623,16 @@ impl ForgeTable {
     /// Hinweis über dem Farbrad: „(Quelle) Wähle eine Farbe.“ bzw. „… einen Grundland-Typ.“
     fn wheel_prompt(req: &Request, decision: &Decision) -> String {
         let what = match decision {
-            Decision::ChooseType { .. } => tr!("Wähle einen Grundland-Typ.", "Choose a basic land type."),
-            _ => tr!("Wähle eine Farbe.", "Choose a color."),
+            Decision::ChooseType { .. } => tr!("Wähle einen Grundland-Typ.", "Choose a basic land type.").to_string(),
+            Decision::ChooseOption { purpose, .. } if purpose == "ManaPool" => {
+                tr!("Mit welchem Mana aus dem Pool bezahlen?", "Which mana from your pool?").to_string()
+            }
+            Decision::ChooseOption { options, .. } if options.iter().any(|o| o.colorless) => {
+                tr!("Wähle eine Farbe oder farblos.", "Choose a color or colorless.").to_string()
+            }
+            Decision::ChooseOptions { min, max, .. } if min == max => trf!("Wähle {max} Farben.", "Choose {max} colors."),
+            Decision::ChooseOptions { min, max, .. } => trf!("Wähle {min}–{max} Farben.", "Choose {min}–{max} colors."),
+            _ => tr!("Wähle eine Farbe.", "Choose a color.").to_string(),
         };
         if req.source_name.is_empty() { what.to_string() } else { format!("({}) {what}", req.source_name) }
     }
@@ -627,18 +652,94 @@ impl ForgeTable {
             let quad = c.bind().screen_quad();
             (quad.len() == 4).then(|| quad.as_slice().iter().fold(Vector2::ZERO, |a, p| a + *p) * 0.25)
         });
+        // an der Karte: über ihr (sonst verdeckte das Rad Länder-Reihe und Manapool)
+        let at_card = at_card.map(|p| p - Vector2::new(0.0, screen.y * WHEEL_ABOVE_CARD));
         let anchor = at_card.unwrap_or(Vector2::new(screen.x * 0.5, screen.y * WHEEL_CENTER_Y));
         let art = card.as_ref().and_then(|c| c.get("face_texture").try_to::<Gd<godot::classes::Texture2D>>().ok());
         let segments = entries.iter().filter_map(|(l, _)| WheelSegment::for_letter(*l)).collect();
-        let follow = if at_card.is_some() { card.clone() } else { None };
+        let follow = None;
         let mut wheel = ManaWheel::create(segments, anchor, follow, art, prompt);
         wheel.connect("picked", &Callable::from_object_method(&self.to_gd(), "on_wheel_picked"));
         parent.add_child(&wheel);
         self.wheel = Some((wheel, entries.into_iter().map(|(_, c)| c).collect(), voluntary));
     }
 
+    /// Mehrfachwahl im Farbrad starten (mehrere Farben, CR 105): Klick wählt bzw. hebt auf,
+    /// darunter orange „Fertig (n/…)“ – erst bei gültiger Anzahl aktiv.
+    fn start_wheel_multi(&mut self, min: u32, max: u32) {
+        let n = self.wheel.as_ref().map_or(0, |(_, c, _)| c.len());
+        self.wheel_multi = Some((vec![false; n], min, max));
+        let mut done = Button3D::create(ButtonStyle::Orange, &pick_label(0, min, max), Showcase::button_width());
+        done.bind_mut().set_enabled(min == 0);
+        done.bind_mut().pin_to_screen(Vector2::new(0.5, WHEEL_CENTER_Y), Vector2::new(0.0, WHEEL_DONE_OFFSET), WHEEL_DONE_WIDTH);
+        let cb = Callable::from_object_method(&self.to_gd(), "on_wheel_multi_done");
+        done.connect("pressed", &cb);
+        if let Some(mut parent) = self.controller.clone() {
+            parent.add_child(&done);
+        }
+        self.wheel_done = Some(done);
+        self.refresh_wheel_multi();
+    }
+
+    fn toggle_wheel_multi(&mut self, index: i64) {
+        let Some((sel, _, max)) = self.wheel_multi.as_mut() else { return };
+        let Some(i) = usize::try_from(index).ok().filter(|i| *i < sel.len()) else { return };
+        let count = sel.iter().filter(|s| **s).count() as u32;
+        if sel[i] {
+            sel[i] = false;
+        } else if count < *max {
+            sel[i] = true;
+        }
+        self.refresh_wheel_multi();
+    }
+
+    fn refresh_wheel_multi(&mut self) {
+        let Some((sel, min, max)) = self.wheel_multi.clone() else { return };
+        if let Some((w, _, _)) = self.wheel.as_mut() {
+            w.bind_mut().set_selected(&sel);
+        }
+        let n = sel.iter().filter(|s| **s).count() as u32;
+        if let Some(b) = self.wheel_done.as_mut().filter(|b| b.is_instance_valid()) {
+            b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
+            b.bind_mut().set_enabled(n >= min && n <= max);
+        }
+    }
+
+    /// „Fertig“ der Mehrfachwahl im Farbrad: gewählte Farben an Forge (`Modes`).
+    #[func]
+    fn on_wheel_multi_done(&mut self) {
+        let Some((sel, min, max)) = self.wheel_multi.clone() else { return };
+        let picked: Vec<usize> = sel.iter().enumerate().filter(|(_, s)| **s).map(|(i, _)| i).collect();
+        let n = picked.len() as u32;
+        if n < min || n > max {
+            return;
+        }
+        let choices = self.wheel.as_ref().map(|(_, c, _)| c.clone()).unwrap_or_default();
+        let modes: Vec<usize> = picked
+            .iter()
+            .filter_map(|i| match choices.get(*i) {
+                Some(Choice::Number(k)) => Some(*k as usize),
+                _ => None,
+            })
+            .collect();
+        self.close_wheel();
+        self.answer(Choice::Modes(modes));
+    }
+
+    /// Antwort aus der gemerkten Farbe (`preferred_color`) für eine Farbfrage, sofern sie dort
+    /// zur Wahl steht; die Farbe gilt nur für die nächste Frage.
+    fn preferred_color_choice(&mut self, decision: &Decision) -> Option<Choice> {
+        let letter = self.preferred_color.take()?;
+        Self::wheel_entries(decision)?.into_iter().find(|(l, _)| *l == letter).map(|(_, c)| c)
+    }
+
     /// Farbrad schließen (ohne Antwort).
     fn close_wheel(&mut self) {
+        self.wheel_multi = None;
+        self.wheel_colors.clear();
+        if let Some(mut b) = self.wheel_done.take().filter(|b| b.is_instance_valid()) {
+            b.bind_mut().dismiss();
+        }
         if let Some((mut w, _, _)) = self.wheel.take() {
             if w.is_instance_valid() {
                 w.bind_mut().close();
@@ -649,7 +750,14 @@ impl ForgeTable {
     /// Segment `index` des Farbrads angeklickt: die zugehörige Antwort an Forge.
     #[func]
     fn on_wheel_picked(&mut self, index: i64) {
+        // Mehrfachwahl (mehrere Farben): Segment an-/abwählen, Rad bleibt offen
+        if self.wheel_multi.is_some() {
+            self.toggle_wheel_multi(index);
+            return;
+        }
         let choice = self.wheel.as_ref().and_then(|(_, c, _)| c.get(usize::try_from(index).ok()?).cloned());
+        // Segment einer Fähigkeit „ein Mana beliebiger Farbe“: Farbe für die Folgefrage merken
+        self.preferred_color = usize::try_from(index).ok().and_then(|i| self.wheel_colors.get(i).copied().flatten());
         self.close_wheel();
         if let Some(c) = choice {
             self.answer(c);
@@ -1187,9 +1295,17 @@ impl ForgeTable {
             self.show_library_pick(&req);
         }
         if let Some(req) = self.pending.clone() {
+            // Farbe vorgewählt (Manafähigkeit „ein Mana beliebiger Farbe“ im Rad gewählt): direkt antworten
+            if let Some(choice) = self.preferred_color_choice(&req.decision) {
+                self.answer(choice);
+                return;
+            }
             if let Some(entries) = Self::wheel_entries(&req.decision) {
                 let prompt = Self::wheel_prompt(&req, &req.decision);
                 self.open_wheel(entries, req.source, &prompt, false);
+                if let Decision::ChooseOptions { min, max, .. } = req.decision {
+                    self.start_wheel_multi(min, max);
+                }
             }
         }
         self.show_cancel_badge();
@@ -1312,7 +1428,13 @@ impl ForgeTable {
                 let name = card.as_ref().map(|c| c.bind().card_name().to_string()).unwrap_or_default();
                 let prompt = format!("({name}) {}", tr!("Wähle das Mana.", "Choose the mana."));
                 let voluntary = !matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::PayMana { .. }));
+                // Segmente derselben Fähigkeit (beliebige Farbe): gewählte Farbe für die Folgefrage
+                let colors: Vec<Option<char>> = entries
+                    .iter()
+                    .map(|(l, c)| (entries.iter().filter(|(_, o)| o == c).count() > 1).then_some(*l))
+                    .collect();
                 self.open_wheel(entries, Some(card_id), &prompt, voluntary);
+                self.wheel_colors = colors;
             }
             _ if all_actions => self.show_action_choice(card_id),
             _ => self.menu = Some(mine.into_iter().unzip()),
@@ -4132,6 +4254,20 @@ fn card_badges(data: &VarDictionary, ring_bearers: &[i64]) -> String {
 /// Leuchten des Rahmens der Kopien von Karten aus anderen Zonen (weiß).
 const ELSEWHERE_GLOW: Color = Color::from_rgb(1.0, 1.0, 1.0);
 
+/// Manabuchstabe einer Auswahl-Option (Farbe bzw. „C“ für farblos), sonst None.
+fn option_letter(o: &crate::rules::OptionText) -> Option<char> {
+    if o.colorless {
+        return Some('C');
+    }
+    Some(match o.color? {
+        ManaColor::White => 'W',
+        ManaColor::Blue => 'U',
+        ManaColor::Black => 'B',
+        ManaColor::Red => 'R',
+        ManaColor::Green => 'G',
+    })
+}
+
 /// Plakette einer Handkarten-Kopie: aus welcher Zone sie gespielt wird.
 fn zone_label(zone: &str) -> String {
     match zone {
@@ -4311,6 +4447,11 @@ fn number_label(x: u32, is_x: bool) -> String {
 /// Szene und Abstand zur Kamera hin (vor den Stack-Karten).
 /// Farbrad bei Fragen der Engine: Höhe der Radmitte (Anteil der Bildhöhe, Mitte des Spielfelds).
 const WHEEL_CENTER_Y: f32 = 0.45;
+/// Freiwilliges Farbrad an einer Karte: so weit über ihrer Mitte (Anteil der Bildhöhe).
+const WHEEL_ABOVE_CARD: f32 = 0.16;
+/// „Fertig“-Knopf der Mehrfachwahl im Farbrad: Abstand unter der Radmitte und Breite (Pixel).
+const WHEEL_DONE_OFFSET: f32 = 130.0;
+const WHEEL_DONE_WIDTH: f32 = 260.0;
 /// Knopf-Spalte (`show_option_buttons`): Lage der Quellkarte und der Knöpfe (links/rechts der
 /// Mitte), Abstand der Knöpfe untereinander, höchstens so viele Knöpfe je Spalte.
 const OPTION_CARD_X: f32 = 0.85;

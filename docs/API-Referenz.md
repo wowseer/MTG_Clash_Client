@@ -121,6 +121,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `cancel_cast()` | `void` | Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört. |
 | `on_zone_clicked(zone: Zone)` | `void` | Anklickbare Zonen-Fläche angeklickt (vom `TableController`): Exil-Strudel → Exil-Ansicht. |
 | `close_zone_viewer()` | `void` | Friedhof-/Exil-Ansicht schließen; die offene Entscheidung zeigt wieder ihre Bedienung. |
+| `on_wheel_multi_done()` | `void` | „Fertig“ der Mehrfachwahl im Farbrad: gewählte Farben an Forge (`Modes`). |
 | `on_wheel_picked(index: int)` | `void` | Segment `index` des Farbrads angeklickt: die zugehörige Antwort an Forge. |
 | `end_turn()` | `void` | Knopf „»»“ (Sofort beenden, nur im eigenen Zug): bis zum Ende dieser Runde automatisch passen; es wird ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die UI weiter. Legt ein anderer Spieler etwas auf den Stack, endet das automatische Passen, damit man antworten kann. |
 | `is_ending_turn()` | `bool` | Ist „Sofort beenden“ gerade aktiv? |
