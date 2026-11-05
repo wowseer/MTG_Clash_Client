@@ -1801,9 +1801,14 @@ public class RemotePlayerController extends PlayerControllerAi {
             ICardFace f = faces.get(k);
             int id = FACE_ID_BASE + k;
             opts.add(new Decisions.Opt(f.getName(), null, id));
-            extra.add(faceJson(id, f.getName(), String.valueOf(f.getType()),
+            com.google.gson.JsonObject fj = faceJson(id, f.getName(), String.valueOf(f.getType()),
                     f.getManaCost() == null ? "" : f.getManaCost().getShortString(), f.getOracleText(),
-                    f.getPower(), f.getToughness()));
+                    f.getPower(), f.getToughness());
+            String img = CardImages.faceImage(sa == null ? null : sa.getHostCard(), f.getName());
+            if (!img.isEmpty()) {
+                fj.addProperty("image", img);
+            }
+            extra.add(fj);
         }
         ICardFace r = pick(faces, Decisions.cardOption(g(), seat, message, opts, null, extra, "CardFace", sa, false));
         return r != null ? r : super.chooseSingleCardFace(sa, faces, message);
@@ -1818,9 +1823,14 @@ public class RemotePlayerController extends PlayerControllerAi {
             CardState st = states.get(k);
             int id = FACE_ID_BASE + k;
             opts.add(new Decisions.Opt(st.getName(), null, id));
-            extra.add(faceJson(id, st.getName(), String.valueOf(st.getType()),
+            com.google.gson.JsonObject fj = faceJson(id, st.getName(), String.valueOf(st.getType()),
                     st.getManaCost() == null ? "" : st.getManaCost().getShortString(), st.getOracleText(),
-                    st.getBasePowerString(), st.getBaseToughnessString()));
+                    st.getBasePowerString(), st.getBaseToughnessString());
+            String img = CardImages.faceImage(st.getCard(), st.getName());
+            if (!img.isEmpty()) {
+                fj.addProperty("image", img);
+            }
+            extra.add(fj);
         }
         CardState r = pick(states, Decisions.cardOption(g(), seat, message, opts, null, extra, "CardFace", sa, false));
         return r != null ? r : super.chooseSingleCardState(sa, states, message, params);
@@ -2016,6 +2026,16 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public int chooseNumberForKeywordCost(SpellAbility sa, Cost cost, KeywordInterface keyword, String prompt,
             int max) {
+        // Multikicker, Replicate, Squad: „beliebig oft“ → so oft, wie das verfügbare Mana nach den
+        // Grundkosten reicht (Schätzung der Engine: Manaquellen + Pool), höchstens 20
+        if (max == Integer.MAX_VALUE && cost != null && cost.getTotalMana() != null) {
+            int per = Math.max(1, cost.getTotalMana().getCMC());
+            int base = sa.getPayCosts() == null || sa.getPayCosts().getTotalMana() == null ? 0
+                    : sa.getPayCosts().getTotalMana().getCMC();
+            int avail = forge.ai.ComputerUtilMana.getAvailableManaEstimate(getPlayer(), false)
+                    + getPlayer().getManaPool().totalMana();
+            max = Math.max(0, Math.min(20, (avail - base) / per));
+        }
         Integer r = Decisions.number(g(), seat, prompt, sa, null, 0, max, false);
         return r != null ? r : super.chooseNumberForKeywordCost(sa, cost, keyword, prompt, max);
     }

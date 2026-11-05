@@ -131,6 +131,18 @@ final class StateJson {
             if (si.isSpell() && src != null) {
                 o.add("card", card(src));
             }
+            // modale Zauber (CR 700.2): Texte der gewählten Modi, damit die Karte nur diese zeigt
+            // Forge hängt die gewählten Modi als Unterfähigkeiten mit SVar „CharmOrder“ an
+            JsonArray modes = new JsonArray();
+            for (SpellAbility m = si.getSpellAbility(); m != null; m = m.getSubAbility()) {
+                if (m.hasSVar("CharmOrder")) {
+                    String d = m.getParamOrDefault("SpellDescription", m.getDescription());
+                    modes.add(d == null || d.isBlank() ? m.toUnsuppressedString() : d);
+                }
+            }
+            if (!modes.isEmpty()) {
+                o.add("modes", modes);
+            }
             JsonArray targets = new JsonArray();
             for (SpellAbility sa = si.getSpellAbility(); sa != null; sa = sa.getSubAbility()) {
                 JsonArray ts = new JsonArray();
@@ -307,6 +319,23 @@ final class StateJson {
                 oo.addProperty("name", other.getName());
                 oo.addProperty("type", String.valueOf(other.getType()));
                 o.add("other_face", oo);
+            }
+        }
+        // Klassen (CR 716): aktuelle Stufe
+        if (c.getType().hasSubtype("Class")) {
+            o.addProperty("class_level", c.getClassLevel());
+        }
+        // Räume (CR 709.5): aufgeschlossene Türen
+        if (c.isRoom() && c.isInPlay()) {
+            JsonArray doors = new JsonArray();
+            c.getUnlockedRoomNames().forEach(doors::add);
+            o.add("unlocked_doors", doors);
+        }
+        // Commander-Steuer (CR 903.8): {2} je bisherigem Wirken aus der Kommandozone
+        if (c.isCommander() && c.getOwner() != null) {
+            int casts = c.getOwner().getCommanderCast(c);
+            if (casts > 0) {
+                o.addProperty("commander_tax", 2 * casts);
             }
         }
         Card host = c.getAttachedTo();

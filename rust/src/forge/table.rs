@@ -58,7 +58,6 @@ fn pick_label(n: u32, min: u32, max: u32) -> String {
 const STARTING_BUTTON_WIDTH: f32 = 4.6;
 const STARTING_BUTTON_SPACING: f32 = 1.15;
 const STARTING_CHOICE_CENTER: Vector3 = Vector3::new(0.0, 1.6, 0.9);
-/// Gemerkte bzw. im HUD gezeigte Zeilen des Spielprotokolls.
 /// Farbe der Pfeile vom Stack-Eintrag zu seinen Zielen.
 
 /// Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, Kamera,
@@ -1801,6 +1800,10 @@ impl ForgeTable {
             Decision::ChooseOption { purpose, .. } if purpose == "Piles" => Some(StageKind::Piles),
             Decision::ChooseOption { options, .. } if options.len() >= 2 && options.iter().all(|o| o.card.is_some()) => {
                 Some(StageKind::CardOptions)
+            }
+            // Markenart: immer die Knopf-Spalte mit Münzen, auch bei zwei Arten
+            Decision::ChooseOption { purpose, options, .. } if purpose == "CounterType" && options.len() >= 2 => {
+                Some(StageKind::Buttons)
             }
             Decision::ChooseOption { options, .. } if options.len() == 2 && Self::wheel_entries(decision).is_none() => {
                 Some(StageKind::Binary)
@@ -4137,7 +4140,15 @@ impl ForgeTable {
             for item in self.stack_items() {
                 let seat = get_int(&item, "controller").clamp(0, 1) as usize;
                 let card = match item.get("card").and_then(|v| v.try_to::<VarDictionary>().ok()) {
-                    Some(c) => (get_int(&c, "id"), c),
+                    // modaler Zauber: nur die gewählten Modi auf der Karte (CR 700.2)
+                    Some(mut c) => {
+                        if let Some(modes) = get_array(&item, "modes").filter(|m| !m.is_empty()) {
+                            let text: Vec<String> = modes.iter_shared().map(|v| format!("• {v}")).collect();
+                            c.set("text", text.join("\n").as_str());
+                            c.set("chosen_modes", true);
+                        }
+                        (get_int(&c, "id"), c)
+                    }
                     None => (ABILITY_KEY_BASE - get_int(&item, "id"), self.ability_card(&item)),
                 };
                 wanted.push((card.0, Some(card.1), stack_zone.clone(), seat));
@@ -4226,7 +4237,21 @@ impl ForgeTable {
                     self.signatures.insert(key, sig);
                 }
                 card.bind_mut().set_badges(&card_badges(data, &ring_bearers));
-                card.bind_mut().set_counters(&counter_list(data));
+                // Marken als Münzen, dazu Klassen-Stufe (CR 716) und Commander-Steuer (CR 903.8)
+                let mut coins = counter_list(data);
+                let level = get_int(data, "class_level");
+                if level > 0 {
+                    coins.push(("CLASS_LEVEL".to_string(), level as u32));
+                }
+                let tax = get_int(data, "commander_tax");
+                if tax > 0 {
+                    coins.push(("COMMANDER_TAX".to_string(), tax as u32));
+                }
+                // Räume (CR 709.5): Zahl der aufgeschlossenen Türen von zwei
+                if let Some(doors) = get_array(data, "unlocked_doors") {
+                    coins.push(("DOORS".to_string(), doors.len() as u32));
+                }
+                card.bind_mut().set_counters(&coins);
                 let tapped = get_bool(data, "tapped");
                 if card.bind().is_tapped() != tapped {
                     card.bind_mut().set_tapped_state(tapped);
@@ -4383,6 +4408,15 @@ fn card_badges(data: &VarDictionary, ring_bearers: &[i64]) -> String {
     }
     if ring_bearers.contains(&get_int(data, "id")) {
         lines.push(tr!("Ringträger", "Ring-bearer").to_string());
+    }
+    // Räume (CR 709.5): aufgeschlossene Türen
+    if let Some(doors) = get_array(data, "unlocked_doors") {
+        let names: Vec<String> = doors.iter_shared().map(|v| v.to_string()).collect();
+        lines.push(if names.is_empty() {
+            tr!("Türen verschlossen", "Doors locked").to_string()
+        } else {
+            trf!("Offen: {}", "Unlocked: {}", names.join(", "))
+        });
     }
     let room = get_str(data, "room");
     if !room.is_empty() {

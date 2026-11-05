@@ -147,7 +147,8 @@ impl CardDef {
             cost_text: s("cost"),
             image: s("image"),
             art: s("art"),
-            custom_text: false,
+            // Stack: nur die gewählten Modi stehen im Text (auf dem echten Bild auf einem Feld)
+            custom_text: card.get("chosen_modes").is_some_and(|v| v.booleanize()),
             colors,
             text: s("text"),
             base_stats: pair("base_power", "base_toughness").or(stats),

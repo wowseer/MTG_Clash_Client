@@ -58,6 +58,71 @@ final class RemoteCostDecision extends AiCostDecision {
         return CardLists.getValidCards(player.getCardsIn(zone), type.split(";"), player, source, ability);
     }
 
+    /**
+     * „Eine Marke von einem eigenen Permanent entfernen“ (Power Conduit u. a.): der Spieler wählt
+     * das Permanent auf dem Tisch und – bei mehreren Markenarten darauf – die Markenart
+     * ({@code ChooseOption}, {@code purpose = "CounterType"}). Nur für eine Marke; sonst KI.
+     */
+    @Override
+    public PaymentDecision visit(forge.game.cost.CostRemoveAnyCounter cost) {
+        int amount = cost.getAbilityAmount(ability);
+        if (amount != 1) {
+            return super.visit(cost);
+        }
+        CardCollection valid = cost.payCostFromSource() ? new CardCollection(ability.getHostCard())
+                : valid(ZoneType.Battlefield, cost.getType());
+        CardCollection withCounters = new CardCollection();
+        for (Card c : valid) {
+            boolean ok = cost.counter == null ? c.hasCounters() : c.getCounters(cost.counter) > 0;
+            if (ok) {
+                withCounters.add(c);
+            }
+        }
+        if (withCounters.isEmpty()) {
+            return null;
+        }
+        Card chosenCard;
+        if (withCounters.size() == 1) {
+            chosenCard = withCounters.getFirst();
+        } else {
+            List<Card> list = new ArrayList<>(withCounters);
+            List<Integer> chosen = Decisions.cards(player.getGame(), seat, "Choose", list, 1, 1,
+                    "Marke entfernen: Permanent wählen", ability, false);
+            if (chosen == null || chosen.isEmpty()) {
+                return super.visit(cost);
+            }
+            chosenCard = list.get(chosen.get(0));
+        }
+        forge.game.card.CounterType type = cost.counter;
+        if (type == null) {
+            List<forge.game.card.CounterType> types = new ArrayList<>();
+            for (var e : chosenCard.getCounters().entrySet()) {
+                if (e.getCount() > 0) {
+                    types.add(e.getElement());
+                }
+            }
+            if (types.isEmpty()) {
+                return null;
+            }
+            type = types.get(0);
+            if (types.size() > 1) {
+                List<Decisions.Opt> opts = new ArrayList<>();
+                for (forge.game.card.CounterType ct : types) {
+                    String key = ct instanceof Enum<?> en ? en.name() : ct.getName();
+                    opts.add(new Decisions.Opt(ct.getName(), null, -1, key));
+                }
+                Integer i = Decisions.option(player.getGame(), seat, "Welche Marke entfernen?", ability, chosenCard,
+                        opts, false, "CounterType");
+                if (i != null) {
+                    type = types.get(i);
+                }
+            }
+        }
+        forge.game.GameEntityCounterTable table = new forge.game.GameEntityCounterTable();
+        table.put(null, chosenCard, type, 1);
+        return PaymentDecision.counters(table);
+    }
+
     @Override
     public PaymentDecision visit(CostSacrifice cost) {
         if (cost.payCostFromSource() || "OriginalHost".equals(cost.getType()) || "All".equals(cost.getAmount())) {

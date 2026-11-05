@@ -78,8 +78,12 @@ final class CardImages {
      * Bildausschnitt mit, damit die UI eigene Rahmen bauen kann.
      */
     static Info info(Card c) {
-        if (c == null || c.isFaceDown() || c.isToken()) {
+        if (c == null || c.isFaceDown()) {
             return Info.NONE;
+        }
+        if (c.isToken()) {
+            String t = tokenImage(c);
+            return t.isEmpty() ? Info.NONE : new Info(t, "");
         }
         IPaperCard ip = c.getPaperCard();
         if (!(ip instanceof PaperCard pc)) {
@@ -91,6 +95,76 @@ final class CardImages {
         String image = resolve(shown, face, false);
         String art = regular(shown) ? "" : resolve(shown, face, true);
         return new Info(image, art);
+    }
+
+    /** Bild einer Seite (Name) der Karte {@code host}, z. B. für „Seite wählen“; sonst "". */
+    static String faceImage(Card host, String faceName) {
+        if (host == null || !(host.getPaperCard() instanceof PaperCard pc)) {
+            return "";
+        }
+        PaperCard shown = DISPLAY.computeIfAbsent(pc.getName() + "|" + pc.getEdition() + "|" + pc.getArtIndex(),
+                k -> displayPrinting(pc));
+        String face = pc.getRules().getMainPart() != null && faceName != null
+                && !faceName.equals(pc.getRules().getMainPart().getName()) ? "back" : "";
+        return resolve(shown, face, false);
+    }
+
+    /**
+     * Bild eines Spielsteins (Scryfall, Token-Druck der Edition): im Token-Bildordner von Forge
+     * bzw. NeoForge, sonst im Hintergrund geladen; "" = (noch) keins.
+     */
+    private static String tokenImage(Card c) {
+        if (!(c.getPaperCard() instanceof forge.item.PaperToken pt)) {
+            return "";
+        }
+        String file;
+        try {
+            file = pt.getImageFilename(1);
+        } catch (RuntimeException e) {
+            return "";
+        }
+        if (file == null || file.isEmpty()) {
+            return "";
+        }
+        String key = "token|" + file;
+        String known = FOUND.get(key);
+        if (known != null && !known.isEmpty()) {
+            return known;
+        }
+        List<File> dirs = new ArrayList<>();
+        dirs.add(new File(ForgeConstants.CACHE_TOKEN_PICS_DIR));
+        dirs.add(new File(System.getProperty("user.home"), "Games/NeoForge/datos/cache/pics/tokens"));
+        for (File d : dirs) {
+            for (String ext : List.of(".jpg", ".png")) {
+                File f = new File(d, file + ext);
+                if (f.isFile() && f.length() > 0) {
+                    FOUND.put(key, f.getAbsolutePath());
+                    return f.getAbsolutePath();
+                }
+            }
+        }
+        CardEdition ed = StaticData.instance().getCardEdition(pt.getEdition());
+        String cn = pt.getCollectorNumber();
+        if (ed == null || cn == null || cn.isEmpty() || REQUESTED.contains(key)) {
+            return "";
+        }
+        REQUESTED.add(key);
+        String url;
+        try {
+            url = ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD
+                    + ImageUtil.getScryfallTokenDownloadUrl(cn, ed.getTokensCode().toLowerCase(), "en", "");
+        } catch (RuntimeException e) {
+            return "";
+        }
+        File target = new File(ForgeConstants.CACHE_TOKEN_PICS_DIR, file + ".jpg");
+        QUEUED.incrementAndGet();
+        DOWNLOADER.submit(() -> {
+            download(url, target, key);
+            if (QUEUED.decrementAndGet() == 0) {
+                ForgeBridge.imagesChanged();
+            }
+        });
+        return "";
     }
 
     /** Editionsarten mit normalem Rahmen (Kernset, Erweiterung, Reprint-, Commander-, Draft-Sets …). */

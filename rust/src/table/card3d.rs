@@ -910,7 +910,7 @@ impl Card3D {
     pub fn set_counters(&mut self, counters: &[(String, u32)]) {
         let wanted: Vec<(String, u32)> = counters
             .iter()
-            .filter(|(k, n)| *n > 0 && k != "LOYALTY" && k != "DEFENSE")
+            .filter(|(k, n)| (*n > 0 || k == "DOORS") && k != "LOYALTY" && k != "DEFENSE")
             .cloned()
             .collect();
         let same = wanted.len() == self.coins.len() && wanted.iter().zip(&self.coins).all(|((k, n), (ck, cn, _, _))| k == ck && n == cn);
@@ -1104,7 +1104,7 @@ impl Card3D {
             kind: card_label(visual, px(128.0, 219.0), 34, light, 0.0),
             text: card_label(visual, px(128.0, TEXT_BOX_CENTER), 30, dark, 0.52),
             stats: card_label(visual, px(206.0, 333.0), 44, Color::WHITE, 0.0),
-            badges: card_label(visual, px(128.0, 130.0), 34, Color::WHITE, 0.58),
+            badges: card_label(visual, px(128.0, 130.0), 52, Color::WHITE, 0.6),
             colors: [light, dark, light, dark, Color::WHITE, Color::WHITE],
         };
         let mut badges = labels.badges.clone();
