@@ -1615,28 +1615,61 @@ impl ForgeTable {
     /// Modus wählen (CR 700.2): je Modus eine Kopie der Karte, auf der nur dieser Modus steht.
     /// Ein Modus: Klick wählt sofort. Mehrere: Klick wählt (orange) bzw. hebt auf, „Fertig (n/…)“;
     /// wiederholbare Modi zählen je Klick hoch („×2“), „Zurücksetzen“ leert die Wahl.
+    /// Modi mit eigenen Zusatzkosten (Spree CR 702.172, Tiered; Video „Spree und Stack“): Titel =
+    /// Schlüsselwort, darunter „Wähle eine oder mehrere Zusatzkosten.“, über jeder Kopie „+ {Kosten}“,
+    /// orange „Bezahlen {Grundkosten + gewählte}“ (erst bei gültiger Wahl aktiv) und „Abbrechen“.
     fn show_modes(&mut self, req: &Request) {
-        let Decision::ChooseModes { modes, min, max, can_repeat, .. } = &req.decision else { return };
+        let Decision::ChooseModes { modes, min, max, can_repeat, costs, keyword, .. } = &req.decision else { return };
         let (min, max, can_repeat) = (*min, *max, *can_repeat);
+        let with_costs = Self::mode_costs(&req.decision);
         let data = self.source_data(req).unwrap_or_default();
-        let title = if min == max && max == 1 {
+        let title = if with_costs && !keyword.is_empty() {
+            keyword.clone()
+        } else if with_costs {
+            tr!("Zusatzkosten wählen", "Choose additional costs").to_string()
+        } else if min == max && max == 1 {
             tr!("Wähle einen Modus", "Choose one").to_string()
         } else if min == max {
             trf!("Wähle {max} Modi", "Choose {max}")
         } else {
             trf!("Wähle {min}–{max} Modi", "Choose {min}–{max}")
         };
-        let subtitle = if req.source_name.is_empty() { String::new() } else { req.source_name.clone() };
+        let subtitle = if !with_costs {
+            req.source_name.clone()
+        } else if max == 1 {
+            tr!("Wähle eine der Zusatzkosten.", "Choose one additional cost.").to_string()
+        } else {
+            tr!("Wähle eine oder mehrere Zusatzkosten.", "Choose one or more additional costs.").to_string()
+        };
         let Some(mut showcase) = self.open_stage(&title, &subtitle) else { return };
         let mut cards = Vec::new();
         for (n, (index, text)) in modes.iter().enumerate() {
             let mut copy = Self::stage_card(&data, Some(text));
             copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
-            cards.push((copy.clone(), trf!("Modus {}", "Mode {}", n + 1)));
+            // Modus-Kosten über der Kopie („+ {3}“), sonst „Modus n“
+            let caption = match costs.get(n).filter(|c| with_costs && !c.is_empty()) {
+                Some(c) => format!("+ {c}"),
+                None => trf!("Modus {}", "Mode {}", n + 1),
+            };
+            cards.push((copy.clone(), caption));
             self.mode_cards.push((copy, *index));
         }
+        // vor dem Einordnen: die Reihe rückt nach links, wenn der Zauber am Stack steht
+        self.stage_spell_at_stack(&mut showcase, req, &data);
         showcase.bind_mut().show_options(cards);
         showcase.bind_mut().enable_scroll();
+        if with_costs {
+            // wie im Video „Spree und Stack“: orange „Bezahlen {Gesamtkosten}“, daneben „Abbrechen“
+            let mut pay = Button3D::create(ButtonStyle::Orange, &self.mode_pay_label(), Showcase::button_width() * 1.2);
+            pay.bind_mut().set_enabled(min == 0);
+            let cb = Callable::from_object_method(&self.to_gd(), "on_modes_done");
+            pay.connect("pressed", &cb);
+            showcase.bind_mut().add_button(pay);
+            if req.cancelable {
+                self.stage_button(&mut showcase, ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), Showcase::button_width(), Choice::Cancel);
+            }
+            return;
+        }
         if req.cancelable {
             self.stage_button(&mut showcase, ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), Showcase::button_width(), Choice::Cancel);
         }
@@ -1657,9 +1690,21 @@ impl ForgeTable {
 
     /// Klick auf eine Modus-Karte.
     fn mode_click(&mut self, mode: usize) {
-        let Some(Decision::ChooseModes { max, can_repeat, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
-        if max <= 1 {
+        let Some(decision) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        let Decision::ChooseModes { max, can_repeat, .. } = decision else { return };
+        let with_costs = Self::mode_costs(&decision);
+        if max <= 1 && !with_costs {
             self.answer(Choice::Modes(vec![mode]));
+            return;
+        }
+        if max <= 1 {
+            // eine Zusatzkosten (Tiered): Klick tauscht die Wahl, bezahlt wird mit dem Knopf
+            let again = self.mode_pick.contains(&mode);
+            self.mode_pick.clear();
+            if !again {
+                self.mode_pick.push(mode);
+            }
+            self.refresh_mode_cards();
             return;
         }
         let picked = self.mode_pick.iter().filter(|m| **m == mode).count();
@@ -1684,11 +1729,76 @@ impl ForgeTable {
             card.bind_mut().set_badges(&if n > 1 { format!("×{n}") } else { String::new() });
         }
         let n = self.mode_pick.len() as u32;
+        let with_costs = self.pending.as_ref().is_some_and(|r| Self::mode_costs(&r.decision));
+        let pay_label = self.mode_pay_label();
         for mut b in self.stage_buttons() {
-            if b.bind().get_text().to_string().starts_with(tr!("Fertig", "Done")) {
+            let text = b.bind().get_text().to_string();
+            if with_costs && text.starts_with(tr!("Bezahlen", "Pay")) {
+                b.bind_mut().set_label_text(GString::from(pay_label.as_str()));
+                b.bind_mut().set_enabled(n >= min && n <= max);
+            } else if !with_costs && text.starts_with(tr!("Fertig", "Done")) {
                 b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
                 b.bind_mut().set_enabled(n >= min && n <= max);
             }
+        }
+    }
+
+    /// Zauber, der gerade gewirkt wird, während einer Bühne am Stack zeigen (CR 601.2a: die Karte
+    /// kommt zuerst auf den Stack, dann werden Modi gewählt; Video „Spree und Stack“): eine helle
+    /// Kopie der ganzen Karte auf der Bühne an der Bildschirmstelle des Stack-Platzes (rechts),
+    /// das Original (auf der Hand bzw. am Stack) ist so lange ausgeblendet. Nur für Karten, die
+    /// nicht auf dem Spielfeld liegen (Fähigkeiten bleiben bei ihrer Karte).
+    fn stage_spell_at_stack(&mut self, showcase: &mut Gd<Showcase>, req: &Request, data: &VarDictionary) {
+        let Some(id) = req.source.map(i64::from) else { return };
+        let Some(original) = self.cards.get(&id).cloned() else { return };
+        let zone = original.bind().get_zone();
+        let on_field = (0..2).any(|seat| {
+            let z = self.zones(seat);
+            [z.battlefield, z.resources].iter().flatten().any(|b| zone.as_ref() == Some(b))
+        });
+        if on_field {
+            return;
+        }
+        let (Some(stack), Some(cam)) = (self.stack_zone.clone(), self.base().get_viewport().and_then(|v| v.get_camera_3d())) else {
+            return;
+        };
+        // Bildschirmstelle des obersten Stack-Platzes → Punkt in der Bühnenebene
+        let screen = cam.unproject_position(stack.get_global_transform().origin);
+        let depth = (showcase.get_global_position() - cam.get_global_position()).length();
+        let world = cam.project_position(screen, depth);
+        let local = showcase.get_global_transform().affine_inverse() * world;
+        let face_up = Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2);
+        let copy = Self::stage_card(data, None);
+        showcase.bind_mut().add_prop_card(copy, Transform3D::new(face_up.scaled(Vector3::splat(STACK_STAGE_SCALE)), local));
+        showcase.bind_mut().hide_while_open(original);
+        // die Auswahl rückt nach links, damit die Karte am Stack frei steht
+        if let Some(mut fan) = showcase.bind().fan_zone() {
+            let p = fan.get_position();
+            fan.set_position(p + Vector3::new(-STACK_STAGE_ROW_SHIFT, 0.0, 0.0));
+        }
+    }
+
+    /// Hat die Moduswahl eigene Zusatzkosten je Modus (Spree CR 702.172, Tiered)?
+    fn mode_costs(decision: &Decision) -> bool {
+        matches!(decision, Decision::ChooseModes { costs, .. } if costs.iter().any(|c| !c.is_empty()))
+    }
+
+    /// „Bezahlen {Gesamtkosten}“: Grundkosten plus die Kosten der gewählten Modi (nur Anzeige).
+    fn mode_pay_label(&self) -> String {
+        let Some(Decision::ChooseModes { modes, costs, base_cost, .. }) = self.pending.as_ref().map(|r| &r.decision) else {
+            return String::new();
+        };
+        let mut parts: Vec<&str> = vec![base_cost.as_str()];
+        for m in &self.mode_pick {
+            if let Some(c) = modes.iter().position(|(i, _)| i == m).and_then(|n| costs.get(n)) {
+                parts.push(c.as_str());
+            }
+        }
+        let total = crate::game::cards::add_costs(&parts);
+        if total.is_empty() {
+            tr!("Bezahlen", "Pay").to_string()
+        } else {
+            format!("{} {total}", tr!("Bezahlen", "Pay"))
         }
     }
 
@@ -3831,6 +3941,10 @@ fn number_label(x: u32, is_x: bool) -> String {
 /// X-Bühne am Stack: Mitte (lokal in der Stack-Zone, etwas unter der obersten Karte und ein
 /// Stück nach links, damit „+5“ nicht über den rechten Bildrand ragt), Größe der Bühne in der
 /// Szene und Abstand zur Kamera hin (vor den Stack-Karten).
+/// Größe der Kopie des gewirkten Zaubers am Stack-Platz einer Bühne (`stage_spell_at_stack`).
+const STACK_STAGE_SCALE: f32 = 1.1;
+/// So weit (Bühnen-Einheiten) rückt die Auswahlreihe nach links, wenn der Zauber am Stack steht.
+const STACK_STAGE_ROW_SHIFT: f32 = 0.5;
 const X_STAGE_LOCAL: Vector3 = Vector3::new(-0.45, 0.2, 0.15);
 const X_STAGE_SCALE: f32 = 2.8;
 const X_STAGE_LIFT: f32 = 2.0;

@@ -185,7 +185,24 @@ final class Decisions {
     /** {@code ChooseModes}: Indizes der gewählten Modi (Wiederholung nur bei {@code canRepeat}). */
     static List<Integer> modes(Game game, int seat, SpellAbility sa, List<String> texts, int min, int max,
             boolean canRepeat, boolean cancelable) {
+        return modes(game, seat, sa, texts, min, max, canRepeat, cancelable, null, null, null);
+    }
+
+    /**
+     * Wie {@link #modes}, mit Erweiterung für Modi mit eigenen Zusatzkosten (Spree CR 702.172,
+     * Tiered): {@code costs} je Modus (leer = keine), {@code base_cost} = Kosten des Zaubers ohne
+     * Modi, {@code keyword} = Schlüsselwort für den Titel („Spree“, „Tiered“).
+     */
+    static List<Integer> modes(Game game, int seat, SpellAbility sa, List<String> texts, int min, int max,
+            boolean canRepeat, boolean cancelable, List<String> costs, String baseCost, String keyword) {
         JsonObject d = decision("ChooseModes", seat);
+        if (costs != null) {
+            JsonArray c = new JsonArray();
+            costs.forEach(c::add);
+            d.add("costs", c);
+            d.addProperty("base_cost", baseCost == null ? "" : baseCost);
+            d.addProperty("keyword", keyword == null ? "" : keyword);
+        }
         JsonArray modes = new JsonArray();
         for (int i = 0; i < texts.size(); i++) {
             JsonArray m = new JsonArray();

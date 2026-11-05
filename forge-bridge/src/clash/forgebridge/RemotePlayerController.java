@@ -1571,10 +1571,25 @@ public class RemotePlayerController extends PlayerControllerAi {
     public List<AbilitySub> chooseModeForAbility(SpellAbility sa, List<AbilitySub> possible, int min, int num,
             boolean allowRepeat) {
         List<String> texts = new ArrayList<>();
+        // Zusatzkosten je Modus (Spree CR 702.172, Tiered: Parameter ModeCost)
+        List<String> costs = new ArrayList<>();
+        boolean anyCost = false;
         for (AbilitySub sub : possible) {
             texts.add(describe(sub));
+            String c = sub.hasParam("ModeCost") ? new Cost(sub.getParam("ModeCost"), false).toSimpleString() : "";
+            costs.add(c);
+            anyCost |= !c.isEmpty();
         }
-        List<Integer> chosen = Decisions.modes(g(), seat, sa, texts, min, num, allowRepeat, min == 0);
+        String keyword = null;
+        String baseCost = null;
+        if (anyCost) {
+            Card host = sa.getHostCard();
+            keyword = host == null ? "" : host.hasKeyword(Keyword.SPREE) ? "Spree"
+                    : host.hasKeyword(Keyword.TIERED) ? "Tiered" : "";
+            baseCost = sa.getPayCosts() == null ? "" : sa.getPayCosts().toSimpleString();
+        }
+        List<Integer> chosen = Decisions.modes(g(), seat, sa, texts, min, num, allowRepeat, min == 0,
+                anyCost ? costs : null, baseCost, keyword);
         if (chosen == null) {
             return super.chooseModeForAbility(sa, possible, min, num, allowRepeat);
         }

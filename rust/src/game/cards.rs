@@ -206,9 +206,55 @@ pub fn parse_cost(text: &str) -> Cost {
     cost
 }
 
+/// Kosten in Engine-Schreibweise zusammenzählen, nur zur Anzeige (z. B. Spree: Grundkosten plus
+/// gewählte Modus-Kosten, „{W}“ + „{1}“ + „{3}{W}{W}“ → „{4}{W}{W}{W}“): Zahlen werden addiert,
+/// alle anderen Symbole (Farben, X, Hybrid, phyrexianisch …) bleiben erhalten, in WUBRG-Reihenfolge.
+pub fn add_costs(parts: &[&str]) -> String {
+    let mut generic = 0u32;
+    let mut has_generic = false;
+    let mut symbols: Vec<String> = Vec::new();
+    for part in parts {
+        for token in part.split(|c: char| c.is_whitespace() || c == '{' || c == '}').filter(|t| !t.is_empty()) {
+            if let Ok(n) = token.parse::<u32>() {
+                generic += n;
+                has_generic = true;
+            } else {
+                symbols.push(token.to_string());
+            }
+        }
+    }
+    let rank = |t: &str| "WUBRG".find(t).unwrap_or(5);
+    symbols.sort_by_key(|t| if t == "X" { 0 } else { 1 + rank(t) });
+    let mut out = String::new();
+    if symbols.first().map(String::as_str) == Some("X") {
+        // X zuerst wie auf Karten („{X}{2}{R}“)
+        while symbols.first().map(String::as_str) == Some("X") {
+            out.push_str("{X}");
+            symbols.remove(0);
+        }
+    }
+    if has_generic && (generic > 0 || symbols.is_empty()) {
+        out.push_str(&format!("{{{generic}}}"));
+    }
+    for t in symbols {
+        out.push_str(&format!("{{{t}}}"));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adds_costs_for_display() {
+        assert_eq!(add_costs(&["{W}", "{1}", "{3}{W}{W}"]), "{4}{W}{W}{W}");
+        assert_eq!(add_costs(&["{U}"]), "{U}");
+        assert_eq!(add_costs(&["{1}{U}", "{2}"]), "{3}{U}");
+        assert_eq!(add_costs(&["{X}{R}", "{1}"]), "{X}{1}{R}");
+        assert_eq!(add_costs(&["{0}"]), "{0}");
+        assert_eq!(add_costs(&[]), "");
+    }
 
     #[test]
     fn parses_costs() {

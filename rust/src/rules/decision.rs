@@ -107,7 +107,19 @@ pub struct OptionText {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decision {
     /// Modi eines modalen Zaubers (Index, Text).
-    ChooseModes { player: PlayerId, modes: Vec<(usize, String)>, min: u32, max: u32, can_repeat: bool },
+    /// Erweiterung für Modi mit eigenen Zusatzkosten (Spree CR 702.172, Tiered): `costs` je
+    /// Modus (leer = keine; die ganze Liste leer = keine Modus-Kosten), `base_cost` = Kosten des
+    /// Zaubers ohne Modi, `keyword` = Schlüsselwort für den Titel („Spree“, „Tiered“).
+    ChooseModes {
+        player: PlayerId,
+        modes: Vec<(usize, String)>,
+        min: u32,
+        max: u32,
+        can_repeat: bool,
+        costs: Vec<String>,
+        base_cost: String,
+        keyword: String,
+    },
     /// London-Mulligan: behalten oder neu ziehen.
     /// `first_player` (**Erweiterung**): wer die Partie beginnt (CR 103.1), nur zur Anzeige.
     Mulligan { player: PlayerId, mulligans_taken: u32, first_player: Option<PlayerId> },
@@ -466,6 +478,9 @@ impl Decision {
                 min: o.u32("min"),
                 max: o.u32("max"),
                 can_repeat: o.bool("can_repeat"),
+                costs: o.strings("costs"),
+                base_cost: o.str("base_cost"),
+                keyword: o.str("keyword"),
             },
             "Mulligan" => Decision::Mulligan {
                 player,
