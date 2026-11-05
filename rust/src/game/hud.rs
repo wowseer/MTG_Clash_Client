@@ -21,7 +21,7 @@
 use godot::classes::control::{GrowDirection, MouseFilter};
 use godot::classes::text_server::AutowrapMode;
 use godot::classes::{
-    Button, CanvasLayer, Control, ICanvasLayer, InputEvent, InputEventKey, Label, PanelContainer,
+    Button, CanvasLayer, Control, ICanvasLayer, InputEvent, InputEventKey, Label, PanelContainer, RichTextLabel,
     StyleBoxFlat, VBoxContainer,
 };
 use godot::builtin::Side;
@@ -108,7 +108,9 @@ pub struct TurnHud {
     button: Option<Gd<Button3D>>,
     end_turn_button: Option<Gd<Button3D>>,
     /// Hinweis der Engine über dem Phasen-Zeitstrahl (z. B. ungültiger Angriff).
-    button_hint: Option<Gd<Label>>,
+    button_hint: Option<Gd<RichTextLabel>>,
+    /// Zuletzt gesetzter Hinweistext (nur bei Änderung neu aufbauen).
+    shown_hint: String,
     /// Elternknoten für die Vorschau (Vollbild-Root des HUD).
     root: Option<Gd<Control>>,
     /// Auswahlfenster in der Bildschirmmitte (alle allgemeinen Forge-Entscheidungen).
@@ -141,6 +143,7 @@ impl ICanvasLayer for TurnHud {
             button: None,
             end_turn_button: None,
             button_hint: None,
+            shown_hint: String::new(),
             root: None,
             choice: None,
             base,
@@ -268,10 +271,17 @@ impl TurnHud {
         let mut timeline = PhaseTimeline::new_alloc();
         place(&mut timeline, (1.0, 1.0), (-BUTTON_MARGIN, main_top - TIMELINE_GAP), GrowDirection::BEGIN, GrowDirection::BEGIN);
         root.add_child(&timeline);
-        let mut button_hint = label(15, GOLD);
+        // Hinweis mit eingebetteten Manasymbolen („… {2}{R}{R}“): RichTextLabel
+        let mut button_hint = RichTextLabel::new_alloc();
+        button_hint.set_fit_content(true);
+        button_hint.set_scroll_active(false);
         button_hint.set_horizontal_alignment(godot::global::HorizontalAlignment::RIGHT);
         button_hint.set_autowrap_mode(AutowrapMode::WORD_SMART);
         button_hint.set_custom_minimum_size(Vector2::new(360.0, 0.0));
+        button_hint.set_mouse_filter(MouseFilter::IGNORE);
+        button_hint.add_theme_font_size_override("normal_font_size", 15);
+        button_hint.add_theme_color_override("default_color", GOLD);
+        button_hint.add_theme_color_override("font_outline_color", Color::from_rgba(0.0, 0.0, 0.0, 0.8));
         button_hint.add_theme_constant_override("outline_size", 5);
         place(&mut button_hint, (1.0, 1.0), (-BUTTON_MARGIN, main_top - TIMELINE_GAP - 66.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
         root.add_child(&button_hint);
@@ -502,8 +512,11 @@ impl TurnHud {
         if let Some(b) = self.end_turn_button.as_mut() {
             b.bind_mut().set_enabled(view.end_turn_enabled);
         }
-        if let Some(l) = self.button_hint.as_mut() {
-            l.set_text(&view.button_hint);
+        if self.shown_hint != view.button_hint {
+            self.shown_hint = view.button_hint.clone();
+            if let Some(l) = self.button_hint.as_mut() {
+                super::mana_symbols::fill_rich(l, &view.button_hint, 17);
+            }
         }
 
         // Auswahlfenster (Mulligan, Optionen, Ja/Nein, Zahlen, Ziele …); die aktuelle Auswahl

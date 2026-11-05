@@ -235,8 +235,23 @@ impl Showcase {
     pub fn set_texts(&mut self, title: GString, subtitle: GString, note: GString) {
         for (label, text) in [(&mut self.title, title), (&mut self.subtitle, subtitle), (&mut self.note, note)] {
             if let Some(l) = label.as_mut() {
-                l.set_text(&text);
-                l.set_visible(!text.is_empty());
+                // alte Symbol-Beschriftung dieser Zeile entfernen
+                if let Some(mut old) = l.get_node_or_null("RichLabel") {
+                    l.remove_child(&old);
+                    old.queue_free();
+                }
+                let text = text.to_string();
+                if cost_symbols::has_cost(&text) {
+                    // Kosten im Text („Zahlen: {2}?“) als Manasymbole: Zeile mit Symbolen statt Schrift
+                    l.set_text("");
+                    let mut rich = cost_symbols::rich_label(&text, l);
+                    rich.set_name("RichLabel");
+                    l.add_child(&rich);
+                    l.set_visible(true);
+                } else {
+                    l.set_text(&text);
+                    l.set_visible(!text.is_empty());
+                }
             }
         }
     }

@@ -11,7 +11,7 @@ pub fn with_symbols(text: &str) -> String {
 }
 
 /// Leerzeilen und Leerzeichen am Zeilenende entfernen (Absätze = einfacher Zeilenumbruch).
-fn tidy(text: &str) -> String {
+pub fn tidy(text: &str) -> String {
     text.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join("\n")
 }
 

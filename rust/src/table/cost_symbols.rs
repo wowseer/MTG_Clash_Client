@@ -17,7 +17,7 @@ use godot::classes::label_3d::DrawFlags as LabelFlags;
 use godot::classes::sprite_base_3d::DrawFlags as SpriteFlags;
 use godot::classes::sub_viewport::UpdateMode;
 use godot::classes::{
-    Control, Engine, IControl, Label3D, SceneTree, Sprite3D, SubViewport, Texture2D, ThemeDb,
+    Control, Engine, IControl, Label3D, RichTextLabel, SceneTree, Sprite3D, SubViewport, Texture2D, ThemeDb,
 };
 use godot::global::HorizontalAlignment;
 use godot::prelude::*;
@@ -143,6 +143,43 @@ pub fn symbol_texture(token: &str) -> Option<Gd<Texture2D>> {
     root.call_deferred("add_child", &[vp.to_variant()]);
     let tex = vp.get_texture()?.upcast::<Texture2D>();
     CACHE.with(|c| c.borrow_mut().insert(token.to_string(), vp));
+    Some(tex)
+}
+
+thread_local! {
+    /// Fließtext mit Symbolen: je (Text, Größe, Farbe) seine `SubViewport`.
+    static RICH: RefCell<HashMap<String, Gd<SubViewport>>> = RefCell::new(HashMap::new());
+}
+
+/// Fließtext mit eingebetteten Manasymbolen („{T}: Add {R}.“) als Textur `size` Pixel groß
+/// (umbrochen, mittig), Schrift `font_px` in `color` – z. B. Regeltext auf Karten, den ein
+/// `Label3D` nicht mit Bildern setzen kann. Einmal gerendert und zwischengespeichert.
+pub fn rich_text_texture(text: &str, font_px: i32, size: Vector2i, color: Color) -> Option<Gd<Texture2D>> {
+    let key = format!("{text}|{font_px}|{}x{}|{}", size.x, size.y, color.to_html());
+    if let Some(vp) = RICH.with(|c| c.borrow().get(&key).cloned()).filter(|v| v.is_instance_valid()) {
+        return vp.get_texture().map(|t| t.upcast::<Texture2D>());
+    }
+    let tree = Engine::singleton().get_main_loop()?.try_cast::<SceneTree>().ok()?;
+    let mut root = tree.get_root();
+    let mut vp = SubViewport::new_alloc();
+    vp.set_size(size);
+    vp.set_transparent_background(true);
+    vp.set_disable_3d(true);
+    vp.set_update_mode(UpdateMode::ONCE);
+    let mut label = RichTextLabel::new_alloc();
+    label.set_size(Vector2::new(size.x as f32, size.y as f32));
+    label.set_scroll_active(false);
+    label.set_fit_content(false);
+    label.set_horizontal_alignment(HorizontalAlignment::CENTER);
+    label.set_vertical_alignment(godot::global::VerticalAlignment::CENTER);
+    label.set_mouse_filter(MouseFilter::IGNORE);
+    label.add_theme_font_size_override("normal_font_size", font_px);
+    label.add_theme_color_override("default_color", color);
+    crate::game::mana_symbols::fill_rich(&mut label, text, (font_px as f32 * 0.95) as i32);
+    vp.add_child(&label);
+    root.call_deferred("add_child", &[vp.to_variant()]);
+    let tex = vp.get_texture()?.upcast::<Texture2D>();
+    RICH.with(|c| c.borrow_mut().insert(key, vp));
     Some(tex)
 }
 
@@ -277,6 +314,10 @@ pub fn rich_label(text: &str, style: &Gd<Label3D>) -> Gd<Node3D> {
                 let mut l = style.duplicate_node().try_cast::<Label3D>().unwrap_or_else(|_| Label3D::new_alloc());
                 l.set_name("Text");
                 l.set_text(&t);
+                // Farbe ohne die gerade laufende Ein-/Ausblende-Transparenz der Vorlage übernehmen
+                let c = l.get_modulate();
+                l.set_modulate(Color::from_rgba(c.r, c.g, c.b, 1.0));
+                l.set_visible(true);
                 l.set_draw_flag(LabelFlags::SHADED, false);
                 l.set_position(Vector3::new(x + w * 0.5, 0.0, 0.0));
                 node.add_child(&l);

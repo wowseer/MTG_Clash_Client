@@ -232,13 +232,16 @@ fn entry(title: &str, text: &str, ability: bool) -> Gd<Control> {
     name.add_theme_color_override("font_color", Color::from_rgb(0.97, 0.97, 0.97));
     col.add_child(&name);
     if !text.is_empty() {
-        let mut desc = Label::new_alloc();
-        desc.set_text(text);
+        // Erklärung mit eingebetteten Manasymbolen („{T}: Add {G}.“)
+        let mut desc = godot::classes::RichTextLabel::new_alloc();
+        desc.set_fit_content(true);
+        desc.set_scroll_active(false);
         desc.set_autowrap_mode(AutowrapMode::WORD_SMART);
-        desc.add_theme_font_override("font", &font(false, true));
-        desc.add_theme_font_size_override("font_size", TEXT_PX);
-        desc.add_theme_color_override("font_color", Color::from_rgb(0.86, 0.86, 0.86));
+        desc.add_theme_font_override("normal_font", &font(false, true));
+        desc.add_theme_font_size_override("normal_font_size", TEXT_PX);
+        desc.add_theme_color_override("default_color", Color::from_rgb(0.86, 0.86, 0.86));
         desc.set_custom_minimum_size(Vector2::new(PANEL_PX as f32 - 36.0 - ICON_PX - 14.0, 0.0));
+        crate::game::mana_symbols::fill_rich(&mut desc, text, TEXT_PX);
         col.add_child(&desc);
     }
     row.add_child(&col);

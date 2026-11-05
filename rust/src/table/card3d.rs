@@ -241,6 +241,8 @@ pub struct Card3D {
     /// Marken als Münzen rechts oben am Rand (`set_counters`): Markenart, Anzahl, Münze,
     /// Zeit seit dem Zuwachs (für Aufspringen und blaues Leuchten; ≥ COIN_POP_TIME = ruhig).
     coins: Vec<(String, u32, Gd<godot::classes::Sprite3D>, f32)>,
+    /// Regeltext mit eingebetteten Manasymbolen (`set_rich_text`), statt der Beschriftung.
+    rich_text: Option<Gd<godot::classes::Sprite3D>>,
     /// Feld über dem gedruckten Textfeld für eigenen Text einer Bühne (`set_text_panel`).
     text_panel: Option<Gd<MeshInstance3D>>,
     /// Kostensymbole über der Oberkante (nur in Zonen mit `show_costs`): Kosten-Text und Reihe.
@@ -313,6 +315,7 @@ impl IArea3D for Card3D {
             zone: None,
             cost_row: None,
             text_panel: None,
+            rich_text: None,
             coins: Vec::new(),
             base,
         }
@@ -1020,7 +1023,48 @@ impl Card3D {
         l.colors[4] = t.stats_color;
         let tint = if self.tapped || self.attacked { TAPPED_TINT } else { Color::WHITE };
         l.stats.set_modulate(t.stats_color * tint);
+        // Regeltext mit Manasymbolen: als Bild mit den Symbolen aus dem Bogen statt als Schrift
+        let shown = l.text.is_visible();
+        let (pos, font) = (l.text.get_position(), l.text.get_font_size());
+        let color = l.colors[3] * tint;
+        let height_px = if custom { CARD_HEIGHT * TEXT_PANEL_HEIGHT } else { TEXT_BOX_HEIGHT * CARD_WIDTH / 256.0 } / LABEL_PIXEL;
+        let raw = card_text::tidy(&self.def.text);
+        let rich = shown && crate::game::mana_symbols::has_symbols(&raw);
+        if rich {
+            l.text.set_visible(false);
+        }
+        self.set_rich_text(rich.then_some((raw, pos, font, height_px, color)));
         self.set_text_panel(custom);
+    }
+
+    /// Regeltext mit eingebetteten Manasymbolen (`cost_symbols::rich_text_texture`) an der Stelle
+    /// der Beschriftung zeigen bzw. ausblenden (`None`).
+    fn set_rich_text(&mut self, text: Option<(String, Vector3, i32, f32, Color)>) {
+        let Some((raw, pos, font, height_px, color)) = text else {
+            if let Some(s) = self.rich_text.as_mut() {
+                s.set_visible(false);
+            }
+            return;
+        };
+        let width_px = (TEXT_WRAP_WIDTH / LABEL_PIXEL) as i32;
+        let size = Vector2i::new(width_px, height_px.round() as i32);
+        let Some(tex) = cost_symbols::rich_text_texture(&raw, font, size, Color::from_rgb(color.r, color.g, color.b)) else { return };
+        if self.rich_text.is_none() {
+            let Some(visual) = self.visual.as_mut() else { return };
+            let mut sprite = godot::classes::Sprite3D::new_alloc();
+            sprite.set_name("RichText");
+            sprite.set_pixel_size(LABEL_PIXEL);
+            sprite.set_draw_flag(godot::classes::sprite_base_3d::DrawFlags::DOUBLE_SIDED, false);
+            sprite.set_draw_flag(godot::classes::sprite_base_3d::DrawFlags::SHADED, false);
+            sprite.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
+            visual.add_child(&sprite);
+            self.rich_text = Some(sprite);
+        }
+        if let Some(s) = self.rich_text.as_mut() {
+            s.set_texture(&tex);
+            s.set_position(pos);
+            s.set_visible(true);
+        }
     }
 
     /// Feld über dem gedruckten Textfeld eines echten Kartenbilds (für eigenen Text einer Bühne,
@@ -1347,6 +1391,8 @@ impl CardLabels {
 /// Wertefeld frei).
 const TEXT_BOX_CENTER: f32 = 276.0;
 const TEXT_BOX_HEIGHT: f32 = 72.0;
+/// Umbruchbreite des Regeltexts (m), wie die Beschriftung in `build_labels`.
+const TEXT_WRAP_WIDTH: f32 = 0.52;
 /// Textfeld eines echten Kartenbilds (Scryfall, moderner Rahmen): Mitte (Anteil der Höhe von
 /// oben), Breite und Höhe (Anteile der Karte) des Feldes für eigenen Text.
 const TEXT_PANEL_CENTER: f32 = 0.765;

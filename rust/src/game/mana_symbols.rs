@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use godot::classes::image::Format;
-use godot::classes::{Image, ImageTexture, Texture2D};
+use godot::classes::{Image, ImageTexture, RichTextLabel, Texture2D};
 use godot::prelude::*;
 
 /// Der Symbolbogen (in die Bibliothek eingebaut, keine Import-Einstellung nötig).
@@ -132,6 +132,43 @@ pub fn uv_rect(token: &str) -> Option<Vector4> {
     let (w, h) = (img.get_width() as f32, img.get_height() as f32);
     let px = SIZE * SCALE;
     Some(Vector4::new(c as f32 * STEP * SCALE / w, r as f32 * STEP * SCALE / h, px / w, px / h))
+}
+
+/// Enthält der Text Symbole in geschweiften Klammern, die der Bogen kennt („{2}{R}“, „{T}“)?
+pub fn has_symbols(text: &str) -> bool {
+    let mut rest = text;
+    while let Some(i) = rest.find('{') {
+        let Some(j) = rest[i..].find('}') else { return false };
+        if cell(&rest[i + 1..i + j]).is_some() || &rest[i + 1..i + j] == "C" {
+            return true;
+        }
+        rest = &rest[i + j + 1..];
+    }
+    false
+}
+
+/// `RichTextLabel` mit `text` füllen: Symbole in geschweiften Klammern („{2}{R}“, „{T}: Add {G}.“)
+/// als eingebettete Bilder aus dem Bogen in Schrifthöhe `px`, der Rest als Text. Farblos „{C}“ als
+/// gezeichnete Raute (`cost_symbols`), Unbekanntes bleibt als Text stehen.
+pub fn fill_rich(label: &mut Gd<RichTextLabel>, text: &str, px: i32) {
+    label.clear();
+    let mut rest = text;
+    while let Some(i) = rest.find('{') {
+        label.add_text(&rest[..i]);
+        let Some(j) = rest[i..].find('}') else {
+            label.add_text(&rest[i..]);
+            return;
+        };
+        let token = &rest[i + 1..i + j];
+        match crate::table::cost_symbols::symbol_texture(token) {
+            Some(tex) => {
+                label.add_image_ex(&tex).width(px as f32).height(px as f32).done();
+            }
+            None => label.add_text(&rest[i..i + j + 1]),
+        }
+        rest = &rest[i + j + 1..];
+    }
+    label.add_text(rest);
 }
 
 /// Zwischenspeicher leeren (beim Abbau des Tisches, damit beim Beenden keine Texturen übrig bleiben).
