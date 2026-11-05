@@ -34,7 +34,12 @@ pub const TAP_ANGLE_DEGREES: f32 = 15.0;
 /// Reihe rechts neben dem Medaillon (lokal x) und kleinste Verkleinerung (Anteil von
 /// [member card_scale]), bevor Karten sich überlappen.
 const AUTO_GAP: f32 = 0.12;
-const BACK_ROW_START: f32 = 1.3;
+const BACK_ROW_START: f32 = 2.4;
+/// Abstand zwischen Kreaturen-Reihe und hinterer Reihe (Artefakte, Verzauberungen …).
+const BACK_ROW_GAP: f32 = 0.25;
+/// Lage der hinteren Reihe, wenn Platz ist: Anteil der halben Feldtiefe vor der Feldmitte (zur
+/// Mittellinie hin) – etwa die Mitte der eigenen Seite.
+const BACK_ROW_MID: f32 = 0.15;
 const MIN_SHRINK: f32 = 0.45;
 /// Ressourcen-Reihe: gleiche Länder überlappen um diesen Anteil der Kartenbreite versetzt;
 /// Abstand zwischen den Gruppen.
@@ -538,8 +543,10 @@ impl Zone {
     /// Tischmitte, +x = rechts (aus Sicht der Seite):
     /// - **vordere Reihe(n)**: Kreaturen mittig an der Mittellinie; passen sie nicht in eine
     ///   Reihe, werden sie kleiner, dann zweireihig;
-    /// - **hintere Reihe rechts** (neben dem Medaillon): Planeswalker, Schlachten, Artefakte,
-    ///   Verzauberungen … – bei Platzmangel kleiner, zuletzt überlappend.
+    /// - **hintere Reihe rechts**: Planeswalker, Schlachten, Artefakte, Ausrüstung,
+    ///   Verzauberungen … – in der Mitte der eigenen Seite direkt hinter den Kreaturen, rechts
+    ///   von der Mitte (bei zwei Kreaturen-Reihen ganz hinten); bei Platzmangel kleiner, zuletzt
+    ///   überlappend.
     ///
     /// Länder liegen in der eigenen Ressourcen-Zone (hinten links).
     fn auto_slots(&self, base: &[usize]) -> Vec<Transform3D> {
@@ -565,7 +572,18 @@ impl Zone {
         let back_avail = half_x - BACK_ROW_START - 0.1;
         let s_back = self.fit_scale(n_back, back_avail);
         let step_b = (CARD_WIDTH * s_back * (1.0 + AUTO_GAP)).min(if n_back > 1 { (back_avail - CARD_WIDTH * s_back) / (n_back - 1) as f32 } else { f32::MAX });
-        let back_z = half_z - len * s_back * 0.5 - 0.05;
+        // in der Mitte der eigenen Seite direkt hinter der Kreaturen-Reihe; brauchen die
+        // Kreaturen zwei Reihen, ganz nach hinten (sonst überlappten sie sich)
+        // Reicht die Kreaturen-Reihe nicht bis zur hinteren Reihe rechts, liegt diese in der
+        // Mitte der eigenen Seite; sonst direkt hinter den Kreaturen, bei zwei Reihen ganz hinten
+        let front_half = per_row as f32 * step_f * 0.5;
+        let back_z = if rows == 1 && (n_front == 0 || front_half + 0.1 < BACK_ROW_START) {
+            -half_z * BACK_ROW_MID
+        } else if rows == 1 {
+            (top + len * s_front * 0.5 + BACK_ROW_GAP + len * s_back * 0.5).min(half_z - len * s_back * 0.5 - 0.05)
+        } else {
+            half_z - len * s_back * 0.5 - 0.05
+        };
         let back_x0 = BACK_ROW_START + CARD_WIDTH * s_back * 0.5;
 
         let (mut k_front, mut k_back) = (0usize, 0usize);

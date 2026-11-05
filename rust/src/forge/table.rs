@@ -2697,20 +2697,25 @@ impl ForgeTable {
             tr!("Klicke eine Option an.", "Click an option to select it.").into(),
             GString::new(),
         );
-        let def = CardDef::from_state(&data);
         let mut cards = Vec::new();
         for (action, label) in options {
-            let mut copy = Card3D::new_alloc();
-            {
-                let mut c = copy.bind_mut();
-                c.set_face_texture(Some(placeholder::card_face(&def)));
-                c.apply_def(&def);
-                c.set_ready_color(Some(PLAYABLE_GLOW));
-            }
-            cards.push((copy.clone(), action_caption(action, &label)));
+            // Wirken / Land spielen: die ganze Karte mit Beschriftung; Fähigkeit: Kopie, auf der
+            // nur ihr Text steht (wie im Video „Choose One + Marke“), ohne Beschriftung
+            let whole = matches!(action, Action::Cast(_) | Action::PlayLand(_)) || label.is_empty();
+            let mut copy = Self::stage_card(&data, (!whole).then_some(label.as_str()));
+            copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+            let caption = if whole { action_caption(action, &label) } else { String::new() };
+            cards.push((copy.clone(), caption));
             self.action_options.push((copy, action));
         }
+        let few = cards.len() <= 3;
         showcase.bind_mut().show_options(cards);
+        if few {
+            // wenige Möglichkeiten: weiter auseinander, fast flach (wie bei Ersatzeffekten)
+            showcase.bind_mut().enable_scroll_with(CARD_OPTION_STEP, CARD_OPTION_RADIUS);
+        } else {
+            showcase.bind_mut().enable_scroll();
+        }
         let mut cancel = Button3D::create(ButtonStyle::Orange, tr!("Abbrechen", "Cancel"), Showcase::button_width());
         let cb = Callable::from_object_method(&self.to_gd(), "on_action_choice_cancel");
         cancel.connect("pressed", &cb);
