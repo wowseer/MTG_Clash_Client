@@ -1600,9 +1600,13 @@ public class RemotePlayerController extends PlayerControllerAi {
         }
         // Knopftext kurz wie „Kicker – {R}“: reine Manakosten dahinter („X – {2}“), steht die
         // Angabe schon im Titel („Offspring {2}“) oder sind es andere Kosten (Opfern, Tappen –
-        // erklärt der Erinnerungstext auf der Karte), nur der Titel („Casualty 1“)
+        // erklärt der Erinnerungstext auf der Karte), nur das Schlüsselwort („Casualty“)
         String costText = cost != null && cost.isOnlyManaCost() ? cost.toSimpleString() : "";
         String text = costText.isEmpty() || name.endsWith(costText) ? name : name + " – " + costText;
+        if (costText.isEmpty()) {
+            // andere Kosten: nur das Schlüsselwort ohne Zahl („Casualty“ statt „Casualty 1“)
+            text = text.replaceFirst("\\s+(\\d+|X)$", "");
+        }
         List<Integer> chosen = Decisions.options(g(), seat, prompt, sa, null,
                 List.of(new Decisions.Opt(text, null)), 0, 1, false, "OptionalCost");
         if (chosen == null) {
