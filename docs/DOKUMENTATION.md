@@ -74,7 +74,7 @@ nach innen: unten **Friedhof, Deck, Exil** links und die **Hand** rechts daneben
 darüber die **Kreaturen** über die ganze Breite. Der Gegner ist nur in der Tiefe gespiegelt (seine
 Stapel oben links, Artefakte von uns aus rechts; `Zone.mirror_x`). Der **Stack** steht senkrecht
 am rechten Rand, die Kommandozonen rechts außen. Passen Kreaturen und hintere Reihe nicht in die
-Tiefe des Spielfelds, werden alle Kacheln gemeinsam kleiner.
+Tiefe des Spielfelds bzw. die Kreaturen nicht in die Breite, werden alle Kacheln gemeinsam kleiner (die Reihe dahinter zählt dabei nur, wenn die Kreaturen bis über sie reichen); mit wenigen Kreaturen sind die Kacheln groß (`card_scale` 2,7).
 
 **Anordnung auf dem Spielfeld** (`Zone.auto_arrange`, beide Spielfelder): Karten werden automatisch
 nach Art platziert, jeweils aus Sicht ihrer Seite („oben“ = zur Tischmitte):

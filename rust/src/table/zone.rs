@@ -35,7 +35,7 @@ pub const TAP_ANGLE_DEGREES: f32 = 15.0;
 /// Medaillon (lokal x) und kleinste Verkleinerung (Anteil von [member card_scale]), bevor Karten
 /// sich überlappen.
 const AUTO_GAP: f32 = 0.12;
-const BACK_ROW_START: f32 = 2.0;
+const BACK_ROW_START: f32 = 3.2;
 /// Abstand zwischen Kreaturen-Reihe und hinterer Reihe.
 const BACK_ROW_GAP: f32 = 0.12;
 const MIN_SHRINK: f32 = 0.45;
@@ -711,7 +711,10 @@ impl Zone {
         let tallest = groups.iter().filter(|g| g.1 == 0).map(|g| g.2.min(STACK_MAX)).max().unwrap_or(0);
         let fits = |s: f32| {
             let front_h = if n_front == 0 { 0.0 } else { len * s * (1.0 + (tallest as f32 - 1.0) * CREATURE_STACK_STEP) };
-            let back_h = if n_back == 0 { 0.0 } else { len * s + BACK_ROW_GAP };
+            // die hintere Reihe zählt in der Höhe nur, wenn die Kreaturen bis über sie reichen
+            let w = CARD_WIDTH * s;
+            let front_right = (-units_front * w * 0.5).max(-wall + units_left * w) + units_front * w;
+            let back_h = if n_back == 0 || front_right <= back_start(s) { 0.0 } else { len * s + BACK_ROW_GAP };
             // Planeswalker links in der Kreaturen-Reihe: beide zusammen in die Breite
             (units_front + units_left) * CARD_WIDTH * s <= 2.0 * wall
                 && (n_back == 0 || back_start(s) + units_back * CARD_WIDTH * s <= wall)
