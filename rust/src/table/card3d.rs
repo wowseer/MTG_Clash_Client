@@ -718,7 +718,8 @@ impl Card3D {
             "{}|{}|{}|{}|{:?}|{}|{}|{}|{}",
             self.card_name,
             self.tapped,
-            self.def.attacking,
+            // angreifend: erklärt (Forge) oder in der Angriffsauswahl vorgemerkt
+            self.advanced || self.def.attacking,
             self.def.sick,
             self.def.stats,
             self.def.damage,

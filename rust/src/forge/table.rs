@@ -3789,11 +3789,21 @@ impl ForgeTable {
                 }
             }
         }
+        // Angreifer bilden einen eigenen Stapel: Zone neu anordnen, wenn sich etwas ändert
+        let mut relayout: Vec<Gd<Zone>> = Vec::new();
         for (id, card) in self.cards.iter_mut() {
             let on = attacking.contains(id);
             if card.bind().is_attacking() != on {
                 card.bind_mut().set_attacking(on);
+                if let Some(z) = card.bind().get_zone() {
+                    if !relayout.contains(&z) {
+                        relayout.push(z);
+                    }
+                }
             }
+        }
+        for mut z in relayout {
+            z.bind_mut().layout();
         }
     }
 
