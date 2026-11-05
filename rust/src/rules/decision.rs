@@ -101,6 +101,8 @@ pub struct OptionText {
     pub color: Option<Color>,
     /// Steht die Option für eine Farbe/Farblos? (`"C"` = farblos)
     pub colorless: bool,
+    /// Erweiterung: Karte, zu der die Option gehört (z. B. Quelle eines Ersatzeffekts).
+    pub card: Option<CardId>,
 }
 
 /// Was die Engine vom Spieler wissen will.
@@ -164,7 +166,8 @@ pub enum Decision {
     Confirm { player: PlayerId, prompt: String },
     /// **Erweiterung:** eine Option aus einer Liste (Startspieler, Abstimmung, Marken-Typ,
     /// Ersatzeffekt, Ja/Nein mit eigenen Beschriftungen …); Antwort `Choice::Number(index)`.
-    ChooseOption { player: PlayerId, prompt: String, options: Vec<OptionText> },
+    /// `purpose` (Erweiterung): wofür die Wahl ist, z. B. `"ReplacementEffect"` (CR 616.1).
+    ChooseOption { player: PlayerId, prompt: String, options: Vec<OptionText>, purpose: String },
     /// **Erweiterung:** `min`–`max` Optionen (optionale Kosten, mehrere Farben, Würfel …);
     /// Antwort `Choice::Modes(indizes)`.
     /// `purpose` (Erweiterung): wofür die Wahl ist, z. B. `"OptionalCost"` (Kicker u. Ä.).
@@ -449,9 +452,10 @@ fn options_from(o: &Obj) -> Vec<OptionText> {
             Some(d) => {
                 let oo = Obj(&d);
                 let c = oo.str("color");
-                OptionText { text: oo.str("text"), color: Color::from_letter(&c), colorless: c == "C" }
+                let card = u32::try_from(oo.int("card")).ok().filter(|_| d.contains_key("card"));
+                OptionText { text: oo.str("text"), color: Color::from_letter(&c), colorless: c == "C", card }
             }
-            None => OptionText { text: v.to_string(), color: None, colorless: false },
+            None => OptionText { text: v.to_string(), color: None, colorless: false, card: None },
         })
         .collect()
 }
@@ -544,7 +548,7 @@ impl Decision {
             "PayUnlessCost" => Decision::PayUnlessCost { player, cost: o.str("cost") },
             "OptionalTrigger" => Decision::OptionalTrigger { player, description: o.str("description") },
             "Confirm" => Decision::Confirm { player, prompt: o.str("prompt") },
-            "ChooseOption" => Decision::ChooseOption { player, prompt: o.str("prompt"), options: options_from(&o) },
+            "ChooseOption" => Decision::ChooseOption { player, prompt: o.str("prompt"), options: options_from(&o), purpose: o.str("purpose") },
             "ChooseOptions" => Decision::ChooseOptions {
                 player,
                 prompt: o.str("prompt"),

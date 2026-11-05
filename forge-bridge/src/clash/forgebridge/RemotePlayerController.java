@@ -1670,8 +1670,23 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     @Override
     public ReplacementEffect chooseSingleReplacementEffect(List<ReplacementEffect> possible) {
-        ReplacementEffect r = pick(possible, Decisions.option(g(), seat, "Welcher Ersatzeffekt gilt zuerst?",
-                null, null, Decisions.opts(possible), false));
+        // CR 616.1: der betroffene Spieler wählt, welcher Ersatzeffekt zuerst gilt; je Effekt
+        // seine Quellkarte, damit die UI eine Kopie mit dem Effekttext zeigt
+        List<Decisions.Opt> opts = new ArrayList<>();
+        List<Card> hosts = new ArrayList<>();
+        for (ReplacementEffect re : possible) {
+            Card host = re.getHostCard();
+            String text = re.getDescription();
+            if (text == null || text.isBlank()) {
+                text = String.valueOf(re);
+            }
+            opts.add(new Decisions.Opt(Decisions.withName(text, host), null, host == null ? -1 : host.getId()));
+            if (host != null && !hosts.contains(host)) {
+                hosts.add(host);
+            }
+        }
+        ReplacementEffect r = pick(possible, Decisions.cardOption(g(), seat, "Welcher Ersatzeffekt gilt zuerst?",
+                opts, hosts, "ReplacementEffect"));
         return r != null ? r : super.chooseSingleReplacementEffect(possible);
     }
 

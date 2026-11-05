@@ -34,7 +34,15 @@ final class Decisions {
     private Decisions() {}
 
     /** Eine Option der Erweiterungs-Auswahlen: Text und optional Farbe (W U B R G, C = farblos). */
-    record Opt(String text, String color) {
+    /**
+     * Option einer Auswahl: Text, Farbe (W U B R G C oder {@code null}) und – Erweiterung – die
+     * Karte, zu der sie gehört ({@code card}, −1 = keine; z. B. Quelle eines Ersatzeffekts).
+     */
+    record Opt(String text, String color, int card) {
+        Opt(String text, String color) {
+            this(text, color, -1);
+        }
+
         static Opt of(Object o) {
             return new Opt(String.valueOf(o), null);
         }
@@ -147,6 +155,9 @@ final class Decisions {
             j.addProperty("text", withName(o.text(), src));
             if (o.color() != null) {
                 j.addProperty("color", o.color());
+            }
+            if (o.card() >= 0) {
+                j.addProperty("card", o.card());
             }
             arr.add(j);
         }
@@ -720,6 +731,28 @@ final class Decisions {
         d.addProperty("prompt", withName(prompt, source(sa, card)));
         d.add("options", optionsJson(options, source(sa, card)));
         Integer i = number(ask(game, seat, d, prompt, sa, card, cancelable, null));
+        return i != null && i >= 0 && i < options.size() ? i : null;
+    }
+
+    /**
+     * Wie {@link #option}, wobei jede Option zu einer Karte gehört ({@link Opt#card}): deren Daten
+     * gehen in der Hülle {@code cards} mit, {@code purpose} sagt der UI, wofür die Wahl ist
+     * (z. B. {@code "ReplacementEffect"}), damit sie eine Kartenkopie je Option zeigt.
+     */
+    static Integer cardOption(Game game, int seat, String prompt, List<Opt> options, List<Card> cards,
+            String purpose) {
+        if (options.isEmpty()) {
+            return null;
+        }
+        if (options.size() == 1) {
+            return 0;
+        }
+        JsonObject d = decision("ChooseOption", seat);
+        d.addProperty("prompt", prompt);
+        d.add("options", optionsJson(options, null));
+        d.addProperty("purpose", purpose);
+        JsonElement a = askRaw(game, seat, d, prompt, null, null, false, null, cards);
+        Integer i = a != null && a.isJsonObject() ? number(a.getAsJsonObject()) : null;
         return i != null && i >= 0 && i < options.size() ? i : null;
     }
 

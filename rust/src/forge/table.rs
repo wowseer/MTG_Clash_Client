@@ -802,6 +802,14 @@ impl ForgeTable {
     /// Modus-Bühne: „Fertig“ (mehrere Modi) – gewählte Modi an Forge.
     #[func]
     fn on_modes_done(&mut self) {
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseOption { .. })) {
+            // Karten-Optionen: die gewählte Möglichkeit (Index) an Forge
+            if let Some(i) = self.mode_pick.first().copied() {
+                self.mode_pick.clear();
+                self.answer(Choice::Number(i as u32));
+            }
+            return;
+        }
         let Some(Decision::ChooseModes { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
         let n = self.mode_pick.len() as u32;
         if n >= min && n <= max {
@@ -1124,6 +1132,7 @@ impl ForgeTable {
                 StageKind::OptionalCost => self.show_optional_cost(&req),
                 StageKind::Scry => self.show_scry(&req),
                 StageKind::Order => self.show_order(&req),
+                StageKind::CardOptions => self.show_card_options(&req),
             }
         }
         if let Some(req) = library_pick {
@@ -1550,6 +1559,9 @@ impl ForgeTable {
             | Decision::OptionalTrigger { .. }
             | Decision::PayUnlessCost { .. }
             | Decision::PayLifeForPhyrexian { .. } => Some(StageKind::Binary),
+            Decision::ChooseOption { options, .. } if options.len() >= 2 && options.iter().all(|o| o.card.is_some()) => {
+                Some(StageKind::CardOptions)
+            }
             Decision::ChooseOption { options, .. } if options.len() == 2 => Some(StageKind::Binary),
             Decision::ChooseOptions { purpose, .. } if purpose == "OptionalCost" => Some(StageKind::OptionalCost),
             Decision::Scry { .. } => Some(StageKind::Scry),
@@ -1689,6 +1701,16 @@ impl ForgeTable {
     /// Klick auf eine Modus-Karte.
     fn mode_click(&mut self, mode: usize) {
         let Some(decision) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
+        if matches!(decision, Decision::ChooseOption { .. }) {
+            // Karten-Optionen: Klick wählt genau eine (erneuter Klick hebt auf)
+            let again = self.mode_pick.contains(&mode);
+            self.mode_pick.clear();
+            if !again {
+                self.mode_pick.push(mode);
+            }
+            self.refresh_mode_cards();
+            return;
+        }
         let Decision::ChooseModes { max, can_repeat, .. } = decision else { return };
         let with_costs = Self::mode_costs(&decision);
         if max <= 1 && !with_costs {
@@ -1720,12 +1742,21 @@ impl ForgeTable {
 
     /// Modus-Karten markieren (orange = gewählt), Zähler im Fertig-Knopf.
     fn refresh_mode_cards(&mut self) {
-        let Some(Decision::ChooseModes { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
         for (card, mode) in self.mode_cards.iter_mut() {
             let n = self.mode_pick.iter().filter(|m| *m == mode).count();
             card.bind_mut().set_marker(if n > 0 { CardMarker::Selected } else { CardMarker::None });
             card.bind_mut().set_badges(&if n > 1 { format!("×{n}") } else { String::new() });
         }
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::ChooseOption { .. })) {
+            let chosen = !self.mode_pick.is_empty();
+            for mut b in self.stage_buttons() {
+                if b.bind().get_text().to_string() == tr!("Anwenden", "Apply") {
+                    b.bind_mut().set_enabled(chosen);
+                }
+            }
+            return;
+        }
+        let Some(Decision::ChooseModes { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
         let n = self.mode_pick.len() as u32;
         let with_costs = self.pending.as_ref().is_some_and(|r| Self::mode_costs(&r.decision));
         let pay_label = self.mode_pay_label();
@@ -1773,6 +1804,57 @@ impl ForgeTable {
         if let Some(mut fan) = showcase.bind().fan_zone() {
             let p = fan.get_position();
             fan.set_position(p + Vector3::new(-STACK_STAGE_ROW_SHIFT, 0.0, 0.0));
+        }
+    }
+
+    /// Eine von mehreren Möglichkeiten, die je zu einer Karte gehören, wie die Spree-Bühne: je
+    /// Möglichkeit eine Kopie ihrer Karte mit nur dem Text dieser Möglichkeit (z. B. der
+    /// Ersatzeffekt), Klick wählt (orange) bzw. hebt auf, orange „Anwenden“ erst mit Wahl aktiv.
+    /// Ersatzeffekte (CR 616.1): Titel „Ersatzeffekt wählen“, darunter „Welcher Ersatzeffekt gilt
+    /// zuerst?“; über der Kopie der Kartenname, falls mehrere Möglichkeiten dieselbe Karte haben.
+    fn show_card_options(&mut self, req: &Request) {
+        let Decision::ChooseOption { options, purpose, prompt, .. } = &req.decision else { return };
+        let (title, subtitle) = match purpose.as_str() {
+            "ReplacementEffect" => (
+                tr!("Ersatzeffekt wählen", "Choose a replacement effect").to_string(),
+                tr!("Welcher Ersatzeffekt gilt zuerst?", "Which replacement effect applies first?").to_string(),
+            ),
+            _ => (if prompt.is_empty() { tr!("Wähle eins", "Choose one").to_string() } else { prompt.clone() }, String::new()),
+        };
+        let Some(mut showcase) = self.open_stage(&title, &subtitle) else { return };
+        let mut cards = Vec::new();
+        for (i, o) in options.iter().enumerate() {
+            let Some(id) = o.card else { continue };
+            let data = req
+                .cards
+                .iter()
+                .find(|c| get_int(c, "id") == i64::from(id))
+                .cloned()
+                .or_else(|| self.card_data(i64::from(id)))
+                .unwrap_or_default();
+            let mut copy = Self::stage_card(&data, Some(&o.text));
+            copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+            // gleiche Karte mehrfach: Nummer darüber, sonst keine Beschriftung (der Name steht auf der Karte)
+            let same = options.iter().filter(|p| p.card == o.card).count() > 1;
+            let caption = if same { trf!("Effekt {}", "Effect {}", i + 1) } else { String::new() };
+            cards.push((copy.clone(), caption));
+            self.mode_cards.push((copy, i));
+        }
+        let few = cards.len() <= 3;
+        showcase.bind_mut().show_options(cards);
+        if few {
+            // wenige Möglichkeiten: weiter auseinander, damit sie sich im Bogen nicht berühren
+            showcase.bind_mut().enable_scroll_with(CARD_OPTION_STEP, CARD_OPTION_RADIUS);
+        } else {
+            showcase.bind_mut().enable_scroll();
+        }
+        let mut apply = Button3D::create(ButtonStyle::Orange, tr!("Anwenden", "Apply"), Showcase::button_width() * 1.2);
+        apply.bind_mut().set_enabled(false);
+        let cb = Callable::from_object_method(&self.to_gd(), "on_modes_done");
+        apply.connect("pressed", &cb);
+        showcase.bind_mut().add_button(apply);
+        if req.cancelable {
+            self.stage_button(&mut showcase, ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), Showcase::button_width(), Choice::Cancel);
         }
     }
 
@@ -3911,6 +3993,9 @@ fn number_label(x: u32, is_x: bool) -> String {
 /// X-Bühne am Stack: Mitte (lokal in der Stack-Zone, etwas unter der obersten Karte und ein
 /// Stück nach links, damit „+5“ nicht über den rechten Bildrand ragt), Größe der Bühne in der
 /// Szene und Abstand zur Kamera hin (vor den Stack-Karten).
+/// Karten-Optionen-Bühne mit bis zu drei Möglichkeiten: Kartenabstand und Bogenradius.
+const CARD_OPTION_STEP: f32 = 0.82;
+const CARD_OPTION_RADIUS: f32 = 60.0;
 /// Größe der Kopie des gewirkten Zaubers am Stack-Platz einer Bühne (`stage_spell_at_stack`).
 const STACK_STAGE_SCALE: f32 = 1.1;
 /// So weit (Bühnen-Einheiten) rückt die Auswahlreihe nach links, wenn der Zauber am Stack steht.
@@ -3940,6 +4025,9 @@ enum StageKind {
     Scry,
     /// Reihenfolge (Trigger, Karten): Karten nebeneinander, Klick vergibt 1, 2, …
     Order,
+    /// Eine von mehreren Möglichkeiten, die je zu einer Karte gehören (Ersatzeffekte …):
+    /// Kartenkopie je Möglichkeit, Klick wählt, „Anwenden“.
+    CardOptions,
 }
 
 /// Hellsicht-Bühne: Mitte und Größe des Kastens (Bühnen-Koordinaten).

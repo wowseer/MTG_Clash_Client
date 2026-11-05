@@ -85,7 +85,8 @@ Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Cho
 | `chooseSomeType` | `ChooseType { options }` | `Number(index)` |
 | `confirmAction`, `confirmReplacementEffect`, `confirmStaticApplication` | `Confirm { prompt }` | `Yes` / `No` |
 | `confirmTrigger` | `OptionalTrigger { description }` | `Yes` / `No` |
-| Startspieler, Abstimmung, Marken-Typ, Schutz, Schlüsselwort, Ersatzeffekt, statische Fähigkeit, Kartenseite/-zustand, Sektor, Würfel, Zahl aus Liste, Ja/Nein mit eigenen Beschriftungen (Kopf/Zahl, Tappen/Enttappen …), Farbe inkl. farblos | `ChooseOption` (**Erweiterung**) | `Number(index)` |
+| Startspieler, Abstimmung, Marken-Typ, Schutz, Schlüsselwort, statische Fähigkeit, Kartenseite/-zustand, Sektor, Würfel, Zahl aus Liste, Ja/Nein mit eigenen Beschriftungen (Kopf/Zahl, Tappen/Enttappen …), Farbe inkl. farblos | `ChooseOption` (**Erweiterung**) | `Number(index)` |
+| `chooseSingleReplacementEffect` (CR 616.1) | `ChooseOption { options: [{text, card}], purpose: "ReplacementEffect" }`: je Ersatzeffekt sein Text und die Karten-ID seiner Quelle, deren Daten in der Hülle `cards` | `Number(index)` |
 | `chooseOptionalCosts`, `chooseColors` (mehrere), `chooseDiceToReroll` | `ChooseOptions` (**Erweiterung**) | `Modes([…])` |
 | `addKeywordCost` (Schlüsselwort-Zusatzkosten beim Wirken, CR 601.2b: Casualty, Conspire, Offspring, Tappen bei Harmonize) | `ChooseOptions { options: [„Casualty“] (Schlüsselwort ohne Zahl; reine Manakosten mit Angabe, z. B. „Offspring {2}“), min: 0, max: 1, purpose: "OptionalCost" }` (wie Kicker; ohne Überschreiben fragte Forge über `chooseNumberForKeywordCost` mit Höchstwert 1) | `Modes([0])` = zahlen, `Modes([])` = normal |
 | `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost` (Multikicker, Replicate, Squad, „beliebig viel Mana zahlen“), angesagte Werte ≠ X | `ChooseNumber` (**Erweiterung**) | `Number(n)` |
@@ -182,6 +183,7 @@ Diese Teile gibt es im Vorbild (`decision.rs` aus forge-rules-rs) (noch) nicht:
 | `OrderTriggers.sources` | Karten-ID der Quelle je Eintrag (−1 = keine), damit die UI Kartenkopien statt Texten zeigt |
 | `Action::ActivateMana { card, index }` in `Priority.actions` | Manafähigkeit mit Priorität aktivieren (CR 605.3a), z. B. Länder vorab tappen; `index` wie bei `PayAction::ActivateMana`. Das Basismodell kennt Manafähigkeiten nur beim Bezahlen |
 | `ChooseTargets.purpose` (`"Choose"` bei `chooseSingleEntityForEffect` / `chooseEntitiesForEffect`) | Wahl für einen Effekt ohne Ziel („choose a player“, CR 115.1); leer = echtes Ziel eines Zaubers oder einer Fähigkeit (CR 115), das die UI nur per Pfeil wählen lässt |
+| `ChooseOption.purpose`, `options[].card` | wofür die Wahl ist (`"ReplacementEffect"`) und zu welcher Karte jede Option gehört; mit Karte je Option zeigt die UI eine Kartenkopie je Möglichkeit statt Knöpfen |
 | `ChooseModes.costs`, `base_cost`, `keyword` | Modi mit eigenen Zusatzkosten (Spree CR 702.172, Tiered): Kosten je Modus, Kosten ohne Modi und Schlüsselwort, damit die UI „+ {Kosten}“ und „Bezahlen {Gesamtkosten}“ zeigt; ohne Modus-Kosten fehlen die Felder |
 | `ChooseOptions.purpose` (`"OptionalCost"` bei `chooseOptionalCosts` und `addKeywordCost`) | wofür die Mehrfachwahl ist, damit die UI optionale Kosten (Kicker …) als eigene Bühne zeigt; sonst leer |
 | `PayAction::UsePool { color }` (`W U B R G C`) in `PayMana.options` | schwebendes Mana einer Farbe einsetzen; die Brücke gibt Pool-Mana nicht mehr automatisch aus (nur über `UsePool` oder `AutoPay`) |
