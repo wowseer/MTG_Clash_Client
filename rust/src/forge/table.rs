@@ -23,6 +23,7 @@ use crate::game::hud::HudView;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, ElsewhereCard, PlayerId, Request, RulesEngine, Target};
 use crate::table::mana_wheel::{ManaWheel, WheelSegment};
+use crate::table::dungeon_view::{DungeonMode, DungeonView};
 use crate::table::loyalty_view::{LoyaltyEntry, LoyaltyView};
 use crate::table::exile_portal::{attach_exile_portal, set_exile_portal_open};
 use crate::game::debug_panel::DebugPanel;
@@ -149,6 +150,8 @@ pub struct ForgeTable {
     /// Offenes Farbrad: Rad, Antwort je Segment, freiwillig (Manafähigkeit eines Landes mit
     /// Priorität – schließen ohne Antwort möglich) oder Antwort auf eine Frage der Engine.
     wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
+    /// Offene Dungeon-Ansicht (Dungeon/Raum wählen oder ansehen).
+    dungeon_view: Option<Gd<DungeonView>>,
     /// Offene Planeswalker-Ansicht und je Fähigkeit die Aktion (None = ausgegraut).
     loyalty_view: Option<(Gd<LoyaltyView>, Vec<Option<Action>>)>,
     /// Mehrfachwahl im Farbrad: gewählte Segmente, Mindest- und Höchstzahl.
@@ -265,6 +268,7 @@ impl INode for ForgeTable {
             cancel_badge: None,
             wheel: None,
             loyalty_view: None,
+            dungeon_view: None,
             wheel_multi: None,
             wheel_done: None,
             wheel_colors: Vec::new(),
@@ -353,6 +357,7 @@ impl INode for ForgeTable {
         // geladene Kartenbilder freigeben (sonst meldet Godot beim Beenden übrige Texturen)
         placeholder::clear_printed();
         crate::game::mana_symbols::clear();
+        crate::table::dungeon_view::clear();
     }
 
     fn process(&mut self, delta: f64) {
@@ -1337,6 +1342,7 @@ impl ForgeTable {
                 StageKind::CardOptions => self.show_card_options(&req),
                 StageKind::Buttons => self.show_option_buttons(&req),
                 StageKind::Piles => self.show_piles(&req),
+                StageKind::Dungeon => self.show_dungeon_choice(&req),
             }
         }
         if let Some(req) = library_pick {
@@ -1397,6 +1403,14 @@ impl ForgeTable {
         // freiwilliges Farbrad offen: Klick daneben schließt es
         if self.wheel.as_ref().is_some_and(|(_, _, v)| *v) {
             self.close_wheel();
+        }
+        // Dungeon in der Kommandozone: groß ansehen (wie in Arena), wenn gerade nichts anderes offen ist
+        if !self.stage_open_now() {
+            if let Some(d) = self.forge_id(&card).and_then(|id| self.card_data(id)).and_then(|d| crate::game::dungeon::Dungeon::from_card(&d)) {
+                let title = d.name.clone();
+                self.open_dungeon_view(vec![d], DungeonMode::View, &title);
+                return;
+            }
         }
         // Planeswalker-Ansicht: Klick auf eine andere Karte schließt sie
         if self.loyalty_view.as_ref().is_some_and(|(b, _)| !b.is_instance_valid() || !b.bind().belongs_to(card.clone())) {
@@ -1552,6 +1566,66 @@ impl ForgeTable {
         parent.add_child(&bar);
         self.loyalty_view = Some((bar, picks));
         true
+    }
+
+    /// Venture (CR 701.49) wie in Arena: `ChooseOption` mit Zweck `Dungeon` (alle Dungeons groß
+    /// nebeneinander, Klick wählt) bzw. `DungeonRoom` (der Dungeon groß, die erreichbaren Räume
+    /// leuchten, Klick auf einen Raum wählt). Die Dungeons kommen aus den Kartendaten der Anfrage
+    /// bzw. des Spielzustands (`dungeon`).
+    fn show_dungeon_choice(&mut self, req: &Request) {
+        let Decision::ChooseOption { options, purpose, .. } = &req.decision else { return };
+        let data_of = |id: CardId| {
+            req.cards.iter().find(|c| get_int(c, "id") == i64::from(id)).cloned().or_else(|| self.card_data(i64::from(id)))
+        };
+        let dungeon_of = |id: Option<CardId>| id.and_then(data_of).and_then(|d| crate::game::dungeon::Dungeon::from_card(&d));
+        let (dungeons, mode, title) = if purpose == "Dungeon" {
+            let list: Vec<_> = options.iter().filter_map(|o| dungeon_of(o.card)).collect();
+            if list.len() != options.len() {
+                return;
+            }
+            (list, DungeonMode::PickDungeon, tr!("Wähle einen Dungeon", "Choose a dungeon").to_string())
+        } else {
+            let Some(d) = dungeon_of(options.first().and_then(|o| o.card)) else { return };
+            let rooms = options.iter().enumerate().map(|(i, o)| (o.key.clone(), i as i64)).collect();
+            (vec![d], DungeonMode::PickRoom(rooms), tr!("Wähle den nächsten Raum", "Choose the next room").to_string())
+        };
+        self.open_dungeon_view(dungeons, mode, &title);
+    }
+
+    /// Dungeon-Ansicht öffnen (schließt andere Auswahl-Objekte).
+    fn open_dungeon_view(&mut self, dungeons: Vec<crate::game::dungeon::Dungeon>, mode: DungeonMode, title: &str) {
+        self.clear_choice_objects();
+        let Some(mut parent) = self.controller.clone() else { return };
+        let mut view = DungeonView::create(dungeons, mode, title);
+        let me = self.to_gd();
+        view.connect("picked", &Callable::from_object_method(&me, "on_dungeon_picked"));
+        view.connect("dismissed", &Callable::from_object_method(&me, "on_dungeon_dismissed"));
+        parent.add_child(&view);
+        self.dungeon_view = Some(view);
+    }
+
+    /// Dungeon-Ansicht schließen (falls offen).
+    fn close_dungeon_view(&mut self) {
+        if let Some(mut v) = self.dungeon_view.take() {
+            if v.is_instance_valid() {
+                v.bind_mut().close();
+            }
+        }
+    }
+
+    /// Dungeon bzw. Raum gewählt: Nummer der Option an die Engine.
+    #[func]
+    fn on_dungeon_picked(&mut self, index: i64) {
+        self.close_dungeon_view();
+        if let Ok(i) = u32::try_from(index) {
+            self.answer(Choice::Number(i));
+        }
+    }
+
+    /// Reine Dungeon-Ansicht geschlossen.
+    #[func]
+    fn on_dungeon_dismissed(&mut self) {
+        self.close_dungeon_view();
     }
 
     /// Planeswalker-Ansicht schließen (falls offen).
@@ -1885,6 +1959,7 @@ impl ForgeTable {
             | Decision::PayUnlessCost { .. }
             | Decision::PayLifeForPhyrexian { .. } => Some(StageKind::Binary),
             Decision::ChooseOption { purpose, .. } if purpose == "Piles" => Some(StageKind::Piles),
+            Decision::ChooseOption { purpose, .. } if purpose == "Dungeon" || purpose == "DungeonRoom" => Some(StageKind::Dungeon),
             Decision::ChooseOption { options, .. } if options.len() >= 2 && options.iter().all(|o| o.card.is_some()) => {
                 Some(StageKind::CardOptions)
             }
@@ -2979,6 +3054,7 @@ impl ForgeTable {
         }
         self.close_wheel();
         self.close_loyalty_view();
+        self.close_dungeon_view();
     }
 
     /// Anzeige für das HUD.
@@ -4093,7 +4169,7 @@ impl ForgeTable {
             .iter_shared()
             .filter_map(|p| p.try_to::<VarDictionary>().ok())
             .find_map(|p| {
-                ["battlefield", "graveyard", "exile", "hand"].iter().find_map(|zone| {
+                ["battlefield", "graveyard", "exile", "hand", "command"].iter().find_map(|zone| {
                     get_array(&p, zone)?
                         .iter_shared()
                         .filter_map(|c| c.try_to::<VarDictionary>().ok())
@@ -4134,6 +4210,9 @@ impl ForgeTable {
     /// Deckt eine offene Bühne gerade den Tisch ab (siehe [method Showcase.is_covering])?
     fn stage_covers(&self) -> bool {
         self.showcase.as_ref().is_some_and(|s| s.is_instance_valid() && s.bind().is_covering())
+            // Dungeon- und Planeswalker-Ansicht decken den Tisch ebenfalls ab (HUD und Pfeile weg)
+            || self.dungeon_view.as_ref().is_some_and(|v| v.is_instance_valid())
+            || self.loyalty_view.as_ref().is_some_and(|(v, _)| v.is_instance_valid())
     }
 
     fn update_arrows(&mut self) {
@@ -4324,7 +4403,7 @@ impl ForgeTable {
                 let def = CardDef::from_state(data);
                 let sig = format!("{def:?}");
                 if self.signatures.get(&key) != Some(&sig) {
-                    let frame = |d: &CardDef| (d.kind, d.cost, d.produces, d.colors.clone(), d.face_down, d.face, d.image.clone());
+                    let frame = |d: &CardDef| (d.kind, d.cost, d.produces, d.colors.clone(), d.face_down, d.face, d.image.clone(), d.dungeon.clone());
                     let known = self.signatures.contains_key(&key);
                     let mut c = card.bind_mut();
                     // Seitenwechsel (Transformieren, Umdrehen, Aufdecken; CR 711, 708.8): animiert
@@ -4524,7 +4603,8 @@ fn card_badges(data: &VarDictionary, ring_bearers: &[i64], token: bool) -> Strin
         });
     }
     let room = get_str(data, "room");
-    if !room.is_empty() {
+    // auf dem Tisch zeigt die gezeichnete Dungeon-Karte den Raum selbst
+    if !room.is_empty() && (token || !data.contains_key("dungeon")) {
         lines.push(trf!("Raum: {room}", "Room: {room}"));
     }
     if let Some(other) = data.get("other_face").and_then(|v| v.try_to::<VarDictionary>().ok()) {
@@ -4774,6 +4854,8 @@ const X_CANCEL_Y: f32 = -0.84;
 /// Welche 3D-Bühne eine Entscheidung bekommt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StageKind {
+    /// Dungeon wählen bzw. nächsten Raum wählen (Venture): Dungeon-Ansicht wie in Arena.
+    Dungeon,
     /// Modus wählen: Kartenkopie je Modus.
     Modes,
     /// Ja/Nein bzw. zwei Antworten: zwei Knöpfe untereinander.

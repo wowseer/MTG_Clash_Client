@@ -106,6 +106,44 @@ final class StateJson {
     }
 
     /**
+     * Räume eines Dungeons (CR 309.4) aus seinem Oracle-Text: je Zeile „Raum — Text (Leads to: A,
+     * B)“ ein Eintrag {@code {name, text, next: [..]}} in Reihenfolge des Textes (erster =
+     * Eingang); Zeilen ohne „—“ (z. B. Hinweise) werden übersprungen. {@code current} = aktueller
+     * Raum (leer = noch keiner).
+     */
+    static JsonObject dungeonJson(String oracle, String current) {
+        JsonObject d = new JsonObject();
+        JsonArray rooms = new JsonArray();
+        for (String line : (oracle == null ? "" : oracle).split("\\\\n|\\n")) {
+            int dash = line.indexOf(" — ");
+            if (dash <= 0) {
+                continue;
+            }
+            String name = line.substring(0, dash).trim();
+            String text = line.substring(dash + 3).trim();
+            JsonArray next = new JsonArray();
+            int leads = text.lastIndexOf("(Leads to:");
+            if (leads >= 0) {
+                String list = text.substring(leads + "(Leads to:".length()).replace(")", "");
+                for (String n : list.split(",")) {
+                    if (!n.isBlank()) {
+                        next.add(n.trim());
+                    }
+                }
+                text = text.substring(0, leads).trim();
+            }
+            JsonObject r = new JsonObject();
+            r.addProperty("name", name);
+            r.addProperty("text", text);
+            r.add("next", next);
+            rooms.add(r);
+        }
+        d.add("rooms", rooms);
+        d.addProperty("current", current == null ? "" : current);
+        return d;
+    }
+
+    /**
      * Stack (CR 405) wie {@code GameState.stack} in forge-rules-rs: unterster Eintrag zuerst, oberster
      * zuletzt. Je Eintrag {@code id}, {@code kind} ({@code Spell} / {@code Ability} /
      * {@code Trigger}), {@code source} (Karten-ID der Quelle), {@code controller} (Sitzplatz),
@@ -306,6 +344,10 @@ final class StateJson {
         String room = c.getCurrentRoom();
         if (room != null && !room.isEmpty()) {
             o.addProperty("room", room);
+        }
+        // Dungeon (CR 309): Räume mit Text und Folgeräumen, aktueller Raum
+        if (c.getType().isDungeon()) {
+            o.add("dungeon", dungeonJson(c.getOracleText(), room));
         }
         // Kartenbild (JPG von Scryfall im Forge-Bildordner); fehlt es, wird es im Hintergrund geladen
         CardImages.Info images = CardImages.info(c);

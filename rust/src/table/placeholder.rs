@@ -126,6 +126,10 @@ fn own_frame(def: &CardDef) -> bool {
 
 /// Zeigt die Karte ihr echtes Kartenbild (statt des gezeichneten Platzhalters)?
 pub fn has_printed_face(def: &CardDef) -> bool {
+    // gezeichnete Dungeon-Karte: Name und Räume stehen im Bild
+    if def.dungeon.is_some() && !def.face_down {
+        return true;
+    }
     !def.face_down && !own_frame(def) && printed_face(&def.image).is_some()
 }
 
@@ -136,6 +140,10 @@ pub fn has_printed_face(def: &CardDef) -> bool {
 pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
     if def.face_down {
         return face_down_face(def);
+    }
+    // Dungeon: selbst gezeichnete Karte mit Räumen und aktuellem Raum (wie in Arena)
+    if let Some(t) = def.dungeon.as_ref().and_then(crate::table::dungeon_view::dungeon_texture) {
+        return t;
     }
     if !own_frame(def) {
         if let Some(t) = printed_face(&def.image) {

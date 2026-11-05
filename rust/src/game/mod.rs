@@ -6,6 +6,7 @@ pub mod choice_panel;
 pub mod counters;
 pub mod debug_panel;
 pub mod decision_view;
+pub mod dungeon;
 pub mod cards;
 pub mod hourglass;
 pub mod hud;

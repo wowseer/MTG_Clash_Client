@@ -91,7 +91,8 @@ accepts_drops = false
 cards_draggable = false
 grid_columns = 1
 grid_spacing = Vector2(1, 0.3)
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.9, 0, 3.6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.1, 0, 2.7)
+card_scale = 1.7
 
 [node name="Resources" type="Zone" parent="Player"]
 kind = 3
@@ -173,7 +174,8 @@ accepts_drops = false
 cards_draggable = false
 grid_columns = 1
 grid_spacing = Vector2(1, 0.3)
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.9, 0, -3.6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.1, 0, -2.7)
+card_scale = 1.7
 
 [node name="Resources" type="Zone" parent="Opponent"]
 kind = 3

@@ -26,6 +26,8 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [Card3D](#card3d) – erbt von `Area3D`
 - [CardInspector](#cardinspector) – erbt von `Node3D`
 - [CostSymbolCanvas](#costsymbolcanvas) – erbt von `Control`
+- [DungeonCanvas](#dungeoncanvas) – erbt von `Control`
+- [DungeonView](#dungeonview) – erbt von `Node3D`
 - [ManaFx](#manafx) – erbt von `Node3D`
 - [LoyaltyView](#loyaltyview) – erbt von `Node3D`
 - [ManaWheel](#manawheel) – erbt von `Node3D`
@@ -157,6 +159,8 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
+| `on_dungeon_picked(index: int)` | `void` | Dungeon bzw. Raum gewählt: Nummer der Option an die Engine. |
+| `on_dungeon_dismissed()` | `void` | Reine Dungeon-Ansicht geschlossen. |
 | `on_loyalty_dismissed()` | `void` | Klick neben die Planeswalker-Ansicht: schließen, die Priorität bleibt offen. |
 | `on_loyalty_picked(index: int)` | `void` | Feld der Planeswalker-Ansicht angeklickt: Fähigkeit aktivieren (Kosten, Ziele usw. fragt die Engine danach). |
 | `on_action_choice_cancel()` | `void` | Knopf „Abbrechen“ bei „Wähle eins“: Bühne schließen, die Priorität bleibt offen. |
@@ -556,6 +560,34 @@ Kartenansicht beim Hovern wie `Fähigkeiten.png`: helle Kopie der Karte am Bilds
 *Erbt von `Control` · Quelle: `rust/src/table/cost_symbols.rs`*
 
 Zeichenfläche eines einzelnen Kostensymbols (intern: liegt in einer unsichtbaren `SubViewport`, deren Textur die 3D-Kostensymbole nutzen).
+
+## DungeonCanvas
+
+*Erbt von `Control` · Quelle: `rust/src/table/dungeon_view.rs`*
+
+Zeichenfläche einer Dungeon-Karte (intern: liegt in einer unsichtbaren `SubViewport`).
+
+## DungeonView
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/dungeon_view.rs`*
+
+Dungeon-Ansicht wie in Arena: Dungeon(s) groß vor dem abgedunkelten Tisch; je nach Modus Dungeon oder Raum per Klick wählen (Signal [signal picked]) bzw. ansehen (Klick → [signal dismissed]).
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `update_pointer(world: Vector3)` | `void` | Trefferpunkt des Mausstrahls (Welt): Dungeon bzw. wählbarer Raum darunter wird hervorgehoben. |
+| `set_hovered(hovered: bool)` | `void` | Maus verlässt die Ansicht. |
+| `activate()` | `void` | Klick: wählt je nach Modus; in der reinen Ansicht schließt jeder Klick. |
+| `close()` | `void` | Schließen (0,15 s ausblenden), danach freigeben. |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `picked(index: int)` | Gewählt: Dungeon-Index (Dungeon wählen) bzw. Nummer der Option des Raums (Raum wählen). |
+| `dismissed()` | Klick in der reinen Ansicht: schließen. |
 
 ## ManaFx
 

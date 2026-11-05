@@ -656,6 +656,23 @@ public class RemotePlayerController extends PlayerControllerAi {
         if (spells.size() <= 1) {
             return super.chooseSingleSpellForEffect(spells, sa, title, params);
         }
+        // Nächsten Dungeon-Raum wählen (CR 309.5a): Option je Raum mit seinem Namen als Schlüssel,
+        // Karte = der Dungeon (die UI zeigt ihn groß, die erreichbaren Räume leuchten)
+        if (spells.stream().allMatch(s -> s.hasParam("RoomName"))) {
+            List<Decisions.Opt> rooms = new ArrayList<>();
+            List<Card> hosts = new ArrayList<>();
+            for (SpellAbility s : spells) {
+                Card host = s.getHostCard();
+                String name = s.getParam("RoomName");
+                String text = s.hasParam("SpellDescription") ? s.getParam("SpellDescription") : "";
+                rooms.add(new Decisions.Opt(name + " — " + text, null, host == null ? -1 : host.getId(), name));
+                if (host != null && !hosts.contains(host)) {
+                    hosts.add(host);
+                }
+            }
+            Integer i = Decisions.cardOption(getGame(), seat, title, rooms, hosts, null, "DungeonRoom", sa, false);
+            return i != null ? spells.get(i) : super.chooseSingleSpellForEffect(spells, sa, title, params);
+        }
         // je Zauber/Fähigkeit eine Kopie ihrer Karte mit nur ihrem Text (Karten-Optionen-Bühne)
         List<Decisions.Opt> opts = new ArrayList<>();
         List<Card> hosts = new ArrayList<>();
@@ -1807,6 +1824,8 @@ public class RemotePlayerController extends PlayerControllerAi {
         // je Seite eine große Kopie mit Name, Typ, Kosten und Text dieser Seite (eigene IDs)
         List<Decisions.Opt> opts = new ArrayList<>();
         com.google.gson.JsonArray extra = new com.google.gson.JsonArray();
+        // Dungeon wählen (Venture, CR 701.49): je Dungeon seine Räume für die Dungeon-Ansicht
+        boolean dungeons = !faces.isEmpty() && faces.stream().allMatch(f -> f.getType() != null && f.getType().isDungeon());
         for (int k = 0; k < faces.size(); k++) {
             ICardFace f = faces.get(k);
             int id = FACE_ID_BASE + k;
@@ -1814,13 +1833,16 @@ public class RemotePlayerController extends PlayerControllerAi {
             com.google.gson.JsonObject fj = faceJson(id, f.getName(), String.valueOf(f.getType()),
                     f.getManaCost() == null ? "" : f.getManaCost().getShortString(), f.getOracleText(),
                     f.getPower(), f.getToughness());
+            if (dungeons) {
+                fj.add("dungeon", StateJson.dungeonJson(f.getOracleText(), ""));
+            }
             String img = CardImages.faceImage(sa == null ? null : sa.getHostCard(), f.getName());
             if (!img.isEmpty()) {
                 fj.addProperty("image", img);
             }
             extra.add(fj);
         }
-        ICardFace r = pick(faces, Decisions.cardOption(g(), seat, message, opts, null, extra, "CardFace", sa, false));
+        ICardFace r = pick(faces, Decisions.cardOption(g(), seat, message, opts, null, extra, dungeons ? "Dungeon" : "CardFace", sa, false));
         return r != null ? r : super.chooseSingleCardFace(sa, faces, message);
     }
 

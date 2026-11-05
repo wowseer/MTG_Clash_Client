@@ -104,6 +104,9 @@ pub struct CardDef {
     /// Nur Länder: Manafarbe für Rahmen und Spalte der Länder-Reihe (aus dem Grundlandtyp bzw.
     /// der einzigen Farbe; sonst farblos).
     pub produces: ManaType,
+    /// Dungeon (CR 309): Räume und aktueller Raum – die Karte zeigt dann die gezeichnete
+    /// Dungeon-Karte (`table::dungeon_view`).
+    pub dungeon: Option<crate::game::dungeon::Dungeon>,
 }
 
 impl CardDef {
@@ -168,6 +171,7 @@ impl CardDef {
             damage: i("damage").unwrap_or(0),
             produces,
             type_line,
+            dungeon: crate::game::dungeon::Dungeon::from_card(card),
         }
     }
 
