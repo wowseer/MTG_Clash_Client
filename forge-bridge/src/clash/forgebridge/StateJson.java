@@ -339,6 +339,26 @@ final class StateJson {
         if (c.getType().hasSubtype("Class")) {
             o.addProperty("class_level", c.getClassLevel());
         }
+        // Planeswalker (CR 606): alle Loyalitätsfähigkeiten mit Kosten und Text, auch gerade nicht
+        // aktivierbare (die UI graut sie aus); "label" = Beschriftung wie in Priority.labels
+        if (c.isPlaneswalker() && c.isInPlay() && !c.isFaceDown()) {
+            JsonArray loy = new JsonArray();
+            for (forge.game.spellability.SpellAbility sa : c.getSpellAbilities()) {
+                if (!sa.isPwAbility()) {
+                    continue;
+                }
+                String label = sa.toUnsuppressedString();
+                int colon = label.indexOf(':');
+                JsonObject a = new JsonObject();
+                a.addProperty("label", label.trim());
+                a.addProperty("cost", colon > 0 ? label.substring(0, colon).trim() : "");
+                a.addProperty("text", colon > 0 ? label.substring(colon + 1).trim() : label.trim());
+                loy.add(a);
+            }
+            if (!loy.isEmpty()) {
+                o.add("loyalty_abilities", loy);
+            }
+        }
         // Vorbereitet (Prepare): eine Kopie ihres Zaubers kann gewirkt werden
         if (c.isPrepared()) {
             o.addProperty("prepared", true);

@@ -332,14 +332,16 @@ fn has_tap_ability(def: &CardDef) -> bool {
 
 /// Kachel einer Karte auf dem Spielfeld wie in `Cratzuren icons.png`: Rahmen in Kartenfarbe,
 /// dunkle Namensleiste oben, der Bildausschnitt (Scryfall `art_crop`) in der Mitte, unten eine
-/// Leiste mit hellem, abgerundetem Wertekästchen (Stärke/Widerstand, Loyalität, Verteidigung;
+/// Leiste mit hellem, abgerundetem Wertekästchen (Stärke/Widerstand, Verteidigung; Loyalität hat
+/// einen eigenen Schild an der Karte;
 /// Text per Label3D) und links unten ein runder schwarzer Knopf mit weißem Symbol (↷ bei einer
 /// Tapp-Fähigkeit, sonst ◎). Name und Werte kommen per Label3D dazu. None ohne Bildausschnitt.
 pub fn tile_face(def: &CardDef) -> Option<Gd<Texture2D>> {
     if def.face_down || def.crop.is_empty() || CLOSED.with(|c| c.get()) {
         return None;
     }
-    let stats = matches!(def.kind, CardKind::Creature | CardKind::Planeswalker | CardKind::Battle) || def.stats.is_some();
+    // Planeswalker: Loyalität im eigenen Schild der Karte (Card3D), kein Wertekästchen
+    let stats = matches!(def.kind, CardKind::Creature | CardKind::Battle) || def.stats.is_some();
     let tap = has_tap_ability(def);
     let base = def.frame_color();
     let key = format!("{}|{}|{}|{}", def.crop, base.to_html(), stats, tap);

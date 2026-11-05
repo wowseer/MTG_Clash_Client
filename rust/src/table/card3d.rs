@@ -51,6 +51,9 @@ const HAND_COST_INSET: f32 = 0.03;
 /// Marken-Münzen: Durchmesser (Welteinheiten) und Dauer von Aufspringen/Leuchten (Sekunden).
 const COIN_SIZE: f32 = 0.2;
 const COIN_POP_TIME: f32 = 0.5;
+/// Loyalitäts-Schild: Höhe (m) und Dauer des Aufblitzens bei einer Änderung (Sekunden).
+const SHIELD_SIZE: f32 = 0.27;
+const SHIELD_FLASH_TIME: f32 = 0.6;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
 /// Kachel-Form auf dem Spielfeld (wie im Video des Users): nur der obere Teil der Karte – Name
@@ -241,6 +244,9 @@ pub struct Card3D {
     /// Marken als Münzen rechts oben am Rand (`set_counters`): Markenart, Anzahl, Münze,
     /// Zeit seit dem Zuwachs (für Aufspringen und blaues Leuchten; ≥ COIN_POP_TIME = ruhig).
     coins: Vec<(String, u32, Gd<godot::classes::Sprite3D>, f32)>,
+    /// Loyalitäts-Schild eines Planeswalkers auf dem Spielfeld (wie in Arena unten mittig an der
+    /// Kachel): Loyalität, Schild, Zeit seit der letzten Änderung (Aufblitzen; ≥ SHIELD_FLASH_TIME = ruhig).
+    shield: Option<(i32, Gd<godot::classes::Sprite3D>, f32)>,
     /// Kachel-Textur für das Spielfeld (`placeholder::tile_face`), sonst None (dann der obere
     /// Teil der Vorderseite).
     tile_texture: Option<Gd<Texture2D>>,
@@ -321,6 +327,7 @@ impl IArea3D for Card3D {
             rich_text: None,
             tile_texture: None,
             coins: Vec::new(),
+            shield: None,
             base,
         }
     }
@@ -375,6 +382,7 @@ impl IArea3D for Card3D {
 
         self.update_cost_row();
         self.update_coins(delta as f32);
+        self.update_shield(delta as f32);
         let dt = delta as f32;
         // Kachel auf dem Spielfeld, beim Zoomen und Ziehen die ganze Karte (lesbar)
         let want_tile = self.tile && !zoomed && !self.dragging;
@@ -656,6 +664,7 @@ impl Card3D {
             self.apply_face_material();
         }
         self.refresh_labels();
+        self.sync_shield();
     }
 
     /// Name der Karte (wie auf dem Kartenbild, ohne Übersetzung).
@@ -832,6 +841,7 @@ impl Card3D {
             i.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.003, icon_z));
         }
         self.refresh_labels();
+        self.sync_shield();
     }
 
     /// Vorderseite: als Kachel die eigene Kachel-Textur (ganz), sonst die Kartenvorderseite (als
@@ -987,6 +997,53 @@ impl Card3D {
         }
     }
 
+    /// Zeigt die Karte den Loyalitäts-Schild (Planeswalker als Kachel auf dem Spielfeld)?
+    fn shows_shield(&self) -> bool {
+        self.tile_shown && self.def.kind == CardKind::Planeswalker && self.def.loyalty.is_some() && !self.def.face_down
+    }
+
+    /// Loyalitäts-Schild (CR 306.5) anlegen, ändern oder entfernen; ändert sich die Loyalität,
+    /// blitzt der Schild auf (springt kurz auf und leuchtet hell).
+    fn sync_shield(&mut self) {
+        let want = self.shows_shield().then(|| self.def.loyalty.unwrap_or(0));
+        match (want, self.shield.as_mut()) {
+            (None, Some(_)) => {
+                if let Some((_, mut s, _)) = self.shield.take() {
+                    s.queue_free();
+                }
+            }
+            (Some(v), Some((old, sprite, t))) if *old != v => {
+                if let Some(tex) = cost_symbols::symbol_texture(&format!("%shield:{v}")) {
+                    sprite.set_texture(&tex);
+                }
+                *old = v;
+                *t = 0.0;
+            }
+            (Some(v), None) => {
+                let Some(mut visual) = self.visual.clone() else { return };
+                let mut sprite = cost_symbols::loyalty_shield(v, SHIELD_SIZE);
+                sprite.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
+                visual.add_child(&sprite);
+                self.shield = Some((v, sprite, SHIELD_FLASH_TIME));
+            }
+            _ => {}
+        }
+        self.update_shield(0.0);
+    }
+
+    /// Schild unten mittig an der Kachel platzieren (halb über den Rand) und das Aufblitzen animieren.
+    fn update_shield(&mut self, dt: f32) {
+        let len = self.length();
+        let Some((_, sprite, t)) = self.shield.as_mut() else { return };
+        *t = (*t + dt).min(SHIELD_FLASH_TIME);
+        let p = *t / SHIELD_FLASH_TIME;
+        let pop = if p < 1.0 { 1.0 + 0.45 * (p * std::f32::consts::PI).sin() } else { 1.0 };
+        sprite.set_scale(Vector3::splat(pop));
+        let glow = if p < 1.0 { 1.0 - p } else { 0.0 };
+        sprite.set_modulate(Color::WHITE.lerp(Color::from_rgb(1.6, 1.5, 1.1), f64::from(glow)));
+        sprite.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.008, len * 0.5 - SHIELD_SIZE * 0.15));
+    }
+
     pub fn set_badges(&mut self, text: &str) {
         if self.badges == text {
             return;
@@ -1000,6 +1057,7 @@ impl Card3D {
     pub(crate) fn refresh_labels(&mut self) {
         let t = self.face_texts();
         let tile = self.tile_shown;
+        let shield = self.shows_shield();
         let zs = [219.0f32, TEXT_BOX_CENTER, 130.0, placeholder::title_center_y()].map(|y| self.px_z(y));
         let len = self.length();
         let Some(l) = self.labels.as_mut() else {
@@ -1017,7 +1075,8 @@ impl Card3D {
         l.kind.set_visible(!tile && !printed);
         l.text.set_visible(!tile && (!printed || custom));
         l.cost.set_visible(!tile && !printed && !t.cost.is_empty());
-        l.stats.set_visible(!printed || tiled || t.stats_color != Color::WHITE);
+        // Planeswalker-Kachel: Loyalität steht im Schild, nicht im Wertefeld
+        l.stats.set_visible((!printed || tiled || t.stats_color != Color::WHITE) && !shield);
         l.kind.set_position(px(128.0, zs[0]));
         l.text.set_position(px(128.0, zs[1]));
         l.badges.set_position(px(128.0, zs[2]));

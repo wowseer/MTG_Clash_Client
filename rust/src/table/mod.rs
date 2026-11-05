@@ -9,6 +9,7 @@ pub mod card3d;
 pub mod card_inspector;
 pub mod cost_symbols;
 pub mod layers;
+pub mod loyalty_bar;
 pub mod mana_wheel;
 pub(crate) mod placeholder;
 pub mod showcase;

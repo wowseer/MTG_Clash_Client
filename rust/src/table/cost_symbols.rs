@@ -64,6 +64,12 @@ impl IControl for CostSymbolCanvas {
             draw_mana_symbol(&mut b, t, c, r);
             return;
         }
+        // Loyalität (CR 306.5, 606): Schild bzw. Kosten-Symbol einer Loyalitätsfähigkeit
+        if let Some(rest) = token.strip_prefix('%') {
+            let (kind, value) = rest.split_once(':').unwrap_or((rest, ""));
+            draw_loyalty(&mut b, kind, value, size);
+            return;
+        }
         // Marken-Münze („#Rand:Anzahl“, siehe [`counter_coin`]): silbern mit farbigem Rand
         if let Some(rest) = token.strip_prefix('#') {
             let (rim, count) = rest.split_once(':').unwrap_or(("gold", rest));
@@ -110,6 +116,73 @@ impl IControl for CostSymbolCanvas {
     }
 }
 
+/// Loyalitäts-Symbol zeichnen (wie in Arena): `shield` = Loyalitäts-Schild des Planeswalkers
+/// (schwarz, weißer Rand, weiße Zahl, Spitze unten); `up` = Kosten „+N“ (heller Schild mit Spitze
+/// nach oben), `down` = „−N“ (dunkler Schild mit Spitze nach unten), `zero` = „0“ (grauer Schild).
+fn draw_loyalty(b: &mut godot::classes::CanvasItem, kind: &str, value: &str, size: f32) {
+    let pt = |x: f32, y: f32| Vector2::new(x * size, y * size);
+    let shape: Vec<Vector2> = match kind {
+        "up" => vec![pt(0.5, 0.05), pt(0.9, 0.3), pt(0.9, 0.84), pt(0.1, 0.84), pt(0.1, 0.3)],
+        "down" => vec![pt(0.1, 0.16), pt(0.9, 0.16), pt(0.9, 0.7), pt(0.5, 0.95), pt(0.1, 0.7)],
+        "zero" => vec![pt(0.1, 0.18), pt(0.9, 0.18), pt(0.9, 0.82), pt(0.1, 0.82)],
+        // Schild: oben flach mit abgeschrägten Ecken, unten spitz
+        _ => vec![pt(0.2, 0.06), pt(0.8, 0.06), pt(0.92, 0.2), pt(0.88, 0.6), pt(0.5, 0.96), pt(0.12, 0.6), pt(0.08, 0.2)],
+    };
+    let (fill, rim, ink) = match kind {
+        "up" => (Color::from_rgb(0.93, 0.92, 0.88), Color::from_rgb(0.15, 0.15, 0.17), Color::from_rgb(0.08, 0.08, 0.1)),
+        "zero" => (Color::from_rgb(0.55, 0.55, 0.58), Color::from_rgb(0.15, 0.15, 0.17), Color::from_rgb(0.97, 0.97, 0.97)),
+        _ => (Color::from_rgb(0.07, 0.07, 0.08), Color::from_rgb(0.95, 0.95, 0.95), Color::from_rgb(0.98, 0.98, 0.98)),
+    };
+    let center = shape.iter().fold(Vector2::ZERO, |a, p| a + *p) / shape.len() as f32;
+    let grow = |k: f32| -> PackedVector2Array { shape.iter().map(|p| center + (*p - center) * k).collect() };
+    // Schatten, Rand, Füllung
+    let shadow: PackedVector2Array = grow(1.04).as_slice().iter().map(|p| *p + Vector2::new(0.0, size * 0.025)).collect();
+    b.draw_colored_polygon(&shadow, Color::from_rgba(0.0, 0.0, 0.0, 0.5));
+    b.draw_colored_polygon(&grow(1.04), rim);
+    b.draw_colored_polygon(&grow(0.9), fill);
+    let Some(font) = ThemeDb::singleton().get_fallback_font() else { return };
+    let n = value.chars().count();
+    let font_size = if n <= 1 { 72 } else if n == 2 { 62 } else { 46 };
+    let ascent = font.get_ascent_ex().font_size(font_size).done();
+    let descent = font.get_descent_ex().font_size(font_size).done();
+    // Mitte der Schrift: beim Schild etwas über der Spitze
+    let cy = match kind {
+        "shield" | "" => size * 0.46,
+        "up" => size * 0.6,
+        "down" => size * 0.46,
+        _ => size * 0.5,
+    };
+    b.draw_string_ex(&font, Vector2::new(0.0, cy + (ascent - descent) * 0.5), value)
+        .alignment(HorizontalAlignment::CENTER)
+        .width(size)
+        .font_size(font_size)
+        .modulate(ink)
+        .done();
+}
+
+/// Token des Kosten-Symbols einer Loyalitätsfähigkeit („+1“ → `%up:+1`, „-3“/„−3“ → `%down:−3`,
+/// „0“ → `%zero:0`); None, wenn `cost` keine Loyalitätskosten sind.
+pub fn loyalty_cost_token(cost: &str) -> Option<String> {
+    let c = cost.trim().replace('-', "−");
+    let digits = c.trim_start_matches(['+', '−']);
+    if digits.is_empty() || !digits.chars().all(|ch| ch.is_ascii_digit() || ch == 'X') {
+        return None;
+    }
+    Some(if c.starts_with('+') {
+        format!("%up:{c}")
+    } else if c.starts_with('−') {
+        format!("%down:{c}")
+    } else {
+        format!("%zero:{c}")
+    })
+}
+
+/// Loyalitäts-Schild als `Sprite3D` (Höhe `size`, Fläche in der XY-Ebene, Vorderseite +Z) mit
+/// der Loyalität `value`.
+pub fn loyalty_shield(value: i32, size: f32) -> Gd<Sprite3D> {
+    symbol_sprite(&format!("%shield:{value}"), size)
+}
+
 thread_local! {
     /// Je Symbol seine `SubViewport` (Knoten, kein Referenzzähler: beim Beenden räumt Godot sie
     /// mit dem Baum ab, der Zwischenspeicher hält keine Textur fest).
@@ -131,7 +204,7 @@ pub fn symbol_texture(token: &str) -> Option<Gd<Texture2D>> {
     let tree = Engine::singleton().get_main_loop()?.try_cast::<SceneTree>().ok()?;
     let mut root = tree.get_root();
     let mut vp = SubViewport::new_alloc();
-    vp.set_name(&format!("CostSymbol_{}", token.replace(['/', '#', ':'], "_")));
+    vp.set_name(&format!("CostSymbol_{}", token.replace(['/', '#', ':', '%', '+'], "_")));
     vp.set_size(Vector2i::new(TEX, TEX));
     vp.set_transparent_background(true);
     vp.set_disable_3d(true);

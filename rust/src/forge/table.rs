@@ -23,6 +23,7 @@ use crate::game::hud::HudView;
 use crate::rules::decision::{CardChoiceReason, PayAction};
 use crate::rules::{Action, CardId, Choice, Color as ManaColor, Decision, ElsewhereCard, PlayerId, Request, RulesEngine, Target};
 use crate::table::mana_wheel::{ManaWheel, WheelSegment};
+use crate::table::loyalty_bar::{LoyaltyBar, LoyaltyEntry};
 use crate::table::exile_portal::{attach_exile_portal, set_exile_portal_open};
 use crate::game::debug_panel::DebugPanel;
 use godot::classes::Os;
@@ -148,6 +149,8 @@ pub struct ForgeTable {
     /// Offenes Farbrad: Rad, Antwort je Segment, freiwillig (Manafähigkeit eines Landes mit
     /// Priorität – schließen ohne Antwort möglich) oder Antwort auf eine Frage der Engine.
     wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
+    /// Offene Loyalitäts-Leiste eines Planeswalkers und je Zeile die Aktion (None = ausgegraut).
+    loyalty_bar: Option<(Gd<LoyaltyBar>, Vec<Option<Action>>)>,
     /// Mehrfachwahl im Farbrad: gewählte Segmente, Mindest- und Höchstzahl.
     wheel_multi: Option<(Vec<bool>, u32, u32)>,
     /// „Fertig“-Knopf der Mehrfachwahl im Farbrad.
@@ -258,6 +261,7 @@ impl INode for ForgeTable {
             choice_prompt: None,
             cancel_badge: None,
             wheel: None,
+            loyalty_bar: None,
             wheel_multi: None,
             wheel_done: None,
             wheel_colors: Vec::new(),
@@ -1390,6 +1394,10 @@ impl ForgeTable {
         if self.wheel.as_ref().is_some_and(|(_, _, v)| *v) {
             self.close_wheel();
         }
+        // Loyalitäts-Leiste: Klick auf eine andere Karte schließt sie
+        if self.loyalty_bar.as_ref().is_some_and(|(b, _)| !b.is_instance_valid() || !b.bind().belongs_to(card.clone())) {
+            self.close_loyalty_bar();
+        }
         if let Some(id) = self.pick_cards.iter().find(|(c, _)| *c == card).map(|(_, id)| *id) {
             if self.scry_zones.is_none() {
                 self.library_click(id);
@@ -1445,6 +1453,9 @@ impl ForgeTable {
     /// Manafähigkeiten über das Farbrad bzw. Menü.
     fn card_action_click(&mut self, card_id: CardId, card: Option<Gd<Card3D>>) {
         let card = card.or_else(|| self.cards.get(&i64::from(card_id)).cloned());
+        if self.open_loyalty_bar(card_id, card.clone()) {
+            return;
+        }
         let in_hand = card.as_ref().is_some_and(|c| self.zones(0).hand.is_some_and(|h| c.bind().get_zone().as_ref() == Some(&h)));
         let Some(req) = self.pending.as_ref() else { return };
         let mine: Vec<(Choice, String)> = match &req.decision {
@@ -1489,6 +1500,71 @@ impl ForgeTable {
             }
             _ if all_actions => self.show_action_choice(card_id),
             _ => self.menu = Some(mine.into_iter().unzip()),
+        }
+    }
+
+    /// Planeswalker (CR 606) wie in Arena: Klick auf den eigenen Planeswalker öffnet über der Karte
+    /// die Leiste seiner Loyalitätsfähigkeiten (gerade nicht aktivierbare ausgegraut); ein zweiter
+    /// Klick auf die Karte schließt sie. true = Leiste geöffnet bzw. geschlossen.
+    fn open_loyalty_bar(&mut self, card_id: CardId, card: Option<Gd<Card3D>>) -> bool {
+        let Some(card) = card else { return false };
+        if !matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::Priority { .. })) {
+            return false;
+        }
+        if self.loyalty_bar.as_ref().is_some_and(|(b, _)| b.is_instance_valid() && b.bind().belongs_to(card.clone())) {
+            self.close_loyalty_bar();
+            return true;
+        }
+        // nur eigene Planeswalker auf dem Spielfeld
+        let players = self.state.as_ref().and_then(|s| get_array(s, "players")).unwrap_or_default();
+        let Some(data) = players
+            .get(0)
+            .and_then(|p| p.try_to::<VarDictionary>().ok())
+            .and_then(|p| get_array(&p, "battlefield"))
+            .and_then(|f| f.iter_shared().filter_map(|c| c.try_to::<VarDictionary>().ok()).find(|c| get_int(c, "id") == i64::from(card_id)))
+        else {
+            return false;
+        };
+        let Some(abilities) = get_array(&data, "loyalty_abilities").filter(|a| !a.is_empty()) else { return false };
+        let mut actions = self.card_actions(card_id);
+        let mut entries = Vec::new();
+        let mut picks = Vec::new();
+        for a in abilities.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()) {
+            let label = get_str(&a, "label");
+            let action = actions.iter().position(|(_, l)| l.trim() == label.trim()).map(|i| actions.remove(i).0);
+            entries.push(LoyaltyEntry { cost: get_str(&a, "cost"), text: get_str(&a, "text"), enabled: action.is_some() });
+            picks.push(action);
+        }
+        // weitere Fähigkeiten der Karte (keine Loyalitätsfähigkeiten) ans Ende
+        for (action, label) in actions {
+            entries.push(LoyaltyEntry { cost: String::new(), text: label.trim().to_string(), enabled: true });
+            picks.push(Some(action));
+        }
+        self.clear_choice_objects();
+        let Some(mut parent) = self.controller.clone() else { return false };
+        let mut bar = LoyaltyBar::create(entries, card);
+        bar.connect("picked", &Callable::from_object_method(&self.to_gd(), "on_loyalty_picked"));
+        parent.add_child(&bar);
+        self.loyalty_bar = Some((bar, picks));
+        true
+    }
+
+    /// Loyalitäts-Leiste schließen (falls offen).
+    fn close_loyalty_bar(&mut self) {
+        if let Some((mut b, _)) = self.loyalty_bar.take() {
+            if b.is_instance_valid() {
+                b.bind_mut().close();
+            }
+        }
+    }
+
+    /// Zeile der Loyalitäts-Leiste angeklickt: Fähigkeit aktivieren (Kosten, Ziele usw. fragt die Engine danach).
+    #[func]
+    fn on_loyalty_picked(&mut self, index: i64) {
+        let action = self.loyalty_bar.as_ref().and_then(|(_, p)| p.get(index as usize).copied().flatten());
+        self.close_loyalty_bar();
+        if let Some(a) = action {
+            self.answer(Choice::Action(a));
         }
     }
 
@@ -2891,6 +2967,7 @@ impl ForgeTable {
             b.bind_mut().dismiss();
         }
         self.close_wheel();
+        self.close_loyalty_bar();
     }
 
     /// Anzeige für das HUD.

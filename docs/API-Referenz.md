@@ -27,6 +27,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [CardInspector](#cardinspector) – erbt von `Node3D`
 - [CostSymbolCanvas](#costsymbolcanvas) – erbt von `Control`
 - [ManaFx](#manafx) – erbt von `Node3D`
+- [LoyaltyBar](#loyaltybar) – erbt von `Node3D`
 - [ManaWheel](#manawheel) – erbt von `Node3D`
 - [Showcase](#showcase) – erbt von `Node3D`
 - [Slider3D](#slider3d) – erbt von `Area3D`
@@ -156,6 +157,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
+| `on_loyalty_picked(index: int)` | `void` | Zeile der Loyalitäts-Leiste angeklickt: Fähigkeit aktivieren (Kosten, Ziele usw. fragt die Engine danach). |
 | `on_action_choice_cancel()` | `void` | Knopf „Abbrechen“ bei „Wähle eins“: Bühne schließen, die Priorität bleibt offen. |
 | `on_aim_released(card: Card3D, target: Card3D)` | `void` | Pfeil losgelassen (vom `TableController`): Angreifer → Spieler/Planeswalker = angreifen, Blocker → Angreifer = blocken, Quelle der Zielwahl → gültiges Ziel = Ziel wählen. Ins Leere losgelassen nimmt den Angriff bzw. Block dieser Kreatur zurück. |
 | `on_card_dropped(card: Card3D, from_zone: Zone, to_zone: Zone)` | `void` | Karte wurde auf dem Tisch abgelegt: Hat sie eine Aktion in der offenen `Priority`- Entscheidung (aus der Hand: Land spielen / wirken; auf dem Spielfeld: Fähigkeit aktivieren), wird diese gewählt. Aus der Hand zurück auf die Hand = abbrechen. Alles andere wird auf den Engine-Stand zurückgesetzt. |
@@ -566,6 +568,28 @@ Mana-Effekt (Land → Karte) bzw. nur Einschlag. Gibt sich nach Frame 80 selbst 
 |---|---|---|
 | `set_target(target: Node3D)` | `void` | Ziel nachträglich setzen (z. B. sobald die Karte auf dem Stack liegt). |
 | `has_target()` | `bool` | Hat der Effekt schon ein Ziel? |
+
+## LoyaltyBar
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/loyalty_bar.rs`*
+
+Leiste der Loyalitätsfähigkeiten an einem Planeswalker (wie in Arena): je Fähigkeit eine Zeile mit Kosten-Symbol und Text, nicht aktivierbare ausgegraut. Signal [signal picked] beim Klick auf eine aktivierbare Zeile.
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `update_pointer(world: Vector3)` | `void` | Trefferpunkt des Mausstrahls (Welt) auf der Leiste: die Zeile darunter wird hervorgehoben. |
+| `set_hovered(hovered: bool)` | `void` | Maus verlässt die Leiste bzw. betritt sie (ohne Trefferpunkt). |
+| `activate()` | `void` | Klick: liegt die Maus auf einer aktivierbaren Zeile, wird [signal picked] gesendet. |
+| `close()` | `void` | Leiste schließen (0,15 s ausblenden), danach freigeben; nicht mehr bedienbar. |
+| `belongs_to(card: Card3D)` | `bool` | Gehört die Leiste zur Karte `card`? |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `picked(index: int)` | Eine aktivierbare Zeile wurde angeklickt: `index` = Nummer der Fähigkeit (Reihenfolge wie übergeben). |
 
 ## ManaWheel
 

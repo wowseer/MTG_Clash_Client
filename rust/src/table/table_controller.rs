@@ -24,6 +24,7 @@ use godot::prelude::*;
 use super::card3d::Card3D;
 use super::button3d::Button3D;
 use super::slider3d::Slider3D;
+use super::loyalty_bar::LoyaltyBar;
 use super::mana_wheel::ManaWheel;
 use super::exile_portal::ZONE_CLICK_GROUP;
 use super::layers::{CARD_LAYER, CONTROL_LAYER, ZONE_LAYER};
@@ -85,6 +86,9 @@ pub struct TableController {
     slider_drag: Option<Gd<Slider3D>>,
     /// Farbrad unter der Maus bzw. gedrückt (Klick beim Loslassen, wenn noch darauf).
     hovered_wheel: Option<Gd<ManaWheel>>,
+    /// Loyalitäts-Leiste unter der Maus und die, auf der die Maustaste gedrückt wurde.
+    hovered_bar: Option<Gd<LoyaltyBar>>,
+    bar_press: Option<Gd<LoyaltyBar>>,
     wheel_press: Option<Gd<ManaWheel>>,
     /// Anklickbare Zonen-Fläche (z. B. Exil-Strudel) unter der Maus bzw. gedrückt.
     hovered_zone_hit: Option<Gd<Area3D>>,
@@ -113,6 +117,8 @@ impl INode3D for TableController {
             control_press: None,
             hovered_slider: None,
             hovered_wheel: None,
+            hovered_bar: None,
+            bar_press: None,
             wheel_press: None,
             hovered_zone_hit: None,
             zone_hit_press: None,
@@ -363,6 +369,19 @@ impl TableController {
         if let (Some(mut w), Some(h)) = (wheel.clone(), control_hit.as_ref()) {
             w.bind_mut().update_pointer(h.position);
         }
+        // Loyalitäts-Leiste: Trefferfläche hängt unter `content` der Leiste; Trefferpunkt wählt die Zeile
+        let bar = control_hit
+            .as_ref()
+            .and_then(|h| h.collider.clone().try_cast::<Node>().ok()?.get_parent()?.get_parent()?.try_cast::<LoyaltyBar>().ok());
+        if bar != self.hovered_bar {
+            if let Some(mut old) = self.hovered_bar.take().filter(|b| b.is_instance_valid()) {
+                old.bind_mut().set_hovered(false);
+            }
+            self.hovered_bar = bar.clone();
+        }
+        if let (Some(mut b), Some(h)) = (bar.clone(), control_hit.as_ref()) {
+            b.bind_mut().update_pointer(h.position);
+        }
         // anklickbare Zonen-Fläche (Exil-Strudel)
         self.hovered_zone_hit = control_hit
             .as_ref()
@@ -381,7 +400,7 @@ impl TableController {
             }
             self.hovered_control = control.clone();
         }
-        let hit = if over_gui || control.is_some() || slider.is_some() || wheel.is_some() || zone_hit {
+        let hit = if over_gui || control.is_some() || slider.is_some() || wheel.is_some() || bar.is_some() || zone_hit {
             None
         } else {
             self.raycast(origin, dir, CARD_LAYER).and_then(|h| {
@@ -431,6 +450,10 @@ impl TableController {
         }
         if let Some(wheel) = self.hovered_wheel.as_ref().filter(|w| w.is_instance_valid()).cloned() {
             self.wheel_press = Some(wheel);
+            return;
+        }
+        if let Some(bar) = self.hovered_bar.as_ref().filter(|b| b.is_instance_valid()).cloned() {
+            self.bar_press = Some(bar);
             return;
         }
         if let Some(hit) = self.hovered_zone_hit.as_ref().filter(|h| h.is_instance_valid()).cloned() {
@@ -525,6 +548,12 @@ impl TableController {
         if let Some(mut wheel) = self.wheel_press.take() {
             if wheel.is_instance_valid() && self.hovered_wheel.as_ref() == Some(&wheel) {
                 wheel.bind_mut().activate();
+            }
+            return;
+        }
+        if let Some(mut bar) = self.bar_press.take() {
+            if bar.is_instance_valid() && self.hovered_bar.as_ref() == Some(&bar) {
+                bar.bind_mut().activate();
             }
             return;
         }
