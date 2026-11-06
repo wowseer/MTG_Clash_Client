@@ -761,6 +761,7 @@ impl ForgeTable {
         let segments = entries.iter().filter_map(|(l, _)| WheelSegment::for_letter(*l)).collect();
         let follow = None;
         let mut wheel = ManaWheel::create(segments, anchor, follow, art, prompt);
+        wheel.bind_mut().set_prompt_on_top(at_card.is_none());
         wheel.connect("picked", &Callable::from_object_method(&self.to_gd(), "on_wheel_picked"));
         parent.add_child(&wheel);
         self.wheel = Some((wheel, entries.into_iter().map(|(_, c)| c).collect(), voluntary));
@@ -5534,7 +5535,7 @@ const LIB_STEP: f32 = 0.3;
 /// Reihenfolge der Segmente im Farbrad (im Uhrzeigersinn ab oben; farblos zuletzt).
 const WHEEL_ORDER: &str = "WUBRGC";
 /// ✕-Knopf „Wirken abbrechen“ an der Karte: Breite und Abstand vor der Karte (Welteinheiten).
-const CANCEL_BADGE_WIDTH: f32 = 1.6;
+const CANCEL_BADGE_WIDTH: f32 = 0.75;
 const CANCEL_BADGE_LIFT: f32 = 0.15;
 const LIB_SCALE: f32 = 1.15;
 const LIB_DECLINE_POS: Vector2 = Vector2::new(1.75, -0.85);

@@ -36,6 +36,8 @@ const CLOSE_TIME: f32 = 0.15;
 const HOVER_SPEED: f32 = 18.0;
 /// Hinweis: Abstand seiner Mitte über dem Radrand (Anteil der Bildhöhe).
 const PROMPT_GAP: f32 = 0.05;
+/// Höhe des Hinweises oben am Bildschirm (Anteil der Bildhöhe), siehe `set_prompt_on_top`.
+const PROMPT_TOP_Y: f32 = 0.07;
 /// Höchstzahl der Segmente (Länge der Shader-Felder).
 const MAX_SEGMENTS: usize = 6;
 
@@ -195,6 +197,8 @@ pub struct ManaWheel {
     follow: Option<Gd<Card3D>>,
     art: Option<Gd<Texture2D>>,
     prompt_text: GString,
+    /// Hinweis oben am Bildschirm wie ein Bühnen-Titel statt direkt über dem Rad.
+    prompt_on_top: bool,
     hovered: i32,
     hover_amount: [f32; MAX_SEGMENTS],
     t: f32,
@@ -215,6 +219,7 @@ impl INode3D for ManaWheel {
             follow: None,
             art: None,
             prompt_text: GString::new(),
+            prompt_on_top: false,
             hovered: -1,
             hover_amount: [0.0; MAX_SEGMENTS],
             t: 0.0,
@@ -259,6 +264,12 @@ impl INode3D for ManaWheel {
 
 #[godot_api]
 impl ManaWheel {
+    /// Hinweis oben am Bildschirm zeigen (wie ein Bühnen-Titel) statt über dem Rad – für Fragen
+    /// der Engine, deren Rad in der Tischmitte zwischen den Medaillons steht.
+    pub fn set_prompt_on_top(&mut self, on_top: bool) {
+        self.prompt_on_top = on_top;
+    }
+
     /// Ein Segment wurde angeklickt: `index` = Nummer des Segments (Reihenfolge wie übergeben).
     #[signal]
     fn picked(index: i64);
@@ -449,12 +460,19 @@ impl ManaWheel {
             h.set_global_transform(Transform3D::new(basis.scaled(Vector3::splat(radius)), center));
         }
         if let Some(l) = self.prompt.as_mut() {
-            // über dem Rad (bzw. darunter, wenn oben kein Platz ist)
+            // oben wie ein Bühnen-Titel (Frage der Engine: über dem Rad lägen die Medaillons),
+            // sonst über dem Rad (bzw. darunter, wenn oben kein Platz ist)
             let gap = screen.y * (RADIUS_SCREEN + PROMPT_GAP);
-            let y = if at.y - gap > screen.y * 0.06 { at.y - gap } else { at.y + gap };
-            let top = cam.project_position(Vector2::new(at.x, y), DISTANCE);
+            let (x, y, size) = if self.prompt_on_top {
+                (screen.x * 0.5, screen.y * PROMPT_TOP_Y, 0.7)
+            } else if at.y - gap > screen.y * 0.06 {
+                (at.x, at.y - gap, 0.45)
+            } else {
+                (at.x, at.y + gap, 0.45)
+            };
+            let top = cam.project_position(Vector2::new(x, y), DISTANCE);
             l.set_global_transform(Transform3D::new(basis, top));
-            l.set_pixel_size(view_h / screen.y * 0.45);
+            l.set_pixel_size(view_h / screen.y * size);
             let mut c = l.get_modulate();
             c.a = alpha;
             l.set_modulate(c);

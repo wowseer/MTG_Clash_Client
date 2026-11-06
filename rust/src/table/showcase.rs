@@ -241,6 +241,35 @@ impl Showcase {
         }
         self.t = 0.0;
         self.closing = false;
+        // am Rand (z. B. Stack rechts außen) nicht aus dem Bild laufen: Titel und Knöpfe ganz zeigen
+        self.keep_on_screen(TITLE_MAX_WIDTH * 0.5);
+    }
+
+    /// Bühne entlang der Bildschirm-Waagerechten verschieben, bis der Bereich ±`half_width`
+    /// (Bühnen-Einheiten) um ihre Mitte ganz im Bild liegt (Rand 2 % der Bildbreite).
+    fn keep_on_screen(&mut self, half_width: f32) {
+        let Some(vp) = self.base().get_viewport() else { return };
+        let Some(cam) = vp.get_camera_3d() else { return };
+        let width = vp.get_visible_rect().size.x;
+        let margin = width * 0.02;
+        let xf = self.base().get_global_transform();
+        let right = xf.basis.col_a() * half_width;
+        let (l, r) = (cam.unproject_position(xf.origin - right).x, cam.unproject_position(xf.origin + right).x);
+        if r - l <= 1.0 {
+            return;
+        }
+        let shift_px = if r > width - margin {
+            (width - margin) - r
+        } else if l < margin {
+            margin - l
+        } else {
+            return;
+        };
+        let world_per_px = 2.0 * right.length() / (r - l);
+        let dir = right.normalized();
+        let mut moved = xf;
+        moved.origin += dir * shift_px * world_per_px;
+        self.base_mut().set_global_transform(moved);
     }
 
     /// Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene).
