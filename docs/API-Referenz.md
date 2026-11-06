@@ -543,12 +543,15 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_ready_glow(on: bool)` | `void` | Dezenter goldener Rand „diese Karte kann eine Fähigkeit aktivieren“ an/aus (für Skripte; Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang. |
 | `flash()` | `void` | Rahmen leuchtet kurz hell und orange auf (etwas wurde aktiviert: gespielt, Fähigkeit, Mana-Einschlag, Angriff …), danach zurück zum normalen Leuchten. |
 | `set_attacking(attacking: bool)` | `void` | Angreifer im Kampf: Karte rückt etwas zum Gegner vor und trägt die rote Angriffsspitze an der Oberkante (`false` = zurück an ihren Platz). |
+| `set_turned(turned: bool)` | `void` | Kartenbild um 180° gedreht zeigen (setzt die Zone, `Zone.turn_cards`): Karten des Gegners liegen in seiner um 180° gedrehten Zone und wären sonst von unserer Seite aus kopfüber. Nur das Bild dreht sich; Vorrücken und Schlag im Kampf bleiben zum Gegner gerichtet. |
+| `set_combat_alone(alone: bool)` | `bool` | Im Kampf geblockt bzw. blockend (`true`): die Karte bildet auf dem Spielfeld einen eigenen Stapel, statt mit gleichen Karten zusammenzuliegen. Gibt zurück, ob sich etwas geändert hat. |
 | `set_tile(tile: bool)` | `void` | Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen und Ziehen wird die ganze Karte gezeigt. Setzt die Zone beim Anordnen. |
 | `set_bright(bright: bool)` | `void` | Immer hell in Originalfarben zeigen (Karten auf einer 3D-Bühne vor der Kamera). |
 | `set_zoom(zoom: bool)` | `void` | Beim Hovern selbst groß vor die Kamera holen (Hand) – setzt die Zone beim Anordnen. |
 | `is_tile()` | `bool` | Wird die Karte als Kachel gezeigt? |
 | `is_attacking()` | `bool` | Ist die Karte als Angreifer markiert (vorgerückt, mit Angriffsspitze)? |
 | `lunge(target: Vector3, reach: float, delay: float)` | `void` | Schlag im Kampf: die Karte holt zum Weltpunkt `target` aus (Anteil `reach` des Wegs, angehoben), trifft nach [`LUNGE_OUT`] Sekunden und kehrt zurück; Start nach `delay`. |
+| `hold(seconds: float)` | `void` | Die Karte bleibt `seconds` lang an ihrem Platz: Bewegungen (`move_to()`) beginnen erst danach (getroffene Kreatur im Kampf, damit der Schlag sichtbar bleibt). |
 | `set_marker_kind(kind: int)` | `void` | Aura um die Karte setzen: 0 = keine, 1 = Angreifer (rot), 2 = Blocker (blau), 3 = ausgewählt/wählt ein Ziel (gold). |
 | `set_tapped_state(tapped: bool)` | `void` | Setzt nur den Tapp-Zustand der Karte (schräg, ausgegraut, Tapp-Symbol), ohne Spielregeln (kein Mana, kein Neu-Anordnen) – für Skripte und Tests. |
 | `is_tapped()` | `bool` | Ist die Karte getappt (leicht schräg, ausgegraut, Tapp-Symbol)? |
@@ -875,6 +878,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `mirror_x` | `bool` | Automatische Anordnung seitenverkehrt (lokal x gespiegelt): für die um 180° gedrehte Zone des Gegners, damit seine Artefakte von uns aus wie unsere rechts und Planeswalker links liegen. |
 | `card_scale` | `float` | Größe der Karten in dieser Zone (1 = normal). Spielfeld und Ressourcen verkleinern sie automatisch, wenn sonst nicht alle in eine Reihe passen. |
 | `tile_cards` | `bool` | Karten als Kachel zeigen (nur Name und Bild, Stärke/Widerstand unten rechts; siehe `Card3D.set_tile()`) – Form der Karten auf dem Spielfeld. |
+| `turn_cards` | `bool` | Kartenbilder um 180° gedreht zeigen (`Card3D.set_turned()`): für die um 180° gedrehten Zonen des Gegners, damit seine Karten von unserer Seite aus lesbar sind. |
 | `zoom_cards` | `bool` | Karten dieser Zone beim Hovern selbst groß vor die Kamera holen (eigene Hand); sonst zeigt die Kartenansicht eine Kopie. |
 | `swallow_cards` | `bool` | Karten verschwinden in der Zone (Exil-Strudel): sie gleiten zur Mitte, schrumpfen dabei auf fast nichts und sinken unter den Tisch – unsichtbar und nicht anklickbar. Verlassen sie die Zone, wachsen sie auf dem Weg zum neuen Platz wieder. |
 

@@ -33,7 +33,7 @@ use crate::game::seat::PlayerSeat;
 use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY};
 use crate::table::search_list::{self, SearchList};
 use crate::table::showcase::Showcase;
-use crate::table::card3d::{Card3D, CardMarker, CARD_HEIGHT, CARD_WIDTH, LUNGE_OUT, PLAYABLE_GLOW, TILE_HEIGHT};
+use crate::table::card3d::{Card3D, CardMarker, CARD_HEIGHT, CARD_WIDTH, LUNGE_HOLD, LUNGE_OUT, PLAYABLE_GLOW, TILE_HEIGHT};
 use crate::table::card_inspector::{CardInspector, InspectorEntry};
 use crate::table::fx::{mana_color, ManaFx};
 use godot::classes::Label3D;
@@ -1320,7 +1320,10 @@ impl ForgeTable {
             "GameEventCardDamaged" if get_str(&event, "phase").starts_with("COMBAT") => {
                 let target = self.cards.get(&get_int(&event, "card")).cloned();
                 let point = target.as_ref().map(|c| c.get_global_position());
-                self.combat_hit(&event, target, point, 0.5);
+                // der Angreifer läuft ganz in den Blocker hinein (landet auf ihm), der Blocker
+                // stemmt sich nur kurz dagegen (Video „Blocken“)
+                let attacker = self.cards.get(&get_int(&event, "source")).is_some_and(|c| c.bind().is_attacking());
+                self.combat_hit(&event, target, point, if attacker { 0.95 } else { 0.18 });
             }
             _ => {}
         }
@@ -2328,7 +2331,7 @@ impl ForgeTable {
             AimKind::Block => {
                 self.block_plan.retain(|(b, _)| *b != id);
                 if let Some(Target::Card(a)) = target {
-                    self.block_plan.push((id, a));
+                    self.assign_blocker(id, a);
                     self.drawn_arrows.insert(arrow_key(ArrowColor::Blue as u64, i64::from(id), Target::Card(a)));
                 }
                 self.combat_armed = None;
@@ -4327,13 +4330,22 @@ impl ForgeTable {
                 }
                 if attackers.contains(&card) {
                     if let Some(blocker) = self.combat_armed.take() {
-                        self.block_plan.push((blocker, card));
+                        self.assign_blocker(blocker, card);
                     }
                     return true;
                 }
                 false
             }
             _ => false,
+        }
+    }
+
+    /// Blocker `blocker` dem Angreifer `attacker` zuweisen (wie im Video „Blocken“): der Rahmen
+    /// des Blockers wechselt weich von Blau zu Orange und blitzt dabei auf (`Card3D::flash`).
+    fn assign_blocker(&mut self, blocker: CardId, attacker: CardId) {
+        self.block_plan.push((blocker, attacker));
+        if let Some(mut card) = self.cards.get(&i64::from(blocker)).filter(|c| c.is_instance_valid()).cloned() {
+            card.bind_mut().flash();
         }
     }
 
@@ -4706,13 +4718,25 @@ impl ForgeTable {
     }
 
     /// Kampfansicht: geplante (eigene Erklärung) und erklärte Angreifer (Zustand `combat`) rücken
-    /// vor und tragen die Angriffsspitze; alle anderen nicht.
+    /// vor und tragen die Angriffsspitze; alle anderen nicht. Jeder geblockte Angreifer und jeder
+    /// Blocker (geplant oder erklärt) liegt in einem eigenen Stapel.
     fn update_combat_look(&mut self) {
         let mut attacking: HashSet<i64> = self.attack_plan.iter().map(|(c, _)| i64::from(*c)).collect();
+        let mut paired: HashSet<i64> = HashSet::new();
+        if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::DeclareBlockers { .. })) {
+            for (b, a) in &self.block_plan {
+                paired.extend([i64::from(*b), i64::from(*a)]);
+            }
+        }
         if let Some(combat) = self.state.as_ref().and_then(|s| s.get("combat")).and_then(|v| v.try_to::<VarDictionary>().ok()) {
             for a in get_array(&combat, "attackers").unwrap_or_default().iter_shared() {
                 if let Ok(a) = a.try_to::<VarDictionary>() {
                     attacking.insert(get_int(&a, "card"));
+                }
+            }
+            for pair in get_array(&combat, "blocks").unwrap_or_default().iter_shared() {
+                if let Ok(pair) = pair.try_to::<VarArray>() {
+                    paired.extend(pair.iter_shared().filter_map(|v| v.try_to::<i64>().ok()));
                 }
             }
         }
@@ -4720,7 +4744,8 @@ impl ForgeTable {
         let mut relayout: Vec<Gd<Zone>> = Vec::new();
         for (id, card) in self.cards.iter_mut() {
             let on = attacking.contains(id);
-            if card.bind().is_attacking() != on {
+            let alone_changed = card.bind_mut().set_combat_alone(paired.contains(id));
+            if card.bind().is_attacking() != on || alone_changed {
                 card.bind_mut().set_attacking(on);
                 if let Some(z) = card.bind().get_zone() {
                     if !relayout.contains(&z) {
@@ -4769,6 +4794,10 @@ impl ForgeTable {
         }
         let (Some(mut card), Some(point)) = (self.cards.get(&source).cloned(), point) else { return };
         card.bind_mut().lunge(point, reach, 0.0);
+        // der Getroffene bleibt bis nach dem Treffer liegen (stirbt er, zieht er erst dann weiter)
+        if let Some(mut t) = target.clone() {
+            t.bind_mut().hold(LUNGE_OUT + LUNGE_HOLD);
+        }
         let fx = ManaFx::impact(target.map(|t| t.upcast()), point, mana_color("R"), LUNGE_OUT);
         if let Some(mut parent) = self.controller.clone() {
             parent.add_child(&fx);

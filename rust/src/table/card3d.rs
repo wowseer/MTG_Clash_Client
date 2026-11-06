@@ -73,10 +73,19 @@ const READY_STRENGTH: f32 = 1.0;
 const FLASH_KEYS: [(f32, f32); 5] = [(0.0, 1.0), (0.07, 4.6), (0.27, 2.7), (0.67, 1.7), (1.6, 1.0)];
 /// Angreifer: rückt so weit nach vorn (zum Gegner, lokal −Z).
 const ADVANCE: f32 = 0.22;
-/// Schlag im Kampf: Ausholen zum Ziel, Rückweg (Sekunden), Anheben in der Mitte.
-pub const LUNGE_OUT: f32 = 0.22;
+/// Schlag im Kampf (wie im Video „Blocken“): Ausholen zum Ziel, Rückweg (Sekunden), Höhe über dem
+/// Ziel beim Treffer (die Karte landet auf ihm statt hindurch) und Drehung in der Tischebene
+/// während des Flugs (Grad).
+pub const LUNGE_OUT: f32 = 0.3;
 const LUNGE_BACK: f32 = 0.38;
 const LUNGE_LIFT: f32 = 0.6;
+const LUNGE_TURN_DEGREES: f32 = 16.0;
+/// Nach dem Treffer bleiben Angreifer und Getroffener so lange liegen (Sekunden), bevor sie
+/// weiterziehen (z. B. zum Friedhof) – sonst überdeckte die Fahrt den Schlag.
+pub const LUNGE_HOLD: f32 = 0.15;
+/// Rahmenfarbe wechselt weich (Faktor je Sekunde, ≈ 0,25 s), z. B. Blau → Orange beim Zuweisen
+/// eines Blockers.
+const GLOW_FADE_SPEED: f32 = 14.0;
 /// Doppelseitige Karte umdrehen (ANIMATION.md): Dauer, Anheben in der Mitte (Cubic-In-Out).
 const FLIP_DURATION: f32 = 0.35;
 const FLIP_LIFT: f32 = 0.25;
@@ -218,6 +227,18 @@ pub struct Card3D {
     /// Schlag zum Ziel (Welt), Zeit, Reichweite (Anteil des Wegs), Verzögerung.
     lunge: Option<(Vector3, f32, f32, f32)>,
     lunge_applied: Vector3,
+    /// Drehung des Schlags in diesem Frame (wird vor dem nächsten Frame zurückgenommen).
+    lunge_turn_applied: f32,
+    /// Restzeit (Sekunden), in der die Karte an ihrem Platz bleibt ([method hold]).
+    hold_left: f32,
+    /// Kartenbild um 180° gedreht (Karten des Gegners lesbar von unserer Seite), siehe
+    /// [method set_turned].
+    turned: bool,
+    /// Im Kampf geblockt bzw. blockend: liegt auf dem Spielfeld in einem eigenen Stapel.
+    combat_alone: bool,
+    /// Rahmenfarbe: gezeigt und Ziel (weicher Übergang, [`GLOW_FADE_SPEED`]).
+    glow_shown: Color,
+    glow_goal: Color,
     /// Kachel-Form gewünscht (Spielfeld) bzw. gerade gezeigt (beim Zoomen/Ziehen ganze Karte).
     tile: bool,
     tile_shown: bool,
@@ -299,6 +320,12 @@ impl IArea3D for Card3D {
             attack_banner: None,
             lunge: None,
             lunge_applied: Vector3::ZERO,
+            lunge_turn_applied: 0.0,
+            hold_left: 0.0,
+            turned: false,
+            combat_alone: false,
+            glow_shown: PLAYABLE_GLOW,
+            glow_goal: PLAYABLE_GLOW,
             tile: false,
             tile_shown: false,
             shape_refs: None,
@@ -362,12 +389,12 @@ impl IArea3D for Card3D {
                     card_xf.affine_inverse() * global
                 }
                 None => Transform3D::new(
-                    tilt.scaled(Vector3::splat(self.hover_scale)),
+                    tilt.scaled(Vector3::splat(self.hover_scale)) * self.turn_basis(),
                     Vector3::new(0.0, self.hover_lift, 0.0),
                 ),
             }
         } else {
-            Transform3D::IDENTITY
+            Transform3D::new(self.turn_basis(), Vector3::ZERO)
         };
 
         if zoomed != self.zoomed {
@@ -385,10 +412,21 @@ impl IArea3D for Card3D {
         self.update_shield(delta as f32);
         let dt = delta as f32;
         // Kachel auf dem Spielfeld, beim Zoomen und Ziehen die ganze Karte (lesbar)
-        let want_tile = self.tile && !zoomed && !self.dragging;
+        let want_tile = if self.hold_left > 0.0 { self.tile_shown } else { self.tile && !zoomed && !self.dragging };
         if want_tile != self.tile_shown {
             self.tile_shown = want_tile;
             self.apply_shape();
+        }
+        self.hold_left = (self.hold_left - dt).max(0.0);
+        if self.glow_shown != self.glow_goal {
+            let w = 1.0 - (-GLOW_FADE_SPEED * dt).exp();
+            let c = self.glow_shown.lerp(self.glow_goal, w as f64);
+            let close = (c.r - self.glow_goal.r).abs() + (c.g - self.glow_goal.g).abs() + (c.b - self.glow_goal.b).abs() < 0.01;
+            self.glow_shown = if close { self.glow_goal } else { c };
+            let shown = self.glow_shown;
+            if let Some(mat) = self.marker_material.as_mut() {
+                mat.set_shader_parameter("glow_color", &Vector3::new(shown.r, shown.g, shown.b).to_variant());
+            }
         }
         // Aufleuchten abklingen lassen
         if let Some(t) = self.flash_t.as_mut() {
@@ -403,22 +441,26 @@ impl IArea3D for Card3D {
         self.advance_amount += (adv_goal - self.advance_amount) * (1.0 - (-10.0 * dt).exp());
         let mut target = target;
         target.origin.z -= ADVANCE * self.advance_amount;
-        let lunge = self.lunge_offset(dt);
+        let (lunge, turn) = self.lunge_offset(dt);
 
         let w = 1.0 - (-self.tilt_speed * dt).exp();
         let flip = self.advance_flip(dt);
         let applied = self.lunge_applied;
+        let turn_applied = self.lunge_turn_applied;
         let visual = self.visual.as_mut().unwrap();
         let mut current = visual.get_transform();
         current.origin -= applied;
+        current.basis = Basis::from_axis_angle(Vector3::UP, -turn_applied) * current.basis;
         let mut next = current.interpolate_with(&target, w);
         next.origin += lunge;
+        next.basis = Basis::from_axis_angle(Vector3::UP, turn) * next.basis;
         match flip {
             // Umdrehen: Drehung um die Längsachse (lokal z) und Anheben direkt setzen
             Some(xf) => visual.set_transform(target * xf),
             None => visual.set_transform(next),
         }
         self.lunge_applied = lunge;
+        self.lunge_turn_applied = turn;
     }
 }
 
@@ -521,6 +563,8 @@ impl Card3D {
     #[func]
     pub fn move_to(&mut self, target: Transform3D, delay: f64) {
         self.stop_motion();
+        // im Kampf getroffen bzw. schlagend: erst nach dem Treffer losziehen
+        let delay = delay.max(f64::from(self.hold_left));
         let duration = self.move_duration;
         let this = self.to_gd();
         let mut tween = self.base_mut().create_tween();
@@ -575,14 +619,37 @@ impl Card3D {
         }
     }
 
+    /// Kartenbild um 180° gedreht zeigen (setzt die Zone, [member Zone.turn_cards]): Karten des
+    /// Gegners liegen in seiner um 180° gedrehten Zone und wären sonst von unserer Seite aus
+    /// kopfüber. Nur das Bild dreht sich; Vorrücken und Schlag im Kampf bleiben zum Gegner gerichtet.
+    #[func]
+    pub fn set_turned(&mut self, turned: bool) {
+        if self.turned != turned {
+            self.turned = turned;
+            self.place_banner();
+        }
+    }
+
+    /// Im Kampf geblockt bzw. blockend (`true`): die Karte bildet auf dem Spielfeld einen eigenen
+    /// Stapel, statt mit gleichen Karten zusammenzuliegen. Gibt zurück, ob sich etwas geändert hat.
+    #[func]
+    pub fn set_combat_alone(&mut self, alone: bool) -> bool {
+        let changed = self.combat_alone != alone;
+        self.combat_alone = alone;
+        changed
+    }
+
     /// Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen
     /// und Ziehen wird die ganze Karte gezeigt. Setzt die Zone beim Anordnen.
     #[func]
     pub fn set_tile(&mut self, tile: bool) {
         if self.tile != tile {
             self.tile = tile;
-            self.tile_shown = tile && !self.zoomed && !self.dragging;
-            self.apply_shape();
+            // während [method hold] behält die Karte ihre Form (process wechselt danach)
+            if self.hold_left <= 0.0 {
+                self.tile_shown = tile && !self.zoomed && !self.dragging;
+                self.apply_shape();
+            }
         }
     }
 
@@ -616,6 +683,14 @@ impl Card3D {
     #[func]
     pub fn lunge(&mut self, target: Vector3, reach: f32, delay: f32) {
         self.lunge = Some((target, 0.0, reach, delay));
+        self.hold(delay + LUNGE_OUT + LUNGE_HOLD);
+    }
+
+    /// Die Karte bleibt `seconds` lang an ihrem Platz: Bewegungen ([method move_to]) beginnen
+    /// erst danach (getroffene Kreatur im Kampf, damit der Schlag sichtbar bleibt).
+    #[func]
+    pub fn hold(&mut self, seconds: f32) {
+        self.hold_left = self.hold_left.max(seconds);
     }
 
     /// Aura um die Karte setzen: 0 = keine, 1 = Angreifer (rot), 2 = Blocker (blau),
@@ -720,12 +795,15 @@ impl Card3D {
     /// Schlüssel zum Stapeln gleicher Karten auf dem Spielfeld (wie gleichnamige Länder): nur
     /// Karten mit gleichem Namen, Tapp-Zustand, Angriff, Einsatzbereitschaft, Stärke/Widerstand,
     /// Schaden, Marken und Seite liegen auf einem Stapel; getappte, angreifende und noch nicht
-    /// einsatzbereite (summoning sick) Kreaturen bilden je einen eigenen.
+    /// einsatzbereite (summoning sick) Kreaturen bilden je einen eigenen; geblockte Angreifer und
+    /// Blocker ([method set_combat_alone]) liegen allein.
     pub fn stack_key(&self) -> String {
         let counters: Vec<String> = self.coins.iter().map(|(k, n, _, _)| format!("{k}{n}")).collect();
+        // geblockt bzw. blockend: eigener Stapel (eindeutiger Name)
+        let name = if self.combat_alone { format!("{}#{}", self.card_name, self.base().instance_id()) } else { self.card_name.to_string() };
         format!(
             "{}|{}|{}|{}|{:?}|{}|{}|{}|{}",
-            self.card_name,
+            name,
             self.tapped,
             // angreifend: erklärt (Forge) oder in der Angriffsauswahl vorgemerkt
             self.advanced || self.def.attacking,
@@ -833,9 +911,7 @@ impl Card3D {
             m.set_shader_parameter("quad_size", &quad.to_variant());
             m.set_shader_parameter("card_half", &(Vector2::new(CARD_WIDTH, len) * 0.5).to_variant());
         }
-        if let Some(b) = self.attack_banner.as_mut() {
-            b.set_position(Vector3::new(0.0, CARD_THICKNESS, -len * 0.5 - BANNER_SIZE.y * 0.5 + 0.02));
-        }
+        self.place_banner();
         let icon_z = if self.tile_shown { 0.0 } else { -CARD_HEIGHT * 0.12 };
         if let Some(i) = self.tap_icon.as_mut() {
             i.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.003, icon_z));
@@ -861,12 +937,13 @@ impl Card3D {
         self.tile_shown && self.tile_texture.is_some()
     }
 
-    /// Versatz des Schlags im Kampf (lokal) für dieses Frame.
-    fn lunge_offset(&mut self, dt: f32) -> Vector3 {
-        let Some((target, t, reach, delay)) = self.lunge.as_mut() else { return Vector3::ZERO };
+    /// Versatz (lokal) und Drehung in der Tischebene (Bogenmaß) des Schlags im Kampf für dieses
+    /// Frame: die Karte hebt ab, kippt leicht zur Seite und landet beim Treffer über dem Ziel.
+    fn lunge_offset(&mut self, dt: f32) -> (Vector3, f32) {
+        let Some((target, t, reach, delay)) = self.lunge.as_mut() else { return (Vector3::ZERO, 0.0) };
         if *delay > 0.0 {
             *delay -= dt;
-            return Vector3::ZERO;
+            return (Vector3::ZERO, 0.0);
         }
         *t += dt;
         let k = if *t < LUNGE_OUT {
@@ -877,14 +954,34 @@ impl Card3D {
             1.0 - (1.0 - (1.0 - u).powi(3)) // zurück, weich auslaufend
         } else {
             self.lunge = None;
-            return Vector3::ZERO;
+            return (Vector3::ZERO, 0.0);
         };
         let (target, reach) = (*target, *reach);
         let xf = self.base().get_global_transform();
         let local = xf.affine_inverse() * target;
         let mut off = local * (reach * k);
-        off.y += LUNGE_LIFT * (std::f32::consts::PI * k).sin() / xf.basis.col_a().length().max(0.01);
-        off
+        // angehoben bis zum Treffer (liegt dann über dem Ziel), beim Rückweg wieder herab
+        off.y += LUNGE_LIFT * (std::f32::consts::FRAC_PI_2 * k).sin() / xf.basis.col_a().length().max(0.01);
+        // seitlich gekippt, am stärksten in der Mitte des Flugs
+        let turn = LUNGE_TURN_DEGREES.to_radians() * (std::f32::consts::PI * k).sin() * reach.min(1.0);
+        (off, turn)
+    }
+
+    /// Drehung des Kartenbilds ([member turned]).
+    fn turn_basis(&self) -> Basis {
+        if self.turned { Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI) } else { Basis::IDENTITY }
+    }
+
+    /// Angriffsspitze an die Kante zum Gegner legen (bei gedrehtem Kartenbild an die andere Kante,
+    /// sonst zeigte sie beim Gegner von uns weg).
+    fn place_banner(&mut self) {
+        let len = if self.tile_shown { TILE_HEIGHT } else { CARD_HEIGHT };
+        let turned = self.turned;
+        if let Some(b) = self.attack_banner.as_mut() {
+            let z = -len * 0.5 - BANNER_SIZE.y * 0.5 + 0.02;
+            let (z, basis) = if turned { (-z, Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI)) } else { (z, Basis::IDENTITY) };
+            b.set_transform(Transform3D::new(basis, Vector3::new(0.0, CARD_THICKNESS, z)));
+        }
     }
 
     fn apply_glow(&mut self) {
@@ -896,9 +993,16 @@ impl Card3D {
             self.ready_glow.map(|c| (c, READY_STRENGTH))
         };
         if let (Some(mesh), Some(mat)) = (self.marker_mesh.as_mut(), self.marker_material.as_mut()) {
+            let was_visible = mesh.is_visible();
             mesh.set_visible(glow.is_some());
             if let Some((c, strength)) = glow {
-                mat.set_shader_parameter("glow_color", &Vector3::new(c.r, c.g, c.b).to_variant());
+                // eben erst sichtbar: gleich in der Zielfarbe, sonst weich überblenden (process)
+                self.glow_goal = c;
+                if !was_visible {
+                    self.glow_shown = c;
+                }
+                let shown = self.glow_shown;
+                mat.set_shader_parameter("glow_color", &Vector3::new(shown.r, shown.g, shown.b).to_variant());
                 mat.set_shader_parameter("strength", &strength.to_variant());
                 mat.set_shader_parameter("schein", &(if active { 0.45f32 } else { 0.32 }).to_variant());
             }
@@ -1406,8 +1510,10 @@ impl Card3D {
         marker.set_mesh(&marker_mesh);
         marker.set_cast_shadows_setting(ShadowCastingSetting::OFF);
         marker.set_visible(false);
-        // Knapp unter der Karte: die Karte verdeckt die Mitte, nur der Schein ragt heraus
-        marker.set_position(Vector3::new(0.0, -CARD_THICKNESS, 0.0));
+        // Zwischen Tischplatte und Kartenbild: die Karte verdeckt die Mitte, nur der Schein ragt
+        // heraus. Nicht tiefer als die Unterseite der Karte, sonst läge er bei Karten direkt auf
+        // dem Tisch unter der Tischplatte und wäre unsichtbar (Blocker ohne Rahmen).
+        marker.set_position(Vector3::new(0.0, -CARD_THICKNESS * 0.5 + 0.0025, 0.0));
         visual.add_child(&marker);
         self.marker_mesh = Some(marker);
         self.marker_material = Some(marker_mat);

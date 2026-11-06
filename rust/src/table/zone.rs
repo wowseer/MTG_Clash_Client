@@ -194,6 +194,10 @@ pub struct Zone {
     /// [method Card3D.set_tile]) – Form der Karten auf dem Spielfeld.
     #[export]
     tile_cards: bool,
+    /// Kartenbilder um 180° gedreht zeigen ([method Card3D.set_turned]): für die um 180° gedrehten
+    /// Zonen des Gegners, damit seine Karten von unserer Seite aus lesbar sind.
+    #[export]
+    turn_cards: bool,
     /// Karten dieser Zone beim Hovern selbst groß vor die Kamera holen (eigene Hand); sonst zeigt
     /// die Kartenansicht eine Kopie.
     #[export]
@@ -223,6 +227,7 @@ impl IArea3D for Zone {
             card_scale: 1.0,
             tile_cards: false,
             zoom_cards: false,
+            turn_cards: false,
             swallow_cards: false,
             size: Vector3::new(3.0, 0.2, 2.0),
             accepts_drops: true,
@@ -630,6 +635,7 @@ impl Zone {
                 _ => 0.0,
             };
             card.bind_mut().set_tile(self.tile_cards);
+            card.bind_mut().set_turned(self.turn_cards);
             card.bind_mut().set_zoom(self.zoom_cards);
             card.bind_mut().move_to(zone_xf * local, delay);
         }
