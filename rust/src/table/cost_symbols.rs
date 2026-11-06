@@ -166,107 +166,177 @@ fn draw_loyalty(b: &mut godot::classes::CanvasItem, kind: &str, value: &str, siz
         .done();
 }
 
-/// Spielstein für ein Kennzeichen eines Spielers zeichnen: runde Münze mit Symbol – `monarch`
-/// (Krone, CR 724), `initiative` (Schwert, CR 725), `blessing` (Stadt, Stadtsegen CR 702.131),
-/// `ring` (Ring, CR 701.54), `poison` (Φ, Giftmarken), `energy` (Blitz), `experience` (Stern),
-/// sonst der Anfangsbuchstabe; `count` > 0 (bzw. > 1 bei Ring) steht in einem Kreis unten rechts.
+/// Ist `kind` ein Kennzeichen (Monarch, Initiative, Stadtsegen, Ring) statt einer Spieler-Marke?
+/// Kennzeichen zeigt der Tisch wie Arena als freistehendes Emblem, Marken als Plakette mit Zahl.
+pub fn is_seat_designation(kind: &str) -> bool {
+    matches!(kind, "monarch" | "initiative" | "blessing" | "ring")
+}
+
+/// Kennzeichen bzw. Marke eines Spielers zeichnen, wie in Arena:
+/// - Kennzeichen ([`is_seat_designation`]) als freistehendes, golden leuchtendes Emblem: `monarch`
+///   (Krone mit Edelstein, CR 724), `initiative` (Wappenschild mit Schwert, CR 725), `blessing`
+///   (goldene Stadt im Strahlenkranz, Stadtsegen CR 702.131), `ring` (der Eine Ring mit glühender
+///   Inschrift, CR 701.54; `count` > 1 = wie oft versucht, als kleine Zahl).
+/// - Marken als dunkle Plakette mit Symbol links und Anzahl rechts: `poison` (grünes Φ),
+///   `energy` (oranger Blitz), `experience` (violetter Stern), sonst der Anfangsbuchstabe.
 fn draw_seat_token(b: &mut godot::classes::CanvasItem, kind: &str, count: i64, size: f32) {
+    use std::f32::consts::{PI, TAU};
     let c = Vector2::splat(size * 0.5);
-    let r = size * 0.42;
-    let (face, ink) = match kind {
-        "monarch" => (Color::from_rgb(0.32, 0.12, 0.42), Color::from_rgb(1.0, 0.82, 0.3)),
-        "initiative" => (Color::from_rgb(0.42, 0.14, 0.1), Color::from_rgb(0.95, 0.92, 0.85)),
-        "blessing" => (Color::from_rgb(0.9, 0.86, 0.72), Color::from_rgb(0.35, 0.28, 0.12)),
-        "ring" => (Color::from_rgb(0.12, 0.12, 0.14), Color::from_rgb(1.0, 0.78, 0.25)),
-        "poison" => (Color::from_rgb(0.1, 0.16, 0.1), Color::from_rgb(0.45, 0.95, 0.35)),
-        "energy" => (Color::from_rgb(0.12, 0.14, 0.24), Color::from_rgb(1.0, 0.88, 0.25)),
-        "experience" => (Color::from_rgb(0.16, 0.12, 0.08), Color::from_rgb(1.0, 0.8, 0.35)),
-        _ => (Color::from_rgb(0.2, 0.2, 0.24), Color::from_rgb(0.92, 0.92, 0.95)),
-    };
-    // Münze: Schatten, goldener Rand, Fläche
-    b.draw_circle(c + Vector2::new(0.0, size * 0.03), r + size * 0.03, Color::from_rgba(0.0, 0.0, 0.0, 0.5));
-    b.draw_circle(c, r + size * 0.025, Color::from_rgb(0.85, 0.68, 0.32));
-    b.draw_circle(c, r, face);
-    let s = r * 0.62;
-    let p = |x: f32, y: f32| c + Vector2::new(x, y) * s;
     let poly = |pts: &[Vector2]| PackedVector2Array::from(pts);
+    let dark = Color::from_rgba(0.05, 0.03, 0.02, 0.92);
+    let gold = Color::from_rgb(1.0, 0.8, 0.32);
+    let gold_light = Color::from_rgb(1.0, 0.94, 0.62);
+    // Umriss: Fläche vergrößert dunkel, dann farbig (wie Arenas Embleme mit dunkler Kontur)
+    let outlined = |b: &mut godot::classes::CanvasItem, pts: &[Vector2], fill: Color, k: f32| {
+        let mid = pts.iter().fold(Vector2::ZERO, |a, p| a + *p) / pts.len() as f32;
+        let big: Vec<Vector2> = pts.iter().map(|p| mid + (*p - mid) * k).collect();
+        b.draw_colored_polygon(&poly(&big), dark);
+        b.draw_colored_polygon(&poly(pts), fill);
+    };
+    let font = ThemeDb::singleton().get_fallback_font();
+    let text_at = |b: &mut godot::classes::CanvasItem, text: &str, center: Vector2, width: f32, fs: i32, color: Color| {
+        if let Some(font) = font.as_ref() {
+            let ascent = font.get_ascent_ex().font_size(fs).done();
+            let descent = font.get_descent_ex().font_size(fs).done();
+            let pos = Vector2::new(center.x - width * 0.5, center.y + (ascent - descent) * 0.5);
+            b.draw_string_outline_ex(font, pos, text).alignment(HorizontalAlignment::CENTER).width(width).font_size(fs).size((fs / 6).max(2)).modulate(dark).done();
+            b.draw_string_ex(font, pos, text).alignment(HorizontalAlignment::CENTER).width(width).font_size(fs).modulate(color).done();
+        }
+    };
+    if is_seat_designation(kind) {
+        // Leuchten hinter dem Emblem: weiche Scheiben nach außen schwächer
+        let glow = match kind {
+            "initiative" => Color::from_rgb(1.0, 0.45, 0.25),
+            "ring" => Color::from_rgb(1.0, 0.5, 0.15),
+            _ => Color::from_rgb(1.0, 0.8, 0.35),
+        };
+        for i in 0..6 {
+            let k = 1.0 - i as f32 / 6.0;
+            b.draw_circle(c, size * (0.18 + 0.3 * k), Color::from_rgba(glow.r, glow.g, glow.b, 0.07));
+        }
+        let s = size * 0.3;
+        let p = |x: f32, y: f32| c + Vector2::new(x, y) * s;
+        match kind {
+            "monarch" => {
+                // Krone: Reif mit fünf Zacken, Kugeln auf den Spitzen, roter Stein in der Mitte
+                let crown = [p(-1.15, 0.7), p(1.15, 0.7), p(1.2, -0.55), p(0.62, -0.05), p(0.38, -0.95), p(0.0, -0.2), p(-0.38, -0.95), p(-0.62, -0.05), p(-1.2, -0.55)];
+                outlined(b, &crown, gold, 1.14);
+                b.draw_colored_polygon(&poly(&[p(-1.1, 0.42), p(1.1, 0.42), p(1.12, 0.7), p(-1.12, 0.7)]), Color::from_rgb(0.82, 0.55, 0.16));
+                b.draw_colored_polygon(&poly(&[p(-0.9, 0.3), p(-0.2, -0.05), p(-0.35, 0.3)]), gold_light);
+                for (x, y) in [(-1.2f32, -0.62f32), (-0.38, -1.02), (0.38, -1.02), (1.2, -0.62)] {
+                    b.draw_circle(p(x, y), s * 0.17, dark);
+                    b.draw_circle(p(x, y), s * 0.12, gold_light);
+                }
+                b.draw_circle(p(0.0, 0.2), s * 0.24, dark);
+                b.draw_circle(p(0.0, 0.2), s * 0.18, Color::from_rgb(0.85, 0.12, 0.18));
+                b.draw_circle(p(-0.05, 0.14), s * 0.06, Color::from_rgb(1.0, 0.7, 0.7));
+            }
+            "initiative" => {
+                // Wappenschild (rot, goldener Rand) mit aufrechtem Schwert
+                let shield = [p(-1.0, -1.05), p(1.0, -1.05), p(1.0, 0.1), p(0.0, 1.2), p(-1.0, 0.1)];
+                outlined(b, &shield, gold, 1.1);
+                let inner: Vec<Vector2> = shield.iter().map(|q| c + (*q - c) * 0.8 + Vector2::new(0.0, -s * 0.02)).collect();
+                b.draw_colored_polygon(&poly(&inner), Color::from_rgb(0.62, 0.1, 0.1));
+                b.draw_colored_polygon(&poly(&[p(0.0, -0.95), p(0.12, -0.75), p(0.12, 0.45), p(-0.12, 0.45), p(-0.12, -0.75)]), Color::from_rgb(0.92, 0.92, 0.95));
+                b.draw_rect(Rect2::new(p(-0.45, 0.4), Vector2::new(s * 0.9, s * 0.14)), gold_light);
+                b.draw_rect(Rect2::new(p(-0.07, 0.54), Vector2::new(s * 0.14, s * 0.3)), gold);
+                b.draw_circle(p(0.0, 0.88), s * 0.1, gold_light);
+            }
+            "blessing" => {
+                // Strahlenkranz, darin die goldene Stadt (Stufenpyramide mit zwei Türmen)
+                let rays: Vec<Vector2> = (0..24)
+                    .map(|i| {
+                        let a = -PI * 0.5 + i as f32 * TAU / 24.0;
+                        let rr = if i % 2 == 0 { 1.3 } else { 0.95 };
+                        p(a.cos() * rr, a.sin() * rr)
+                    })
+                    .collect();
+                outlined(b, &rays, Color::from_rgb(0.95, 0.72, 0.28), 1.06);
+                b.draw_circle(c, s * 0.92, dark);
+                b.draw_circle(c, s * 0.84, Color::from_rgb(0.98, 0.9, 0.6));
+                let city = [
+                    p(-0.75, 0.55), p(0.75, 0.55), p(0.75, 0.25), p(0.55, 0.25), p(0.55, -0.35), p(0.42, -0.6), p(0.3, -0.35),
+                    p(0.3, -0.05), p(0.18, -0.05), p(0.18, -0.5), p(0.0, -0.8), p(-0.18, -0.5), p(-0.18, -0.05), p(-0.3, -0.05),
+                    p(-0.3, -0.35), p(-0.42, -0.6), p(-0.55, -0.35), p(-0.55, 0.25), p(-0.75, 0.25),
+                ];
+                b.draw_colored_polygon(&poly(&city), Color::from_rgb(0.72, 0.48, 0.12));
+                b.draw_rect(Rect2::new(p(-0.08, 0.2), Vector2::new(s * 0.16, s * 0.35)), Color::from_rgb(0.3, 0.18, 0.05));
+            }
+            _ => {
+                // Ring: goldener Reif in leichter Aufsicht, glühende Inschrift
+                let ring_pts = |rx: f32, ry: f32| -> PackedVector2Array { (0..=48).map(|i| { let a = i as f32 * TAU / 48.0; p(a.cos() * rx, a.sin() * ry + 0.05) }).collect() };
+                let band = ring_pts(0.95, 0.66);
+                b.draw_polyline_ex(&band, dark).width(s * 0.52).antialiased(true).done();
+                b.draw_polyline_ex(&band, gold).width(s * 0.38).antialiased(true).done();
+                // Inschrift: kurze glühende Striche entlang der Mitte des Reifs (nur vorn sichtbar)
+                for i in 0..14 {
+                    let a = 0.15 * PI + i as f32 * 0.7 * PI / 13.0;
+                    let q = p(a.cos() * 0.95, a.sin() * 0.65 + 0.05);
+                    b.draw_line_ex(q - Vector2::new(s * 0.05, 0.0), q + Vector2::new(s * 0.05, -s * 0.03), Color::from_rgb(1.0, 0.45, 0.1)).width(s * 0.07).antialiased(true).done();
+                }
+                b.draw_arc_ex(p(0.0, 0.05), s * 0.98, 1.1 * PI, 1.6 * PI, 16, gold_light).width(s * 0.08).antialiased(true).done();
+                if count > 1 {
+                    text_at(b, &count.to_string(), p(0.0, 0.05), s * 1.2, (size * 0.24) as i32, gold_light);
+                }
+            }
+        }
+        return;
+    }
+    // Marke: dunkle Plakette, Symbol links im farbigen Kreis, Anzahl rechts
+    let (accent, ink) = match kind {
+        "poison" => (Color::from_rgb(0.35, 0.85, 0.3), Color::from_rgb(0.1, 0.2, 0.08)),
+        "energy" => (Color::from_rgb(1.0, 0.62, 0.15), Color::from_rgb(0.25, 0.12, 0.02)),
+        "experience" => (Color::from_rgb(0.72, 0.5, 1.0), Color::from_rgb(0.16, 0.08, 0.28)),
+        _ => (Color::from_rgb(0.8, 0.8, 0.85), Color::from_rgb(0.15, 0.15, 0.18)),
+    };
+    let h = size * 0.46;
+    let top = c.y - h * 0.5;
+    let (x0, x1) = (size * 0.04, size * 0.96);
+    let rounded = |b: &mut godot::classes::CanvasItem, grow: f32, col: Color, dy: f32| {
+        let r = h * 0.5 + grow;
+        b.draw_rect(Rect2::new(Vector2::new(x0 + h * 0.5, top - grow + dy), Vector2::new(x1 - x0 - h, h + 2.0 * grow)), col);
+        b.draw_circle(Vector2::new(x0 + h * 0.5, c.y + dy), r, col);
+        b.draw_circle(Vector2::new(x1 - h * 0.5, c.y + dy), r, col);
+    };
+    rounded(b, size * 0.02, Color::from_rgba(0.0, 0.0, 0.0, 0.5), size * 0.025);
+    rounded(b, size * 0.02, accent, 0.0);
+    rounded(b, 0.0, Color::from_rgb(0.1, 0.1, 0.12), 0.0);
+    let ic = Vector2::new(x0 + h * 0.5, c.y);
+    let ir = h * 0.62;
+    b.draw_circle(ic, ir + size * 0.015, dark);
+    b.draw_circle(ic, ir, accent);
+    let s = ir * 0.62;
+    let p = |x: f32, y: f32| ic + Vector2::new(x, y) * s;
     match kind {
-        "monarch" => {
-            // Krone: Band und drei Zacken mit Kugeln
-            b.draw_colored_polygon(&poly(&[p(-0.9, 0.55), p(0.9, 0.55), p(0.9, 0.1), p(0.5, -0.45), p(0.25, 0.05), p(0.0, -0.75), p(-0.25, 0.05), p(-0.5, -0.45), p(-0.9, 0.1)]), ink);
-            for x in [-0.5f32, 0.0, 0.5] {
-                b.draw_circle(p(x, if x == 0.0 { -0.8 } else { -0.5 }), s * 0.13, ink);
-            }
-        }
-        "initiative" => {
-            // Schwert: Klinge, Parierstange, Griff
-            b.draw_colored_polygon(&poly(&[p(0.0, -0.95), p(0.14, -0.75), p(0.14, 0.35), p(-0.14, 0.35), p(-0.14, -0.75)]), ink);
-            b.draw_rect(Rect2::new(p(-0.5, 0.35), Vector2::new(s * 1.0, s * 0.16)), ink);
-            b.draw_rect(Rect2::new(p(-0.09, 0.5), Vector2::new(s * 0.18, s * 0.35)), ink);
-            b.draw_circle(p(0.0, 0.92), s * 0.12, ink);
-        }
-        "blessing" => {
-            // Stadt: drei Türme
-            for (x, w, h) in [(-0.75f32, 0.4f32, 1.0f32), (-0.2, 0.45, 1.5), (0.35, 0.4, 1.15)] {
-                b.draw_rect(Rect2::new(p(x, 0.75 - h), Vector2::new(s * w, s * h)), ink);
-                b.draw_colored_polygon(&poly(&[p(x - 0.05, 0.75 - h), p(x + w + 0.05, 0.75 - h), p(x + w * 0.5, 0.75 - h - 0.3)]), ink);
-            }
-        }
-        "ring" => {
-            b.draw_arc_ex(c, s * 0.62, 0.0, std::f32::consts::TAU, 40, ink).width(s * 0.28).antialiased(true).done();
-        }
         "poison" => {
             // Φ (phyrexianisch)
-            b.draw_arc_ex(c, s * 0.5, 0.0, std::f32::consts::TAU, 40, ink).width(s * 0.18).antialiased(true).done();
-            b.draw_rect(Rect2::new(p(-0.09, -0.95), Vector2::new(s * 0.18, s * 1.9)), ink);
+            b.draw_arc_ex(ic, s * 0.55, 0.0, TAU, 32, ink).width(s * 0.22).antialiased(true).done();
+            b.draw_rect(Rect2::new(p(-0.1, -1.0), Vector2::new(s * 0.2, s * 2.0)), ink);
         }
         "energy" => {
-            b.draw_colored_polygon(&poly(&[p(0.25, -0.95), p(-0.55, 0.12), p(-0.05, 0.12), p(-0.3, 0.95), p(0.55, -0.15), p(0.05, -0.15)]), ink);
+            b.draw_colored_polygon(&poly(&[p(0.3, -1.0), p(-0.6, 0.12), p(-0.05, 0.12), p(-0.3, 1.0), p(0.6, -0.15), p(0.05, -0.15)]), ink);
         }
         "experience" => {
             let pts: Vec<Vector2> = (0..10)
                 .map(|i| {
-                    let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
-                    let rr = if i % 2 == 0 { 0.95 } else { 0.42 };
+                    let a = -PI * 0.5 + i as f32 * PI / 5.0;
+                    let rr = if i % 2 == 0 { 1.0 } else { 0.45 };
                     p(a.cos() * rr, a.sin() * rr)
                 })
                 .collect();
             b.draw_colored_polygon(&poly(&pts), ink);
         }
         other => {
-            if let Some(font) = ThemeDb::singleton().get_fallback_font() {
-                let letter: String = other.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
-                b.draw_string_ex(&font, Vector2::new(0.0, c.y + size * 0.14), &letter)
-                    .alignment(HorizontalAlignment::CENTER)
-                    .width(size)
-                    .font_size((size * 0.42) as i32)
-                    .modulate(ink)
-                    .done();
-            }
+            let letter: String = other.chars().next().map(|ch| ch.to_uppercase().to_string()).unwrap_or_default();
+            text_at(b, &letter, ic, ir * 2.0, (size * 0.24) as i32, ink);
         }
     }
-    let show_count = if kind == "ring" { count > 1 } else { count > 0 && !matches!(kind, "monarch" | "initiative" | "blessing") };
-    if show_count {
-        let bc = c + Vector2::new(r * 0.68, r * 0.68);
-        let br = size * 0.17;
-        b.draw_circle(bc, br + size * 0.015, Color::from_rgb(0.85, 0.68, 0.32));
-        b.draw_circle(bc, br, Color::from_rgb(0.96, 0.95, 0.92));
-        if let Some(font) = ThemeDb::singleton().get_fallback_font() {
-            let text = count.to_string();
-            let fs = if text.len() <= 1 { (size * 0.26) as i32 } else { (size * 0.2) as i32 };
-            let ascent = font.get_ascent_ex().font_size(fs).done();
-            let descent = font.get_descent_ex().font_size(fs).done();
-            b.draw_string_ex(&font, Vector2::new(bc.x - br, bc.y + (ascent - descent) * 0.5), &text)
-                .alignment(HorizontalAlignment::CENTER)
-                .width(br * 2.0)
-                .font_size(fs)
-                .modulate(Color::from_rgb(0.1, 0.1, 0.12))
-                .done();
-        }
-    }
+    let text = count.to_string();
+    let fs = if text.len() <= 2 { (size * 0.3) as i32 } else { (size * 0.22) as i32 };
+    text_at(b, &text, Vector2::new((ic.x + ir + x1) * 0.5, c.y), x1 - ic.x - ir, fs, Color::from_rgb(0.97, 0.97, 0.97));
 }
 
-/// Spielstein eines Spieler-Kennzeichens als `Sprite3D` (Durchmesser `size`, Fläche in der
+/// Kennzeichen bzw. Marke eines Spielers als `Sprite3D` (Kantenlänge `size`, Fläche in der
 /// XY-Ebene, Vorderseite +Z); `kind`/`count` siehe [`draw_seat_token`].
 pub fn seat_token(kind: &str, count: i64, size: f32) -> Gd<Sprite3D> {
     symbol_sprite(&format!("§{kind}:{count}"), size)

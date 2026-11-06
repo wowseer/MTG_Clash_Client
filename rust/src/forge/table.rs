@@ -3714,7 +3714,8 @@ impl ForgeTable {
                 if kept.iter().any(|(k, ..)| *k == kind) {
                     continue;
                 }
-                let mut sprite = crate::table::cost_symbols::seat_token(&kind, n, SEAT_TOKEN_SIZE);
+                let size = if crate::table::cost_symbols::is_seat_designation(&kind) { SEAT_TOKEN_SIZE } else { SEAT_COUNTER_SIZE };
+                let mut sprite = crate::table::cost_symbols::seat_token(&kind, n, size);
                 sprite.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
                 parent.add_child(&sprite);
                 kept.push((kind, n, sprite, 0.0));
@@ -3730,8 +3731,9 @@ impl ForgeTable {
         (c.x >= 0.0).then_some(c)
     }
 
-    /// Spielsteine rechts neben das Medaillon legen (Strahl von der Kamera auf den Tisch) und
-    /// neue bzw. geänderte kurz aufspringen lassen.
+    /// Kennzeichen und Marken rechts neben das Medaillon legen (Strahl von der Kamera auf den
+    /// Tisch) – wie in Arena die Embleme (Monarch, Initiative …) in einer Reihe, die Marken als
+    /// Plaketten darunter – und neue bzw. geänderte kurz aufspringen lassen.
     fn update_seat_tokens(&mut self, dt: f32) {
         let Some(vp) = self.base().get_viewport() else { return };
         let Some(cam) = vp.get_camera_3d() else { return };
@@ -3741,10 +3743,19 @@ impl ForgeTable {
                 continue;
             }
             let Some(center) = self.badge_center(seat) else { continue };
-            for (k, (_, _, sprite, t)) in self.seat_tokens[seat].iter_mut().enumerate() {
+            let designations = self.seat_tokens[seat].iter().filter(|(k, ..)| crate::table::cost_symbols::is_seat_designation(k)).count();
+            let (mut d, mut m) = (0usize, 0usize);
+            for (kind, _, sprite, t) in self.seat_tokens[seat].iter_mut() {
                 *t = (*t + dt).min(SEAT_TOKEN_POP);
-                let (col, row) = (k % 4, k / 4);
-                let at = center + Vector2::new((126.0 + col as f32 * 82.0) * px, row as f32 * 82.0 * px);
+                let at = if crate::table::cost_symbols::is_seat_designation(kind) {
+                    d += 1;
+                    center + Vector2::new((122.0 + (d - 1) as f32 * 88.0) * px, -4.0 * px)
+                } else {
+                    m += 1;
+                    let (col, row) = ((m - 1) % 3, (m - 1) / 3);
+                    let y0 = if designations > 0 { 78.0 } else { 0.0 };
+                    center + Vector2::new((136.0 + col as f32 * 104.0) * px, (y0 + row as f32 * 54.0) * px)
+                };
                 let origin = cam.project_ray_origin(at);
                 let dir = cam.project_ray_normal(at);
                 if dir.y.abs() < 1e-4 {
@@ -5429,7 +5440,9 @@ struct Search {
 }
 
 /// Spielsteine der Spieler-Kennzeichen: Durchmesser, Höhe über dem Tisch, Dauer des Aufspringens.
-const SEAT_TOKEN_SIZE: f32 = 0.75;
+const SEAT_TOKEN_SIZE: f32 = 0.8;
+/// Kantenlänge der Marken-Plaketten (Gift, Energie …) am Medaillon.
+const SEAT_COUNTER_SIZE: f32 = 0.95;
 const SEAT_TOKEN_Y: f32 = 0.04;
 const SEAT_TOKEN_POP: f32 = 0.5;
 
