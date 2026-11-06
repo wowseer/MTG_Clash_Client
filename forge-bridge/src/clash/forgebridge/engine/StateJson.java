@@ -258,9 +258,22 @@ final class StateJson {
     static JsonArray cards(Player p, ZoneType zone) {
         JsonArray arr = new JsonArray();
         for (Card c : p.getCardsIn(zone)) {
+            if (isRulesPlumbing(c)) {
+                continue;
+            }
             arr.add(card(c));
         }
         return arr;
+    }
+
+    /**
+     * Interne Effektkarte ohne eigene Bedeutung für den Spieler: Forges „Commander Effect“, den
+     * jeder Commander-Spieler fest in der Kommandozone hat (trägt die Commander-Regeln wie
+     * „aus der Kommandozone wirken“, CR 903.8). Andere Effekte (Dauer-Effekte von Zaubern,
+     * Embleme) bleiben sichtbar.
+     */
+    private static boolean isRulesPlumbing(Card c) {
+        return c.isImmutable() && !c.isEmblem() && "Commander Effect".equals(c.getName());
     }
 
     static JsonObject card(Card c) {
@@ -337,6 +350,12 @@ final class StateJson {
         }
         if (c.isCommander()) {
             o.addProperty("commander", true);
+            // Commander-Steuer (CR 903.8): {2} je bisherigem Wirken aus der Kommandozone; in der
+            // Kommandozone zusätzlich die Kosten, mit denen er von dort gewirkt wird
+            o.addProperty("commander_tax", commanderTax(c));
+            if (c.isInZone(ZoneType.Command) && c.getManaCost() != null) {
+                o.addProperty("cast_cost", withCommanderTax(c, c.getManaCost()).getShortString());
+            }
         }
         if (c.isEmblem()) {
             o.addProperty("emblem", true);
@@ -471,5 +490,21 @@ final class StateJson {
             i++;
         }
         return -1;
+    }
+
+    /** Commander-Steuer der Karte {@code c} (CR 903.8): {2} je bisherigem Wirken aus der Kommandozone. */
+    static int commanderTax(Card c) {
+        return c.isCommander() && c.getOwner() != null ? 2 * c.getOwner().getCommanderCast(c) : 0;
+    }
+
+    /** Manakosten {@code base} plus Commander-Steuer von {@code c}. */
+    static forge.card.mana.ManaCost withCommanderTax(Card c, forge.card.mana.ManaCost base) {
+        int tax = commanderTax(c);
+        if (tax <= 0) {
+            return base;
+        }
+        forge.game.mana.ManaCostBeingPaid withTax = new forge.game.mana.ManaCostBeingPaid(base);
+        withTax.increaseGenericMana(tax);
+        return withTax.toManaCost();
     }
 }

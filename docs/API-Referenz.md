@@ -57,6 +57,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `bridge_jar` | `String` | Gebaute Brücke (`forge-bridge/build.sh`). `res://`-Pfade werden umgerechnet. |
 | `java_max_memory_mb` | `int` | Maximaler Java-Heap in MB (`-Xmx`). |
 | `ai_pace` | `float` | Tempo der Forge-KI: Faktor für die Pausen nach ihren Aktionen (Land, Zauber, Angriff, Blocker, Phasenwechsel), damit man ihrem Zug zusehen kann. 1 = normal, 2 = doppelt so langsam, 0 = ohne Pausen. Wird bei `start_match()` an die Brücke geschickt. |
+| `game_type` | `String` | Spielart für `start_match()`: leer = Constructed, `Commander` = Commander-Partie (Decks mit Abschnitt ``Commander``, CR 903). Eingebettet in NeoForge legt der Gastgeber die Spielart fest. |
 | `autostart` | `bool` | Brücke automatisch in `ready()` starten. |
 | `log_messages` | `bool` | Jede empfangene Nachricht in die Godot-Konsole schreiben (zum Debuggen). |
 
@@ -377,7 +378,6 @@ Ein Sitzplatz am Tisch (Mensch oder KI) mit seinen Zonen, Lebenspunkten und dem 
 | `battlefield` | `Zone` | Zone des Spielfelds (Kreaturen, Helden, Artefakte, Verzauberungen, Ausrüstung, Auren). |
 | `discard` | `Zone` | Zone des Friedhofs (Ablagestapel). |
 | `exile` | `Zone` | Zone des Exils (CR 406): offener Stapel neben dem Friedhof. |
-| `command` | `Zone` | Kommandozone (CR 408): Commander, Embleme, Dungeons, „The Ring“ als Spalte. |
 | `resource_zone` | `Zone` | Reihe für ausgespielte Ressourcen-Karten. |
 | `mana_pool` | `ManaPool` | Manapool dieses Spielers. |
 | `life` | `int` | Aktuelle Lebenspunkte (≤ 0 = Partie verloren). |
@@ -863,6 +863,7 @@ Ein Bereich auf dem Tisch, der Karten hält und anordnet: Hand, Deck, Friedhof, 
 | `hand_radius` | `float` | Hand: Radius des Fächerbogens. |
 | `hand_card_angle_degrees` | `float` | Hand: Winkel zwischen zwei Karten (Grad). |
 | `hand_max_spread_degrees` | `float` | Hand: maximaler Gesamtwinkel des Fächers (Grad). |
+| `tail_offset` | `Vector3` | Hand: Verschiebung der Endgruppe (`add_tail_card()`, lokal) – z. B. damit der Commander in der fast verdeckten Hand des Gegners ganz zu sehen ist. |
 | `coverflow` | `bool` | Hand als Cover-Flow (Kartenwahl-Bühne): Karten im Abstand `coverflow_step` nebeneinander, die mittlere vorn und gerade, die übrigen zur Seite gedreht, nach hinten versetzt und überlappend; am Rand dicht gestapelt. Ersetzt den Fächerbogen. |
 | `coverflow_step` | `float` | Cover-Flow: Abstand der Karten (Zonen-Einheiten, kleiner als die Kartenbreite = überlappend). |
 | `coverflow_scroll` | `float` | Cover-Flow: Verschiebung aller Karten nach rechts (Zonen-Einheiten); was dadurch in die Mitte rückt, dreht sich nach vorn (Schieberegler der Bühne). |

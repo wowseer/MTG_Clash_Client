@@ -61,6 +61,11 @@ pub struct ForgeBridge {
     /// langsam, 0 = ohne Pausen. Wird bei [method start_match] an die Brücke geschickt.
     #[export(range = (0.0, 4.0))]
     ai_pace: f64,
+    /// Spielart für [method start_match]: leer = Constructed, `Commander` = Commander-Partie
+    /// (Decks mit Abschnitt `[Commander]`, CR 903). Eingebettet in NeoForge legt der Gastgeber
+    /// die Spielart fest.
+    #[export]
+    game_type: GString,
     /// Brücke automatisch in `ready()` starten.
     #[export]
     autostart: bool,
@@ -84,6 +89,7 @@ impl INode for ForgeBridge {
             bridge_jar: "res://../forge-bridge/build/forge-bridge.jar".into(),
             java_max_memory_mb: 2048,
             ai_pace: 1.0,
+            game_type: GString::new(),
             autostart: false,
             log_messages: false,
             client: None,
@@ -292,7 +298,7 @@ impl ForgeBridge {
             names: names.as_slice().iter().map(|n| n.to_string()).collect(),
             seed: (seed >= 0).then_some(seed),
             ai_pace: self.ai_pace,
-            game_type: None,
+            game_type: (!self.game_type.is_empty()).then(|| self.game_type.to_string()),
         };
         self.send_value(&start.to_json())
     }

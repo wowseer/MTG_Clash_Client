@@ -57,7 +57,7 @@ derselbe Modus darf mehrfach gewählt werden“) ist noch nicht möglich.
 
 | Bereich | Was | Darstellung in 3D |
 |---|---|---|
-| Zonen | Bibliothek, Hand, Spielfeld, Friedhof, **Exil**, **Stack**, **Kommandozone** (Embleme, Commander, Dungeons, Ringe), Sideboard (nur Deck-Editor) | eigene `Zone` je Bereich; Friedhof/Exil aufklappbar als Fächer; Stack groß in der Bildmitte |
+| Zonen | Bibliothek, Hand, Spielfeld, Friedhof, **Exil**, **Stack**, **Kommandozone** (Embleme, Commander, Dungeons, Ringe), Sideboard (nur Deck-Editor) | eigene `Zone` je Bereich, außer Kommandozone (Commander als Kopie am Ende der Hand, Embleme/Dungeons am Ende der Artefakt-Reihe); Friedhof/Exil aufklappbar als Fächer; Stack groß in der Bildmitte |
 | Karte | Name, Manakosten, Typzeile, **Regeltext**, Stärke/Widerstand (aktuell vs. aufgedruckt), Loyalität, Verteidigung (Schlachten), Farbe | Kartenbild aus Forge-Daten; geänderte Werte farbig |
 | Status | getappt, **verdeckt** (Morph/Manifest), **umgedreht/transformiert** (doppelseitig, Flip), **phasiert**, **Spielsteine**, **Kopien**, Beschwörungskrankheit, angreifend/blockend | Drehen, Rückseite, Umdrehen-Animation, halbtransparent, Spielstein-Rahmen |
 | Marken | +1/+1, −1/−1, Loyalität, Gift, Energie, Erfahrung, Zeit, Lore … (auf Karten **und** Spielern) | Plaketten an der Karte bzw. am Medaillon |

@@ -37,8 +37,8 @@ pub const TAP_ANGLE_DEGREES: f32 = 15.0;
 const AUTO_GAP: f32 = 0.12;
 const BACK_ROW_START: f32 = 1.75;
 /// Die hintere Reihe liegt rechtsbündig und reicht so weit über den rechten Rand der Zone
-/// hinaus bis an den Tischrand (lokal x; davor endet sie vor der Kommandozone).
-const BACK_ROW_OVERHANG: f32 = 0.95;
+/// hinaus bis an den Tischrand (lokal x).
+const BACK_ROW_OVERHANG: f32 = 1.9;
 /// Abstand zwischen Kreaturen-Reihe und hinterer Reihe.
 const BACK_ROW_GAP: f32 = 0.12;
 /// Kleinste Größe der Planeswalker (Anteil von [member card_scale]) bei vielen Planeswalkern.
@@ -144,6 +144,10 @@ pub struct Zone {
     /// Hand: maximaler Gesamtwinkel des Fächers (Grad).
     #[export]
     hand_max_spread_degrees: f32,
+    /// Hand: Verschiebung der Endgruppe ([method add_tail_card], lokal) – z. B. damit der
+    /// Commander in der fast verdeckten Hand des Gegners ganz zu sehen ist.
+    #[export]
+    tail_offset: Vector3,
     /// Hand als Cover-Flow (Kartenwahl-Bühne): Karten im Abstand [member coverflow_step]
     /// nebeneinander, die mittlere vorn und gerade, die übrigen zur Seite gedreht, nach hinten
     /// versetzt und überlappend; am Rand dicht gestapelt. Ersetzt den Fächerbogen.
@@ -227,6 +231,7 @@ impl IArea3D for Zone {
             face_up: true,
             hand_radius: 5.0,
             hand_card_angle_degrees: 6.0,
+            tail_offset: Vector3::ZERO,
             coverflow: false,
             coverflow_step: 0.3,
             coverflow_scroll: 0.0,
@@ -765,10 +770,15 @@ impl Zone {
         // sie größere Karten erlaubt – bevorzugt an einer Kategorie-Grenze geteilt
         let category = |g: usize| -> u8 {
             let i = keys.iter().zip(&front).position(|(k, f)| *k == groups[g].0 && *f == groups[g].1).unwrap_or(0);
-            match self.cards[base[i]].bind().kind() {
-                CardKind::Artifact | CardKind::Equipment => 0,
-                CardKind::Enchantment | CardKind::Aura => 1,
-                _ => 2,
+            // nach der Typzeile: Embleme, Dungeons, „The Ring“ (CR 408) gelten nicht als Artefakt
+            let card = self.cards[base[i]].bind();
+            let has = |w: &str| card.def().type_line.split(|c: char| !c.is_alphanumeric()).any(|t| t == w);
+            if has("Artifact") {
+                0
+            } else if has("Enchantment") {
+                1
+            } else {
+                2
             }
         };
         let mut back: Vec<usize> = (0..groups.len()).filter(|&g| groups[g].1 == 1).collect();
@@ -984,6 +994,9 @@ impl Zone {
                 let r = self.hand_radius;
                 // Mittlere Karte oben (-Z), äußere Karten sinken ab und drehen nach außen.
                 let pos = Vector3::new(r * a.sin(), half_t + i as f32 * 0.004, r * (1.0 - a.cos()));
+                // Endgruppe immer offen (öffentliche Karten wie der Commander, auch in der
+                // verdeckten Hand des Gegners)
+                let (flip, pos) = if i >= n - tail { (Basis::IDENTITY, pos + self.tail_offset) } else { (flip, pos) };
                 let basis = Basis::from_axis_angle(Vector3::UP, -a) * flip;
                 Transform3D::new(basis, pos)
             }

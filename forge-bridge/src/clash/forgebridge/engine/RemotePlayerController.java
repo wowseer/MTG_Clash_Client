@@ -187,12 +187,8 @@ public class RemotePlayerController extends PlayerControllerAi {
                         forge.card.mana.ManaCost base = sa.getPayCosts().getTotalMana();
                         // Commander aus der Kommandozone: Commander-Steuer {2} je bisherigem Wirken
                         // (CR 903.8) direkt in den Kosten
-                        int tax = zt == ZoneType.Command && host.isCommander() && host.getOwner() != null
-                                ? 2 * host.getOwner().getCommanderCast(host) : 0;
-                        if (tax > 0) {
-                            forge.game.mana.ManaCostBeingPaid withTax = new forge.game.mana.ManaCostBeingPaid(base);
-                            withTax.increaseGenericMana(tax);
-                            base = withTax.toManaCost();
+                        if (zt == ZoneType.Command) {
+                            base = StateJson.withCommanderTax(host, base);
                         }
                         cost = base.getShortString();
                     }

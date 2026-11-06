@@ -118,7 +118,7 @@ Angezeigt:
 - [x] Phase, Leben, Runde, Spieler am Zug, Spielende
 - [x] Stack: Zauber und Fähigkeiten in der Tischmitte, Ziele als violette Pfeile, nur als 3D-Stapel (keine 2D-Liste)
 - [x] Spielprotokoll oben rechts
-- [x] Kommandozone, Monarch/Initiative/Stadtsegen/Ring, Tag/Nacht, doppelseitige Karten (Umdreh-Animation), verdeckte Karten
+- [x] Kommandozone ohne eigene Fläche (Commander nur als Kopie am Ende der Hand, auch beim Gegner, Kosten mit Commander-Steuer; Embleme/Dungeons/Effekte am Ende der Artefakt-Reihe), Monarch/Initiative/Stadtsegen/Ring, Tag/Nacht, doppelseitige Karten (Umdreh-Animation), verdeckte Karten
 - [x] Kartenbild aus Engine-Daten: Regeltext mit Symbolen, Typzeile, Farben, Stärke/Widerstand, Loyalität, Verteidigung
 - [x] Exil-Stapel, Marken- und Spielstein-Plaketten, angelegte Karten unter dem Träger, Spieler-Marken
 

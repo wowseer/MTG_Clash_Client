@@ -41,13 +41,12 @@ follow_distance = 6.6
 fov = 30.0
 far = 200.0
 
-[node name="Player" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "exile", "command", "resource_zone", "mana_pool")]
+[node name="Player" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "exile", "resource_zone", "mana_pool")]
 hand = NodePath("Hand")
 deck = NodePath("Deck")
 battlefield = NodePath("Battlefield")
 discard = NodePath("Discard")
 exile = NodePath("Exile")
-command = NodePath("Command")
 resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
@@ -85,15 +84,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.85, 0, 4.0)
 card_scale = 1.7
 swallow_cards = true
 
-[node name="Command" type="Zone" parent="Player"]
-size = Vector3(1, 0.1, 1.6)
-accepts_drops = false
-cards_draggable = false
-grid_columns = 1
-grid_spacing = Vector2(1, 0.3)
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.0, 0, 3.6)
-card_scale = 1.7
-
 [node name="Resources" type="Zone" parent="Player"]
 kind = 3
 size = Vector3(4.7, 0.3, 1.45)
@@ -119,7 +109,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.64, 0.92, 3.4)
 [node name="ManaAnchor" type="Marker3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.95, 0, 3.75)
 
-[node name="Opponent" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "exile", "command", "resource_zone", "mana_pool")]
+[node name="Opponent" type="PlayerSeat" parent="." node_paths=PackedStringArray("hand", "deck", "battlefield", "discard", "exile", "resource_zone", "mana_pool")]
 display_name = "Forge-KI"
 is_ai = true
 hand = NodePath("Hand")
@@ -127,7 +117,6 @@ deck = NodePath("Deck")
 battlefield = NodePath("Battlefield")
 discard = NodePath("Discard")
 exile = NodePath("Exile")
-command = NodePath("Command")
 resource_zone = NodePath("Resources")
 mana_pool = NodePath("ManaPool")
 
@@ -168,15 +157,6 @@ transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -4.85, 0, -4.0)
 card_scale = 1.7
 swallow_cards = true
 
-[node name="Command" type="Zone" parent="Opponent"]
-size = Vector3(1, 0.1, 1.6)
-accepts_drops = false
-cards_draggable = false
-grid_columns = 1
-grid_spacing = Vector2(1, 0.3)
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.0, 0, -3.6)
-card_scale = 1.7
-
 [node name="Resources" type="Zone" parent="Opponent"]
 kind = 3
 size = Vector3(4.7, 0.3, 1.45)
@@ -197,6 +177,7 @@ size = Vector3(4, 0.3, 1.2)
 accepts_drops = false
 cards_draggable = false
 face_up = false
+tail_offset = Vector3(0, 0, -0.95)
 transform = Transform3D(-1.4, 0, 0, 0, 1.352, 0.362, 0, 0.362, -1.352, 1.0, 1, -6.4)
 
 [node name="Stack" type="Zone" parent="."]

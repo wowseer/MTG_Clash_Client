@@ -194,10 +194,13 @@ pub struct ForgeTable {
     stage_choices: Vec<Choice>,
     /// Modus-Bühne: Kartenkopie je Modus (Modusnummer der Engine) und die Wahl.
     mode_cards: Vec<(Gd<Card3D>, usize)>,
-    /// Kopien im Handfächer für Karten, die gerade aus einer anderen Zone spielbar sind
-    /// (Friedhof, Exil, Kommandozone, Sideboard …; `Decision::Priority::elsewhere`): Karten-ID
-    /// des Originals, Zone, Kopie, Runde ihres Erscheinens.
-    hand_proxies: Vec<(CardId, String, Gd<Card3D>, i64)>,
+    /// Kopien im Handfächer ([method sync_hand_proxies]): Karten, die gerade aus einer anderen
+    /// Zone spielbar sind, und die Commander beider Seiten.
+    hand_proxies: Vec<HandProxy>,
+    /// Aus anderen Zonen spielbare Karten der letzten `Priority` (`Decision::Priority::elsewhere`)
+    /// mit den Kartendaten der Anfrage.
+    elsewhere: Vec<ElsewhereCard>,
+    elsewhere_cards: Vec<VarDictionary>,
     mode_pick: Vec<usize>,
     /// Optionale Kosten mit mehreren Möglichkeiten: an/aus je Option.
     option_toggles: Vec<bool>,
@@ -299,6 +302,8 @@ impl INode for ForgeTable {
             stage_choices: Vec::new(),
             mode_cards: Vec::new(),
             hand_proxies: Vec::new(),
+            elsewhere: Vec::new(),
+            elsewhere_cards: Vec::new(),
             mode_pick: Vec::new(),
             option_toggles: Vec::new(),
             pick_cards: Vec::new(),
@@ -1375,14 +1380,12 @@ impl ForgeTable {
             }
         }
         let auto_pay = self.auto_pay(&req.decision);
-        let elsewhere = match &req.decision {
-            Decision::Priority { elsewhere, .. } => Some((elsewhere.clone(), req.cards.clone())),
-            _ => None,
-        };
-        self.pending = Some(req);
-        if let Some((list, cards)) = elsewhere {
-            self.sync_hand_proxies(&list, &cards);
+        if let Decision::Priority { elsewhere, .. } = &req.decision {
+            self.elsewhere = elsewhere.clone();
+            self.elsewhere_cards = req.cards.clone();
         }
+        self.pending = Some(req);
+        self.sync_hand_proxies();
         if auto_pay {
             self.answer(Choice::Pay(PayAction::AutoPay));
             return;
@@ -2384,16 +2387,25 @@ impl ForgeTable {
     /// War `card` eine Handkarten-Kopie (Karte aus einer anderen Zone), die Hand neu anordnen,
     /// damit sie an ihren Platz im Fächer zurückgleitet.
     fn relayout_hand_if_proxy(&mut self, card: &Gd<Card3D>) {
-        if !self.hand_proxies.iter().any(|(_, _, c, _)| c == card) {
-            return;
-        }
-        let Some(mut hand) = self.elsewhere_zone() else { return };
+        let Some(seat) = self.hand_proxies.iter().find(|p| &p.proxy == card).map(|p| p.seat) else { return };
+        let Some(mut hand) = self.zones(seat).hand else { return };
         if card.bind().get_zone().as_ref() != Some(&hand) {
             hand.bind_mut().add_tail_card(card.clone());
         } else {
             hand.bind_mut().layout();
         }
     }
+}
+
+/// Kopie einer Karte im Handfächer ([method ForgeTable.sync_hand_proxies]).
+struct HandProxy {
+    /// Karten-ID des Originals.
+    card: CardId,
+    /// Sitzplatz, in dessen Hand die Kopie liegt.
+    seat: usize,
+    /// Angezeigte Kosten (leer = aufgedruckte).
+    cost: String,
+    proxy: Gd<Card3D>,
 }
 
 /// Zonen eines Sitzplatzes.
@@ -2403,7 +2415,6 @@ struct SeatZones {
     battlefield: Option<Gd<Zone>>,
     discard: Option<Gd<Zone>>,
     exile: Option<Gd<Zone>>,
-    command: Option<Gd<Zone>>,
     resources: Option<Gd<Zone>>,
 }
 
@@ -2562,10 +2573,11 @@ impl ForgeTable {
         );
         showcase.bind_mut().set_texts(GString::from(title.as_str()), GString::from(subtitle.as_str()), GString::from(note.as_str()));
 
+        // nur die echte Starthand: Kopien aus anderen Zonen (Commander) bleiben im Fächer
         let hand: Vec<Gd<Card3D>> = self
             .zones(LOCAL_SEAT as usize)
             .hand
-            .map(|h| h.bind().get_cards().iter_shared().collect())
+            .map(|h| h.bind().get_cards().iter_shared().filter(|c| !self.hand_proxies.iter().any(|p| &p.proxy == c)).collect())
             .unwrap_or_default();
         showcase.bind_mut().show_cards(&hand);
 
@@ -3936,11 +3948,10 @@ impl ForgeTable {
                     battlefield: s.battlefield.clone(),
                     discard: s.discard.clone(),
                     exile: s.exile.clone(),
-                    command: s.command.clone(),
                     resources: s.resource_zone.clone(),
                 }
             }
-            None => SeatZones { hand: None, deck: None, battlefield: None, discard: None, exile: None, command: None, resources: None },
+            None => SeatZones { hand: None, deck: None, battlefield: None, discard: None, exile: None, resources: None },
         }
     }
 
@@ -4083,85 +4094,107 @@ impl ForgeTable {
     }
 
     fn forge_id(&self, card: &Gd<Card3D>) -> Option<i64> {
-        if let Some((id, ..)) = self.hand_proxies.iter().find(|(_, _, c, _)| c == card) {
-            return Some(i64::from(*id));
+        if let Some(p) = self.hand_proxies.iter().find(|p| &p.proxy == card) {
+            return Some(i64::from(p.card));
         }
         self.cards.iter().find(|(_, c)| *c == card).map(|(id, _)| *id)
     }
 
-    /// Kopien rechts neben der Hand abgleichen (wie in Arena): jede Karte, die gerade aus einer
-    /// anderen Zone als Hand und Spielfeld spielbar ist – Friedhof (Flashback …), Exil (Foretell,
-    /// Abenteuer, „you may play“), Kommandozone (Commander), Sideboard (Companion), Bibliothek –,
-    /// erscheint als Kopie fest rechts außen im Handfächer, mit Lücke zu den echten Handkarten
-    /// (`Zone::add_tail_card`): sie fliegt aus ihrer Zone dorthin, ihr Rahmen leuchtet weiß, darüber stehen
-    /// die Kosten, mit denen sie aus dieser Zone gespielt wird (z. B. Flashback), und eine Plakette
-    /// mit der Zone. Zieht man sie auf den Tisch, spielt man die Karte aus ihrer Zone. Nicht mehr
-    /// spielbare Kopien verschwinden.
-    fn sync_hand_proxies(&mut self, list: &[ElsewhereCard], cards: &[VarDictionary]) {
-        let Some(mut hand) = self.elsewhere_zone() else { return };
-        let turn = self.state.as_ref().map_or(0, |s| get_int(s, "turn"));
-        // weg: nicht mehr in der Liste
-        let keep: Vec<CardId> = list.iter().map(|e| e.card).collect();
-        for (id, zone, mut proxy, born) in std::mem::take(&mut self.hand_proxies) {
-            if keep.contains(&id) && proxy.is_instance_valid() {
-                self.hand_proxies.push((id, zone, proxy, born));
-            } else if proxy.is_instance_valid() {
-                hand.bind_mut().remove_card(proxy.clone());
+    /// Kopien rechts neben der Hand abgleichen (wie in Arena), als Endgruppe rechts außen im
+    /// Handfächer mit Lücke zu den echten Handkarten (`Zone::add_tail_card`):
+    /// - jede Karte, die gerade aus einer anderen Zone als Hand und Spielfeld spielbar ist –
+    ///   Friedhof (Flashback …), Exil (Foretell, Abenteuer, „you may play“), Sideboard
+    ///   (Companion), Bibliothek –, mit den Kosten der Spielweise aus dieser Zone;
+    /// - die **Commander** beider Seiten, solange sie in der Kommandozone sind (CR 903.6): die
+    ///   Kommandozone hat keine eigene Fläche, der Commander ist nur auf der Hand seines Besitzers
+    ///   zu sehen – auch beim Gegner offen –, mit den Kosten samt Commander-Steuer (CR 903.8,
+    ///   `cast_cost`).
+    ///
+    /// Die Kopie fliegt aus ihrer Zone dorthin; darüber stehen die Kosten und eine Plakette mit
+    /// der Zone. Ihr Rahmen leuchtet weiß, solange sie spielbar ist (in `Priority.elsewhere`,
+    /// also bezahlbar); zieht man sie dann auf den Tisch, spielt man die Karte aus ihrer Zone.
+    /// Nicht mehr spielbare Kopien (außer Commandern) verschwinden, ändern sich die Kosten,
+    /// wird die Kopie neu gelegt.
+    fn sync_hand_proxies(&mut self) {
+        let priority = matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::Priority { .. }));
+        // Soll: (Sitzplatz, Karte, Zone, Kosten, Kartendaten, spielbar)
+        let mut wanted: Vec<(usize, CardId, String, String, Option<VarDictionary>, bool)> = Vec::new();
+        for e in &self.elsewhere {
+            let data = self
+                .elsewhere_cards
+                .iter()
+                .find(|c| get_int(c, "id") == i64::from(e.card))
+                .cloned()
+                .or_else(|| self.card_data(i64::from(e.card)));
+            wanted.push((LOCAL_SEAT as usize, e.card, e.zone.clone(), e.cost.clone(), data, priority));
+        }
+        let players = self.state.as_ref().and_then(|s| get_array(s, "players")).unwrap_or_default();
+        for (seat, p) in players.iter_shared().filter_map(|p| p.try_to::<VarDictionary>().ok()).enumerate().take(2) {
+            let commanders = get_array(&p, "command")
+                .map(|a| a.iter_shared().filter_map(|c| c.try_to::<VarDictionary>().ok()).filter(|c| get_bool(c, "commander")).collect())
+                .unwrap_or_else(Vec::new);
+            for c in commanders {
+                let Ok(id) = CardId::try_from(get_int(&c, "id")) else { continue };
+                if !wanted.iter().any(|w| w.1 == id) {
+                    wanted.push((seat, id, "Command".to_string(), get_str(&c, "cast_cost"), Some(c), false));
+                }
+            }
+        }
+
+        // weg: nicht mehr gewünscht oder andere Kosten (z. B. Commander-Steuer gestiegen)
+        for p in std::mem::take(&mut self.hand_proxies) {
+            let keep = p.proxy.is_instance_valid() && wanted.iter().any(|w| w.0 == p.seat && w.1 == p.card && w.3 == p.cost);
+            if keep {
+                self.hand_proxies.push(p);
+            } else if p.proxy.is_instance_valid() {
+                let mut proxy = p.proxy;
+                if let Some(mut hand) = self.zones(p.seat).hand {
+                    hand.bind_mut().remove_card(proxy.clone());
+                }
                 proxy.queue_free();
             }
         }
-        for e in list {
-            let (id, zone) = (&e.card, &e.zone);
-            if self.hand_proxies.iter().any(|(c, ..)| c == id) {
+        for (seat, id, zone, cost, data, playable) in wanted {
+            let glow = playable.then_some(ELSEWHERE_GLOW);
+            if let Some(p) = self.hand_proxies.iter_mut().find(|p| p.seat == seat && p.card == id) {
+                p.proxy.bind_mut().set_ready_color(glow);
                 continue;
             }
-            let data = cards
-                .iter()
-                .find(|c| get_int(c, "id") == i64::from(*id))
-                .cloned()
-                .or_else(|| self.card_data(i64::from(*id)));
             let Some(mut data) = data else { continue };
-            // Kosten der Spielweise aus dieser Zone (Flashback …) statt der aufgedruckten
-            if !e.cost.is_empty() {
-                data.set("cost", e.cost.as_str());
+            let Some(mut hand) = self.zones(seat).hand else { continue };
+            // Kosten der Spielweise aus dieser Zone (Flashback, Commander-Steuer …) statt der aufgedruckten
+            if !cost.is_empty() {
+                data.set("cost", cost.as_str());
             }
             let mut proxy = Self::stage_card(&data, None);
-            proxy.bind_mut().set_ready_color(Some(ELSEWHERE_GLOW));
-            proxy.bind_mut().set_badges(&zone_label(zone));
-            // aus ihrer Zone in die Hand fliegen
+            proxy.bind_mut().set_ready_color(glow);
+            proxy.bind_mut().set_badges(&zone_label(&zone));
+            // aus ihrer Zone (liegt sie noch auf dem Tisch) in die Hand fliegen, sonst aus der Hand auftauchen
             let from = self
                 .cards
-                .get(&i64::from(*id))
+                .get(&i64::from(id))
                 .filter(|c| c.is_instance_valid())
                 .map(|c| c.get_global_transform())
-                .or_else(|| self.zones(LOCAL_SEAT as usize).deck.map(|d| d.get_global_transform()));
+                .unwrap_or_else(|| hand.get_global_transform());
             if let Some(mut parent) = self.controller.clone() {
                 parent.add_child(&proxy);
             }
-            if let Some(xf) = from {
-                proxy.set_global_transform(xf);
-            }
+            proxy.set_global_transform(from);
             hand.bind_mut().add_tail_card(proxy.clone());
-            self.hand_proxies.push((*id, zone.clone(), proxy, turn));
+            self.hand_proxies.push(HandProxy { card: id, seat, cost, proxy });
         }
     }
 
     /// Kopie der Karte `id` aus dem Handfächer nehmen (die Karte wurde gespielt).
     fn remove_hand_proxy(&mut self, id: CardId) {
-        let Some(pos) = self.hand_proxies.iter().position(|(c, ..)| *c == id) else { return };
-        let (_, _, mut proxy, _) = self.hand_proxies.remove(pos);
+        let Some(pos) = self.hand_proxies.iter().position(|p| p.card == id) else { return };
+        let HandProxy { seat, mut proxy, .. } = self.hand_proxies.remove(pos);
         if proxy.is_instance_valid() {
-            if let Some(mut zone) = self.elsewhere_zone() {
+            if let Some(mut zone) = self.zones(seat).hand {
                 zone.bind_mut().remove_card(proxy.clone());
             }
             proxy.queue_free();
         }
-    }
-
-    /// Zone der Kopien von Karten aus anderen Zonen: der eigene Handfächer (dort als Endgruppe
-    /// rechts außen mit Lücke, `Zone::add_tail_card`).
-    fn elsewhere_zone(&self) -> Option<Gd<Zone>> {
-        self.zones(LOCAL_SEAT as usize).hand
     }
 
     /// Leuchten: mit Priorität die Karten, die eine Aktion haben; bei der Zielwahl alle gültigen
@@ -4445,7 +4478,7 @@ impl ForgeTable {
         let mut table_zones: Vec<Gd<Zone>> = Vec::new();
         for seat in 0..2 {
             let z = self.zones(seat);
-            table_zones.extend([z.battlefield, z.resources, z.command].into_iter().flatten());
+            table_zones.extend([z.battlefield, z.resources].into_iter().flatten());
         }
         table_zones.extend(self.stack_zone.clone());
         let on_table = |id: &CardId| {
@@ -5018,11 +5051,19 @@ impl ForgeTable {
                     wanted.push((get_int(&c, "id"), Some(c), zone, seat));
                 }
             }
-            for (key, zone) in [("graveyard", &z.discard), ("exile", &z.exile), ("command", &z.command)] {
+            for (key, zone) in [("graveyard", &z.discard), ("exile", &z.exile)] {
                 if let Some(zone) = zone {
                     for c in list(key) {
                         wanted.push((get_int(&c, "id"), Some(c), zone.clone(), seat));
                     }
+                }
+            }
+            // Kommandozone (CR 408) ohne eigene Fläche: Commander liegen als Kopie auf der Hand
+            // ([method sync_hand_proxies]), Embleme, Dungeons und „The Ring“ am rechten Ende der
+            // hinteren Spielfeld-Reihe
+            if let Some(zone) = &z.battlefield {
+                for c in list("command").into_iter().filter(|c| !get_bool(c, "commander")) {
+                    wanted.push((get_int(&c, "id"), Some(c), zone.clone(), seat));
                 }
             }
         }

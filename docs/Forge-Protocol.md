@@ -292,7 +292,10 @@ colourless), `text` (rules text with current changes, symbols in `{…}` notatio
 additionally `power`, `toughness` (current) and `base_power`, `base_toughness` (printed), for
 planeswalkers `loyalty`, for battles `defense` (in play the current counters, otherwise printed),
 `damage` (only > 0, damage taken); only when applicable: `token: true`, `attached_to` (card ID of
-the host for auras, equipment, fortifications), `commander: true`, `emblem: true`, `room` (current
+the host for auras, equipment, fortifications), `commander: true` (with `commander_tax` = the commander tax
+in generic mana, CR 903.8: {2} per previous cast from the command zone, and – while in the command
+zone – `cast_cost` = the mana cost to cast it from there including the tax, e.g. `"4 {R} {R}"`),
+`emblem: true`, `room` (current
 room of a dungeon), `sick` (creature is summoning sick, CR 302.6), `attacking` (attacking in the
 current combat), `class_level` (classes, CR 716), `dungeon` (dungeons, CR 309; image via their
 token printing like tokens: `{rooms: [{name, text, next: [room names]}], current}` from the Oracle
@@ -315,7 +318,8 @@ name → count, names = Forge's `CounterEnumType`, e.g. `{"P1P1": 2, "LOYALTY": 
 Players additionally: `mana_pool` = amount of floating mana per colour in the order W U B R G C;
 `counters` = player counters (CR 122.1) as for cards, e.g. `{"POISON": 3, "ENERGY": 2}`;
 `command` = cards in the command zone (CR 408: commander, emblems, dungeons, "The Ring", "The
-Monarch"/"The Initiative" and other effect cards); `blessing` (city's blessing), `ring_level` (how
+Monarch"/"The Initiative" and other effect cards; without Forge's internal "Commander Effect" card,
+which only carries the commander rules); `blessing` (city's blessing), `ring_level` (how
 often the Ring has tempted the player), `ring_bearer` (card ID, if any).
 
 Game additionally: `monarch` / `initiative` = seat (−1 = nobody), `day` = true (day) / false
@@ -410,7 +414,7 @@ HUD). The `ForgeTable` node (`rust/src/forge/table.rs`) translates:
 | `DeclareAttackers` / `DeclareBlockers` | candidates glow blue, chosen ones orange; attackers move forward (attack lunge), attack arrows (orange) only with more than one attack target; dragging an arrow (creature → player/planeswalker or blocker → attacker; `TableController.aim_released`) or clicking plans an attack or block (red / blue arrows, markers), the phase button at the bottom right ("Attack (n) »" / "Block (n) »") sends the plan (`ForgeTable.pass_priority`); "End turn" (`ForgeTable.end_turn`) answers `Pass` or `Attackers([])` by itself until the end of the turn; `combat` from the state shows the AI's combat as arrows |
 | all other decisions | HUD choice window (`decision_view.rs`): buttons, multiple choice with "Done", number field; source card highlighted in gold |
 | `exile`, `attached_to`, `counters`, `token` | exile pile per side (`PlayerSeat.exile`); attached cards offset under their host in its zone; counters and "token" as plaques on the card; player counters beside the medallion |
-| `command`, `face`, `face_down`, `monarch`, `initiative`, `day`, `ring_level` | command zone per side as a column (player bottom right, opponent top right); face changes as a flip animation, face-down cards with a card-back pattern; plaques "Commander", "Ring-bearer", "Room: …", "↺ other face"; monarch, initiative, city's blessing, Ring level as emblems beside the medallion, day/night beside the turn number |
+| `command`, `face`, `face_down`, `monarch`, `initiative`, `day`, `ring_level` | no command zone on the table: commanders (`commander`) appear only as a face-up copy at the right end of their owner's hand fan (the opponent's too) with `cast_cost`, glowing only while castable (`Priority.elsewhere`); emblems, dungeons and other effect cards at the right end of the battlefield's back row; face changes as a flip animation, face-down cards with a card-back pattern; plaques "Commander", "Ring-bearer", "Room: …", "↺ other face"; monarch, initiative, city's blessing, Ring level as emblems beside the medallion, day/night beside the turn number |
 | `log` | currently not displayed (planned: an expandable 3D scroll) |
 | `stack` | `Stack` zone on the right as a pile of cards (newest entry in front, older ones offset behind): spells (including `Casting`) as their card, abilities as the card of their source; arrows to the targets in the colour of the source card, as an arc to entries below; no separate list in the HUD, the 3D pile shows all entries |
 | `phase`, `life`, `turn`, `game_over` | timeline, medallions, turn number, game-over message in the `TurnHud` |
