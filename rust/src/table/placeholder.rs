@@ -26,8 +26,8 @@ fn rect(x: i32, y: i32, w: i32, h: i32) -> Rect2i {
 }
 
 /// Durchmesser und Abstand der Kostensymbole in der Titelleiste (Pixel).
-const PIP: i32 = 24;
-const PIP_STEP: i32 = 26;
+const PIP: i32 = 28;
+const PIP_STEP: i32 = 30;
 const TITLE_Y: i32 = 36;
 
 /// Pixelmitten (x) der Kostensymbole, von links nach rechts, rechtsbündig in der Titelleiste.
@@ -63,7 +63,8 @@ pub fn pip_tokens(def: &CardDef) -> Vec<String> {
 /// Zeigt das Kartenbild die generische Zahl selbst (Symbol aus dem Bogen)? Dann braucht es
 /// keine Beschriftung darüber.
 pub fn draws_generic(def: &CardDef) -> bool {
-    def.cost.generic > 0 && crate::game::mana_symbols::cell(&def.cost.generic.to_string()).is_some()
+    // „nur eigene Grafik“: kein Symbolbogen – dann steht die Zahl als Beschriftung im grauen Kreis
+    crate::assets::protected_enabled() && def.cost.generic > 0 && crate::game::mana_symbols::cell(&def.cost.generic.to_string()).is_some()
 }
 
 /// Pixelmitte (y) der Titelleiste.
@@ -196,13 +197,23 @@ pub fn card_face(def: &CardDef) -> Gd<Texture2D> {
             }
             // Wertefeld unten rechts (Kreatur, Planeswalker, Schlacht)
             if matches!(kind, CardKind::Creature | CardKind::Planeswalker | CardKind::Battle) {
-                img.fill_rect(rect(W - 82, 318, 64, 32), Color::from_rgb(0.12, 0.08, 0.06));
-                img.fill_rect(rect(W - 80, 320, 60, 28), dark);
+                value_box(&mut img, dark);
             }
         }
     }
     finish(img)
 }
+
+/// Wertefeld unten rechts (Stärke/Widerstand, Loyalität, Verteidigung): dunkler Rand, Fläche
+/// `fill`; groß genug für gut lesbare Zahlen ([`VALUE_BOX_CENTER`]).
+fn value_box(img: &mut Gd<Image>, fill: Color) {
+    img.fill_rect(rect(W - 100, 315, 84, 38), Color::from_rgb(0.12, 0.08, 0.06));
+    img.fill_rect(rect(W - 98, 317, 80, 34), fill);
+}
+
+/// Mitte des Wertefelds (Pixel der Kartentextur) und nutzbare Breite für die Zahl.
+pub const VALUE_BOX_CENTER: (f32, f32) = (198.0, 334.0);
+pub const VALUE_BOX_TEXT_WIDTH: f32 = 72.0;
 
 /// Bildausschnitt in das Bildfeld (20/60, 216 × 140 px) einpassen: auf die Feldbreite skaliert,
 /// überstehende Höhe oben und unten gleichmäßig abgeschnitten (bzw. umgekehrt bei breiten Bildern).
@@ -300,8 +311,7 @@ fn face_down_face(def: &CardDef) -> Gd<Texture2D> {
     img.fill_rect(rect(20, 20, W - 40, 32), dark); // Titel
     img.fill_rect(rect(20, 208, W - 40, 22), dark); // Typzeile
     if def.stats.is_some() {
-        img.fill_rect(rect(W - 82, 318, 64, 32), Color::from_rgb(0.12, 0.08, 0.06));
-        img.fill_rect(rect(W - 80, 320, 60, 28), dark);
+        value_box(&mut img, dark);
     }
     finish(img)
 }
