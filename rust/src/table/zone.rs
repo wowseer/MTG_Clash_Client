@@ -31,11 +31,14 @@ const STACK_MAX_SHOWN: f32 = 6.0;
 /// Drehung getappter Karten im Uhrzeigersinn (Grad) – nur leicht schräg statt quer.
 pub const TAP_ANGLE_DEGREES: f32 = 15.0;
 /// Automatische Anordnung (Aufteilung wie `mtg_arena_spielfeld.png`): Abstand zwischen Karten
-/// (Anteil der Kartenbreite), Beginn der hinteren Reihe (Artefakte, Verzauberungen …) rechts vom
-/// Medaillon (lokal x) und kleinste Verkleinerung (Anteil von [member card_scale]), bevor Karten
-/// sich überlappen.
+/// (Anteil der Kartenbreite), am weitesten links mögliche Lage der hinteren Reihe (Artefakte,
+/// Verzauberungen …) rechts vom Medaillon (lokal x) und kleinste Verkleinerung (Anteil von
+/// [member card_scale]), bevor Karten sich überlappen.
 const AUTO_GAP: f32 = 0.12;
-const BACK_ROW_START: f32 = 3.2;
+const BACK_ROW_START: f32 = 1.75;
+/// Die hintere Reihe liegt rechtsbündig und reicht so weit über den rechten Rand der Zone
+/// hinaus bis an den Tischrand (lokal x; davor endet sie vor der Kommandozone).
+const BACK_ROW_OVERHANG: f32 = 0.95;
 /// Abstand zwischen Kreaturen-Reihe und hinterer Reihe.
 const BACK_ROW_GAP: f32 = 0.12;
 /// Kleinste Größe der Planeswalker (Anteil von [member card_scale]) bei vielen Planeswalkern.
@@ -47,13 +50,13 @@ const PW_TWO_ROWS_FROM: usize = 3;
 const PW_REGION_WIDTH: f32 = 2.9;
 /// Tiefe der unteren Reihe (Länder in ihrer Zone, Artefakte im Spielfeld) – Kreaturen und
 /// Planeswalker bleiben darüber.
-const BACK_ROW_DEPTH: f32 = 1.35;
+const BACK_ROW_DEPTH: f32 = 1.5;
 /// Zweite Kreaturen-Reihe, sobald eine Reihe unter diesen Anteil von [member card_scale] schrumpfen müsste.
 const TWO_ROWS_BELOW: f32 = 0.6;
 const MIN_SHRINK: f32 = 0.32;
 /// Ressourcen-Reihe: gleiche Länder überlappen um diesen Anteil der Kartenbreite versetzt;
 /// Abstand zwischen den Gruppen.
-const LAND_STACK_STEP: f32 = 0.3;
+const LAND_STACK_STEP: f32 = 0.22;
 const LAND_GROUP_GAP: f32 = 0.12;
 /// Spielfeld: Versatz gleicher Karten auf einem Stapel (Kartenbreiten).
 const BATTLE_STACK_STEP: f32 = 0.3;
@@ -635,8 +638,10 @@ impl Zone {
     /// Slots der automatischen Anordnung (siehe [member auto_arrange]) für die freien Karten
     /// `base`, in deren Reihenfolge – Aufteilung wie `mtg_arena_spielfeld.png`. Lokal: −z = zur
     /// Tischmitte, +x = rechts (aus Sicht der Seite):
-    /// - **untere Reihe** ([`BACK_ROW_DEPTH`] tief): links die Länder (eigene Zone), rechts ab
-    ///   [`BACK_ROW_START`] Artefakte, Verzauberungen, Schlachten … in eigener Größe;
+    /// - **untere Reihe** ([`BACK_ROW_DEPTH`] tief): links die Länder (eigene Zone), rechts
+    ///   Artefakte, Verzauberungen, Schlachten … in eigener Größe, nach Kategorie geordnet und
+    ///   rechtsbündig bis an den Tischrand ([`BACK_ROW_OVERHANG`]), höchstens bis
+    ///   [`BACK_ROW_START`] nach links; bei vielen zwei Reihen (bevorzugt je Kategorie eine);
     /// - **darüber** Planeswalker ganz links (Größe nur nach ihrer Zahl, ab [`PW_TWO_ROWS_FROM`] in zwei Reihen) und
     ///   die Kreaturen mittig, rechts neben den Planeswalkern; gleiche Kreaturen untereinander
     ///   gestapelt (hohe Stapel enger, [`stack_step`]). Passen sie nicht, werden sie kleiner; eine
@@ -693,13 +698,9 @@ impl Zone {
             (first.iter().position(|f| *f == n).unwrap_or(0), flag(2), flag(1), flag(3))
         };
         groups.sort_by_key(|g| rank(g));
-        // Breite einer Gruppe in Kartenbreiten (ohne Abstand) und je Reihe in Einheiten
-        // Kreaturen-Stapel liegen untereinander (eine Kartenbreite), die anderen nebeneinander
+        // Breite einer Gruppe in Kartenbreiten (ohne Abstand): Kreaturen-Stapel liegen
+        // untereinander (eine Kartenbreite), die anderen nebeneinander
         let group_units = |n: usize, row: u8| if row == 0 { 1.0 } else { 1.0 + (n as f32 - 1.0) * BATTLE_STACK_STEP };
-        let row_units = |f: u8| -> f32 {
-            groups.iter().filter(|g| g.1 == f).map(|g| group_units(g.2, g.1) + AUTO_GAP).sum::<f32>()
-        };
-        let units_back = row_units(1);
         let wall = half_x - 0.1;
         // Die untere Reihe der Zone gehört Ländern (eigene Zone daneben) und Artefakten:
         // Kreaturen und Planeswalker liegen immer darüber, auch mit hohen Stapeln
@@ -759,16 +760,58 @@ impl Zone {
         };
         let w = CARD_WIDTH * s;
 
-        // hintere Reihe (Artefakte, Verzauberungen …): eigene Größe, passt in die untere Reihe
-        let back_avail = (wall - BACK_ROW_START).max(CARD_WIDTH * min_s);
-        let mut back_s = self.card_scale.min((BACK_ROW_DEPTH - 0.1) / len);
-        while back_s > min_s && units_back * CARD_WIDTH * back_s > back_avail {
-            back_s -= self.card_scale * 0.02;
+        // hintere Reihe (Artefakte, Verzauberungen …): nach Kategorie geordnet (Artefakte, dann
+        // Verzauberungen, dann der Rest), rechtsbündig bis an den Tischrand; eine zweite Reihe, sobald
+        // sie größere Karten erlaubt – bevorzugt an einer Kategorie-Grenze geteilt
+        let category = |g: usize| -> u8 {
+            let i = keys.iter().zip(&front).position(|(k, f)| *k == groups[g].0 && *f == groups[g].1).unwrap_or(0);
+            match self.cards[base[i]].bind().kind() {
+                CardKind::Artifact | CardKind::Equipment => 0,
+                CardKind::Enchantment | CardKind::Aura => 1,
+                _ => 2,
+            }
+        };
+        let mut back: Vec<usize> = (0..groups.len()).filter(|&g| groups[g].1 == 1).collect();
+        back.sort_by_key(|&g| category(g)); // stabil: innerhalb der Kategorie wie bisher
+        let back_right = wall + BACK_ROW_OVERHANG;
+        let back_avail = (back_right - BACK_ROW_START).max(CARD_WIDTH * min_s);
+        let units_of = |r: &[usize]| -> f32 {
+            (r.iter().map(|&g| group_units(groups[g].2, 1) + AUTO_GAP).sum::<f32>() - AUTO_GAP).max(0.0)
+        };
+        let back_scale = |rows: &[Vec<usize>]| -> f32 {
+            let n = rows.len() as f32;
+            let by_depth = (BACK_ROW_DEPTH - 0.1 - BACK_ROW_GAP * (n - 1.0)) / (n * len);
+            let widest = rows.iter().map(|r| units_of(r)).fold(0.0f32, f32::max).max(0.001);
+            self.card_scale.min(by_depth).min(back_avail / (widest * CARD_WIDTH)).max(min_s)
+        };
+        // Kandidaten: eine Reihe, zwei Reihen an jeder Kategorie-Grenze, zwei gleich breite Reihen
+        let mut layouts: Vec<Vec<Vec<usize>>> = vec![vec![back.clone()]];
+        for cut in 1..back.len() {
+            if category(back[cut]) != category(back[cut - 1]) {
+                layouts.push(vec![back[..cut].to_vec(), back[cut..].to_vec()]);
+            }
         }
-        let back_s = back_s.max(min_s);
+        if back.len() >= 2 {
+            let total = units_of(&back);
+            let cut = (1..back.len())
+                .min_by(|&a, &b| {
+                    let d = |c: usize| (units_of(&back[..c]) - total * 0.5).abs();
+                    d(a).total_cmp(&d(b))
+                })
+                .unwrap_or(1);
+            layouts.push(vec![back[..cut].to_vec(), back[cut..].to_vec()]);
+        }
+        let mut back_rows = layouts[0].clone();
+        let mut back_s = back_scale(&back_rows);
+        for l in &layouts[1..] {
+            let sc = back_scale(l);
+            // zweite Reihe nur, wenn die Karten dadurch spürbar größer werden
+            if sc > back_s * 1.05 {
+                back_rows = l.clone();
+                back_s = sc;
+            }
+        }
         let back_w = CARD_WIDTH * back_s;
-        let back_squeeze = (back_avail / (units_back * back_w).max(0.001)).min(1.0);
-        let back_z = half_z - len * back_s * 0.5 - 0.05;
 
         // Lage (x, z, Größe) der ersten Karte jeder Gruppe
         let mut slot = vec![(0.0f32, 0.0f32, s); groups.len()];
@@ -792,11 +835,17 @@ impl Zone {
             }
             z_row += row_h(r, s) + BACK_ROW_GAP;
         }
-        let mut xb = BACK_ROW_START + back_w * 0.5;
-        for (g, grp) in groups.iter().enumerate() {
-            if grp.1 == 1 {
-                slot[g] = (xb, back_z, back_s);
-                xb += (group_units(grp.2, 1) + AUTO_GAP) * back_w * back_squeeze;
+        // jede Reihe endet am Tischrand; die untere Reihe liegt an der Kante zum Spieler
+        let mut squeeze_of = vec![1.0f32; groups.len()];
+        let n_back = back_rows.len();
+        for (r, row) in back_rows.iter().enumerate() {
+            let squeeze = (back_avail / (units_of(row) * back_w).max(0.001)).min(1.0);
+            let z = half_z - 0.05 - len * back_s * 0.5 - (n_back - 1 - r) as f32 * (len * back_s + BACK_ROW_GAP);
+            let mut xb = back_right - units_of(row) * back_w * squeeze + back_w * 0.5;
+            for &g in row {
+                slot[g] = (xb, z, back_s);
+                squeeze_of[g] = squeeze;
+                xb += (group_units(groups[g].2, 1) + AUTO_GAP) * back_w * squeeze;
             }
         }
 
@@ -814,7 +863,7 @@ impl Zone {
                 let (x, z) = if *f == 0 {
                     (x0, z0 + row as f32 * stack_step(groups[g].2.min(STACK_MAX)) * len * sc)
                 } else {
-                    let squeeze = if *f == 1 { back_squeeze } else { 1.0 };
+                    let squeeze = squeeze_of[g];
                     (x0 + row as f32 * BATTLE_STACK_STEP * CARD_WIDTH * sc * squeeze, z0)
                 };
                 let y = CARD_THICKNESS * 0.5 + row as f32 * 0.004 + i as f32 * 0.0005;
