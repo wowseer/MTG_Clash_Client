@@ -1050,7 +1050,7 @@ impl Card3D {
         }
         self.badges = text.to_string();
         if let Some(l) = self.labels.as_mut() {
-            l.badges.set_text(text);
+            style_badge(&mut l.badges, text);
         }
     }
 
@@ -1225,7 +1225,7 @@ impl Card3D {
         let mut badges = labels.badges.clone();
         badges.set_outline_size(14);
         badges.set_outline_modulate(Color::from_rgba(0.05, 0.04, 0.03, 0.92));
-        badges.set_text(&self.badges);
+        style_badge(&mut badges, &self.badges);
         self.labels = Some(labels);
         self.refresh_labels();
     }
@@ -1525,6 +1525,29 @@ const TEXT_PANEL_HEIGHT: f32 = 0.27;
 
 /// Größe eines Schriftpunkts der Kartenbeschriftung (m).
 const LABEL_PIXEL: f32 = 0.0008;
+
+/// Plakette in der Kartenmitte setzen. Kurze Zahlen (Reihenfolge „1“, „2“ …, Wiederholung
+/// „×2“) stehen groß und fett, damit man sie nach dem Anklicken sofort sieht; längere Texte
+/// („Spielstein“, „aus dem Friedhof“ …) normal.
+fn style_badge(l: &mut Gd<Label3D>, text: &str) {
+    let number = !text.is_empty() && text.chars().count() <= 3 && text.chars().all(|c| c.is_ascii_digit() || c == '×');
+    if number {
+        let mut font = godot::classes::SystemFont::new_gd();
+        font.set_font_names(&PackedStringArray::from(&[GString::from("Noto Sans"), GString::from("DejaVu Sans"), GString::from("sans-serif")]));
+        font.set_font_weight(800);
+        l.set_font(&font);
+        l.set_font_size(BADGE_NUMBER_FONT);
+        l.set_outline_size(BADGE_NUMBER_FONT / 6);
+    } else {
+        l.set_font(Gd::<godot::classes::Font>::null_arg());
+        l.set_font_size(52);
+        l.set_outline_size(14);
+    }
+    l.set_text(text);
+}
+
+/// Schriftgröße kurzer Zahlen-Plaketten ([`style_badge`]).
+const BADGE_NUMBER_FONT: i32 = 240;
 
 fn card_label(parent: &mut Gd<Node3D>, pos: Vector3, font_size: i32, color: Color, wrap_width: f32) -> Gd<Label3D> {
     const PIXEL: f32 = LABEL_PIXEL;
