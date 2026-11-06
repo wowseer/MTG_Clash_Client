@@ -102,6 +102,8 @@ const FOCUS_STEP: f32 = 0.3;
 const FOCUS_BUTTON_WIDTH: f32 = 1.3;
 /// Abstand der Titelmitte über der Oberkante der großen Karte (Fokus-Anordnung).
 const FOCUS_TITLE_GAP: f32 = 0.2;
+/// Abstand des Untertitels über der Karte am Stack ([method Showcase.set_title_card]).
+const AVOID_GAP: f32 = 0.06;
 
 /// Bühne vor der Kamera: Abdunkelung, Kartenfächer ([Zone]), Titel und [Button3D]-Knöpfe.
 /// [method open] stellt sie vor die aktuelle Kamera, [method show_cards] holt Karten herein,
@@ -123,6 +125,10 @@ pub struct Showcase {
     slider: Option<Gd<Slider3D>>,
     /// Fokus-Anordnung: Karte groß, Knöpfe untereinander darunter statt in einer Reihe.
     focus: bool,
+    /// Tischkarte, zu der die Frage gehört (der gewirkte Zauber am Stack, [method
+    /// set_title_card]): Der Untertitel der Fokus-Anordnung steht dann immer als Überschrift
+    /// über ihr und folgt ihr, solange sie noch an ihren Platz gleitet.
+    title_card: Option<Gd<Card3D>>,
     /// Fächer als Cover-Flow: Schieben verschiebt die Karten statt der Zone.
     coverflow: bool,
     /// Sperre hinter der Bühne (Kartenlayer): Tischkarten dahinter bekommen keinen Hover.
@@ -167,6 +173,7 @@ impl INode3D for Showcase {
             scroll_extra: 0.0,
             slider: None,
             focus: false,
+            title_card: None,
             coverflow: false,
             blocker: None,
             peek_button: None,
@@ -195,6 +202,9 @@ impl INode3D for Showcase {
         let alpha = if self.closing { DIM_ALPHA * (1.0 - k) } else if peeking { 0.0 } else { DIM_ALPHA * k };
         if let Some(m) = self.dimmer.as_mut() {
             m.set_albedo(Color::from_rgba(0.02, 0.02, 0.04, alpha));
+        }
+        if self.title_card.is_some() {
+            self.place_subtitle();
         }
         let text_alpha = if self.closing { 1.0 - k } else { k };
         for l in [&mut self.title, &mut self.subtitle, &mut self.note].into_iter().flatten() {
@@ -304,7 +314,8 @@ impl Showcase {
         };
         self.fit_subtitle(&subtitle.to_string());
         let sub_max_w = if self.focus { FOCUS_SIDE_WIDTH } else { SUBTITLE_MAX_WIDTH };
-        let sub_top = !self.focus;
+        let above = self.subtitle_above().is_some();
+        let sub_top = !self.focus || above;
         for (row, (label, text)) in [(&mut self.title, title), (&mut self.subtitle, subtitle), (&mut self.note, note)].into_iter().enumerate() {
             if let Some(l) = label.as_mut() {
                 // alte Symbol-Beschriftung dieser Zeile entfernen
@@ -330,7 +341,8 @@ impl Showcase {
                         sprite.set_draw_flag(SpriteFlags::SHADED, false);
                         sprite.set_modulate(Color::from_rgba(1.0, 1.0, 1.0, c.a));
                         let half = size.y as f32 * pixel * 0.5;
-                        sprite.set_position(Vector3::new(0.0, if sub_top { -half } else { 0.0 }, 0.0));
+                        let y = if above { half } else if sub_top { -half } else { 0.0 };
+                        sprite.set_position(Vector3::new(0.0, y, 0.0));
                         l.add_child(&sprite);
                     }
                     l.set_visible(true);
@@ -461,6 +473,39 @@ impl Showcase {
         if let Some(l) = self.title.as_mut() {
             l.set_position(Vector3::new(0.0, FOCUS_CENTER.y + CARD_HEIGHT * FOCUS_SCALE * 0.5 + FOCUS_TITLE_GAP, 0.05));
         }
+    }
+
+    /// Karte am Stack, zu der die Frage gehört (der gewirkte Zauber): Der Untertitel der
+    /// Fokus-Anordnung steht dann immer mittig als Überschrift über dieser Karte statt rechts
+    /// neben der großen Karte (dort läge er auf dem Stack) und folgt ihr jedes Bild.
+    /// Nach [method set_focus_layout] aufrufen.
+    #[func]
+    pub fn set_title_card(&mut self, card: Gd<Card3D>) {
+        self.title_card = Some(card);
+        let (t, sub, n) = self.texts.clone();
+        self.set_texts(t, sub, n);
+    }
+
+    /// Fläche der [member title_card] in der Bühnenebene (x/y der Bühne, y nach oben;
+    /// `position` = linke untere Ecke): ihre Bildschirm-Ecken auf die Bühnenebene projiziert.
+    /// Nur in der Fokus-Anordnung.
+    fn subtitle_above(&self) -> Option<Rect2> {
+        let card = self.title_card.as_ref().filter(|c| self.focus && c.is_instance_valid())?;
+        let cam = self.base().get_viewport()?.get_camera_3d()?;
+        let quad = card.bind().screen_quad();
+        if quad.is_empty() {
+            return None;
+        }
+        let xf = self.base().get_global_transform();
+        let depth = (xf.origin - cam.get_global_position()).length();
+        let to_stage = xf.affine_inverse();
+        let (mut lo, mut hi) = (Vector2::new(f32::MAX, f32::MAX), Vector2::new(f32::MIN, f32::MIN));
+        for p in quad.as_slice() {
+            let q = to_stage * cam.project_position(*p, depth);
+            lo = Vector2::new(lo.x.min(q.x), lo.y.min(q.y));
+            hi = Vector2::new(hi.x.max(q.x), hi.y.max(q.y));
+        }
+        Some(Rect2::new(lo, hi - lo))
     }
 
     /// Breite eines Knopfes in der Fokus-Anordnung (Welteinheiten).
@@ -869,9 +914,17 @@ impl Showcase {
     /// Fokus-Anordnung linksbündig rechts neben der großen Karte, mittig zu ihr.
     fn place_subtitle(&mut self) {
         let focus = self.focus;
+        let above = self.subtitle_above();
         let Some(l) = self.subtitle.as_mut() else { return };
         let pixel = l.get_pixel_size();
-        if focus {
+        if let Some(rect) = above {
+            // mittig über der Karte, die frei bleiben soll
+            let x = rect.center().x;
+            l.set_width(FOCUS_SIDE_WIDTH / pixel);
+            l.set_horizontal_alignment(HorizontalAlignment::CENTER);
+            l.set_vertical_alignment(VerticalAlignment::BOTTOM);
+            l.set_position(Vector3::new(x, rect.end().y + AVOID_GAP, 0.05));
+        } else if focus {
             let x0 = CARD_WIDTH * FOCUS_SCALE * 0.5 + FOCUS_SIDE_GAP;
             l.set_width(FOCUS_SIDE_WIDTH / pixel);
             l.set_horizontal_alignment(HorizontalAlignment::LEFT);

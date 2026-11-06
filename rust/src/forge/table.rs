@@ -2709,6 +2709,18 @@ impl ForgeTable {
         }
     }
 
+    /// Fokus-Bühne zu einer Karte, die am Stack liegt (z. B. der gerade gewirkte Zauber bei
+    /// Kicker/Casualty): der Untertitel (Kartenname bzw. Einzelheiten) steht als Überschrift
+    /// über dieser Stack-Karte statt neben der großen Karte, wo er auf dem Stack läge
+    /// ([method Showcase.set_title_card]).
+    fn title_over_stack_card(&self, showcase: &mut Gd<Showcase>, req: &Request) {
+        let Some(card) = req.source.and_then(|id| self.cards.get(&i64::from(id)).cloned()) else { return };
+        let on_stack = self.stack_zone.as_ref().is_some_and(|z| card.bind().get_zone().as_ref() == Some(z));
+        if on_stack && card.is_visible_in_tree() {
+            showcase.bind_mut().set_title_card(card);
+        }
+    }
+
     /// Zauber, der gerade gewirkt wird, während einer Bühne am Stack zeigen (CR 601.2a: die Karte
     /// kommt zuerst auf den Stack, dann werden Modi gewählt; Video „Spree und Stack“): eine helle
     /// Kopie der ganzen Karte auf der Bühne an der Bildschirmstelle des Stack-Platzes (rechts),
@@ -2867,6 +2879,7 @@ impl ForgeTable {
             showcase.bind_mut().show_options(vec![(Self::stage_card(&data, None), String::new())]);
         }
         showcase.bind_mut().set_focus_layout();
+        self.title_over_stack_card(&mut showcase, req);
         let width = Showcase::focus_button_width();
         for (i, (style, opt)) in [ButtonStyle::Orange, ButtonStyle::Blue].into_iter().zip(hud.options.iter()).enumerate() {
             let raw = if confirm_like { (i == 0).to_variant() } else { (i as i64).to_variant() };
@@ -3017,6 +3030,7 @@ impl ForgeTable {
             showcase.bind_mut().show_options(vec![(Self::stage_card(&data, None), String::new())]);
         }
         showcase.bind_mut().set_focus_layout();
+        self.title_over_stack_card(&mut showcase, req);
         let width = Showcase::focus_button_width();
         if options.len() == 1 {
             self.stage_button(&mut showcase, ButtonStyle::Orange, &first, width, Choice::Modes(vec![0]));
@@ -3363,6 +3377,7 @@ impl ForgeTable {
             showcase.bind_mut().show_options(vec![(copy, String::new())]);
         }
         showcase.bind_mut().set_focus_layout();
+        self.title_over_stack_card(&mut showcase, req);
         // darunter die Knopfreihe −5 / − / Bestätigen / + / +5, darunter Abbrechen
         let me = self.to_gd();
         let mut add = |button: Gd<Button3D>, pos: Vector2, method: &str, arg: Option<i64>| {
