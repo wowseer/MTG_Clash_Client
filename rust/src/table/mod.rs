@@ -13,6 +13,7 @@ pub mod dungeon_view;
 pub mod loyalty_view;
 pub mod mana_wheel;
 pub(crate) mod placeholder;
+pub mod search_list;
 pub mod showcase;
 pub mod slider3d;
 pub mod target_arrows;

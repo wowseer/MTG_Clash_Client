@@ -88,8 +88,8 @@ NeoForge). The Java bridge translates Forge's `PlayerController` calls into `Dec
 | `chooseTargetsFor` (via `setupTargets`) | `ChooseTargets { source, description, candidates, min, max }` | `Targets([…])` / `Cancel` |
 | `announceRequirements` (X from 0) | `ChooseX { max }` (UI: 3D buttons at the stack, `ForgeTable.show_choose_x`) | `Number(n)` / `Cancel` |
 | `chooseColor`, `chooseColors` with exactly one colour | `ChooseColor { options }` | `Color("R")` |
-| `chooseCardName` | `NameCard { options }` (all allowed names) | `Number(index)` |
-| `chooseSomeType` | `ChooseType { options }` | `Number(index)` |
+| `chooseCardName` | `NameCard { options, suggested }` (all allowed names; `suggested` = indices of names the player knows: own cards in all zones and face-up cards of opponents on the battlefield, in graveyard, exile, stack and command zone) | `Number(index)` |
+| `chooseSomeType` | `ChooseType { options, kind, suggested }` (`kind` = Forge's kind of type, e.g. `"Creature"`, `"Basic Land"`, `"Card"`; `suggested` = indices of types that appear on the player's own cards in all zones, including the library) | `Number(index)` |
 | `confirmAction`, `confirmReplacementEffect`, `confirmStaticApplication` | `Confirm { prompt }` | `Yes` / `No` |
 | `confirmTrigger` | `OptionalTrigger { description }` | `Yes` / `No` |
 | Starting player, vote, counter type, protection, keyword, sector, dice, number from a list, yes/no with custom labels (heads/tails, tap/untap …), colour including colourless | `ChooseOption` (**extension**) | `Number(index)` |
@@ -200,6 +200,7 @@ These parts do not (yet) exist in the model (`decision.rs` from forge-rules-rs):
 | `Decision::ChooseStartingPlayer { player, players }` → `Choice::Number(index)` | who starts the game (CR 103.1); `players` = seats, `labels` = player names. The UI shows 3D buttons for it instead of a window |
 | `Decision::Mulligan` + field `first_player` | seat of the starting player (−1 = not known yet), so the mulligan stage can show "You go first" / "X goes first"; the base model only has `mulligans_taken` |
 | `ChooseTargets` also for player/card choices by effects (`chooseSingleEntityForEffect` with players) | the base model has no decision for this; the UI treats them like targets (click on medallion/card) |
+| `NameCard.suggested`, `ChooseType.kind`, `ChooseType.suggested` | suggestion list for naming a card / choosing a type (indices into `options`) and the kind of type, so the UI can show "Choose a creature type." with the types of the own deck first ("Show all" for the rest) |
 | `Choice::Cancel` | cancel the target/X choice while casting (the cast is undone); for other decisions "the engine decides by itself" |
 | Request envelope: `prompt`, `source`, `ability`, `cancelable`, `labels`, `cards` | display texts (Forge's question text, source card, ability text, display text per list entry) and card data (`cards`: list as in `state`) of the cards concerned – also from hidden zones, e.g. for `ChooseCards` with `Search` |
 

@@ -31,6 +31,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [ManaFx](#manafx) – erbt von `Node3D`
 - [LoyaltyView](#loyaltyview) – erbt von `Node3D`
 - [ManaWheel](#manawheel) – erbt von `Node3D`
+- [SearchList](#searchlist) – erbt von `Node3D`
 - [Showcase](#showcase) – erbt von `Node3D`
 - [Slider3D](#slider3d) – erbt von `Area3D`
 - [TableCamera](#tablecamera) – erbt von `Camera3D`
@@ -161,8 +162,12 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
-| `on_card_info(cards: VarArray)` | `void` | Antwort auf `card_info`: Kartendaten merken; offene Suche mit Bildern neu aufbauen. |
-| `on_search_pick(index: int)` | `void` | Treffer `index` (Nummer der Option) gewählt. |
+| `on_card_info(cards: VarArray)` | `void` | Antwort auf `card_info`: Kartendaten merken; die Vorschau der Suche neu aufbauen, wenn sich bei ihrer Karte etwas Sichtbares ändert (z. B. das Bild kam). |
+| `on_search_selected(row: int)` | `void` | Zeile `row` der Suchliste gewählt: „Fertig“ wird anklickbar. |
+| `on_search_confirmed(row: int)` | `void` | Zweiter Klick auf die gewählte Zeile: bestätigen. |
+| `on_search_done()` | `void` | „Fertig“: die gewählte Zeile bestätigen. |
+| `on_search_toggle()` | `void` | „Alle zeigen“ / „Nur Vorschläge“ umschalten. |
+| `on_search_pick(index: int)` | `void` | Option `index` gewählt: an die Engine. |
 | `on_search_cancel()` | `void` | „Abbrechen“ in der Suche. |
 | `on_divide_step(index: int, delta: int)` | `void` | „−“ / Zahl / „+“ an Ziel `index`: Menge ändern (nie unter das Mindestmaß, nie über den Rest). |
 | `on_divide_done()` | `void` | „Fertig“ auf der Kampfschaden-Bühne: wie der Phasen-Knopf. |
@@ -652,6 +657,30 @@ Farbrad vor der Kamera an einer Bildschirmstelle: Segmente (Farbe + Manasymbol),
 | Signal | Beschreibung |
 |---|---|
 | `picked(index: int)` | Ein Segment wurde angeklickt: `index` = Nummer des Segments (Reihenfolge wie übergeben). |
+
+## SearchList
+
+*Erbt von `Node3D` · Quelle: `rust/src/table/search_list.rs`*
+
+Auswahlliste mit Filterfeld: zeigt `set_entries()`-Einträge in sieben Zeilen, scrollt mit dem Mausrad bzw. Scrollbalken. Signale [signal selected] (Zeile angeklickt) und [signal confirmed] (zweiter Klick auf die gewählte Zeile).
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `selected_index()` | `int` | Gewählter Eintrag (Nummer in der Liste von `set_entries()`), -1 = keiner. |
+| `hovered_index()` | `int` | Eintrag unter der Maus, -1 = keiner. |
+| `move_selection(step: int)` | `void` | Auswahl um `step` Zeilen verschieben (Pfeiltasten); ohne Auswahl die erste Zeile. |
+| `update_pointer(world: Vector3)` | `void` | Mauspunkt auf der Trefferfläche (Weltkoordinaten): Zeile bzw. Scrollbalken darunter. |
+| `set_hovered(hovered: bool)` | `void` | Maus verlässt die Liste. |
+| `activate()` | `void` | Klick: Zeile wählen (zweimal = bestätigen) bzw. im Scrollbalken dorthin springen. |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `selected(index: int)` | Eintrag `index` (Nummer in der Liste von `set_entries()`) wurde angeklickt. |
+| `confirmed(index: int)` | Die gewählte Zeile wurde noch einmal angeklickt (Doppelklick): Auswahl bestätigen. |
 
 ## Showcase
 

@@ -27,6 +27,7 @@ use super::slider3d::Slider3D;
 use super::dungeon_view::DungeonView;
 use super::loyalty_view::LoyaltyView;
 use super::mana_wheel::ManaWheel;
+use super::search_list::SearchList;
 use super::exile_portal::ZONE_CLICK_GROUP;
 use super::layers::{CARD_LAYER, CONTROL_LAYER, ZONE_LAYER};
 use super::table_camera::TableCamera;
@@ -90,6 +91,8 @@ pub struct TableController {
     /// Planeswalker-Ansicht unter der Maus und die, auf der die Maustaste gedrückt wurde.
     hovered_bar: Option<Gd<LoyaltyView>>,
     bar_press: Option<Gd<LoyaltyView>>,
+    hovered_list: Option<Gd<SearchList>>,
+    list_press: Option<Gd<SearchList>>,
     /// Dungeon-Ansicht unter der Maus und die, auf der die Maustaste gedrückt wurde.
     hovered_dungeon: Option<Gd<DungeonView>>,
     dungeon_press: Option<Gd<DungeonView>>,
@@ -123,6 +126,8 @@ impl INode3D for TableController {
             hovered_wheel: None,
             hovered_bar: None,
             bar_press: None,
+            hovered_list: None,
+            list_press: None,
             hovered_dungeon: None,
             dungeon_press: None,
             wheel_press: None,
@@ -388,6 +393,17 @@ impl TableController {
         if let (Some(mut b), Some(h)) = (bar.clone(), control_hit.as_ref()) {
             b.bind_mut().update_pointer(h.position);
         }
+        // Auswahlliste: die Trefferfläche ist ein Kind der Liste; Trefferpunkt wählt die Zeile
+        let list = control_hit.as_ref().and_then(|h| h.collider.clone().try_cast::<Node>().ok()?.get_parent()?.try_cast::<SearchList>().ok());
+        if list != self.hovered_list {
+            if let Some(mut old) = self.hovered_list.take().filter(|l| l.is_instance_valid()) {
+                old.bind_mut().set_hovered(false);
+            }
+            self.hovered_list = list.clone();
+        }
+        if let (Some(mut l), Some(h)) = (list.clone(), control_hit.as_ref()) {
+            l.bind_mut().update_pointer(h.position);
+        }
         // Dungeon-Ansicht: Trefferfläche hängt unter `content` der Ansicht
         let dungeon = control_hit
             .as_ref()
@@ -419,7 +435,7 @@ impl TableController {
             }
             self.hovered_control = control.clone();
         }
-        let hit = if over_gui || control.is_some() || slider.is_some() || wheel.is_some() || bar.is_some() || dungeon.is_some() || zone_hit {
+        let hit = if over_gui || control.is_some() || slider.is_some() || wheel.is_some() || bar.is_some() || list.is_some() || dungeon.is_some() || zone_hit {
             None
         } else {
             self.raycast(origin, dir, CARD_LAYER).and_then(|h| {
@@ -473,6 +489,10 @@ impl TableController {
         }
         if let Some(bar) = self.hovered_bar.as_ref().filter(|b| b.is_instance_valid()).cloned() {
             self.bar_press = Some(bar);
+            return;
+        }
+        if let Some(list) = self.hovered_list.as_ref().filter(|l| l.is_instance_valid()).cloned() {
+            self.list_press = Some(list);
             return;
         }
         if let Some(d) = self.hovered_dungeon.as_ref().filter(|d| d.is_instance_valid()).cloned() {
@@ -577,6 +597,12 @@ impl TableController {
         if let Some(mut bar) = self.bar_press.take() {
             if bar.is_instance_valid() && self.hovered_bar.as_ref() == Some(&bar) {
                 bar.bind_mut().activate();
+            }
+            return;
+        }
+        if let Some(mut list) = self.list_press.take() {
+            if list.is_instance_valid() && self.hovered_list.as_ref() == Some(&list) {
+                list.bind_mut().activate();
             }
             return;
         }

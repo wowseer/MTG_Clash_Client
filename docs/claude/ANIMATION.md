@@ -61,6 +61,7 @@ Spiel nie auf.
 | 3D-Knopf Oberfläche | 8 s Schleife (Blender: 4 s; halbes Tempo, ruhiger) | – | Shader nach den Blender-Treibern (`speed` 0,5): Rauschen kreist in z/w, Leuchten 0,85 + 0,15·sin(2φ); Zeitversatz je Knopf zufällig |
 | Farbrad (`ManaWheel`) aufgehen / schließen | 0,20 s / 0,15 s | Cubic-Out / linear | wächst aus der Mitte der Karte, folgt ihr; Segment-Hover exponentiell (Faktor 18/s), +60 % heller |
 | Planeswalker-Ansicht (`LoyaltyView`) aufgehen / schließen | 0,20 s / 0,15 s | Cubic-Out / linear | Karte wächst von 90 % und blendet ein, Tisch dunkelt auf 55 % ab; Feld-Hover exponentiell (18/s), 3 % größer, goldener Rand |
+| Auswahlliste (`SearchList`) erscheinen | 0,20 s | Cubic-Out | wächst von 96 % und blendet ein (mit der Bühne); Zeilen-Hover exponentiell (18/s), Auswahl golden |
 | Dungeon-Ansicht (`DungeonView`) aufgehen / schließen | 0,25 s / 0,15 s | Cubic-Out / linear | Karten wachsen von 92 %, Tisch dunkelt auf 62 % ab; wählbare Räume pulsieren blau (1,2 s), Hover golden (18/s) |
 | Loyalitäts-Schild blitzt bei Änderung | 0,6 s | Sinus-Puls | springt um bis zu 45 % auf und leuchtet hell, klingt linear ab |
 | Exil-Strudel öffnen / schließen | 0,30 s / 0,30 s | Back-Out / Quad-In | nur offen, solange Karten im Exil liegen; Wirbel dreht laufend (`TIME`), Größe 1,45 |

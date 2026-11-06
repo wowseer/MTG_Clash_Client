@@ -163,10 +163,14 @@ pub enum Decision {
     PayMana { player: PlayerId, remaining: String, options: Vec<PayAction> },
     PayLifeForPhyrexian { player: PlayerId, symbol: String },
     ChooseColor { player: PlayerId, options: Vec<Color> },
-    /// Kartennamen nennen; Antwort `Choice::Number(index)`.
-    NameCard { player: PlayerId, options: Vec<String> },
-    /// Typ wählen; Antwort `Choice::Number(index)`.
-    ChooseType { player: PlayerId, options: Vec<String> },
+    /// Kartennamen nennen (CR 201.3); Antwort `Choice::Number(index)`. `suggested`: Indizes in
+    /// `options` mit Namen, die der Spieler kennt (eigene und offen liegende Karten) – für eine
+    /// Vorschlagsliste (Erweiterung).
+    NameCard { player: PlayerId, options: Vec<String>, suggested: Vec<u32> },
+    /// Typ wählen (z. B. Kreaturtyp, CR 205.3); Antwort `Choice::Number(index)`. `kind`: Art des
+    /// Typs, wie die Engine sie nennt („Creature“, „Basic Land“ …; leer = unbekannt),
+    /// `suggested`: Indizes in `options` mit Typen auf den eigenen Karten (Erweiterung).
+    ChooseType { player: PlayerId, options: Vec<String>, kind: String, suggested: Vec<u32> },
     DeclareAttackers { player: PlayerId, candidates: Vec<CardId>, defenders: Vec<Target> },
     DeclareBlockers { player: PlayerId, candidates: Vec<CardId>, attackers: Vec<CardId> },
     AssignCombatDamage {
@@ -337,6 +341,9 @@ impl Obj<'_> {
     }
     fn ids(&self, k: &str) -> Vec<CardId> {
         self.arr(k).iter().filter_map(int).map(|i| i.max(0) as CardId).collect()
+    }
+    fn indices(&self, k: &str) -> Vec<u32> {
+        self.arr(k).iter().filter_map(int).filter_map(|i| u32::try_from(i).ok()).collect()
     }
     fn strings(&self, k: &str) -> Vec<String> {
         self.arr(k).iter().map(text).collect()
@@ -552,8 +559,13 @@ impl Decision {
                 player,
                 options: o.strings("options").iter().filter_map(|c| Color::from_letter(c)).collect(),
             },
-            "NameCard" => Decision::NameCard { player, options: o.strings("options") },
-            "ChooseType" => Decision::ChooseType { player, options: o.strings("options") },
+            "NameCard" => Decision::NameCard { player, options: o.strings("options"), suggested: o.indices("suggested") },
+            "ChooseType" => Decision::ChooseType {
+                player,
+                options: o.strings("options"),
+                kind: o.str("kind"),
+                suggested: o.indices("suggested"),
+            },
             "DeclareAttackers" => {
                 Decision::DeclareAttackers { player, candidates: o.ids("candidates"), defenders: targets("defenders") }
             }

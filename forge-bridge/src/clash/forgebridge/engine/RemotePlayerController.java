@@ -1736,7 +1736,7 @@ public class RemotePlayerController extends PlayerControllerAi {
             boolean isOptional) {
         List<String> types = new ArrayList<>(validTypes);
         String r = pick(types, Decisions.nameOrType(g(), seat, "ChooseType", "Wähle: " + kindOfType, sa, null,
-                types, isOptional));
+                types, kindOfType, ownTypes(), isOptional));
         return r != null ? r : isOptional ? null : super.chooseSomeType(kindOfType, sa, validTypes, isOptional);
     }
 
@@ -2130,13 +2130,46 @@ public class RemotePlayerController extends PlayerControllerAi {
 
     // ------------------------------------------------------------------ Kartennamen
 
+    /** Typen auf den eigenen Karten (alle Zonen, auch Bibliothek: die Deckliste kennt der Spieler):
+     *  jedes Wort der Typzeile, z. B. Kreaturtypen für „Wähle einen Kreaturtyp“ (CR 205.3m). */
+    private java.util.Set<String> ownTypes() {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (Card c : getPlayer().getAllCards()) {
+            out.addAll(c.getType().getSubtypes());
+            for (String w : c.getType().toString().split("[\\s—-]+")) {
+                if (!w.isEmpty()) {
+                    out.add(w);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Kartennamen, die der Spieler kennt: eigene Karten (alle Zonen) und offen liegende Karten der
+     *  Gegner (Spielfeld, Friedhof, Exil, Stack, Kommandozone). */
+    private java.util.Set<String> seenNames() {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (Card c : getPlayer().getAllCards()) {
+            out.add(c.getName());
+        }
+        for (Player p : getPlayer().getOpponents()) {
+            for (Card c : p.getCardsIn(ZoneType.Battlefield, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Stack,
+                    ZoneType.Command)) {
+                if (!c.isFaceDown()) {
+                    out.add(c.getName());
+                }
+            }
+        }
+        return out;
+    }
+
     @Override
     public String chooseCardName(SpellAbility sa, List<ICardFace> faces, String message) {
         List<String> names = new ArrayList<>();
         for (ICardFace f : faces) {
             names.add(f.getName());
         }
-        String r = pick(names, Decisions.nameOrType(g(), seat, "NameCard", message, sa, null, names, false));
+        String r = pick(names, Decisions.nameOrType(g(), seat, "NameCard", message, sa, null, names, null, seenNames(), false));
         return r != null ? r : super.chooseCardName(sa, faces, message);
     }
 
@@ -2150,7 +2183,7 @@ public class RemotePlayerController extends PlayerControllerAi {
             }
         }
         List<String> list = new ArrayList<>(names);
-        String r = pick(list, Decisions.nameOrType(g(), seat, "NameCard", message, sa, null, list, false));
+        String r = pick(list, Decisions.nameOrType(g(), seat, "NameCard", message, sa, null, list, null, seenNames(), false));
         return r != null ? r : super.chooseCardName(sa, cpp, valid, message);
     }
 }

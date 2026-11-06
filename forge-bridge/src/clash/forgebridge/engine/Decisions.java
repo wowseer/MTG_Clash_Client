@@ -349,9 +349,10 @@ final class Decisions {
         return i >= 0 ? i : null;
     }
 
-    /** {@code NameCard} bzw. {@code ChooseType}: Index in {@code options}. */
+    /** {@code NameCard} bzw. {@code ChooseType}: Index in {@code options}; {@code kind} = Art des Typs
+     *  (nur {@code ChooseType}), {@code suggested} = Namen bzw. Typen für die Vorschlagsliste. */
     static Integer nameOrType(Game game, int seat, String type, String prompt, SpellAbility sa, Card card,
-            List<String> options, boolean cancelable) {
+            List<String> options, String kind, java.util.Set<String> suggested, boolean cancelable) {
         if (options.size() == 1 && !cancelable) {
             return 0;
         }
@@ -359,6 +360,18 @@ final class Decisions {
         JsonArray arr = new JsonArray();
         options.forEach(arr::add);
         d.add("options", arr);
+        if (kind != null) {
+            d.addProperty("kind", kind);
+        }
+        // Vorschläge: Indizes der Optionen, die auf Karten des Spielers bzw. offen liegenden
+        // Karten vorkommen (die UI zeigt sie zuerst, „Alle zeigen“ den Rest)
+        JsonArray sug = new JsonArray();
+        for (int i = 0; i < options.size(); i++) {
+            if (suggested.contains(options.get(i))) {
+                sug.add(i);
+            }
+        }
+        d.add("suggested", sug);
         Integer i = number(ask(game, seat, d, prompt, sa, card, cancelable, null));
         return i != null && i >= 0 && i < options.size() ? i : null;
     }
