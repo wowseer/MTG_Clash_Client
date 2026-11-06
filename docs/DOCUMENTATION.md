@@ -267,10 +267,8 @@ and never go into Git.
 **Placeholder card image:** name, cost symbols, type line and rules text come from the engine.
 Symbols in the rules text are replaced (`{T}` → ↷, `{R}` → Ⓡ, `{2}` → ②, hybrid as "(R/G)"), the
 font size of name, type line and rules text adapts to the text length (`card_text::fit_line` /
-`fit_font`). Value box at the bottom right (large, with a big bold number that nearly fills it;
-long values such as 10/10 get smaller): creatures power/toughness (green = above the printed
-value, red = below or damaged), planeswalkers loyalty, battles defense. Cost pips are 28 px; in
-"own graphics only" mode the generic cost is written as a bold number in the grey pip. Frame colour = card colour
+`fit_font`). Value box at the bottom right: creatures power/toughness (green = above the printed
+value, red = below or damaged), planeswalkers loyalty, battles defense. Frame colour = card colour
 (gold = multicoloured, grey = colourless, lands by their mana colour); type symbol in the image
 field per card type (planeswalker = crown, battle = shield).
 

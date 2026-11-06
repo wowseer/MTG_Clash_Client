@@ -1080,8 +1080,7 @@ impl Card3D {
         l.kind.set_position(px(128.0, zs[0]));
         l.text.set_position(px(128.0, zs[1]));
         l.badges.set_position(px(128.0, zs[2]));
-        let (vx, vy) = placeholder::VALUE_BOX_CENTER;
-        l.stats.set_position(if tile { px(212.0, len * 0.5 - 0.045) } else { px(vx, (vy / 358.0 - 0.5) * CARD_HEIGHT) });
+        l.stats.set_position(if tile { px(212.0, len * 0.5 - 0.045) } else { px(206.0, (333.0 / 358.0 - 0.5) * CARD_HEIGHT) });
         let ty = zs[3];
         // Schriftgrößen an die Textlänge anpassen. Umrechnung: 1 Schriftpunkt = PIXEL m,
         // 1 Texturpixel = CARD_WIDTH / 256 m.
@@ -1135,8 +1134,7 @@ impl Card3D {
             l.stats.set_outline_size(0);
             l.name.set_modulate(l.colors[0] * tint);
         } else {
-            // große, fette Zahl im Wertefeld (füllt es fast aus, lange Werte wie 10/10 kleiner)
-            l.stats.set_font_size(card_text::fit_line(&t.stats, placeholder::VALUE_BOX_TEXT_WIDTH * per_px, 40, 84));
+            l.stats.set_font_size(44);
             l.colors[0] = Color::from_rgb(0.97, 0.93, 0.85);
             l.stats.set_modulate(t.stats_color * tint);
         }
@@ -1217,10 +1215,10 @@ impl Card3D {
         let dark = Color::from_rgb(0.18, 0.12, 0.08);
         let labels = CardLabels {
             name: card_label(visual, px(110.0, 36.0), 36, light, 0.0),
-            cost: bold(card_label(visual, px(218.0, 36.0), 44, dark, 0.0)),
+            cost: card_label(visual, px(218.0, 36.0), 34, dark, 0.0),
             kind: card_label(visual, px(128.0, 219.0), 34, light, 0.0),
             text: card_label(visual, px(128.0, TEXT_BOX_CENTER), 30, dark, 0.52),
-            stats: bold(card_label(visual, px(placeholder::VALUE_BOX_CENTER.0, placeholder::VALUE_BOX_CENTER.1), 84, Color::WHITE, 0.0)),
+            stats: card_label(visual, px(206.0, 333.0), 44, Color::WHITE, 0.0),
             badges: card_label(visual, px(128.0, 130.0), 52, Color::WHITE, 0.6),
             colors: [light, dark, light, dark, Color::WHITE, Color::WHITE],
         };
@@ -1547,15 +1545,6 @@ fn card_label(parent: &mut Gd<Node3D>, pos: Vector3, font_size: i32, color: Colo
     l.set_position(pos);
     l.set_cast_shadows_setting(ShadowCastingSetting::OFF);
     parent.add_child(&l);
-    l
-}
-
-/// Beschriftung in fetter Schrift (Zahlen auf der Karte: Wertefeld, generische Kosten).
-fn bold(mut l: Gd<Label3D>) -> Gd<Label3D> {
-    let mut font = godot::classes::SystemFont::new_gd();
-    font.set_font_names(&PackedStringArray::from(&[GString::from("Noto Sans"), GString::from("DejaVu Sans"), GString::from("sans-serif")]));
-    font.set_font_weight(800);
-    l.set_font(&font);
     l
 }
 
