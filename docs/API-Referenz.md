@@ -159,6 +159,8 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
+| `on_divide_step(index: int, delta: int)` | `void` | „−“ / Zahl / „+“ an Ziel `index`: Menge ändern (nie unter das Mindestmaß, nie über den Rest). |
+| `on_divide_done()` | `void` | „Fertig“ auf der Kampfschaden-Bühne: wie der Phasen-Knopf. |
 | `on_dungeon_picked(index: int)` | `void` | Dungeon bzw. Raum gewählt: Nummer der Option an die Engine. |
 | `on_dungeon_dismissed()` | `void` | Reine Dungeon-Ansicht geschlossen. |
 | `on_loyalty_dismissed()` | `void` | Klick neben die Planeswalker-Ansicht: schließen, die Priorität bleibt offen. |
@@ -254,7 +256,6 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | `on_choice_done()` | `void` | Knopf „Fertig“ / „OK“ im Auswahlfenster (Mehrfachauswahl, Zahl, Text). |
 | `on_pool_clicked(mana: int)` | `void` | Mana-Symbol im Manapool angeklickt → an den `ForgeTable` (beim Bezahlen einsetzen). |
 | `on_badge_clicked(seat: int)` | `void` | Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den `ForgeTable` weitergeben. |
-| `on_choice_values_changed(value: float)` | `void` | Ein Zahlenfeld beim Verteilen wurde geändert: Summe und „Fertig“ aktualisieren. |
 | `on_choice_filter_changed(text: String)` | `void` | Suchfeld des Auswahlfensters geändert: Optionen filtern. |
 | `on_choice_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster: Antwort null. |
 | `on_next_pressed()` | `void` | Phasen-Knopf bzw. Leertaste: ruft `ForgeTable.pass_priority()` auf (passen bzw. im Kampf Angreifer/Blocker bestätigen). |

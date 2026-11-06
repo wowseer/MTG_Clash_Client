@@ -9,12 +9,10 @@ use godot::prelude::*;
 
 use super::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::mana::ManaType;
-use crate::rules::{Choice, Color, Decision, OptionText, Request, Target};
+use crate::rules::{Choice, Color, Decision, OptionText, Request};
 
 /// Auswahlfenster für die Anfrage, oder `None`, wenn sie nicht im Fenster beantwortet wird.
-/// `name_of(t)` liefert den Anzeigenamen eines Ziels bzw. einer Karte, falls die
-/// Anfrage keine `labels` mitbringt.
-pub fn hud_choice(req: &Request, name_of: &dyn Fn(Target) -> String) -> Option<HudChoice> {
+pub fn hud_choice(req: &Request) -> Option<HudChoice> {
     let plain = |texts: Vec<String>| -> Vec<ChoiceOption> {
         texts.into_iter().map(|text| ChoiceOption { text, color: None }).collect()
     };
@@ -61,51 +59,8 @@ pub fn hud_choice(req: &Request, name_of: &dyn Fn(Target) -> String) -> Option<H
         Decision::ChooseOptions { prompt, options, min, max, .. } => {
             (prompt.clone(), single_or_multi(*min, *max), ext_options(options))
         }
-        Decision::AssignCombatDamage { attacker, amount, blockers, lethal, trample_to, .. } => {
-            let mut options: Vec<String> = blockers
-                .iter()
-                .zip(lethal.iter().chain(std::iter::repeat(&0)))
-                .map(|(b, l)| trf!("{} (tödlich: {})", "{} (lethal: {})", name_of(Target::Card(*b)), l))
-                .collect();
-            // Vorbelegung: tödlicher Schaden der Reihe nach, Rest aufs Trampel-Ziel bzw. den letzten Blocker
-            let mut left = *amount as i64;
-            let mut initial: Vec<i64> = lethal
-                .iter()
-                .take(blockers.len())
-                .map(|l| {
-                    let v = (*l as i64).min(left);
-                    left -= v;
-                    v
-                })
-                .collect();
-            initial.resize(blockers.len(), 0);
-            if let Some(t) = trample_to {
-                options.push(trf!("{} (Trampeln)", "{} (trample)", name_of(*t)));
-                initial.push(left);
-            } else if let Some(last) = initial.last_mut() {
-                *last += left;
-            }
-            (
-                trf!("Kampfschaden von {} verteilen", "Assign combat damage of {}", name_of(Target::Card(*attacker))),
-                ChoiceMode::Distribute { total: *amount as i64, mins: vec![0; options.len()], initial },
-                plain(options),
-            )
-        }
-        Decision::DivideAmount { amount, targets, min_each, .. } => {
-            let options: Vec<String> = (0..targets.len())
-                .map(|i| Some(req.label(i)).filter(|l| !l.is_empty()).unwrap_or_else(|| name_of(targets[i])))
-                .collect();
-            let min = *min_each as i64;
-            let mut initial = vec![min; targets.len()];
-            if let Some(first) = initial.first_mut() {
-                *first += *amount as i64 - min * targets.len() as i64;
-            }
-            (
-                trf!("{amount} auf die Ziele verteilen", "Divide {amount} among the targets"),
-                ChoiceMode::Distribute { total: *amount as i64, mins: vec![min; targets.len()], initial },
-                plain(options),
-            )
-        }
+        // Verteilen: Knöpfe an den Zielen auf dem Tisch (ForgeTable::show_divide), kein Fenster
+        Decision::AssignCombatDamage { .. } | Decision::DivideAmount { .. } => return None,
         Decision::OrderTriggers { descriptions, .. } => (
             tr!("Reihenfolge wählen: in der Reihenfolge anklicken (erste zuerst)", "Choose the order: click in order (first goes first)").into(),
             ChoiceMode::Multi { min: descriptions.len(), max: descriptions.len() },

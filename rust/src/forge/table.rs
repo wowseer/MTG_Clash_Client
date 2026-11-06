@@ -150,6 +150,8 @@ pub struct ForgeTable {
     /// Offenes Farbrad: Rad, Antwort je Segment, freiwillig (Manafähigkeit eines Landes mit
     /// Priorität – schließen ohne Antwort möglich) oder Antwort auf eine Frage der Engine.
     wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
+    /// Offenes Verteilen auf dem Tisch (Schaden, Marken, Kampfschaden – wie in Arena).
+    divide: Option<Divide>,
     /// Offene Dungeon-Ansicht (Dungeon/Raum wählen oder ansehen).
     dungeon_view: Option<Gd<DungeonView>>,
     /// Offene Planeswalker-Ansicht und je Fähigkeit die Aktion (None = ausgegraut).
@@ -269,6 +271,7 @@ impl INode for ForgeTable {
             wheel: None,
             loyalty_view: None,
             dungeon_view: None,
+            divide: None,
             wheel_multi: None,
             wheel_done: None,
             wheel_colors: Vec::new(),
@@ -374,6 +377,7 @@ impl INode for ForgeTable {
             }
         }
         self.update_inspector();
+        self.update_divide_positions();
         self.flash_new_stack();
         self.update_combat_look();
         self.update_arrows();
@@ -415,6 +419,17 @@ impl ForgeTable {
         }
         match self.pending.as_ref().map(|r| &r.decision) {
             Some(Decision::Priority { .. }) => self.answer(Choice::Action(Action::Pass)),
+            // Verteilen: alles verteilt = bestätigen, sonst abbrechen (wo Forge das erlaubt)
+            Some(Decision::DivideAmount { .. } | Decision::AssignCombatDamage { .. }) => {
+                if let Some(d) = self.divide.as_ref() {
+                    if d.remaining() == 0 {
+                        let amounts = d.entries.iter().map(|e| e.value.max(0) as u32).collect();
+                        self.answer(Choice::Damage(amounts));
+                    } else if self.pending.as_ref().is_some_and(|r| r.cancelable) {
+                        self.answer(Choice::Cancel);
+                    }
+                }
+            }
             // Kampf: der Phasen-Knopf bestätigt den Plan, der auf dem Tisch gebaut wurde
             Some(Decision::DeclareAttackers { .. }) => {
                 let plan = self.attack_plan.clone();
@@ -1332,6 +1347,9 @@ impl ForgeTable {
         if let Some(req) = choose_x {
             self.show_choose_x(&req);
         }
+        if let Some(req) = self.pending.clone().filter(|r| matches!(r.decision, Decision::DivideAmount { .. } | Decision::AssignCombatDamage { .. })) {
+            self.show_divide(&req);
+        }
         if let Some((kind, req)) = stage_3d {
             match kind {
                 StageKind::Modes => self.show_modes(&req),
@@ -1566,6 +1584,246 @@ impl ForgeTable {
         parent.add_child(&bar);
         self.loyalty_view = Some((bar, picks));
         true
+    }
+
+    /// Verteilen wie in Arena (CR 601.2d Schaden/Marken beim Wirken, CR 510.1c Kampfschaden,
+    /// CR 615.7 Schutzschild): an jedem Ziel – Karte bzw. Spieler-Medaillon – „−“, die zugewiesene
+    /// Menge und „+“ (Klick auf die Zahl = +1); der Phasen-Knopf zeigt den Rest bzw. „Fertig“.
+    /// Beim Kampfschaden ist tödlicher Schaden der Reihe nach vorbelegt, der Rest auf das
+    /// Trampel-Ziel bzw. den letzten Blocker.
+    fn show_divide(&mut self, req: &Request) {
+        // liegengebliebene Auswahl-Objekte (Bühnen, Knöpfe) zuerst wegräumen
+        self.clear_choice_objects();
+        let (targets, mins, initial, total, hint) = match &req.decision {
+            Decision::DivideAmount { amount, targets, min_each, .. } => {
+                let min = i64::from(*min_each);
+                let what = if req.source_name.is_empty() { String::new() } else { format!("{}: ", req.source_name) };
+                (
+                    targets.clone(),
+                    vec![min; targets.len()],
+                    vec![min; targets.len()],
+                    i64::from(*amount),
+                    trf!("{what}{amount} auf die Ziele verteilen (+ / −)", "{what}divide {amount} among the targets (+ / −)"),
+                )
+            }
+            Decision::AssignCombatDamage { attacker, amount, blockers, lethal, trample_to, .. } => {
+                let mut left = i64::from(*amount);
+                let mut initial: Vec<i64> = blockers
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| {
+                        let v = i64::from(lethal.get(i).copied().unwrap_or(0)).min(left);
+                        left -= v;
+                        v
+                    })
+                    .collect();
+                let mut targets: Vec<Target> = blockers.iter().map(|b| Target::Card(*b)).collect();
+                if let Some(t) = trample_to {
+                    targets.push(*t);
+                    initial.push(left);
+                } else if let Some(last) = initial.last_mut() {
+                    *last += left;
+                }
+                let name = self.cards.get(&i64::from(*attacker)).map(|c| c.bind().card_name().to_string()).unwrap_or_default();
+                (
+                    targets.clone(),
+                    vec![0; targets.len()],
+                    initial,
+                    i64::from(*amount),
+                    trf!("Kampfschaden von {name} verteilen ({amount}, + / −)", "Assign combat damage of {name} ({amount}, + / −)"),
+                )
+            }
+            _ => return,
+        };
+        // Kampfschaden: Blocker groß auf einer Bühne (wie in Arena), Knöpfe darunter
+        let combat = matches!(req.decision, Decision::AssignCombatDamage { .. });
+        let mut copies: Vec<Option<Gd<Card3D>>> = vec![None; targets.len()];
+        let mut done_button = None;
+        if combat {
+            let Decision::AssignCombatDamage { lethal, .. } = &req.decision else { return };
+            if let Some(mut showcase) = self.open_stage(tr!("Kampfschaden verteilen", "Assign combat damage"), &hint) {
+                let mut cards = Vec::new();
+                for (i, t) in targets.iter().enumerate() {
+                    let Target::Card(id) = t else { continue };
+                    let Some(data) = self.card_data(i64::from(*id)).or_else(|| req.cards.iter().find(|c| get_int(c, "id") == i64::from(*id)).cloned()) else { continue };
+                    let copy = Self::stage_card(&data, None);
+                    let l = lethal.get(i).copied().unwrap_or(0);
+                    cards.push((copy.clone(), trf!("tödlich: {l}", "lethal: {l}")));
+                    copies[i] = Some(copy);
+                }
+                showcase.bind_mut().show_options(cards);
+                showcase.bind_mut().enable_scroll_with(CARD_OPTION_STEP, CARD_OPTION_RADIUS);
+                // eigener „Fertig“-Knopf (unter einer Bühne ist der Phasen-Knopf ausgeblendet)
+                let mut done = Button3D::create(ButtonStyle::Orange, tr!("Fertig", "Done"), Showcase::button_width());
+                done.connect("pressed", &Callable::from_object_method(&self.to_gd(), "on_divide_done"));
+                showcase.bind_mut().add_button(done.clone());
+                done_button = Some(done);
+            }
+        }
+        let Some(mut parent) = self.controller.clone() else { return };
+        let me = self.to_gd();
+        let mut entries = Vec::new();
+        for (i, target) in targets.iter().enumerate() {
+            let mut make = |style: ButtonStyle, text: &str, delta: i64| {
+                let mut b = Button3D::create_shaped(style, text, 0.3, COMPACT_BODY);
+                b.connect("pressed", &Callable::from_object_method(&me, "on_divide_step").bind(&[(i as i64).to_variant(), delta.to_variant()]));
+                parent.add_child(&b);
+                b
+            };
+            let minus = make(ButtonStyle::Blue, "−", -1);
+            let number = make(ButtonStyle::Orange, "0", 1);
+            let plus = make(ButtonStyle::Blue, "+", 1);
+            entries.push(DivideEntry { target: *target, value: initial[i], min: mins[i], minus, number, plus, copy: copies[i].clone() });
+        }
+        self.divide = Some(Divide { entries, total, hint, staged: combat, done: done_button });
+        self.refresh_divide();
+        self.update_divide_positions();
+    }
+
+    /// Verteilen beenden: Knöpfe ausblenden (eine Bühne schließt `clear_choice_objects`).
+    fn close_divide(&mut self) {
+        if let Some(d) = self.divide.take() {
+            for e in d.entries {
+                for mut b in [e.minus, e.number, e.plus] {
+                    if b.is_instance_valid() {
+                        b.bind_mut().dismiss();
+                    }
+                }
+            }
+        }
+    }
+
+    /// „−“ / Zahl / „+“ an Ziel `index`: Menge ändern (nie unter das Mindestmaß, nie über den Rest).
+    #[func]
+    fn on_divide_step(&mut self, index: i64, delta: i64) {
+        let Some(d) = self.divide.as_mut() else { return };
+        let rest = d.remaining();
+        let Some(e) = usize::try_from(index).ok().and_then(|i| d.entries.get_mut(i)) else { return };
+        let next = (e.value + delta).max(e.min);
+        if next - e.value > rest {
+            return;
+        }
+        e.value = next;
+        self.refresh_divide();
+    }
+
+    /// „Fertig“ auf der Kampfschaden-Bühne: wie der Phasen-Knopf.
+    #[func]
+    fn on_divide_done(&mut self) {
+        self.pass_priority();
+    }
+
+    /// Zahlen und Freigabe der Knöpfe nach dem aktuellen Stand.
+    fn refresh_divide(&mut self) {
+        let Some(rest) = self.divide.as_ref().map(Divide::remaining) else { return };
+        let names = [self.seat_name(0).to_string(), self.seat_name(1).to_string()];
+        let Some(d) = self.divide.as_mut() else { return };
+        for e in d.entries.iter_mut() {
+            // Spieler auf der Bühne (Trampeln): Name vor der Zahl
+            let text = match e.target {
+                Target::Player(p) if d.staged => format!("{}: {}", names.get(p as usize).cloned().unwrap_or_default(), e.value),
+                _ => e.value.to_string(),
+            };
+            e.number.bind_mut().set_label_text(GString::from(text.as_str()));
+            e.minus.bind_mut().set_enabled(e.value > e.min);
+            e.plus.bind_mut().set_enabled(rest > 0);
+            e.number.bind_mut().set_enabled(rest > 0);
+        }
+        if let Some(b) = d.done.as_mut().filter(|b| b.is_instance_valid()) {
+            let text = if rest == 0 { tr!("Fertig", "Done").to_string() } else { trf!("Noch {rest} verteilen", "{rest} left to assign") };
+            b.bind_mut().set_label_text(GString::from(text.as_str()));
+            b.bind_mut().set_enabled(rest == 0);
+        }
+    }
+
+    /// Knöpfe jedes Ziels an seine Bildschirmstelle heften: über der Karte bzw. unter dem
+    /// Medaillon des Spielers.
+    fn update_divide_positions(&mut self) {
+        if self.divide.is_none() {
+            return;
+        }
+        let Some(vp) = self.base().get_viewport() else { return };
+        let Some(cam) = vp.get_camera_3d() else { return };
+        let screen_h = vp.get_visible_rect().size.y;
+        let px = screen_h / 1080.0;
+        let anchors: Vec<Option<Vector2>> = self
+            .divide
+            .as_ref()
+            .map(|d| {
+                // Bühne: unter jeder Kopie; Spieler (Trampeln) rechts neben der letzten Kopie
+                let below = |c: &Gd<Card3D>| -> Option<Vector2> {
+                    let q = c.bind().screen_quad();
+                    let pts = q.as_slice();
+                    (pts.len() == 4).then(|| {
+                        let x = pts.iter().map(|p| p.x).sum::<f32>() * 0.25;
+                        let bottom = pts.iter().map(|p| p.y).fold(f32::MIN, f32::max);
+                        // unter der Karte, zwischen Schieberegler und „Fertig“
+                        Vector2::new(x, bottom + 122.0 * px)
+                    })
+                };
+                let last = d.entries.iter().filter_map(|e| e.copy.as_ref()).filter(|c| c.is_instance_valid()).last().and_then(below);
+                d.entries
+                    .iter()
+                    .map(|e| match (&e.copy, e.target, d.staged) {
+                        (Some(c), _, _) if c.is_instance_valid() => below(c),
+                        (_, Target::Player(_), true) => last.map(|p| p + Vector2::new(300.0 * px, 0.0)),
+                        _ => self.target_screen_point(e.target, &cam),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        // Ziele dicht beieinander (z. B. Blocker im selben Stapel): Knopfreihen nicht übereinander,
+        // die spätere rückt jeweils eine Reihe höher
+        let row_w = 210.0 * px;
+        let row_h = 46.0 * px;
+        let mut placed: Vec<Vector2> = Vec::new();
+        let anchors: Vec<Option<Vector2>> = anchors
+            .into_iter()
+            .map(|a| {
+                let mut at = a?;
+                while placed.iter().any(|p| (p.x - at.x).abs() < row_w && (p.y - at.y).abs() < row_h) {
+                    at.y -= row_h;
+                }
+                placed.push(at);
+                Some(at)
+            })
+            .collect();
+        let Some(d) = self.divide.as_mut() else { return };
+        for (e, at) in d.entries.iter_mut().zip(anchors) {
+            let Some(at) = at else { continue };
+            // Spieler auf der Bühne: breiteres Zahlenfeld mit Namen
+            let wide = if matches!(e.target, Target::Player(_)) && d.staged { 1.9 } else { 1.0 };
+            for (b, dx, w) in [(&mut e.minus, -80.0 * wide, 70.0), (&mut e.number, 0.0, 96.0 * wide), (&mut e.plus, 80.0 * wide, 70.0)] {
+                b.bind_mut().pin_to_screen(Vector2::ZERO, at + Vector2::new(dx * px, 0.0), w * px);
+            }
+        }
+    }
+
+    /// Bildschirmstelle für Knöpfe an einem Ziel: Karte = Mitte über ihrer Oberkante, Spieler =
+    /// rechts neben seinem Medaillon (Ankerpunkt `HeroAnchor`).
+    fn target_screen_point(&self, target: Target, cam: &Gd<godot::classes::Camera3D>) -> Option<Vector2> {
+        let screen_h = self.base().get_viewport()?.get_visible_rect().size.y;
+        let px = screen_h / 1080.0;
+        match target {
+            Target::Card(id) => {
+                let card = self.cards.get(&i64::from(id)).filter(|c| c.is_instance_valid())?;
+                let quad = card.bind().screen_quad();
+                let pts = quad.as_slice();
+                if pts.len() != 4 {
+                    return None;
+                }
+                let x = pts.iter().map(|p| p.x).sum::<f32>() * 0.25;
+                let top = pts.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+                Some(Vector2::new(x, top - 30.0 * px))
+            }
+            Target::Player(p) => {
+                let seat = if p as usize == LOCAL_SEAT as usize { self.player_seat.clone() } else { self.opponent_seat.clone() }?;
+                let anchor = seat.get_node_or_null("HeroAnchor")?.try_cast::<Node3D>().ok()?;
+                let at = cam.unproject_position(anchor.get_global_position());
+                // rechts neben dem Medaillon (das 2D-Medaillon läge sonst über den Knöpfen)
+                Some(at + Vector2::new(190.0 * px, 68.0 * px))
+            }
+        }
     }
 
     /// Venture (CR 701.49) wie in Arena: `ChooseOption` mit Zweck `Dungeon` (alle Dungeons groß
@@ -2356,8 +2614,7 @@ impl ForgeTable {
     /// phyrexianisches Mana, zwei Optionen): zwei Knöpfe untereinander – oben orange (erste
     /// Antwort, z. B. „Ja“), darunter blau; die Quellkarte groß darüber.
     fn show_binary(&mut self, req: &Request) {
-        let name_of = |t: Target| format!("{t:?}");
-        let Some(hud) = decision_view::hud_choice(req, &name_of) else { return };
+        let Some(hud) = decision_view::hud_choice(req) else { return };
         if hud.options.len() < 2 {
             return;
         }
@@ -3055,6 +3312,7 @@ impl ForgeTable {
         self.close_wheel();
         self.close_loyalty_view();
         self.close_dungeon_view();
+        self.close_divide();
     }
 
     /// Anzeige für das HUD.
@@ -3083,19 +3341,7 @@ impl ForgeTable {
         });
         // Kartenwahl auf dem Tisch: kein Fenster (Klick auf die Karten, Phasen-Knopf bestätigt)
         let table_pick_open = self.pending.as_ref().is_some_and(|r| self.table_pick(&r.decision).is_some());
-        let choice = menu_choice.or_else(|| self.pending.as_ref().filter(|r| !table_pick_open && Self::stage_kind(&r.decision).is_none() && self.wheel.is_none() && Self::number_range(&r.decision).is_none()).and_then(|req| {
-            // Anzeigename eines Ziels: Spieler-Name, Karte vom Tisch oder aus den Kartendaten
-            let name_of = |t: Target| match t {
-                Target::Player(p) => self.seat_name(p as usize).to_string(),
-                Target::Card(c) => self
-                    .cards
-                    .get(&i64::from(c))
-                    .map(|card| card.bind().card_name().to_string())
-                    .or_else(|| req.cards.iter().find(|d| get_int(d, "id") == i64::from(c)).map(|d| get_str(d, "name")))
-                    .unwrap_or_else(|| format!("#{c}")),
-            };
-            decision_view::hud_choice(req, &name_of)
-        }));
+        let choice = menu_choice.or_else(|| self.pending.as_ref().filter(|r| !table_pick_open && Self::stage_kind(&r.decision).is_none() && self.wheel.is_none() && Self::number_range(&r.decision).is_none()).and_then(decision_view::hud_choice));
         let seat_state = |selected_only: bool| -> [bool; 2] {
             let mut out = [false; 2];
             match self.pending.as_ref().map(|r| &r.decision) {
@@ -3639,6 +3885,14 @@ impl ForgeTable {
                 };
                 let what = if description.is_empty() { req.prompt.clone() } else { description.clone() };
                 return Some((label, what));
+            }
+            // Verteilen: Rest im Phasen-Knopf, „Fertig“ sobald alles verteilt ist
+            Decision::DivideAmount { .. } | Decision::AssignCombatDamage { .. } if self.divide.is_some() => {
+                let d = self.divide.as_ref()?;
+                let rest = d.remaining();
+                let label = if rest == 0 { tr!("Fertig  »", "Done  »").to_string() } else { trf!("Noch {rest} verteilen …", "{rest} left to assign …") };
+                // auf der Bühne steht der Hinweis schon im Untertitel
+                return Some((label, if d.staged { String::new() } else { d.hint.clone() }));
             }
             // Kartenwahl auf dem Tisch: Zähler im Phasen-Knopf, Hinweis = Forges Frage
             d @ Decision::ChooseCards { min, max, .. } if self.table_pick(d).is_some() => {
@@ -4852,6 +5106,36 @@ const X_PAY_WIDTH: f32 = 1.35;
 const X_CANCEL_Y: f32 = -0.84;
 
 /// Welche 3D-Bühne eine Entscheidung bekommt.
+/// Ein Ziel beim Verteilen: Ziel, zugewiesene Menge, Mindestmenge und die drei Knöpfe.
+struct DivideEntry {
+    target: Target,
+    value: i64,
+    min: i64,
+    minus: Gd<Button3D>,
+    number: Gd<Button3D>,
+    plus: Gd<Button3D>,
+    /// Kopie des Ziels auf der Bühne (Kampfschaden), sonst None.
+    copy: Option<Gd<Card3D>>,
+}
+
+/// Offenes Verteilen: Ziele, Gesamtmenge, Hinweis für den Phasen-Knopf.
+struct Divide {
+    entries: Vec<DivideEntry>,
+    total: i64,
+    hint: String,
+    /// Ziele auf einer Bühne (Kampfschaden) statt auf dem Tisch.
+    staged: bool,
+    /// „Fertig“-Knopf der Bühne (Kampfschaden), sonst None.
+    done: Option<Gd<Button3D>>,
+}
+
+impl Divide {
+    /// Noch nicht verteilte Menge.
+    fn remaining(&self) -> i64 {
+        self.total - self.entries.iter().map(|e| e.value).sum::<i64>()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StageKind {
     /// Dungeon wählen bzw. nächsten Raum wählen (Venture): Dungeon-Ansicht wie in Arena.
