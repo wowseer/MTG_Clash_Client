@@ -150,6 +150,9 @@ pub struct ForgeTable {
     /// Offenes Farbrad: Rad, Antwort je Segment, freiwillig (Manafähigkeit eines Landes mit
     /// Priorität – schließen ohne Antwort möglich) oder Antwort auf eine Frage der Engine.
     wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
+    /// Spielsteine der Spieler-Kennzeichen (Monarch, Initiative, Ring, Gift …) je Sitzplatz:
+    /// Art, Anzahl, Spielstein, Zeit seit der letzten Änderung (Aufspringen).
+    seat_tokens: [Vec<(String, i64, Gd<godot::classes::Sprite3D>, f32)>; 2],
     /// Offene Suche (Kartennamen nennen, Typ wählen) mit Suchfeld auf einer Bühne.
     search: Option<Search>,
     /// Kartendaten zu Namen (Antworten auf `card_info`) und schon angefragte Namen.
@@ -278,6 +281,7 @@ impl INode for ForgeTable {
             dungeon_view: None,
             divide: None,
             search: None,
+            seat_tokens: [Vec::new(), Vec::new()],
             card_info: HashMap::new(),
             card_info_requested: HashMap::new(),
             wheel_multi: None,
@@ -427,6 +431,7 @@ impl INode for ForgeTable {
         }
         self.update_inspector();
         self.update_divide_positions();
+        self.update_seat_tokens(delta as f32);
         // Suche: Bilder der Treffer nachfragen, bis sie da sind
         if let Some(names) = self.search.as_ref().filter(|s| s.names).map(|s| s.shown.iter().filter_map(|(i, _)| s.options.get(*i).cloned()).collect::<Vec<_>>()) {
             self.request_missing_card_info(&names);
@@ -2051,11 +2056,13 @@ impl ForgeTable {
                 Some(Vector2::new(x, top - 30.0 * px))
             }
             Target::Player(p) => {
+                // rechts neben dem Medaillon (das 2D-Medaillon läge sonst über den Knöpfen)
+                if let Some(c) = self.badge_center(p as usize) {
+                    return Some(c + Vector2::new(190.0 * px, 0.0));
+                }
                 let seat = if p as usize == LOCAL_SEAT as usize { self.player_seat.clone() } else { self.opponent_seat.clone() }?;
                 let anchor = seat.get_node_or_null("HeroAnchor")?.try_cast::<Node3D>().ok()?;
-                let at = cam.unproject_position(anchor.get_global_position());
-                // rechts neben dem Medaillon (das 2D-Medaillon läge sonst über den Knöpfen)
-                Some(at + Vector2::new(190.0 * px, 68.0 * px))
+                Some(cam.unproject_position(anchor.get_global_position()) + Vector2::new(190.0 * px, 0.0))
             }
         }
     }
@@ -3625,7 +3632,8 @@ impl ForgeTable {
             active_seat: st.map_or(-1, |s| get_int(s, "active_player")),
             names: [self.seat_name(0), self.seat_name(1)],
             lives: [life(0), life(1)],
-            counters: [0, 1].map(|seat| self.seat_flags(seat, player(seat).as_ref())),
+            // Kennzeichen und Spieler-Marken liegen als Spielsteine am Medaillon (sync_seat_tokens)
+            counters: [String::new(), String::new()],
             day: st.and_then(|s| s.get("day")).and_then(|v| v.try_to::<bool>().ok()),
             turn: st.map_or(0, |s| get_int(s, "turn")),
             winner: self.winner.clone(),
@@ -3657,30 +3665,98 @@ impl ForgeTable {
     }
 
     /// Zeile unter dem Spielernamen: Monarch, Initiative, Stadtsegen, Ring-Stufe und Marken.
-    fn seat_flags(&self, seat: usize, player: Option<&VarDictionary>) -> String {
-        let st = self.state.as_ref();
-        let game_flag = |key: &str| st.is_some_and(|s| s.get(key).and_then(|v| v.try_to::<i64>().ok()) == Some(seat as i64));
-        let mut parts: Vec<String> = Vec::new();
+    /// Kennzeichen eines Spielers als Liste (Art, Anzahl): Monarch (CR 724), Initiative (CR 725),
+    /// Stadtsegen (CR 702.131), Ring (CR 701.54, Anzahl = wie oft versucht), dann seine Marken
+    /// (Gift, Energie, Erfahrung …).
+    fn seat_designations(state: &VarDictionary, seat: usize, player: Option<&VarDictionary>) -> Vec<(String, i64)> {
+        let game_flag = |key: &str| state.get(key).and_then(|v| v.try_to::<i64>().ok()) == Some(seat as i64);
+        let mut out = Vec::new();
         if game_flag("monarch") {
-            parts.push(tr!("♛ Monarch", "♛ Monarch").to_string());
+            out.push(("monarch".to_string(), 1));
         }
         if game_flag("initiative") {
-            parts.push(tr!("Initiative", "Initiative").to_string());
+            out.push(("initiative".to_string(), 1));
         }
         if let Some(p) = player {
             if get_bool(p, "blessing") {
-                parts.push(tr!("Stadtsegen", "City's blessing").to_string());
+                out.push(("blessing".to_string(), 1));
             }
             let ring = get_int(p, "ring_level");
             if ring > 0 {
-                parts.push(trf!("Ring {ring}", "Ring {ring}"));
+                out.push(("ring".to_string(), ring));
             }
-            let counters = counters::player_counters(&counter_list(p));
-            if !counters.is_empty() {
-                parts.push(counters);
+            for (name, n) in counter_list(p) {
+                if n > 0 {
+                    out.push((name.to_lowercase(), i64::from(n)));
+                }
             }
         }
-        parts.join(" · ")
+        out
+    }
+
+    /// Spielsteine an den Medaillons an den Zustand anpassen (neu, geändert → springt auf, weg).
+    fn sync_seat_tokens(&mut self, state: &VarDictionary) {
+        let players: Vec<VarDictionary> = get_array(state, "players")
+            .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
+            .unwrap_or_default();
+        let Some(mut parent) = self.controller.clone() else { return };
+        for seat in 0..2 {
+            let wanted = Self::seat_designations(state, seat, players.get(seat));
+            let old = std::mem::take(&mut self.seat_tokens[seat]);
+            let mut kept = Vec::new();
+            for (kind, n, mut sprite, t) in old {
+                match wanted.iter().find(|(k, _)| *k == kind) {
+                    Some((_, wn)) if *wn == n => kept.push((kind, n, sprite, t)),
+                    _ => sprite.queue_free(),
+                }
+            }
+            for (kind, n) in wanted {
+                if kept.iter().any(|(k, ..)| *k == kind) {
+                    continue;
+                }
+                let mut sprite = crate::table::cost_symbols::seat_token(&kind, n, SEAT_TOKEN_SIZE);
+                sprite.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
+                parent.add_child(&sprite);
+                kept.push((kind, n, sprite, 0.0));
+            }
+            self.seat_tokens[seat] = kept;
+        }
+    }
+
+    /// Mitte des Medaillons von Sitzplatz `seat` auf dem Bildschirm (vom HUD), sonst None.
+    fn badge_center(&self, seat: usize) -> Option<Vector2> {
+        let hud = self.base().get_parent()?.get_node_or_null("TurnHud")?.try_cast::<crate::game::hud::TurnHud>().ok()?;
+        let c = hud.bind().badge_center(seat as i64);
+        (c.x >= 0.0).then_some(c)
+    }
+
+    /// Spielsteine rechts neben das Medaillon legen (Strahl von der Kamera auf den Tisch) und
+    /// neue bzw. geänderte kurz aufspringen lassen.
+    fn update_seat_tokens(&mut self, dt: f32) {
+        let Some(vp) = self.base().get_viewport() else { return };
+        let Some(cam) = vp.get_camera_3d() else { return };
+        let px = vp.get_visible_rect().size.y / 1080.0;
+        for seat in 0..2 {
+            if self.seat_tokens[seat].is_empty() {
+                continue;
+            }
+            let Some(center) = self.badge_center(seat) else { continue };
+            for (k, (_, _, sprite, t)) in self.seat_tokens[seat].iter_mut().enumerate() {
+                *t = (*t + dt).min(SEAT_TOKEN_POP);
+                let (col, row) = (k % 4, k / 4);
+                let at = center + Vector2::new((126.0 + col as f32 * 82.0) * px, row as f32 * 82.0 * px);
+                let origin = cam.project_ray_origin(at);
+                let dir = cam.project_ray_normal(at);
+                if dir.y.abs() < 1e-4 {
+                    continue;
+                }
+                let hit = origin + dir * ((SEAT_TOKEN_Y - origin.y) / dir.y);
+                sprite.set_global_position(hit);
+                let p = *t / SEAT_TOKEN_POP;
+                let pop = if p < 1.0 { 1.0 + 0.5 * (p * std::f32::consts::PI).sin() } else { 1.0 };
+                sprite.set_scale(Vector3::splat(pop));
+            }
+        }
     }
 
     fn seat_name(&self, seat: usize) -> GString {
@@ -4742,6 +4818,7 @@ impl ForgeTable {
 
     /// Gleicht den Tisch mit dem Forge-Zustand ab: Karten anlegen, verschieben, tappen, entfernen.
     fn apply_state(&mut self, state: VarDictionary) {
+        self.sync_seat_tokens(&state);
         let players: Vec<VarDictionary> = get_array(&state, "players")
             .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
             .unwrap_or_default();
@@ -5350,6 +5427,11 @@ struct Search {
     shown: Vec<(usize, Gd<Node>)>,
     field: Gd<Button3D>,
 }
+
+/// Spielsteine der Spieler-Kennzeichen: Durchmesser, Höhe über dem Tisch, Dauer des Aufspringens.
+const SEAT_TOKEN_SIZE: f32 = 0.75;
+const SEAT_TOKEN_Y: f32 = 0.04;
+const SEAT_TOKEN_POP: f32 = 0.5;
 
 /// Suche: Lage auf der Bühne (Suchfeld, Treffer), Zahl und Abstand der Treffer.
 const SEARCH_FIELD_Y: f32 = 0.55;

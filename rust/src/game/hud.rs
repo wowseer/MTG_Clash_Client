@@ -199,6 +199,21 @@ impl TurnHud {
         }
     }
 
+    /// Mitte des Medaillons von Sitzplatz `seat` auf dem Bildschirm (Pixel); (−1, −1), wenn es
+    /// (noch) keins gibt. Für 3D-Objekte, die sich am Medaillon ausrichten (Spielsteine der
+    /// Kennzeichen, Knöpfe beim Verteilen).
+    #[func]
+    pub fn badge_center(&self, seat: i64) -> Vector2 {
+        let badge = if seat == 0 { self.player_badge.as_ref() } else { self.opponent_badge.as_ref() };
+        badge
+            .filter(|b| b.is_instance_valid() && b.is_visible_in_tree())
+            .map(|b| {
+                let r = b.get_global_rect();
+                r.position + r.size * 0.5
+            })
+            .unwrap_or(Vector2::new(-1.0, -1.0))
+    }
+
     /// Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den [ForgeTable] weitergeben.
     #[func]
     fn on_badge_clicked(&mut self, seat: i64) {

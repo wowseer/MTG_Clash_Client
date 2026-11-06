@@ -260,6 +260,7 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | `on_choice_option(index: int)` | `void` | Option `index` im Auswahlfenster angeklickt (eine Option / Ja-Nein: Antwort senden; Mehrfachauswahl: an-/abwählen). |
 | `on_choice_done()` | `void` | Knopf „Fertig“ / „OK“ im Auswahlfenster (Mehrfachauswahl, Zahl, Text). |
 | `on_pool_clicked(mana: int)` | `void` | Mana-Symbol im Manapool angeklickt → an den `ForgeTable` (beim Bezahlen einsetzen). |
+| `badge_center(seat: int)` | `Vector2` | Mitte des Medaillons von Sitzplatz `seat` auf dem Bildschirm (Pixel); (−1, −1), wenn es (noch) keins gibt. Für 3D-Objekte, die sich am Medaillon ausrichten (Spielsteine der Kennzeichen, Knöpfe beim Verteilen). |
 | `on_badge_clicked(seat: int)` | `void` | Ein Medaillon (Spieler als Ziel) wurde angeklickt: an den `ForgeTable` weitergeben. |
 | `on_choice_filter_changed(text: String)` | `void` | Suchfeld des Auswahlfensters geändert: Optionen filtern. |
 | `on_choice_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster: Antwort null. |
