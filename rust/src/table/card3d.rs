@@ -120,7 +120,7 @@ void fragment() {
 /// unbeleuchtet. `strength` = Kern, `schein` = Schein; ruhiges Pulsieren wie das Idle der Datei.
 const GLOW_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 uniform vec3 glow_color = vec3(0.02, 0.28, 1.0);
 uniform float strength = 1.0;
 uniform float schein = 0.3;

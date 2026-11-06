@@ -72,7 +72,7 @@ fn keys(f: f32, k: &[(f32, f32)]) -> f32 {
 /// Kugelförmiger Glanz (Blender: Spherical Gradient → Potenz, Kern weiß gemischt).
 const BLOB_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 instance uniform vec3 color = vec3(1.0);
 instance uniform float strength = 0.0;
 instance uniform float falloff = 2.0;
@@ -89,7 +89,7 @@ void fragment() {
 /// Ring (Schockwelle): Kurve mit Radius 1 und Dicke `width` (Bildfläche = Radius 1,25).
 const RING_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 instance uniform vec3 color = vec3(1.0);
 instance uniform float strength = 0.0;
 instance uniform float width = 0.03;
@@ -100,8 +100,10 @@ void fragment() {
     float d = abs(r - 1.0);
     float tube = 1.0 - smoothstep(width * 0.5, width * 1.5, d);
     float halo = exp(-d / (width * 4.0)) * 0.35;
+    // Schein vor dem Rand der Bildfläche auf null, sonst zeichnen sich ihre Kanten ab
+    float edge = 1.0 - smoothstep(1.1, 1.24, r);
     vec3 c = mix(color, vec3(1.0), core * tube);
-    ALBEDO = c * strength * gain * (tube + halo);
+    ALBEDO = c * strength * gain * (tube + halo) * edge;
 }
 "#;
 
@@ -109,7 +111,7 @@ void fragment() {
 /// Pentagramm mit `rot_inner` (Bildfläche = Radius 1,3).
 const RUNE_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 instance uniform vec3 color = vec3(1.0);
 instance uniform float strength = 0.0;
 instance uniform float rot_outer = 0.0;
@@ -141,7 +143,7 @@ void fragment() {
         float a1 = radians(90.0 + 144.0 * float(i + 1));
         v += line(seg(pi, 0.78 * vec2(cos(a0), sin(a0)), 0.78 * vec2(cos(a1), sin(a1))), 0.02);
     }
-    v = clamp(v, 0.0, 1.0);
+    v = clamp(v, 0.0, 1.0) * (1.0 - smoothstep(1.24, 1.29, r));
     ALBEDO = mix(color, vec3(1.0), 0.15) * strength * gain * v;
 }
 "#;
@@ -149,7 +151,7 @@ void fragment() {
 /// Kometenschweif: Band mit UV.x = Lage im Schweif (0 Ende … 1 Kopf), UV.y quer.
 const TAIL_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 instance uniform vec3 color = vec3(1.0);
 instance uniform float strength = 0.0;
 instance uniform float core = 0.0;
