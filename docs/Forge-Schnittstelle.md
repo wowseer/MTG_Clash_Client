@@ -71,6 +71,8 @@ aus der lokalen Forge-Installation gelesen.
 Manueller Test ohne Godot: `forge-bridge/run.sh` starten und JSON-Zeilen eintippen, z. B.
 `{"cmd":"ping"}`.
 
+**Kartendaten zu Namen:** `{"cmd":"card_info","names":["Lightning Bolt", …]}` → `{"type":"card_info","cards":[{name, type, cost, text, power?, toughness?, image?}, …]}` (unbekannte Namen fehlen; `image` fehlt, solange das Bild noch geladen wird – später erneut fragen). Für die Suche bei „Kartennamen nennen“.
+
 ## Was die Engine entscheidet und was der Spieler
 
 Seit Protokoll 3 spricht die Brücke das **Protokoll-Modell** (`Decision` / `Choice`, Vorbild:

@@ -75,6 +75,12 @@ impl StartMatch {
     }
 }
 
+/// Kartendaten (Name, Typ, Kosten, Text, Stärke/Widerstand, Bild) zu Kartennamen anfordern –
+/// Antwort `{"type":"card_info","cards":[…]}`; unbekannte Namen fehlen in der Antwort.
+pub fn card_info(names: &[String]) -> Value {
+    json!({ "cmd": "card_info", "names": names })
+}
+
 /// Debug: alle Kartennamen anfordern (Antwort `debug_card_names`).
 pub fn debug_card_names() -> Value {
     json!({ "cmd": "debug_card_names" })

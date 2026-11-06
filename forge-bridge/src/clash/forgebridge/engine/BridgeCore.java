@@ -227,6 +227,33 @@ public final class BridgeCore {
                     send(st);
                 }
             }
+            // Kartendaten zu Namen (z. B. Treffer bei „Kartennamen nennen“): Name, Typ, Kosten,
+            // Text, Stärke/Widerstand, Bild – Antwort {"type":"card_info","cards":[…]}
+            case "card_info" -> {
+                JsonArray cards = new JsonArray();
+                if (cmd.has("names") && cmd.get("names").isJsonArray()) {
+                    for (JsonElement n : cmd.getAsJsonArray("names")) {
+                        String cardName = n.getAsString();
+                        forge.item.PaperCard pc = forge.StaticData.instance().getCommonCards().getCard(cardName);
+                        if (pc == null) {
+                            continue;
+                        }
+                        forge.card.CardRules r = pc.getRules();
+                        forge.card.ICardFace f = r.getMainPart();
+                        JsonObject o = RemotePlayerController.faceJson(0, cardName, String.valueOf(f.getType()),
+                                f.getManaCost() == null ? "" : f.getManaCost().getShortString(), f.getOracleText(),
+                                f.getPower(), f.getToughness());
+                        String img = CardImages.paperImage(pc);
+                        if (!img.isEmpty()) {
+                            o.addProperty("image", img);
+                        }
+                        cards.add(o);
+                    }
+                }
+                JsonObject m = message("card_info");
+                m.add("cards", cards);
+                send(m);
+            }
             // Debug-Fenster der UI (nur in Debug-Builds von Godot): siehe DebugTools
             case "debug_card_names" -> DebugTools.sendCardNames();
             case "debug_add_card" -> {

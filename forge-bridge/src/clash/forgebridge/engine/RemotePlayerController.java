@@ -1894,7 +1894,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     private static final int FACE_ID_BASE = 1_900_000_000;
 
     /** Kartendaten einer Seite (Name, Typ, Kosten, Text, Werte) wie {@code StateJson.card}. */
-    private static com.google.gson.JsonObject faceJson(int id, String name, String type, String cost, String text,
+    static com.google.gson.JsonObject faceJson(int id, String name, String type, String cost, String text,
             String power, String toughness) {
         com.google.gson.JsonObject o = new com.google.gson.JsonObject();
         o.addProperty("id", id);

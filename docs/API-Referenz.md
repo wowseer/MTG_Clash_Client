@@ -73,6 +73,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `start_match(decks: PackedStringArray, remote_seats: PackedInt32Array, names: PackedStringArray, seed: int)` | `bool` | Startet eine Partie. `decks`: Pfade zu Forge-`.dck`-Dateien (`res://` erlaubt) oder Namen von Decks aus Forges Constructed-Sammlung, einer je Sitzplatz (mind. 2). `remote_seats`: Sitzplätze, die MTG Clash steuert (Rest = Forge-KI). `names`: Spielernamen (darf kürzer sein). `seed` < 0 = zufällig. |
 | `answer(request_id: int, choice: Variant)` | `bool` | Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im Format des Protokoll-Modells (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`; Aufbau siehe `docs/Forge-Schnittstelle.md`. |
 | `request_state(viewer: int)` | `bool` | Fragt den aktuellen Spielzustand ab → [signal state_received]. `viewer` = Sitzplatz, dessen Handkarten mitgeschickt werden (-1 = keiner). |
+| `request_card_info(names: PackedStringArray)` | `bool` | Kartendaten zu Kartennamen anfordern → [signal card_info_received] (z. B. für Treffer bei „Kartennamen nennen“). |
 | `debug_request_card_names()` | `bool` | Debug: alle Kartennamen anfordern → [signal debug_card_names_received]. |
 | `debug_add_card(seat: int, name: String)` | `bool` | Debug: Karte `name` neu erzeugen und Sitzplatz `seat` auf die Hand legen. Danach kommt der neue Zustand; eine offene Priorität wird neu gestellt. |
 | `debug_infinite_mana(seat: int, on: bool)` | `bool` | Debug: unendliches Mana für Sitzplatz `seat` an/aus (Pool wird bei jedem Phasenwechsel und Zauber auf 50 je Manaart aufgefüllt). |
@@ -90,6 +91,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `match_started(state: Dictionary)` | Die Partie hat begonnen; `state` = Spielzustand (siehe Protokoll). |
 | `state_received(state: Dictionary)` | Antwort auf `request_state()`. |
 | `debug_card_names_received(names: PackedStringArray)` | Antwort auf `debug_request_card_names()`: alle Kartennamen der Kartendatenbank, sortiert (Debug-Fenster). |
+| `card_info_received(cards: VarArray)` | Antwort auf `request_card_info()`: Kartendaten (`{name, type, cost, text, power, toughness, image}`) je bekanntem Namen. |
 | `game_over(result: Dictionary)` | Die Partie ist vorbei: `{winner, draw, reason}`. |
 | `bridge_error(code: String, message: String)` | Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed"). |
 | `bridge_stopped(exit_code: int)` | Der Java-Prozess ist beendet (`exit_code` -1 = unbekannt / von uns beendet). |
@@ -159,6 +161,9 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
+| `on_card_info(cards: VarArray)` | `void` | Antwort auf `card_info`: Kartendaten merken; offene Suche mit Bildern neu aufbauen. |
+| `on_search_pick(index: int)` | `void` | Treffer `index` (Nummer der Option) gewählt. |
+| `on_search_cancel()` | `void` | „Abbrechen“ in der Suche. |
 | `on_divide_step(index: int, delta: int)` | `void` | „−“ / Zahl / „+“ an Ziel `index`: Menge ändern (nie unter das Mindestmaß, nie über den Rest). |
 | `on_divide_done()` | `void` | „Fertig“ auf der Kampfschaden-Bühne: wie der Phasen-Knopf. |
 | `on_dungeon_picked(index: int)` | `void` | Dungeon bzw. Raum gewählt: Nummer der Option an die Engine. |

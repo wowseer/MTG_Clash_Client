@@ -175,6 +175,11 @@ impl ForgeBridge {
     #[signal]
     fn debug_card_names_received(names: PackedStringArray);
 
+    /// Antwort auf [method request_card_info]: Kartendaten (`{name, type, cost, text, power,
+    /// toughness, image}`) je bekanntem Namen.
+    #[signal]
+    fn card_info_received(cards: VarArray);
+
     /// Die Partie ist vorbei: `{winner, draw, reason}`.
     #[signal]
     fn game_over(result: VarDictionary);
@@ -307,6 +312,14 @@ impl ForgeBridge {
         self.send_value(&command::request_state(PlayerId::try_from(viewer).ok()))
     }
 
+    /// Kartendaten zu Kartennamen anfordern → [signal card_info_received] (z. B. für Treffer
+    /// bei „Kartennamen nennen“).
+    #[func]
+    pub fn request_card_info(&mut self, names: PackedStringArray) -> bool {
+        let names: Vec<String> = names.as_slice().iter().map(|n| n.to_string()).collect();
+        self.send_value(&command::card_info(&names))
+    }
+
     /// Debug: alle Kartennamen anfordern → [signal debug_card_names_received].
     #[func]
     pub fn debug_request_card_names(&mut self) -> bool {
@@ -381,6 +394,10 @@ impl ForgeBridge {
             "match_started" => self.signals().match_started().emit(&sub("state")),
             "state" => self.signals().state_received().emit(&sub("state")),
             "game_over" => self.signals().game_over().emit(&dict),
+            "card_info" => {
+                let cards = msg.get("cards").map(json::to_variant).and_then(|v| v.try_to::<VarArray>().ok()).unwrap_or_default();
+                self.signals().card_info_received().emit(&cards);
+            }
             "debug_card_names" => {
                 let names: PackedStringArray = msg
                     .get("names")

@@ -33,12 +33,8 @@ pub fn hud_choice(req: &Request) -> Option<HudChoice> {
             ChoiceMode::Single,
             options.iter().map(|c| ChoiceOption { text: color_name(*c).into(), color: Some(mana(*c).color()) }).collect(),
         ),
-        Decision::NameCard { options, .. } => {
-            (tr!("Kartennamen nennen", "Name a card").into(), ChoiceMode::Single, plain(options.clone()))
-        }
-        Decision::ChooseType { options, .. } => {
-            (tr!("Typ wählen", "Choose a type").into(), ChoiceMode::Single, plain(options.clone()))
-        }
+        // Kartennamen / Typ: Bühne mit Suchfeld (ForgeTable::show_search), kein Fenster
+        Decision::NameCard { .. } | Decision::ChooseType { .. } => return None,
         Decision::Confirm { prompt, .. } => (prompt.clone(), ChoiceMode::Confirm, yes_no()),
         Decision::PayUnlessCost { cost, .. } => (
             trf!("Zahlen, um den Effekt zu verhindern: {cost}?", "Pay {cost} to prevent the effect?"),

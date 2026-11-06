@@ -106,6 +106,16 @@ final class CardImages {
         return new Info(image, art, crop);
     }
 
+    /** Bild (Anzeige-Druck mit normalem Rahmen) einer Karte aus der Kartendatenbank; "" = (noch) keins. */
+    static String paperImage(PaperCard pc) {
+        if (pc == null) {
+            return "";
+        }
+        PaperCard shown = DISPLAY.computeIfAbsent(pc.getName() + "|" + pc.getEdition() + "|" + pc.getArtIndex(),
+                k -> displayPrinting(pc));
+        return resolve(shown, "", false);
+    }
+
     /** Bild einer Seite (Name) der Karte {@code host}, z. B. für „Seite wählen“; sonst "". */
     static String faceImage(Card host, String faceName) {
         if (host == null || !(host.getPaperCard() instanceof PaperCard pc)) {

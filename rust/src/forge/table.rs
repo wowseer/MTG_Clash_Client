@@ -150,6 +150,11 @@ pub struct ForgeTable {
     /// Offenes Farbrad: Rad, Antwort je Segment, freiwillig (Manafähigkeit eines Landes mit
     /// Priorität – schließen ohne Antwort möglich) oder Antwort auf eine Frage der Engine.
     wheel: Option<(Gd<ManaWheel>, Vec<Choice>, bool)>,
+    /// Offene Suche (Kartennamen nennen, Typ wählen) mit Suchfeld auf einer Bühne.
+    search: Option<Search>,
+    /// Kartendaten zu Namen (Antworten auf `card_info`) und schon angefragte Namen.
+    card_info: HashMap<String, VarDictionary>,
+    card_info_requested: HashMap<String, f64>,
     /// Offenes Verteilen auf dem Tisch (Schaden, Marken, Kampfschaden – wie in Arena).
     divide: Option<Divide>,
     /// Offene Dungeon-Ansicht (Dungeon/Raum wählen oder ansehen).
@@ -272,6 +277,9 @@ impl INode for ForgeTable {
             loyalty_view: None,
             dungeon_view: None,
             divide: None,
+            search: None,
+            card_info: HashMap::new(),
+            card_info_requested: HashMap::new(),
             wheel_multi: None,
             wheel_done: None,
             wheel_colors: Vec::new(),
@@ -328,6 +336,7 @@ impl INode for ForgeTable {
             bridge.connect("decision_requested", &cb("on_decision_requested"));
             bridge.connect("game_over", &cb("on_game_over"));
             bridge.connect("bridge_error", &cb("on_bridge_error"));
+            bridge.connect("card_info_received", &cb("on_card_info"));
             // Debug-Fenster (F10), nur in Debug-Builds
             if Os::singleton().is_debug_build() {
                 let mut panel = DebugPanel::new_alloc();
@@ -356,6 +365,46 @@ impl INode for ForgeTable {
         }
     }
 
+    /// Tastatur in der Suche (Kartennamen nennen, Typ wählen): Zeichen tippen, Rücktaste löscht,
+    /// Enter nimmt den ersten Treffer, Escape bricht ab (wo erlaubt). Sonst unberührt (Leertaste =
+    /// Passen bleibt beim HUD).
+    fn input(&mut self, event: Gd<godot::classes::InputEvent>) {
+        if self.search.is_none() {
+            return;
+        }
+        let Ok(key) = event.try_cast::<godot::classes::InputEventKey>() else { return };
+        if !key.is_pressed() {
+            return;
+        }
+        use godot::global::Key;
+        match key.get_keycode() {
+            Key::BACKSPACE => {
+                if let Some(s) = self.search.as_mut() {
+                    s.query.pop();
+                }
+            }
+            Key::ENTER | Key::KP_ENTER => {
+                let first = self.search.as_ref().and_then(|s| s.shown.first().map(|(i, _)| *i));
+                if let Some(i) = first {
+                    self.on_search_pick(i as i64);
+                }
+            }
+            Key::ESCAPE => self.on_search_cancel(),
+            _ => {
+                let Some(c) = char::from_u32(key.get_unicode() as u32).filter(|c| !c.is_control()) else { return };
+                if let Some(s) = self.search.as_mut() {
+                    s.query.push(c);
+                }
+            }
+        }
+        if self.search.is_some() {
+            self.refresh_search();
+        }
+        if let Some(mut vp) = self.base().get_viewport() {
+            vp.set_input_as_handled();
+        }
+    }
+
     fn exit_tree(&mut self) {
         // geladene Kartenbilder freigeben (sonst meldet Godot beim Beenden übrige Texturen)
         placeholder::clear_printed();
@@ -378,6 +427,10 @@ impl INode for ForgeTable {
         }
         self.update_inspector();
         self.update_divide_positions();
+        // Suche: Bilder der Treffer nachfragen, bis sie da sind
+        if let Some(names) = self.search.as_ref().filter(|s| s.names).map(|s| s.shown.iter().filter_map(|(i, _)| s.options.get(*i).cloned()).collect::<Vec<_>>()) {
+            self.request_missing_card_info(&names);
+        }
         self.flash_new_stack();
         self.update_combat_look();
         self.update_arrows();
@@ -1350,6 +1403,9 @@ impl ForgeTable {
         if let Some(req) = self.pending.clone().filter(|r| matches!(r.decision, Decision::DivideAmount { .. } | Decision::AssignCombatDamage { .. })) {
             self.show_divide(&req);
         }
+        if let Some(req) = self.pending.clone().filter(|r| matches!(r.decision, Decision::NameCard { .. } | Decision::ChooseType { .. })) {
+            self.show_search(&req);
+        }
         if let Some((kind, req)) = stage_3d {
             match kind {
                 StageKind::Modes => self.show_modes(&req),
@@ -1416,6 +1472,11 @@ impl ForgeTable {
                 self.close_zone_viewer();
                 self.card_action_click(id, None);
             }
+            return;
+        }
+        // Suche: Treffer-Karte angeklickt
+        if let Some(i) = self.search.as_ref().and_then(|s| s.shown.iter().find(|(_, n)| n.clone().try_cast::<Card3D>().ok().as_ref() == Some(&card)).map(|(i, _)| *i)) {
+            self.on_search_pick(i as i64);
             return;
         }
         // freiwilliges Farbrad offen: Klick daneben schließt es
@@ -1584,6 +1645,179 @@ impl ForgeTable {
         parent.add_child(&bar);
         self.loyalty_view = Some((bar, picks));
         true
+    }
+
+    /// Kartennamen nennen (CR 201.3) bzw. Typ wählen (z. B. Kreaturtyp, CR 205.3) wie in Arena:
+    /// Bühne mit Suchfeld – einfach lostippen (Rücktaste löscht, Enter nimmt den ersten Treffer,
+    /// Escape bricht ab, wo erlaubt). Treffer bei Kartennamen als Karten (Daten über `card_info`),
+    /// bei Typen als Knöpfe; Klick wählt.
+    fn show_search(&mut self, req: &Request) {
+        self.clear_choice_objects();
+        let (names, options) = match &req.decision {
+            Decision::NameCard { options, .. } => (true, options.clone()),
+            Decision::ChooseType { options, .. } => (false, options.clone()),
+            _ => return,
+        };
+        let title = if names { tr!("Kartennamen nennen", "Name a card") } else { tr!("Typ wählen", "Choose a type") };
+        let sub = if req.prompt.is_empty() { req.source_name.clone() } else { req.prompt.clone() };
+        let Some(mut showcase) = self.open_stage(title, &sub) else { return };
+        let mut field = Button3D::create(ButtonStyle::Grey, "", Showcase::button_width() * 1.5);
+        field.bind_mut().set_enabled(false);
+        showcase.bind_mut().add_button_at(field.clone(), Vector2::new(0.0, SEARCH_FIELD_Y));
+        if req.cancelable {
+            let mut cancel = Button3D::create(ButtonStyle::Grey, tr!("Abbrechen", "Cancel"), Showcase::button_width());
+            cancel.connect("pressed", &Callable::from_object_method(&self.to_gd(), "on_search_cancel"));
+            showcase.bind_mut().add_button(cancel);
+        }
+        self.search = Some(Search { names, options, query: String::new(), shown: Vec::new(), field });
+        self.refresh_search();
+    }
+
+    /// Treffer zur Eingabe: zuerst Namen, die mit ihr beginnen, dann solche, die sie enthalten
+    /// (ohne Groß-/Kleinschreibung); höchstens `limit`.
+    fn search_matches(options: &[String], query: &str, limit: usize) -> Vec<usize> {
+        let q = query.to_lowercase();
+        let mut starts: Vec<usize> = Vec::new();
+        let mut contains: Vec<usize> = Vec::new();
+        for (i, o) in options.iter().enumerate() {
+            let l = o.to_lowercase();
+            if l.starts_with(&q) {
+                starts.push(i);
+            } else if l.contains(&q) {
+                contains.push(i);
+            }
+        }
+        // je Gruppe alphabetisch
+        let by_name = |a: &usize, b: &usize| options[*a].to_lowercase().cmp(&options[*b].to_lowercase());
+        starts.sort_by(by_name);
+        contains.sort_by(by_name);
+        starts.extend(contains);
+        starts.truncate(limit);
+        starts
+    }
+
+    /// Suchfeld und Treffer nach der aktuellen Eingabe neu aufbauen.
+    fn refresh_search(&mut self) {
+        let Some(showcase) = self.showcase.clone().filter(|s| s.is_instance_valid()) else { return };
+        let Some(search) = self.search.as_mut() else { return };
+        let label = if search.query.is_empty() {
+            tr!("Tippe zum Suchen …", "Type to search …").to_string()
+        } else {
+            format!("{}▌", search.query)
+        };
+        search.field.bind_mut().set_label_text(GString::from(label.as_str()));
+        for (_, mut n) in search.shown.drain(..) {
+            if n.is_instance_valid() {
+                n.queue_free();
+            }
+        }
+        let names = search.names;
+        let limit = if names { SEARCH_CARDS } else { SEARCH_BUTTONS };
+        // Kartennamen: erst ab der ersten Eingabe Treffer (wie in Arena)
+        let hits = if names && search.query.is_empty() { Vec::new() } else { Self::search_matches(&search.options, &search.query, limit) };
+        let hit_names: Vec<String> = hits.iter().map(|&i| search.options[i].clone()).collect();
+        let mut shown = Vec::new();
+        let me = self.to_gd();
+        let mut parent = showcase.clone().upcast::<Node>();
+        if names {
+            let n = hits.len().max(1) as f32;
+            for (k, (&i, name)) in hits.iter().zip(&hit_names).enumerate() {
+                let data = self.card_info.get(name).cloned().unwrap_or_else(|| {
+                    let mut d = VarDictionary::new();
+                    d.set("name", name.as_str());
+                    d
+                });
+                let mut copy = Self::stage_card(&data, None);
+                let x = (k as f32 - (n - 1.0) * 0.5) * SEARCH_CARD_STEP;
+                let face_up = Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2);
+                parent.add_child(&copy);
+                copy.set_transform(Transform3D::new(face_up.scaled(Vector3::splat(SEARCH_CARD_SCALE)), Vector3::new(x, SEARCH_RESULTS_Y, 0.02)));
+                copy.bind_mut().set_bright(true);
+                copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
+                shown.push((i, copy.upcast::<Node>()));
+            }
+            self.request_missing_card_info(&hit_names);
+        } else {
+            let mut sc = showcase.clone();
+            let cols = hits.len().clamp(1, SEARCH_COLUMNS);
+            for (k, (&i, name)) in hits.iter().zip(&hit_names).enumerate() {
+                let (col, row) = (k % cols, k / cols);
+                let x = (col as f32 - (cols as f32 - 1.0) * 0.5) * SEARCH_BUTTON_STEP.x;
+                let y = SEARCH_RESULTS_TOP - row as f32 * SEARCH_BUTTON_STEP.y;
+                let mut b = Button3D::create(if k == 0 { ButtonStyle::Orange } else { ButtonStyle::Blue }, name, Showcase::button_width() * 0.9);
+                b.connect("pressed", &Callable::from_object_method(&me, "on_search_pick").bind(&[(i as i64).to_variant()]));
+                sc.bind_mut().add_button_at(b.clone(), Vector2::new(x, y));
+                shown.push((i, b.upcast::<Node>()));
+            }
+        }
+        if let Some(search) = self.search.as_mut() {
+            search.shown = shown;
+        }
+    }
+
+    /// Kartendaten (mit Bild) für die gezeigten Namen nachfragen: noch nie gefragt bzw. ohne Bild
+    /// und seit [`CARD_INFO_RETRY`] Sekunden nicht mehr gefragt (Bilder lädt die Brücke im
+    /// Hintergrund nach).
+    fn request_missing_card_info(&mut self, names: &[String]) {
+        let now = self.clock;
+        let missing: Vec<String> = names
+            .iter()
+            .filter(|n| self.card_info.get(*n).is_none_or(|d| get_str(d, "image").is_empty()))
+            .filter(|n| self.card_info_requested.get(*n).is_none_or(|t| now - *t >= CARD_INFO_RETRY))
+            .cloned()
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        for n in &missing {
+            self.card_info_requested.insert(n.clone(), now);
+        }
+        if let Some(mut b) = self.bridge.clone() {
+            let arr: PackedStringArray = missing.iter().map(|n| GString::from(n.as_str())).collect();
+            b.bind_mut().request_card_info(arr);
+        }
+    }
+
+    /// Antwort auf `card_info`: Kartendaten merken; offene Suche mit Bildern neu aufbauen.
+    #[func]
+    fn on_card_info(&mut self, cards: VarArray) {
+        let mut changed = false;
+        for c in cards.iter_shared().filter_map(|c| c.try_to::<VarDictionary>().ok()) {
+            let name = get_str(&c, "name");
+            if name.is_empty() {
+                continue;
+            }
+            // nur neu aufbauen, wenn sich etwas Sichtbares ändert (z. B. das Bild kam)
+            let before = self.card_info.get(&name).map(|d| get_str(d, "image"));
+            if before.as_deref() != Some(get_str(&c, "image").as_str()) {
+                changed = true;
+            }
+            self.card_info.insert(name, c);
+        }
+        if changed && self.search.as_ref().is_some_and(|s| s.names) {
+            self.refresh_search();
+        }
+    }
+
+    /// Treffer `index` (Nummer der Option) gewählt.
+    #[func]
+    fn on_search_pick(&mut self, index: i64) {
+        if self.search.is_none() {
+            return;
+        }
+        if let Ok(i) = u32::try_from(index) {
+            self.search = None;
+            self.answer(Choice::Number(i));
+        }
+    }
+
+    /// „Abbrechen“ in der Suche.
+    #[func]
+    fn on_search_cancel(&mut self) {
+        if self.pending.as_ref().is_some_and(|r| r.cancelable) {
+            self.search = None;
+            self.answer(Choice::Cancel);
+        }
     }
 
     /// Verteilen wie in Arena (CR 601.2d Schaden/Marken beim Wirken, CR 510.1c Kampfschaden,
@@ -3313,6 +3547,7 @@ impl ForgeTable {
         self.close_loyalty_view();
         self.close_dungeon_view();
         self.close_divide();
+        self.search = None;
     }
 
     /// Anzeige für das HUD.
@@ -5106,6 +5341,29 @@ const X_PAY_WIDTH: f32 = 1.35;
 const X_CANCEL_Y: f32 = -0.84;
 
 /// Welche 3D-Bühne eine Entscheidung bekommt.
+/// Offene Suche: Kartennamen (Treffer als Karten) oder Typen (Treffer als Knöpfe), alle
+/// Optionen der Engine, Eingabe, gezeigte Treffer (Nummer der Option, Knoten), Suchfeld.
+struct Search {
+    names: bool,
+    options: Vec<String>,
+    query: String,
+    shown: Vec<(usize, Gd<Node>)>,
+    field: Gd<Button3D>,
+}
+
+/// Suche: Lage auf der Bühne (Suchfeld, Treffer), Zahl und Abstand der Treffer.
+const SEARCH_FIELD_Y: f32 = 0.55;
+const SEARCH_RESULTS_Y: f32 = -0.2;
+const SEARCH_RESULTS_TOP: f32 = 0.25;
+const SEARCH_CARDS: usize = 6;
+const SEARCH_CARD_STEP: f32 = 0.66;
+const SEARCH_CARD_SCALE: f32 = 0.85;
+/// Kartendaten ohne Bild: so oft (Sekunden) erneut nachfragen.
+const CARD_INFO_RETRY: f64 = 2.0;
+const SEARCH_BUTTONS: usize = 12;
+const SEARCH_COLUMNS: usize = 3;
+const SEARCH_BUTTON_STEP: Vector2 = Vector2::new(1.25, 0.28);
+
 /// Ein Ziel beim Verteilen: Ziel, zugewiesene Menge, Mindestmenge und die drei Knöpfe.
 struct DivideEntry {
     target: Target,
