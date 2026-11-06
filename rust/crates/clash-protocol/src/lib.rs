@@ -1,6 +1,6 @@
 //! # clash-protocol
 //!
-//! Protokoll-Modell und JSON-Form (Protokoll v3) der Forge-Brücke von MTG Clash – ohne Godot,
+//! Protokoll-Modell und JSON-Form (Protokoll v3) der Forge-Brücke von Neo Forge 3D – ohne Godot,
 //! ohne Java, nur `serde_json`. Damit kann jede Rust-Oberfläche (Godot, Bevy, Terminal, Tests)
 //! Forge bedienen.
 //!
@@ -11,7 +11,7 @@
 //! - [`RulesEngine`]: die Schnittstelle, über die eine Oberfläche Antworten schickt.
 //!
 //! Transport (Java-Prozess bzw. Socket zum Gastgeber) liefert das Crate `clash-forge-client`.
-//! Das vollständige Protokoll beschreibt `docs/Forge-Schnittstelle.md`.
+//! Das vollständige Protokoll beschreibt `docs/Forge-Protocol.md`.
 //!
 //! ```
 //! use clash_protocol::{Choice, Action, Request, command};

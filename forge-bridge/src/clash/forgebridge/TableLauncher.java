@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
  * die vom Tisch gesteuerten Spieler auf ({@link ClashBridge#concedeRemotePlayers}).
  *
  * <p>Ein anderer Tisch (nicht Godot) muss nur {@code --clash-port=N} verstehen, sich mit
- * {@code 127.0.0.1:N} verbinden und das Protokoll sprechen ({@code docs/Forge-Schnittstelle.md}).
+ * {@code 127.0.0.1:N} verbinden und das Protokoll sprechen ({@code docs/Forge-Protocol.md}).
  */
 public final class TableLauncher {
     private TableLauncher() {}

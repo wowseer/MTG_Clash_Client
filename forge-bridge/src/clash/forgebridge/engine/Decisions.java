@@ -23,7 +23,7 @@ import forge.game.spellability.SpellAbility;
  * Forge-KI zurück bzw. bricht das Wirken ab.
  *
  * <p>Varianten, die es im Basismodell noch nicht gibt ({@code ChooseOption}, {@code ChooseOptions},
- * {@code ChooseNumber}, {@code Choice::Cancel}), sind in {@code docs/Forge-Schnittstelle.md} unter
+ * {@code ChooseNumber}, {@code Choice::Cancel}), sind in {@code docs/Forge-Protocol.md} unter
  * „Erweiterungen gegenüber dem Basismodell“ aufgeführt.
  *
  * <p>Hülle: {@code {"type":"request","id","player","decision","prompt","source":{id,name},

@@ -5,7 +5,7 @@
 # Die Änderungen an NeoForges eigenen Klassen (NeoGame, SafeAi, NeoMain, SettingsPanel,
 # Sprachdateien) stehen als Patch in integrations/neoforge/neoforge-host.patch; einmalig anwenden mit
 #   git -C "$NEOFORGE" apply integrations/neoforge/neoforge-host.patch
-# Maßgeblich ist immer die Fassung in MTG Clash; in NeoForge nicht von Hand ändern.
+# Maßgeblich ist immer die Fassung in Neo Forge 3D; in NeoForge nicht von Hand ändern.
 set -e
 cd "$(dirname "$0")/.."
 NEOFORGE="${NEOFORGE:-$HOME/Entwicklung/Java/NeoForge}"

@@ -3,7 +3,7 @@ members = [".", "crates/clash-protocol", "crates/clash-forge-client"]
 resolver = "3"
 
 [package]
-name = "mtg_clash"
+name = "neo_forge_3d"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"

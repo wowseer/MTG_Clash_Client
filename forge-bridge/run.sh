@@ -1,6 +1,6 @@
 #!/bin/sh
 # Startet die Brücke von Hand (zum Testen). Protokoll über stdin/stdout, siehe
-# docs/Forge-Schnittstelle.md. FORGE_DIR = Forge-Installationsordner (mit res/).
+# docs/Forge-Protocol.md. FORGE_DIR = Forge-Installationsordner (mit res/).
 BRIDGE_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -z "$FORGE_DIR" ]; then
   # Projektkopie (forge-bridge/forge/) bevorzugen, sonst ~/Games/Forge

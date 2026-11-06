@@ -1,6 +1,6 @@
 //! # clash-forge-client
 //!
-//! Verbindung zur Forge-Brücke von MTG Clash, ohne Godot: entweder die Brücke als eigenen
+//! Verbindung zur Forge-Brücke von Neo Forge 3D, ohne Godot: entweder die Brücke als eigenen
 //! Java-Prozess starten ([`ForgeClient::spawn`], JSON Lines über stdin/stdout) oder sich mit einem
 //! Gastgeber verbinden, der Forge schon laufen hat und den Tisch mit `--clash-port=N` gestartet
 //! hat ([`ForgeClient::connect`], TCP `127.0.0.1:N`, z. B. NeoForge).

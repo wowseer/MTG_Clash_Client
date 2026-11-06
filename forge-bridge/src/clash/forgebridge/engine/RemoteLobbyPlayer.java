@@ -10,7 +10,7 @@ import forge.game.player.Player;
 import forge.game.player.PlayerController;
 
 /**
- * Lobby-Spieler, der von MTG Clash (über die Brücke) gesteuert wird.
+ * Lobby-Spieler, der von Neo Forge 3D (über die Brücke) gesteuert wird.
  * Erzeugt im Spiel einen {@link Player} mit {@link RemotePlayerController}.
  */
 public class RemoteLobbyPlayer extends LobbyPlayer implements IGameEntitiesFactory {

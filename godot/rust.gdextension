@@ -4,5 +4,5 @@ compatibility_minimum = 4.7
 reloadable = true
 
 [libraries]
-linux.debug.x86_64 = "res://../rust/target/debug/libmtg_clash.so"
-linux.release.x86_64 = "res://../rust/target/release/libmtg_clash.so"
+linux.debug.x86_64 = "res://../rust/target/debug/libneo_forge_3d.so"
+linux.release.x86_64 = "res://../rust/target/release/libneo_forge_3d.so"

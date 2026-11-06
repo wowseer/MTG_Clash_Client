@@ -4,7 +4,7 @@
 //! Die Regel-Engine hält an und liefert eine [`Decision`]; die UI antwortet mit einer [`Choice`].
 //! Variantennamen und Felder entsprechen dem Vorbild, damit jede Engine, die dieses Modell spricht,
 //! ohne Umbau angebunden werden kann. Varianten mit dem Vermerk **Erweiterung** gibt es im Vorbild (noch)
-//! nicht; sie decken Fragen der Java-Engine ab und sind in `docs/Forge-Schnittstelle.md`
+//! nicht; sie decken Fragen der Java-Engine ab und sind in `docs/Forge-Protocol.md`
 //! aufgelistet.
 //!
 //! JSON-Form (Protokoll v3): jede Variante als Objekt mit `"type": "<Variantenname>"` und den

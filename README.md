@@ -1,84 +1,90 @@
-# MTG Clash
+# Neo Forge 3D
 
-**Ein 3D-Spieltisch für die komplette Magic-Regel-Engine von [Forge](https://github.com/Card-Forge/forge)** –
-gebaut mit Godot 4.7 und Rust. Jede Entscheidung, die Forge einem Spieler abverlangt, triffst du
-direkt am Tisch; die KI spielt nur deinen Gegner. Der Tisch prüft selbst keine Regeln: Er zeigt
-den Zustand der Engine und schickt ihr deine Antworten.
+**A 3D game table for the complete Magic rules engine of [Forge](https://github.com/Card-Forge/forge)** –
+built with Godot 4.7 and Rust. Every decision Forge asks of a player is made right at the table;
+the AI only plays your opponent. The table does not check any rules itself: it shows the engine's
+state and sends your answers back to it.
 
-> *English:* A 3D table (Godot 4.7 + Rust) for the complete rules engine of Forge. Every decision
-> Forge asks of a player is made at the table; the AI only plays the opponent. The Forge
-> integration is split into reusable pieces (Java bridge, godot-free Rust crates, NeoForge
-> integration) – see [docs/Einbau.md](docs/Einbau.md).
+The goal is a 3D table for [NeoForge](https://github.com/AdrianLopez98/NeoForge) (a JavaFX front
+end for Forge): when NeoForge starts a two-player match with the 3D table enabled, this Godot UI
+takes over the human seat. Until then it also runs standalone against Forge.
 
-![Spieltisch im fünften Zug](docs/bilder/tisch.png)
+![Game table on turn five](docs/bilder/tisch.png)
 
-<sub>Alle Bilder sind im Modus „nur eigene Grafik“ entstanden (`CLASH_FREE_ASSETS=1`): selbst
-gezeichnete Kartenrahmen, Typsymbole und Manasymbole, keine Kartenbilder.</sub>
+<sub>All images were made in "own graphics only" mode (`CLASH_FREE_ASSETS=1`): self-drawn card
+frames, type symbols and mana symbols, no card images.</sub>
 
-## Was der Tisch kann
+## Features
 
-- **Alles am Tisch entscheiden:** Karten aus der Hand aufs Feld ziehen, Ziele per Pfeil,
-  Angreifer und Blocker per Klick, Mana bezahlen (Quellen anklicken oder automatisch), Mulligan,
-  Hellsicht, Karten wählen, Reihenfolge von Auslösungen, Modi (auch Spree/Tiered mit Kosten),
-  Kicker und andere Zusatzkosten, Farbrad für Farben, Schaden verteilen.
-- **Der ganze Spielzustand sichtbar:** Stack als 3D-Stapel mit Zielpfeilen, Friedhof und Exil,
-  Kommandozone, Marken als Münzen, angelegte Auren und Ausrüstung, Spielsteine, doppelseitige und
-  verdeckte Karten, Monarch/Initiative/Ring, Tag/Nacht, Klassen, Räume, Sagas.
-- **Planeswalker wie gewohnt:** Klick öffnet die Karte groß, die Loyalitätsfähigkeiten wählst du
-  direkt auf der Karte.
-- **Karten aus anderen Zonen** (Rückblende, Commander, Begleiter, Vorbereiten …) erscheinen
-  rechts neben der Hand mit den Kosten ihrer Spielweise.
-- **Zwei Wege zu Forge:** eigenständig (der Tisch startet Forge als Java-Prozess) oder
-  eingebettet in [NeoForge](https://github.com/AdrianLopez98/NeoForge), das seine Partien
-  (Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander, Draft, Cube) am 3D-Tisch spielen lässt.
-- Deutsch und Englisch.
+- **Decide everything at the table:** drag cards from your hand onto the battlefield, choose
+  targets with arrows, attackers and blockers by click, pay mana (click sources or pay
+  automatically), mulligan, scry, choose cards, order triggers, modes (including Spree/Tiered
+  with costs), kicker and other additional costs, a colour wheel for colours, divide damage.
+- **The whole game state is visible:** the stack as a 3D pile with target arrows, graveyard and
+  exile, command zone, counters as coins, attached auras and equipment, tokens, double-faced and
+  face-down cards, monarch/initiative/the Ring, day/night, classes, rooms, sagas.
+- **Planeswalkers as you know them:** a click opens the card large; choose loyalty abilities
+  directly on the card.
+- **Cards from other zones** (flashback, commander, companion, foretell …) appear to the right of
+  the hand with the cost of how they can be played.
+- **Two ways to Forge:** standalone (the table starts Forge as a Java process) or embedded in
+  [NeoForge](https://github.com/AdrianLopez98/NeoForge), which then plays its matches (Standard,
+  Pioneer, Modern, Legacy, Vintage, Pauper, Commander, Draft, Cube) on the 3D table.
+- German and English.
 
-| Planeswalker | Modus wählen |
+| Planeswalker | Choosing a mode |
 |---|---|
-| ![Planeswalker-Ansicht](docs/bilder/planeswalker.png) | ![Modus-Wahl](docs/bilder/modus.png) |
-| **Zauber auf dem Stack mit Zielpfeil** | **Angreifer wählen** |
-| ![Stack mit Zielpfeil](docs/bilder/stack.png) | ![Angriff](docs/bilder/angriff.png) |
+| ![Planeswalker view](docs/bilder/planeswalker.png) | ![Choosing a mode](docs/bilder/modus.png) |
+| **Spell on the stack with target arrow** | **Declaring attackers** |
+| ![Stack with target arrow](docs/bilder/stack.png) | ![Attack](docs/bilder/angriff.png) |
 
-## Aufbau
+## Repository layout
 
-| Ordner | Inhalt |
+| Folder | Contents |
 |---|---|
-| `godot/` | Godot-Projekt (Hauptszene `table.tscn`) |
-| `rust/` | Godot-Erweiterung (gdext): Tisch, HUD, Darstellung |
-| `rust/crates/clash-protocol/` | Protokoll-Modell `Decision`/`Choice` + JSON, ohne Godot |
-| `rust/crates/clash-forge-client/` | Verbindung zur Brücke (Java-Prozess oder Gastgeber), ohne Godot; Beispiel `autoplay` |
-| `forge-bridge/` | Java-Brücke zu Forge: Fassade `ClashBridge`, `TableLauncher`, Forge-Adapter |
-| `integrations/neoforge/` | Anbindung an NeoForge: `ClashTable` + Patch für NeoForges Klassen |
-| `docs/` | Bedienung (`DOKUMENTATION.md`), Protokoll (`Forge-Schnittstelle.md`), Einbau in andere Projekte (`Einbau.md`), API-Referenz |
-| `tools/` | Skripte (Doku, NeoForge-Sync/-Patch/-Test) |
+| `godot/` | Godot project (main scene `table.tscn`) |
+| `rust/` | Godot extension (gdext): table, HUD, rendering |
+| `rust/crates/clash-protocol/` | Protocol model `Decision`/`Choice` + JSON, no Godot dependency |
+| `rust/crates/clash-forge-client/` | Connection to the bridge (Java process or host), no Godot dependency; example `autoplay` |
+| `forge-bridge/` | Java bridge to Forge: facade `ClashBridge`, `TableLauncher`, Forge adapter |
+| `integrations/neoforge/` | NeoForge integration: `ClashTable` + patch for NeoForge's classes |
+| `docs/` | Usage and architecture ([`DOCUMENTATION.md`](docs/DOCUMENTATION.md)), protocol ([`Forge-Protocol.md`](docs/Forge-Protocol.md)), embedding in other projects ([`Embedding.md`](docs/Embedding.md)), API reference |
+| `tools/` | Scripts (docs, NeoForge sync/patch/test) |
 
-Die Anbindung an Forge lässt sich ohne den Godot-Tisch wiederverwenden – für eigene Oberflächen
-und andere Forge-Programme: **[docs/Einbau.md](docs/Einbau.md)**.
+The Forge integration can be reused without the Godot table – for your own front ends and other
+Forge programs: **[docs/Embedding.md](docs/Embedding.md)**.
 
-## Schnellstart
+## Quick start
 
-Voraussetzungen: Godot 4.7, Rust (Edition 2024), Java 17+ und eine Forge-Installation
-(Desktop-Version; Ordner mit `res/` und `forge-gui-desktop-*-jar-with-dependencies.jar`).
+Requirements: Godot 4.7, Rust (edition 2024), Java 17+ and a Forge installation (desktop
+version; a folder with `res/` and `forge-gui-desktop-*-jar-with-dependencies.jar`).
 
 ```sh
-FORGE_DIR=/pfad/zu/forge forge-bridge/build.sh   # Java-Brücke
-cd rust && cargo build                            # Godot-Erweiterung und Crates
-# Godot 4.7 öffnen: godot/project.godot, F5 (FORGE_DIR muss gesetzt sein,
-# oder Forge nach forge-bridge/forge/ kopieren)
+FORGE_DIR=/path/to/forge forge-bridge/build.sh   # Java bridge
+cd rust && cargo build                            # Godot extension and crates
+# Open Godot 4.7: godot/project.godot, F5 (FORGE_DIR must be set,
+# or copy Forge to forge-bridge/forge/)
 ```
 
-Einrichtung im Detail: [docs/Forge-Schnittstelle.md](docs/Forge-Schnittstelle.md), Abschnitt
-„Einrichtung“. Nur eigene Grafik (keine Kartenbilder, keine fremden Symbole):
-`CLASH_FREE_ASSETS=1` setzen bzw. Godot mit `-- --free-assets` starten.
+Detailed setup: [docs/Forge-Protocol.md](docs/Forge-Protocol.md), section "Setup". Own graphics
+only (no card images, no third-party symbols): set `CLASH_FREE_ASSETS=1` or start Godot with
+`-- --free-assets`.
 
-## Lizenz
+## Contributing
 
-**GPL-3.0** wie Forge – siehe [`LICENSE`](LICENSE).
+Code comments and the in-engine class reference (`///` docs, `docs/API-Referenz.md`) are written
+in German; the developer documentation in this README and in `docs/` is in English. Commit
+messages are in English. The UI never implements rules – every rule question goes to Forge
+through the protocol.
 
-Nicht im Repo und nicht Teil dieser Lizenz: Forge selbst (Programm-Jar und Kartendatenbank) und
-die Kartenbilder, die der Tisch aus der lokalen Forge-Installation liest bzw. von Scryfall lädt.
-Magic: The Gathering, Kartennamen, -texte und -bilder sind Eigentum von Wizards of the Coast;
-dieses Projekt steht in keiner Verbindung zu Wizards of the Coast. Die Symboldateien
-`Assets/Mana/Mana.svg` (slightlymagic.net) und `Assets/Mana/Colorless.svg` sind Fremdmaterial und
-gehören nicht zu dem hier lizenzierten Material; im Modus „nur eigene Grafik“ werden sie nicht
-verwendet.
+## License
+
+**GPL-3.0**, like Forge – see [`LICENSE`](LICENSE).
+
+Not in this repository and not covered by this license: Forge itself (program jar and card
+database) and the card images, which the table reads from the local Forge installation or
+downloads from Scryfall. Magic: The Gathering, card names, texts and images are property of
+Wizards of the Coast; this project is not affiliated with Wizards of the Coast. The symbol files
+`Assets/Mana/Mana.svg` (slightlymagic.net) and `Assets/Mana/Colorless.svg` are third-party
+material and not part of the material licensed here; they are not used in "own graphics only"
+mode.

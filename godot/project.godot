@@ -10,13 +10,13 @@ config_version=5
 
 [application]
 
-config/name="MTG Clash"
+config/name="Neo Forge 3D"
 run/main_scene="res://table.tscn"
 config/features=PackedStringArray("4.7")
 
 [dotnet]
 
-project/assembly_name="MTG Clash"
+project/assembly_name="Neo Forge 3D"
 
 [rendering]
 

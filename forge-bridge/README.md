@@ -1,19 +1,20 @@
 # forge-bridge
 
-Java-Brücke zwischen einer Oberfläche (MTG Clash oder eine eigene) und der Forge-Regel-Engine.
-Lizenz: **GPL-3.0** (siehe `LICENSE`), da sie Forge-Klassen verwendet.
+Java bridge between a front end (Neo Forge 3D or your own) and the Forge rules engine.
+License: **GPL-3.0** (see `LICENSE`), because it uses Forge classes.
 
-| Paket | Rolle |
+| Package | Role |
 |---|---|
-| `clash.forgebridge` | **Öffentliche Schnittstelle**: `ClashBridge` (einbetten, ferngesteuerter Sitz, eigenständiger Betrieb), `TableLauncher` (Tisch-Prozess starten und per Socket verbinden) |
-| `clash.forgebridge.engine` | intern: Forge-Adapter (`RemotePlayerController`, `Decisions`, `StateJson`, `BridgeCore` …) |
-| `clash.forgebridge.app` | `BridgeMain`: eigenständiger Prozess (stdin/stdout), braucht `forge-gui-desktop` |
+| `clash.forgebridge` | **Public API**: `ClashBridge` (embedding, remote-controlled seat, standalone mode), `TableLauncher` (start the table process and connect via socket) |
+| `clash.forgebridge.engine` | internal: Forge adapter (`RemotePlayerController`, `Decisions`, `StateJson`, `BridgeCore` …) |
+| `clash.forgebridge.app` | `BridgeMain`: standalone process (stdin/stdout), needs `forge-gui-desktop` |
 
-- Bauen: `./build.sh` → `build/forge-bridge-core.jar` (Bibliothek zum Einbetten) und
-  `build/forge-bridge.jar` (Programm, Main-Class `clash.forgebridge.app.BridgeMain`);
-  Forge-Jar über `FORGE_JAR`
-- Von Hand starten: `./run.sh` (Forge-Ordner über `FORGE_DIR`, sonst `forge/` hier im Ordner, sonst `~/Games/Forge`)
-- Testdecks: `testdecks/`
+- Build: `./build.sh` → `build/forge-bridge-core.jar` (library for embedding) and
+  `build/forge-bridge.jar` (program, main class `clash.forgebridge.app.BridgeMain`);
+  Forge jar via `FORGE_JAR`
+- Run by hand: `./run.sh` (Forge folder via `FORGE_DIR`, otherwise `forge/` in this folder,
+  otherwise `~/Games/Forge`), then type JSON lines, e.g. `{"cmd":"ping"}`
+- Test decks: `testdecks/`
 
-Protokoll und Einrichtung: [`../docs/Forge-Schnittstelle.md`](../docs/Forge-Schnittstelle.md),
-Einbau in andere Projekte: [`../docs/Einbau.md`](../docs/Einbau.md).
+Protocol and setup: [`../docs/Forge-Protocol.md`](../docs/Forge-Protocol.md),
+embedding in other projects: [`../docs/Embedding.md`](../docs/Embedding.md).

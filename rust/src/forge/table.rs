@@ -1249,7 +1249,7 @@ impl ForgeTable {
         self.cards.get(&forge_id).cloned()
     }
 
-    /// Zuletzt von Forge empfangener Spielzustand (Aufbau siehe `docs/Forge-Schnittstelle.md`).
+    /// Zuletzt von Forge empfangener Spielzustand (Aufbau siehe `docs/Forge-Protocol.md`).
     #[func]
     pub fn get_state(&self) -> VarDictionary {
         self.state.clone().unwrap_or_default()

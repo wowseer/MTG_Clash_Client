@@ -48,7 +48,7 @@ Kein eigenes Muster brauchen: `tuckCardsViaMulligan` (= M3), `sideboard` und
 
 **Rückfall:** Solange ein Muster fehlt, entscheidet die Forge-KI (`PlayerControllerAi`). Das ist
 der aktuelle Zustand für M2–M8 und M13; M1 ist teilweise, M9–M12 sind umgesetzt (Anfrage
-`choice`, siehe `docs/Forge-Schnittstelle.md`). Mehrfachwahl desselben Modus (z. B. „Wähle drei,
+`choice`, siehe `docs/Forge-Protocol.md`). Mehrfachwahl desselben Modus (z. B. „Wähle drei,
 derselbe Modus darf mehrfach gewählt werden“) ist noch nicht möglich.
 
 ---
@@ -67,7 +67,7 @@ derselbe Modus darf mehrfach gewählt werden“) ist noch nicht möglich.
 
 Dafür muss `StateJson` (Brücke) erweitert werden: Stack, Kommandozone, Regeltext, Marken,
 `attached_to`, Kampfzuordnung, Manapool, Spielerzähler, Vorder-/Rückseite. Jede Erweiterung
-erhöht ggf. die Protokollversion und wird in `docs/Forge-Schnittstelle.md` beschrieben.
+erhöht ggf. die Protokollversion und wird in `docs/Forge-Protocol.md` beschrieben.
 
 ---
 

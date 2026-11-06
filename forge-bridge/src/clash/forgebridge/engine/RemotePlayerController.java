@@ -59,7 +59,7 @@ import forge.game.trigger.WrappedAbility;
 import forge.game.zone.ZoneType;
 
 /**
- * Spielersteuerung, deren Hauptentscheidungen MTG Clash trifft.
+ * Spielersteuerung, deren Hauptentscheidungen Neo Forge 3D trifft.
  *
  * <p>Jede Frage geht als {@code Decision} an den Client ({@link Decisions},
  * Protokoll v3): Priorität, Mulligan, beim Wirken optionale Kosten, Modi, X und Ziele, dazu alle
@@ -1460,7 +1460,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     /**
      * Spieler und/oder Karten für einen Effekt wählen: {@code ChooseTargets} mit
      * {@code purpose = "Choose"} (kein Ziel; Knöpfe je Spieler, Klick auf Medaillon bzw. Karte). Das Basismodell kennt dafür keine eigene Entscheidung (Erweiterung, siehe
-     * Forge-Schnittstelle.md). Liefert die gewählten Indizes oder {@code null} (Engine entscheidet).
+     * Forge-Protocol.md). Liefert die gewählten Indizes oder {@code null} (Engine entscheidet).
      */
     private <T extends GameEntity> List<Integer> entities(List<T> list, int min, int max, String title,
             SpellAbility sa) {

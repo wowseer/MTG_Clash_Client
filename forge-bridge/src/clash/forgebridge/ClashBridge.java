@@ -16,7 +16,7 @@ import forge.game.player.Player;
  * <p>Die Brücke übersetzt Forges {@code PlayerController}-Aufrufe eines Sitzplatzes in
  * {@code Decision}-Nachrichten (JSON Lines, Protokoll v{@value #PROTOCOL_VERSION}) und die
  * {@code Choice}-Antworten zurück; dazu schickt sie den Spielzustand, Ereignisse und das
- * Spielprotokoll. Das Protokoll steht in {@code docs/Forge-Schnittstelle.md}.
+ * Spielprotokoll. Das Protokoll steht in {@code docs/Forge-Protocol.md}.
  *
  * <h2>Zwei Betriebsarten</h2>
  * <ul>

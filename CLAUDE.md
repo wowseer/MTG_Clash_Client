@@ -1,4 +1,4 @@
-# CLAUDE.md – MTG Clash
+# CLAUDE.md – Neo Forge 3D
 
 ## Ziel
 
@@ -36,7 +36,7 @@
   nie direkt mit Java-Details. UI-Code darf keine Annahmen über Java/Forge enthalten.
 - Fragt Forge etwas, das das Basismodell nicht kennt (z. B. Reihenfolge von Ersatzeffekten,
   Startspieler, Abstimmung, Marken-Typ), gibt es eine allgemeine Erweiterung (Liste von Optionen →
-  `Choice::Number(index)`). Jede Erweiterung in `docs/Forge-Schnittstelle.md` unter
+  `Choice::Number(index)`). Jede Erweiterung in `docs/Forge-Protocol.md` unter
   „Erweiterungen gegenüber dem Basismodell“ auflisten.
 - IDs: `CardId` = Forge-Karten-ID, `PlayerId` = Sitzplatz-Index.
 - **Genau zwei Spieler:** Der 3D-Tisch ist nur für Partien mit zwei Spielern (du und ein Gegner,
@@ -84,9 +84,9 @@ Godot mit `-- --clash-port=N` und hängt den menschlichen Sitz (`RemoteLobbyPlay
 | `rust/src/game/decision_view.rs` | `Decision` → Auswahlfenster → `Choice` (engine-neutral) |
 | `forge-bridge/src/clash/forgebridge/` | öffentlich: `ClashBridge` (Fassade), `TableLauncher` (Tisch starten + Socket); `engine/` intern: `RemotePlayerController` (Forge-Aufrufe), `Decisions` (→ `Decision`, Antwort-`Choice` lesen), `StateJson` (Zustand → JSON), `LogForwarder` (Spielprotokoll), `BridgeCore` (Befehle, Partie, Anfragen); `app/BridgeMain` (eigenständiger Prozess) |
 | `integrations/neoforge/` | NeoForge-Anbindung, getrennt mitgebbar: `ClashTable.java` (maßgeblich hier) und `neoforge-host.patch` (NeoForges Klassen) |
-| `docs/Einbau.md` | Einbau der Bausteine in andere Projekte (Rust-UIs, andere Sprachen, Java-Gastgeber, NeoForge) |
+| `docs/Embedding.md` | Einbau der Bausteine in andere Projekte (Rust-UIs, andere Sprachen, Java-Gastgeber, NeoForge) |
 | `forge-bridge/forge/` | lokale Kopie von Forge (Jar + `res/`), **nicht im Git** (GPL, Kartendaten von WotC) |
-| `docs/Forge-Schnittstelle.md` | Protokoll (Befehle, Nachrichten, `state`-Aufbau). **Bei jeder Protokolländerung pflegen** |
+| `docs/Forge-Protocol.md` | Protokoll (Befehle, Nachrichten, `state`-Aufbau). **Bei jeder Protokolländerung pflegen** |
 
 Forge-Sitzplatz 0 = Spieler unten (ferngesteuert), Sitzplatz 1 = Gegner oben (Forge-KI).
 
@@ -193,7 +193,7 @@ wieder löschen), das `res://table.tscn` lädt, sich an `ForgeBridge.decision_re
 nächsten `_process` über `ForgeTable` bzw. das HUD antwortet (`submit_choice`, `pass_priority`, `TurnHud.on_choice_option`). Nicht direkt im
 Signal-Handler antworten. Start:
 `godot --headless --path godot -s res://_probe.gd`. Forge braucht ca. 5 s zum Laden; das
-Brücken-Log steht in `~/.local/share/godot/app_userdata/MTG Clash/forge-bridge.log`.
+Brücken-Log steht in `~/.local/share/godot/app_userdata/Neo Forge 3D/forge-bridge.log`.
 
 Lange Spiel- und Belastungstests immer mit `--headless`: Ein verdecktes Testfenster kann die
 Bildausgabe (Vulkan, vsync) blockieren, dann steht der Hauptthread scheinbar „eingefroren“ – das
@@ -213,11 +213,15 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
   Spielweisen bekommt eine Auswahl“, „ein Zauber, der auf etwas auf dem Stack reagiert, bekommt
   einen Pfeil dorthin“) und sie allgemein in der 3D-UI umsetzen, für alle Karten und Fälle.
   Getestet wird mit den vorhandenen Testdecks, nicht mit Decks aus den Karten im Video.
-- **Sprache:** Code-Kommentare, `///`-Doku und Dokumentation auf **Deutsch**; Commit-Messages auf Englisch.
+- **Sprache:** Code-Kommentare und `///`-Doku auf **Deutsch**. Die Entwickler-Doku für GitHub ist
+  **Englisch**: `README.md`, `forge-bridge/README.md`, `integrations/neoforge/README.md`,
+  `docs/DOCUMENTATION.md`, `docs/Forge-Protocol.md`, `docs/Embedding.md`. Interne Pläne bleiben
+  Deutsch (`CLAUDE.md`, `docs/claude/`, `docs/Kartenabdeckung.md`, `docs/UI-Aktionen.xlsx`).
+  Commit-Messages auf Englisch. Projektname überall „Neo Forge 3D“ (getrennt geschrieben).
 - **Doku immer mitpflegen**, im selben Schritt wie die Änderung:
   1. `///`-Doku an jeder neuen oder geänderten Godot-Klasse, `#[func]`, `#[export]`, `#[var]`, `#[signal]` (erscheint in der Godot-Hilfe, F1)
-  2. `docs/DOKUMENTATION.md` (Bedienung, Szenenaufbau, Stand)
-  3. `docs/Forge-Schnittstelle.md` bei jeder Protokolländerung
+  2. `docs/DOCUMENTATION.md` (Bedienung, Szenenaufbau, Stand)
+  3. `docs/Forge-Protocol.md` bei jeder Protokolländerung
   4. `python3 tools/gen_api_doc.py`
 - **Nach jeder Aufgabe committen** auf `main` (`git add . && git commit`). Vorher `git status`
   ansehen: nur eigene Änderungen committen, fremde (z. B. vom User gelöschte Dateien) erwähnen.

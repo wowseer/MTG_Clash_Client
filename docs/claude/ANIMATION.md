@@ -93,7 +93,7 @@ Gegnerzüge dürfen etwas langsamer sein als eigene, damit man sie verfolgen kan
 ## Vorlage für eine neue Animation
 
 Bevor du eine Animation baust, fülle diese Vorlage aus (im Commit-Text oder in
-`docs/DOKUMENTATION.md`):
+`docs/DOCUMENTATION.md`):
 
 ```
 Animation: <Name, z. B. „Kreatur stirbt“>

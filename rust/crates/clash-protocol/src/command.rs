@@ -1,5 +1,5 @@
 //! Befehle an die Brücke (eine JSON-Zeile je Befehl, Feld `cmd`). Siehe
-//! `docs/Forge-Schnittstelle.md`, Abschnitt „Befehle“.
+//! `docs/Forge-Protocol.md`, Abschnitt „Befehle“.
 
 use serde_json::{json, Map, Value};
 

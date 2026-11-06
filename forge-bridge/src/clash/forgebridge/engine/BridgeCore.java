@@ -35,14 +35,14 @@ import forge.player.GamePlayerUtil;
 import forge.util.MyRandom;
 
 /**
- * Kern der Brücke zwischen MTG Clash (Godot/Rust) und der Forge-Regel-Engine (intern – Gastgeber
+ * Kern der Brücke zwischen Neo Forge 3D (Godot/Rust) und der Forge-Regel-Engine (intern – Gastgeber
  * und andere Projekte benutzen die Fassade {@link clash.forgebridge.ClashBridge}).
  *
  * <p>Läuft als eigener Prozess ({@link clash.forgebridge.app.BridgeMain}, stdin/stdout) oder eingebettet in einen
  * Gastgeber wie NeoForge ({@link #attach}, lokaler Socket). Protokoll: JSON Lines (UTF-8), eine
  * Nachricht pro Zeile. Im eigenen Prozess werden alle sonstigen Ausgaben von Forge nach stderr
  * umgeleitet, damit stdout sauber bleibt.
- * Das vollständige Protokoll steht in {@code docs/Forge-Schnittstelle.md}.
+ * Das vollständige Protokoll steht in {@code docs/Forge-Protocol.md}.
  *
  * <p>Muss mit dem Forge-Installationsordner als Arbeitsverzeichnis gestartet werden
  * (Forge lädt {@code res/} relativ dazu).
@@ -97,7 +97,7 @@ public final class BridgeCore {
     }
 
     /**
-     * Eingebetteter Betrieb (z. B. in NeoForge): Die Partie startet der Gastgeber selbst; MTG Clash
+     * Eingebetteter Betrieb (z. B. in NeoForge): Die Partie startet der Gastgeber selbst; Neo Forge 3D
      * ist nur der Spieltisch. Nachrichten gehen auf {@code os}, Befehle kommen von {@code is}
      * (typischerweise ein lokaler Socket). Liest in einem eigenen Thread; ist die Verbindung zu,
      * werden offene Anfragen beendet (die Engine entscheidet dann selbst) und {@code onClose}
@@ -325,7 +325,7 @@ public final class BridgeCore {
         if (cmd.has("order_combatants")) {
             rules.setOrderCombatants(cmd.get("order_combatants").getAsBoolean());
         }
-        Match match = new Match(rules, players, "MTG Clash");
+        Match match = new Match(rules, players, "Neo Forge 3D");
         Game game = match.createGame();
         currentGame = game;
         game.subscribeToEvents(new EventForwarder(game));

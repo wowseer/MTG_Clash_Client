@@ -2,7 +2,7 @@
 name = "clash-protocol"
 version = "0.3.0"
 edition = "2024"
-description = "Protokoll-Modell (Decision/Choice) und JSON-Form (Protokoll v3) der Forge-Brücke von MTG Clash – ohne Godot"
+description = "Protokoll-Modell (Decision/Choice) und JSON-Form (Protokoll v3) der Forge-Brücke von Neo Forge 3D – ohne Godot"
 license = "GPL-3.0-or-later"
 
 [dependencies]

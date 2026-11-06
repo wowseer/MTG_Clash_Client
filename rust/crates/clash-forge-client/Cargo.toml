@@ -2,7 +2,7 @@
 name = "clash-forge-client"
 version = "0.3.0"
 edition = "2024"
-description = "Verbindung zur Forge-Brücke von MTG Clash: Java-Prozess starten oder mit einem Gastgeber verbinden, JSON Lines senden und empfangen – ohne Godot"
+description = "Verbindung zur Forge-Brücke von Neo Forge 3D: Java-Prozess starten oder mit einem Gastgeber verbinden, JSON Lines senden und empfangen – ohne Godot"
 license = "GPL-3.0-or-later"
 
 [dependencies]

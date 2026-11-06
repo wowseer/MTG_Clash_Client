@@ -26,7 +26,7 @@ const HOSTED_CLOSE_DELAY: f64 = 4.0;
 
 /// Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) als eigenen
 /// Prozess bzw. verbindet sich mit einem Gastgeber und spricht mit ihr über JSON-Zeilen
-/// (Protokoll: `docs/Forge-Schnittstelle.md`).
+/// (Protokoll: `docs/Forge-Protocol.md`).
 ///
 /// Ablauf: [method start_bridge] → Signal [signal bridge_ready] → [method start_match] →
 /// Signale [signal forge_event] (jedes Spielereignis) und [signal decision_requested]
@@ -153,7 +153,7 @@ impl ForgeBridge {
     /// Ein ferngesteuerter Spieler muss entscheiden (Protokoll v3): `{id, player, decision, prompt,
     /// source, ability, cancelable, labels, state}`; `decision` ist eine `Decision`
     /// (z. B. `{"type": "Priority", "actions": […]}`). Antwort mit [method answer] und einer
-    /// `Choice`. Aufbau siehe `docs/Forge-Schnittstelle.md`.
+    /// `Choice`. Aufbau siehe `docs/Forge-Protocol.md`.
     #[signal]
     fn decision_requested(request: VarDictionary);
 
@@ -269,7 +269,7 @@ impl ForgeBridge {
 
     /// Startet eine Partie. `decks`: Pfade zu Forge-`.dck`-Dateien (`res://` erlaubt) oder
     /// Namen von Decks aus Forges Constructed-Sammlung, einer je Sitzplatz (mind. 2).
-    /// `remote_seats`: Sitzplätze, die MTG Clash steuert (Rest = Forge-KI).
+    /// `remote_seats`: Sitzplätze, die Neo Forge 3D steuert (Rest = Forge-KI).
     /// `names`: Spielernamen (darf kürzer sein). `seed` < 0 = zufällig.
     #[func]
     pub fn start_match(
@@ -299,7 +299,7 @@ impl ForgeBridge {
 
     /// Beantwortet eine Anfrage aus [signal decision_requested]. `choice` ist eine Antwort im
     /// Format des Protokoll-Modells (Protokoll v3), z. B. `{"type": "Action", "action": {"type": "Pass"}}`;
-    /// Aufbau siehe `docs/Forge-Schnittstelle.md`.
+    /// Aufbau siehe `docs/Forge-Protocol.md`.
     #[func]
     pub fn answer(&mut self, request_id: i64, choice: Variant) -> bool {
         self.send_value(&command::answer_json(request_id, json::from_variant(&choice)))

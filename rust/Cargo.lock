@@ -148,16 +148,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "mtg_clash"
-version = "0.1.0"
-dependencies = [
- "clash-forge-client",
- "clash-protocol",
- "godot",
- "serde_json",
-]
-
-[[package]]
 name = "nanoserde"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -171,6 +161,16 @@ name = "nanoserde-derive"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a846cbc04412cf509efcd8f3694b114fc700a035fb5a37f21517f9fb019f1ebc"
+
+[[package]]
+name = "neo_forge_3d"
+version = "0.1.0"
+dependencies = [
+ "clash-forge-client",
+ "clash-protocol",
+ "godot",
+ "serde_json",
+]
 
 [[package]]
 name = "proc-macro2"

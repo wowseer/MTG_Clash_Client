@@ -82,7 +82,7 @@ Import), Mipmaps an, Anisotropie 16×. Ladezeit eines Felds unter 2 s.
   `Tavern`), als Tool-Klasse auch im Editor sichtbar.
 - Gemeinsame Maße (Brettgröße, Zonen-Positionen) aus einer Stelle lesen, nicht kopieren.
 - Exportierte Einstellungen: Thema-Farben, Leuchtstärke, Detailstufe (für schwächere Rechner).
-- Doku: Abschnitt „Kulisse“ in `docs/DOKUMENTATION.md` ergänzen, `///`-Doku an der Klasse,
+- Doku: Abschnitt „Kulisse“ in `docs/DOCUMENTATION.md` ergänzen, `///`-Doku an der Klasse,
   API-Referenz neu erzeugen, committen.
 
 ## Vorlage für ein neues Spielfeld
