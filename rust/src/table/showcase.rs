@@ -627,8 +627,8 @@ impl Showcase {
         self.slider = Some(slider);
     }
 
-    /// Knopf „Schlachtfeld ansehen“ oben rechts: blendet die Bühne samt Abdunkelung aus (der
-    /// Tisch ist dann sichtbar und hoverbar), ein erneuter Druck („Zurück zur Auswahl“) holt sie
+    /// Knopf „Schlachtfeld ansehen“ oben rechts: blendet die Bühne samt Abdunkelung und den
+    /// Karten darauf aus (auch ausgeliehene wie die Starthand; der Tisch ist dann sichtbar und hoverbar), ein erneuter Druck („Zurück zur Auswahl“) holt sie
     /// zurück. Die Entscheidung bleibt dabei offen.
     #[func]
     pub fn enable_peek(&mut self) {
@@ -663,6 +663,16 @@ impl Showcase {
                 });
                 self.peek_saved.push((node.clone(), node.is_visible(), layer));
                 node.set_visible(false);
+            }
+            // ausgeliehene Karten (z. B. die Starthand beim Mulligan) hängen nicht unter der
+            // Bühne, sondern bleiben im Tisch: ebenfalls aus- und später wieder einblenden
+            let borrowed: Vec<Gd<Card3D>> = self.borrowed.iter().map(|(c, _)| c.clone()).filter(|c| c.is_instance_valid()).collect();
+            for mut card in borrowed {
+                let layer = card.get_collision_layer();
+                card.set_collision_layer(0);
+                let visible = card.is_visible();
+                card.set_visible(false);
+                self.peek_saved.push((card.upcast(), visible, Some(layer)));
             }
         } else {
             for (mut node, visible, layer) in self.peek_saved.drain(..) {
