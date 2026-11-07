@@ -2,11 +2,9 @@
 //!
 //! Nachbau des Pfeils aus `Assets/Pfeil/MTG_Pfeil.blend` (Geometry-Nodes-Gruppe „MTG_Pfeil_GN“,
 //! Material „MTG_Pfeil_Mat“):
-//! - **Form:** quadratische Bézier-Kurve in der Tischebene von Start `S` nach Ziel `Z`, seitlich
-//!   gebogen: Kontrollpunkt `(S+Z)/2 + 2·Bogen·|Z−S|·rechts`. Anders als in Blender (fest 0,3) ist
-//!   „Bogen“ **dynamisch**: in Ruhe 0 (gerader Pfeil); bewegt sich ein Ende quer zum Pfeil, bleibt
-//!   die Mitte zurück wie bei einem Seil (Feder mit leichtem Nachschwingen, [`BEND_STIFFNESS`],
-//!   [`BEND_DAMPING`]), höchstens [`MAX_BOGEN`]. Liegen Start und Ziel übereinander (näher als
+//! - **Form:** in der Tischebene gerade von Start `S` nach Ziel `Z` (anders als in Blender ohne
+//!   seitlichen Bogen; der Pfeil biegt und schwingt auch nicht, wenn sich ein Ende bewegt – er
+//!   folgt der Maus ruhig). Liegen Start und Ziel übereinander (näher als
 //!   [`LOOP_DISTANCE`], z. B. Zauber auf dem Stack → Zauber darunter), wird er zum **Bogen**, der
 //!   aus der Quelle aufsteigt und auf dem Ziel landet. Die Enden liegen in der Höhe ihrer Karten.
 //!   Darüber ein flaches
@@ -35,13 +33,6 @@ use godot::prelude::*;
 
 use super::shader_noise::PERLIN_FBM;
 
-/// Größte seitliche Biegung relativ zur Länge (Blender-Eingang „Bogen“ = 0,3).
-const MAX_BOGEN: f32 = 0.3;
-/// Biegung je Querbewegung eines Endes (Pfeillängen pro Sekunde → Bogen).
-const BEND_PER_SPEED: f32 = 0.22;
-/// Feder der Biegung: Steifigkeit (1/s²) und Dämpfung (1/s); leicht unterdämpft = Nachschwingen.
-const BEND_STIFFNESS: f32 = 140.0;
-const BEND_DAMPING: f32 = 15.0;
 /// Blender-Eingang „Breite“ (dort 0,14; hier etwas kräftiger für die weiter entfernte
 /// Tischkamera). Das Band ist 4 × so breit, der sichtbare Kern etwa so breit wie dieser Wert.
 const BREITE: f32 = 0.18;
@@ -148,10 +139,6 @@ pub struct ArrowSpec {
 #[derive(Clone, Copy, Debug)]
 struct ArrowState {
     born: f64,
-    from: Vector3,
-    to: Vector3,
-    bend: f32,
-    bend_velocity: f32,
 }
 
 /// Zeichnet die leuchtenden Pfeile aus `Assets/Pfeil/MTG_Pfeil.blend` auf dem Tisch (Angriff,
@@ -163,11 +150,10 @@ struct ArrowState {
 pub struct TargetArrows {
     mesh: Gd<ImmediateMesh>,
     material: Gd<ShaderMaterial>,
-    /// Zustand je Pfeil-Schlüssel (Erscheinen, letzte Enden, Biegung).
+    /// Zustand je Pfeil-Schlüssel (Zeitpunkt des Erscheinens).
     states: HashMap<u64, ArrowState>,
-    /// Laufende Spielzeit dieses Knotens (Summe der Frame-Zeiten) und Stand beim letzten Aufbau.
+    /// Laufende Spielzeit dieses Knotens (Summe der Frame-Zeiten).
     clock: f64,
-    last_build: f64,
     base: Base<Node3D>,
 }
 
@@ -180,7 +166,7 @@ impl INode3D for TargetArrows {
         material.set_shader(&shader);
         // Über Tisch und flach liegenden Karten zeichnen
         material.set_render_priority(10);
-        Self { mesh: ImmediateMesh::new_gd(), material, states: HashMap::new(), clock: 0.0, last_build: 0.0, base }
+        Self { mesh: ImmediateMesh::new_gd(), material, states: HashMap::new(), clock: 0.0, base }
     }
 
     fn ready(&mut self) {
@@ -228,8 +214,6 @@ impl TargetArrows {
     pub fn set_arrows(&mut self, arrows: &[ArrowSpec]) {
         self.mesh.clear_surfaces();
         let now = self.clock;
-        let dt = ((now - self.last_build) as f32).min(0.1);
-        self.last_build = now;
         self.states.retain(|k, _| arrows.iter().any(|a| a.key == *k));
         let table_y = self.base().get_global_position().y;
         let inv = self.base().get_global_transform().affine_inverse();
@@ -259,25 +243,11 @@ impl TargetArrows {
                 continue;
             }
             let born = if a.grow { now } else { now - GROW_TIME as f64 };
-            let st = self.states.entry(a.key).or_insert(ArrowState { born, from, to, bend: 0.0, bend_velocity: 0.0 });
-            if dt > 1e-4 && arch.is_none() {
-                // Querbewegung der Enden (Pfeillängen/s): die Mitte bleibt zurück
-                let right = (to - from).cross(Vector3::UP).normalized_or_zero();
-                let moved = ((to - st.to) + (from - st.from) * 0.5).dot(right) / length / dt;
-                let target = (-moved * BEND_PER_SPEED).clamp(-MAX_BOGEN, MAX_BOGEN);
-                let accel = BEND_STIFFNESS * (target - st.bend) - BEND_DAMPING * st.bend_velocity;
-                st.bend_velocity += accel * dt;
-                st.bend = (st.bend + st.bend_velocity * dt).clamp(-MAX_BOGEN, MAX_BOGEN);
-            }
-            st.from = from;
-            st.to = to;
+            let st = self.states.entry(a.key).or_insert(ArrowState { born });
             let k = (((now - st.born) as f32) / GROW_TIME).clamp(0.0, 1.0);
             let progress = (k * k * (3.0 - 2.0 * k)).max(0.001);
-            let control = arch.unwrap_or_else(|| {
-                let d = to - from;
-                let right = d.cross(Vector3::UP).normalized_or_zero();
-                (from + to) * 0.5 + right * (d.length() * st.bend * 2.0)
-            });
+            // gerade: Kontrollpunkt in der Mitte (nur der Bogen über dem Stack ist gekrümmt)
+            let control = arch.unwrap_or((from + to) * 0.5);
             ends.push((from, to, a.color, a.alpha, progress, control));
         }
         if ends.is_empty() {

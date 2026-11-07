@@ -50,7 +50,7 @@ Spiel nie auf.
 | Pfeil-Bogen auf dem Stack | wächst wie jeder Pfeil (0,33 s) | weich | Ziel liegt unter der Quelle (näher als `LOOP_DISTANCE`): Bogen steigt aus der vorderen Karte auf (Scheitel 1,6) und landet auf dem sichtbaren Rand der Karte dahinter |
 | Hand-Bühne schieben (`Slider3D`) | Zonen-Tween 0,35 s | Cubic-Out | Karten gleiten dem Regler nach; Fächer 0,7 Abstand, bis ±Überbreite/2 |
 | „Wähle eins“ | Bühne wie Mulligan (0,20 s auf / 0,15 s zu) | Cubic-Out | Kartenkopien gleiten aus der Fächermitte in den Fächer |
-| Pfeil biegen | Feder 140 / Dämpfung 15 | leicht unterdämpft | Querbewegung eines Endes biegt den Pfeil (höchstens 0,3 der Länge), danach schwingt er gerade zurück |
+| Pfeil folgt der Maus | sofort | – | immer gerade, kein Biegen und kein Nachschwingen (Wunsch des Users: der Zielpfeil soll nicht wackeln) |
 | Pfeil Lichtwellen | laufend, 1,5 Einheiten/s | – | fBm-Rauschen entlang des Pfeils zur Spitze hin (Treiber `frame/24`) |
 | Kampfschaden | 0,30 s Stoß + 0,2 s zurück | Expo-Out / Quad-In | Zahl springt aus dem Ziel, Treffer-Blitz |
 | Kreatur stirbt | 0,50 s | Quad-In | entsättigen, zerfallen, dann zum Friedhof |
