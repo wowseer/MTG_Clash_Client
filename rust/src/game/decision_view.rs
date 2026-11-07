@@ -11,6 +11,30 @@ use super::choice_panel::{ChoiceMode, ChoiceOption, HudChoice};
 use crate::game::mana::ManaType;
 use crate::rules::{Choice, Color, Decision, OptionText, Request};
 
+/// Überschrift einer Auswahl nach ihrem Zweck (`purpose`, Erweiterung des Protokolls): nur die
+/// Mechanik, nie Kartennamen oder -texte. `None` = Zweck ohne eigene Überschrift.
+pub fn purpose_title(purpose: &str) -> Option<String> {
+    let t = match purpose {
+        "Vote" => tr!("Abstimmen", "Vote"),
+        "Keyword" => tr!("Schlüsselwort wählen", "Choose a keyword"),
+        "CounterType" => tr!("Markenart wählen", "Choose a counter type"),
+        "Protection" => tr!("Schutz wählen", "Choose protection"),
+        "NumberList" => tr!("Zahl wählen", "Choose a number"),
+        "ReplacementEffect" => tr!("Ersatzeffekt wählen", "Choose a replacement effect"),
+        "StaticAbility" => tr!("Statische Fähigkeit wählen", "Choose a static ability"),
+        "CardFace" => tr!("Seite wählen", "Choose a face"),
+        "Dungeon" => tr!("Wähle einen Dungeon", "Choose a dungeon"),
+        "DungeonRoom" => tr!("Wähle den nächsten Raum", "Choose the next room"),
+        "Piles" => tr!("Stapel wählen", "Choose a pile"),
+        "Dice" => tr!("Würfel", "Dice"),
+        "Retarget" => tr!("Neues Ziel wählen", "Choose a new target"),
+        "ManaPool" => tr!("Mana aus dem Pool", "Mana from your pool"),
+        "OpeningHand" => tr!("Aus der Starthand", "From your opening hand"),
+        _ => return None,
+    };
+    Some(t.to_string())
+}
+
 /// Auswahlfenster für die Anfrage, oder `None`, wenn sie nicht im Fenster beantwortet wird.
 pub fn hud_choice(req: &Request) -> Option<HudChoice> {
     let plain = |texts: Vec<String>| -> Vec<ChoiceOption> {
@@ -46,15 +70,22 @@ pub fn hud_choice(req: &Request) -> Option<HudChoice> {
             ChoiceMode::Confirm,
             plain(vec![tr!("2 Leben zahlen", "Pay 2 life").into(), tr!("Mit Mana zahlen", "Pay with mana").into()]),
         ),
-        Decision::OptionalTrigger { description, .. } => (
-            trf!("Ausgelöste Fähigkeit nutzen?\n{description}", "Use the triggered ability?\n{description}"),
+        // nur die Mechanik; der Text der Fähigkeit steht auf der Karte
+        Decision::OptionalTrigger { .. } => (
+            tr!("Ausgelöste Fähigkeit nutzen?", "Use the triggered ability?").into(),
             ChoiceMode::Confirm,
             yes_no(),
         ),
-        Decision::ChooseOption { prompt, options, .. } => (prompt.clone(), ChoiceMode::Single, ext_options(options)),
-        Decision::ChooseOptions { prompt, options, min, max, .. } => {
-            (prompt.clone(), single_or_multi(*min, *max), ext_options(options))
-        }
+        Decision::ChooseOption { purpose, options, .. } => (
+            purpose_title(purpose).unwrap_or_else(|| tr!("Wähle eins", "Choose one").into()),
+            ChoiceMode::Single,
+            ext_options(options),
+        ),
+        Decision::ChooseOptions { purpose, options, min, max, .. } => (
+            purpose_title(purpose).unwrap_or_else(|| if min == max { trf!("Wähle {max}", "Choose {max}") } else { trf!("Wähle {min}–{max}", "Choose {min}–{max}") }),
+            single_or_multi(*min, *max),
+            ext_options(options),
+        ),
         // Verteilen: Knöpfe an den Zielen auf dem Tisch (ForgeTable::show_divide), kein Fenster
         Decision::AssignCombatDamage { .. } | Decision::DivideAmount { .. } => return None,
         Decision::OrderTriggers { descriptions, .. } => (
@@ -62,18 +93,15 @@ pub fn hud_choice(req: &Request) -> Option<HudChoice> {
             ChoiceMode::Multi { min: descriptions.len(), max: descriptions.len() },
             plain(descriptions.clone()),
         ),
-        Decision::ChooseNumber { prompt, min, max, .. } => {
-            (prompt.clone(), ChoiceMode::Number { min: *min as i64, max: *max as i64 }, vec![])
+        Decision::ChooseNumber { min, max, .. } => {
+            (tr!("Zahl wählen", "Choose a number").into(), ChoiceMode::Number { min: *min as i64, max: *max as i64 }, vec![])
         }
         // Auf dem Tisch beantwortet bzw. (noch) nicht von der Java-Engine gestellt
         _ => return None,
     };
-    // Der Fragetext der Engine hat Vorrang; bei OptionalTrigger steht der Text schon im Titel,
-    // bei phyrexianischem Mana ist der eigene kurze Titel klarer (passt in eine Zeile)
-    let title = match (&req.decision, req.prompt.is_empty()) {
-        (Decision::OptionalTrigger { .. } | Decision::PayLifeForPhyrexian { .. }, _) | (_, true) => default_title,
-        _ => req.prompt.clone(),
-    };
+    // Überschrift = nur die Mechanik (eigener Text der UI); Fragetexte der Engine enthalten oft
+    // Kartennamen und -texte. Nur Ja/Nein-Fragen (`Confirm`) behalten die Frage der Engine.
+    let title = default_title;
     let detail = match (req.source_name.is_empty(), req.ability.is_empty() || req.ability == req.source_name) {
         (true, true) => String::new(),
         (false, true) => req.source_name.clone(),

@@ -745,8 +745,9 @@ impl ForgeTable {
         Some(entries)
     }
 
-    /// Hinweis über dem Farbrad: „(Quelle) Wähle eine Farbe.“ bzw. „… einen Grundland-Typ.“
-    fn wheel_prompt(req: &Request, decision: &Decision) -> String {
+    /// Hinweis über dem Farbrad: „Wähle eine Farbe.“ bzw. „Wähle einen Grundland-Typ.“ (nur die
+    /// Mechanik, ohne Kartennamen).
+    fn wheel_prompt(decision: &Decision) -> String {
         let what = match decision {
             Decision::ChooseType { .. } => tr!("Wähle einen Grundland-Typ.", "Choose a basic land type.").to_string(),
             Decision::ChooseOption { purpose, .. } if purpose == "ManaPool" => {
@@ -759,7 +760,7 @@ impl ForgeTable {
             Decision::ChooseOptions { min, max, .. } => trf!("Wähle {min}–{max} Farben.", "Choose {min}–{max} colors."),
             _ => tr!("Wähle eine Farbe.", "Choose a color.").to_string(),
         };
-        if req.source_name.is_empty() { what.to_string() } else { format!("({}) {what}", req.source_name) }
+        what.to_string()
     }
 
     /// Farbrad öffnen, mit dem Bild der Karte `source` in der Radmitte: bei einer Frage der Engine
@@ -1485,7 +1486,7 @@ impl ForgeTable {
                 return;
             }
             if let Some(entries) = Self::wheel_entries(&req.decision) {
-                let prompt = Self::wheel_prompt(&req, &req.decision);
+                let prompt = Self::wheel_prompt(&req.decision);
                 self.open_wheel(entries, req.source, &prompt, false);
                 if let Decision::ChooseOptions { min, max, .. } = req.decision {
                     self.start_wheel_multi(min, max);
@@ -1777,7 +1778,8 @@ impl ForgeTable {
         self.refresh_search();
     }
 
-    /// Überschrift der Suche: „(Quelle) Wähle einen Kreaturtyp.“ bzw. „… Nenne einen Kartennamen.“
+    /// Überschrift der Suche: „Wähle einen Kreaturtyp.“ bzw. „Nenne einen Kartennamen.“ (nur die
+    /// Mechanik, ohne Kartennamen).
     fn search_title(req: &Request) -> String {
         let what = match &req.decision {
             Decision::NameCard { .. } => tr!("Nenne einen Kartennamen.", "Name a card.").to_string(),
@@ -1795,7 +1797,7 @@ impl ForgeTable {
             .to_string(),
             _ => String::new(),
         };
-        if req.source_name.is_empty() { what } else { format!("({}) {what}", req.source_name) }
+        what
     }
 
     /// Treffer zur Eingabe: zuerst Namen, die mit ihr beginnen, dann solche, die sie enthalten
@@ -3127,14 +3129,7 @@ impl ForgeTable {
     /// groß. Bei mehr als sieben Möglichkeiten zwei Spalten. „Abbrechen“ darunter, wo erlaubt.
     fn show_option_buttons(&mut self, req: &Request) {
         let Decision::ChooseOption { options, purpose, prompt, .. } = &req.decision else { return };
-        let title = match purpose.as_str() {
-            "CounterType" => tr!("Marke wählen", "Choose a counter").to_string(),
-            "Keyword" => tr!("Fähigkeit wählen", "Choose an ability").to_string(),
-            "Protection" => tr!("Schutz wählen", "Choose protection").to_string(),
-            "NumberList" => tr!("Zahl wählen", "Choose a number").to_string(),
-            "Vote" => tr!("Abstimmen", "Vote").to_string(),
-            _ => tr!("Wähle eins", "Choose one").to_string(),
-        };
+        let title = decision_view::purpose_title(purpose).unwrap_or_else(|| tr!("Wähle eins", "Choose one").to_string());
         let subtitle = if prompt.is_empty() { req.source_name.clone() } else { prompt.clone() };
         let data = self.source_data(req);
         let Some(mut showcase) = self.open_stage(&title, &subtitle) else { return };
@@ -3418,7 +3413,7 @@ impl ForgeTable {
             }
         }
         let title = match (min, max) {
-            (_, 0) => if req.prompt.is_empty() { tr!("Aufgedeckt", "Revealed").to_string() } else { req.prompt.clone() },
+            (_, 0) => tr!("Aufgedeckte Karten", "Revealed cards").to_string(),
             (0, 1) => tr!("Wähle bis zu einer Karte", "Choose up to one").to_string(),
             (1, 1) => tr!("Wähle eine Karte", "Choose one card").to_string(),
             (a, b) if a == b => trf!("Wähle {b} Karten", "Choose {b} cards"),
@@ -3515,23 +3510,16 @@ impl ForgeTable {
     /// „Abbrechen“ (wo erlaubt). „−“/„+“ sind nur aktiv, wo sich der Wert ändern kann; der Start
     /// ist der kleinste erlaubte Wert. Liegt die Karte auf dem Stack (sie wird gerade gewirkt),
     /// steht die Bühne dort ohne Abdunkeln; sonst vor der Kamera wie „Kicker“ (Tisch abgedunkelt).
-    /// Titel: „Wähle einen Wert für X.“ bzw. der Fragetext der Engine. Kein Fenster.
+    /// Titel: „Wähle einen Wert für X.“ bzw. „Wähle eine Zahl von … bis ….“. Kein Fenster.
     fn show_choose_x(&mut self, req: &Request) {
         let Some((min, max, is_x)) = Self::number_range(&req.decision) else { return };
         self.x_value = min;
         let data = self.source_data(req);
-        // eigener Fragetext der Karte (z. B. „How much life?“) bleibt, das allgemeine „Choose a
-        // number“ der Engine wird übersetzt und nennt den Bereich
-        let prompt = match &req.decision {
-            Decision::ChooseNumber { prompt, .. } if !prompt.is_empty() => prompt.clone(),
-            _ => req.prompt.clone(),
-        };
+        // nur die Mechanik (die Frage der Karte steht auf ihr), mit dem erlaubten Bereich
         let title = if is_x {
             tr!("Wähle einen Wert für X.", "Select a value for X.").to_string()
-        } else if prompt.is_empty() || prompt.to_lowercase().contains("choose a number") {
-            trf!("Wähle eine Zahl von {min} bis {max}.", "Choose a number from {min} to {max}.")
         } else {
-            prompt
+            trf!("Wähle eine Zahl von {min} bis {max}.", "Choose a number from {min} to {max}.")
         };
         let Some(mut showcase) = self.open_stage(&title, "") else { return };
         let source = req.source.and_then(|id| self.cards.get(&i64::from(id)).cloned());

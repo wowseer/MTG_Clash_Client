@@ -104,6 +104,8 @@ the card view (see below). Tapped cards (lands too) are grey and stand slightly 
 they are used. Size `Zone.card_scale` (battlefield 2.7, lands 2.4); if a row is too full, the
 cards automatically shrink (down to 45 %), then they move closer together.
 
+**Stage headings** name only the mechanic ("Vote", "Choose a keyword", "Revealed cards", "Name a card.", "Choose a creature type.", "Use the triggered ability?" …), never card names or rules texts; they come from the decision's `purpose` (`decision_view::purpose_title`). Card names appear only as the heading above the card at the stack.
+
 ### Scenery and screen display
 
 The look is inspired by digital trading card games (game board from above, medallions with life

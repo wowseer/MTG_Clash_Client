@@ -982,7 +982,7 @@ public class RemotePlayerController extends PlayerControllerAi {
             Card host = p.getLeft().getSourceCard();
             opts.add(new Decisions.Opt((host == null ? "?" : host.getName()) + " → " + targetLabel(p.getRight()), null));
         }
-        Integer i = Decisions.option(getGame(), seat, "Ziel wählen, das geändert wird", sa, null, opts, false);
+        Integer i = Decisions.option(getGame(), seat, "Ziel wählen, das geändert wird", sa, null, opts, false, "Retarget");
         return i != null ? allTargets.get(i) : super.chooseTarget(sa, allTargets);
     }
 
@@ -1081,7 +1081,7 @@ public class RemotePlayerController extends PlayerControllerAi {
         List<Decisions.Opt> opts = new ArrayList<>();
         rolls.forEach(r -> opts.add(new Decisions.Opt("Wurf " + r.getModifiedValue()
                 + (r.getModifiedValue() != r.getNaturalValue() ? " (gewürfelt " + r.getNaturalValue() + ")" : ""), null)));
-        Integer i = Decisions.option(getGame(), seat, "Würfelwurf zum Tauschen wählen", null, null, opts, false);
+        Integer i = Decisions.option(getGame(), seat, "Würfelwurf zum Tauschen wählen", null, null, opts, false, "Dice");
         return i != null ? rolls.get(i) : super.chooseRollToSwap(rolls);
     }
 
@@ -1094,7 +1094,7 @@ public class RemotePlayerController extends PlayerControllerAi {
         List<Decisions.Opt> opts = new ArrayList<>();
         swapChoices.forEach(c -> opts.add(new Decisions.Opt(c, null)));
         Integer i = Decisions.option(getGame(), seat, "Wurf " + currentResult + " tauschen mit (Stärke " + power
-                + ", Widerstand " + toughness + ")", null, null, opts, false);
+                + ", Widerstand " + toughness + ")", null, null, opts, false, "Dice");
         return i != null ? swapChoices.get(i) : super.chooseRollSwapValue(swapChoices, currentResult, power, toughness);
     }
 
@@ -1933,21 +1933,21 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public Integer chooseRollToIgnore(List<Integer> rolls) {
         Integer r = pick(rolls, Decisions.option(g(), seat, "Welchen Wurf ignorieren?", null, null,
-                Decisions.opts(rolls), false));
+                Decisions.opts(rolls), false, "Dice"));
         return r != null ? r : super.chooseRollToIgnore(rolls);
     }
 
     @Override
     public Integer chooseRollToModify(List<Integer> rolls) {
         Integer r = pick(rolls, Decisions.option(g(), seat, "Welchen Wurf verändern?", null, null,
-                Decisions.opts(rolls), true));
+                Decisions.opts(rolls), true, "Dice"));
         return r;
     }
 
     @Override
     public List<Integer> chooseDiceToReroll(List<Integer> rolls) {
         List<Integer> chosen = Decisions.options(g(), seat, "Welche Würfel neu werfen?", null, null,
-                Decisions.opts(rolls), 0, rolls.size(), false);
+                Decisions.opts(rolls), 0, rolls.size(), false, "Dice");
         if (chosen == null) {
             return super.chooseDiceToReroll(rolls);
         }
