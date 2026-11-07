@@ -2726,7 +2726,8 @@ impl ForgeTable {
     /// Ein Modus: Klick wählt sofort. Mehrere: Klick wählt (orange) bzw. hebt auf, „Fertig“;
     /// wiederholbare Modi zählen je Klick hoch („×2“), „Zurücksetzen“ leert die Wahl.
     /// Modi mit eigenen Zusatzkosten (Spree CR 702.172, Tiered; Video „Spree und Stack“): Titel =
-    /// Schlüsselwort, darunter „Wähle eine oder mehrere Zusatzkosten.“, über jeder Kopie „+ {Kosten}“,
+    /// Schlüsselwort, darunter „Wähle eine oder mehrere Zusatzkosten.“, über jeder Kopie die Kosten „{Kosten}“
+    /// (Reihe um [`MODE_COST_ROW_DROP`] tiefer),
     /// orange „Bezahlen {Grundkosten + gewählte}“ (erst bei gültiger Wahl aktiv) und „Abbrechen“.
     fn show_modes(&mut self, req: &Request) {
         let Decision::ChooseModes { modes, min, max, can_repeat, costs, keyword, .. } = &req.decision else { return };
@@ -2756,9 +2757,9 @@ impl ForgeTable {
         for (n, (index, text)) in modes.iter().enumerate() {
             let mut copy = Self::stage_card(&data, Some(text));
             copy.bind_mut().set_ready_color(Some(PLAYABLE_GLOW));
-            // Modus-Kosten über der Kopie („+ {3}“), sonst „Modus n“
+            // Modus-Kosten über der Kopie („{3}“), sonst „Modus n“
             let caption = match costs.get(n).filter(|c| with_costs && !c.is_empty()) {
-                Some(c) => format!("+ {c}"),
+                Some(c) => c.clone(),
                 None => trf!("Modus {}", "Mode {}", n + 1),
             };
             cards.push((copy.clone(), caption));
@@ -2769,6 +2770,8 @@ impl ForgeTable {
         showcase.bind_mut().show_options(cards);
         showcase.bind_mut().enable_scroll();
         if with_costs {
+            // Kosten über den Karten nicht direkt unter dem Untertitel: Reihe etwas tiefer
+            showcase.bind_mut().shift_fan(Vector3::new(0.0, -MODE_COST_ROW_DROP, 0.0));
             // wie im Video „Spree und Stack“: orange „Bezahlen {Gesamtkosten}“, daneben „Abbrechen“
             let mut pay = Button3D::create(ButtonStyle::Orange, &self.mode_pay_label(), Showcase::button_width() * 1.2);
             pay.bind_mut().set_enabled(min == 0);
@@ -2931,10 +2934,7 @@ impl ForgeTable {
         showcase.bind_mut().add_prop_card(copy, Transform3D::new(face_up.scaled(Vector3::splat(STACK_STAGE_SCALE)), local));
         showcase.bind_mut().hide_while_open(original);
         // die Auswahl rückt nach links, damit die Karte am Stack frei steht
-        if let Some(mut fan) = showcase.bind().fan_zone() {
-            let p = fan.get_position();
-            fan.set_position(p + Vector3::new(-STACK_STAGE_ROW_SHIFT, 0.0, 0.0));
-        }
+        showcase.bind_mut().shift_fan(Vector3::new(-STACK_STAGE_ROW_SHIFT, 0.0, 0.0));
     }
 
     /// Eine (bzw. bei `ChooseOptions` mehrere) von Möglichkeiten, die je zu einer Karte gehören,
@@ -5762,6 +5762,9 @@ const CARD_OPTION_RADIUS: f32 = 60.0;
 const STACK_STAGE_SCALE: f32 = 1.1;
 /// So weit (Bühnen-Einheiten) rückt die Auswahlreihe nach links, wenn der Zauber am Stack steht.
 const STACK_STAGE_ROW_SHIFT: f32 = 0.5;
+/// Modus-Bühne mit Zusatzkosten (Spree): so weit (Bühnen-Einheiten) liegt die Kartenreihe tiefer,
+/// damit die Kosten über den Karten Abstand zum Untertitel haben.
+const MODE_COST_ROW_DROP: f32 = 0.2;
 const X_STAGE_LOCAL: Vector3 = Vector3::new(-0.45, 0.2, 0.4);
 const X_STAGE_SCALE: f32 = 2.8;
 const X_STAGE_LIFT: f32 = 2.0;

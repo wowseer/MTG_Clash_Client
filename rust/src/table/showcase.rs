@@ -127,6 +127,8 @@ pub struct Showcase {
     /// Schiebbarer Fächer: Überbreite (Welteinheiten) und Regler.
     scroll_extra: f32,
     slider: Option<Gd<Slider3D>>,
+    /// Mitte des Hauptfächers (lokal; [method shift_fan] verschiebt sie).
+    fan_center: Vector3,
     /// Fokus-Anordnung: Karte groß, Knöpfe untereinander darunter statt in einer Reihe.
     focus: bool,
     /// Größe und Mitte der großen Karte in der Fokus-Anordnung.
@@ -179,6 +181,7 @@ impl INode3D for Showcase {
             buttons: Vec::new(),
             scroll_extra: 0.0,
             slider: None,
+            fan_center: FAN_CENTER,
             focus: false,
             focus_scale: FOCUS_SCALE,
             focus_center: FOCUS_CENTER,
@@ -590,7 +593,7 @@ impl Showcase {
         }
         let offset = (0.5 - value) * self.scroll_extra;
         let mut xf = zone.get_transform();
-        xf.origin = FAN_CENTER + Vector3::new(offset, 0.0, 0.0);
+        xf.origin = self.fan_center + Vector3::new(offset, 0.0, 0.0);
         zone.set_transform(xf);
         zone.bind_mut().layout();
     }
@@ -786,6 +789,18 @@ impl Showcase {
         l.set_position(Vector3::new(pos.x, pos.y, 0.05));
         self.base_mut().add_child(&l);
         self.decor.push(l.upcast());
+    }
+
+    /// Hauptfächer samt Beschriftungen um `delta` (Bühnen-Einheiten) verschieben, z. B. tiefer
+    /// oder nach links neben eine Karte am Stack; Schieben mit dem Regler behält das bei.
+    #[func]
+    pub fn shift_fan(&mut self, delta: Vector3) {
+        self.fan_center += delta;
+        if let Some(mut zone) = self.zone.clone() {
+            let p = zone.get_position();
+            zone.set_position(p + delta);
+            zone.bind_mut().layout();
+        }
     }
 
     /// Der Hauptfächer der Bühne.
