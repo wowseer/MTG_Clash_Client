@@ -3044,7 +3044,7 @@ impl ForgeTable {
 
     /// Ja/Nein-Fragen und Entweder-oder (optionale Fähigkeit, „… es sei denn, du zahlst“,
     /// phyrexianisches Mana, zwei Optionen): zwei Knöpfe untereinander – oben orange (erste
-    /// Antwort, z. B. „Ja“), darunter blau; die Quellkarte groß darüber.
+    /// Antwort, z. B. „Ja“), darunter blau; die Quellkarte groß darüber, ohne Fähigkeitstext daneben.
     fn show_binary(&mut self, req: &Request) {
         let Some(hud) = decision_view::hud_choice(req) else { return };
         if hud.options.len() < 2 {
@@ -3052,7 +3052,9 @@ impl ForgeTable {
         }
         let confirm_like = !matches!(req.decision, Decision::ChooseOption { .. });
         let data = self.source_data(req);
-        let Some(mut showcase) = self.open_stage(&hud.title, &hud.detail) else { return };
+        // ohne Fähigkeitstext neben der Karte: er steht schon auf der Karte (und hinge sonst
+        // über der Karte am Stack)
+        let Some(mut showcase) = self.open_stage(&hud.title, "") else { return };
         if let Some(data) = data {
             showcase.bind_mut().show_options(vec![(Self::stage_card(&data, None), String::new())]);
         }
