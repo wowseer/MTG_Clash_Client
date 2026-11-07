@@ -791,6 +791,14 @@ impl Showcase {
         self.decor.push(l.upcast());
     }
 
+    /// Nur den Untertitel ersetzen (Titel und Hinweis bleiben), z. B. den Kartennamen als
+    /// Überschrift über der Karte am Stack.
+    #[func]
+    pub fn set_subtitle(&mut self, subtitle: GString) {
+        let (t, _, n) = self.texts.clone();
+        self.set_texts(t, subtitle, n);
+    }
+
     /// Hauptfächer samt Beschriftungen um `delta` (Bühnen-Einheiten) verschieben, z. B. tiefer
     /// oder nach links neben eine Karte am Stack; Schieben mit dem Regler behält das bei.
     #[func]

@@ -2894,13 +2894,15 @@ impl ForgeTable {
     }
 
     /// Fokus-Bühne zu einer Karte, die am Stack liegt (z. B. der gerade gewirkte Zauber bei
-    /// Kicker/Casualty): der Untertitel (Kartenname bzw. Einzelheiten) steht als Überschrift
-    /// über dieser Stack-Karte statt neben der großen Karte, wo er auf dem Stack läge
-    /// ([method Showcase.set_title_card]).
+    /// Kicker/Casualty): über dieser Stack-Karte steht ihr Kartenname als Überschrift (nicht die
+    /// Mechanik – die steht im Titel und auf den Knöpfen), statt neben der großen Karte, wo er auf
+    /// dem Stack läge ([method Showcase.set_title_card]).
     fn title_over_stack_card(&self, showcase: &mut Gd<Showcase>, req: &Request) {
         let Some(card) = req.source.and_then(|id| self.cards.get(&i64::from(id)).cloned()) else { return };
         let on_stack = self.stack_zone.as_ref().is_some_and(|z| card.bind().get_zone().as_ref() == Some(z));
         if on_stack && card.is_visible_in_tree() {
+            let name = card.bind().card_name();
+            showcase.bind_mut().set_subtitle(name);
             showcase.bind_mut().set_title_card(card);
         }
     }

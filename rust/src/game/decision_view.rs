@@ -42,7 +42,7 @@ pub fn hud_choice(req: &Request) -> Option<HudChoice> {
             plain(vec![tr!("Zahlen", "Pay").into(), tr!("Nicht zahlen", "Don't pay").into()]),
         ),
         Decision::PayLifeForPhyrexian { symbol, .. } => (
-            trf!("Phyrexianisches Mana ({symbol}): mit 2 Leben bezahlen?", "Phyrexian mana ({symbol}): pay 2 life?"),
+            trf!("{symbol} mit 2 Leben bezahlen?", "Pay {symbol} with 2 life?"),
             ChoiceMode::Confirm,
             plain(vec![tr!("2 Leben zahlen", "Pay 2 life").into(), tr!("Mit Mana zahlen", "Pay with mana").into()]),
         ),
@@ -68,9 +68,10 @@ pub fn hud_choice(req: &Request) -> Option<HudChoice> {
         // Auf dem Tisch beantwortet bzw. (noch) nicht von der Java-Engine gestellt
         _ => return None,
     };
-    // Der Fragetext der Engine hat Vorrang; bei OptionalTrigger steht der Text schon im Titel
+    // Der Fragetext der Engine hat Vorrang; bei OptionalTrigger steht der Text schon im Titel,
+    // bei phyrexianischem Mana ist der eigene kurze Titel klarer (passt in eine Zeile)
     let title = match (&req.decision, req.prompt.is_empty()) {
-        (Decision::OptionalTrigger { .. }, _) | (_, true) => default_title,
+        (Decision::OptionalTrigger { .. } | Decision::PayLifeForPhyrexian { .. }, _) | (_, true) => default_title,
         _ => req.prompt.clone(),
     };
     let detail = match (req.source_name.is_empty(), req.ability.is_empty() || req.ability == req.source_name) {
