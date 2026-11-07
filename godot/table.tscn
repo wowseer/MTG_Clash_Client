@@ -104,7 +104,7 @@ transform = Transform3D(2.8, 0, 0, 0, 2.705, -0.725, 0, 0.725, 2.705, 1.0, 0.6, 
 zoom_cards = true
 
 [node name="HeroAnchor" type="Marker3D" parent="Player"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.64, 0.92, 3.55)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0, 0.6, 4.5)
 
 [node name="ManaAnchor" type="Marker3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.95, 0, 3.75)

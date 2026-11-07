@@ -392,16 +392,17 @@ Ein Sitzplatz am Tisch (Mensch oder KI) mit seinen Zonen, Lebenspunkten und dem 
 
 *Erbt von `Control` · Quelle: `rust/src/game/seat_badge.rs`*
 
-Rautenförmiges Spieler-Medaillon (HUD): Wappen in der Seitenfarbe `accent`, darunter ein roter Edelstein mit den Lebenspunkten `life`. Ist `active` gesetzt (Spieler am Zug), pulsiert ein Schein um die Raute; Lebensänderungen blitzen kurz rot (Schaden) bzw. grün (Heilung). Wird vom `TurnHud` jedes Frame über `set_state()` aktualisiert.
+Rundes Helden-Medaillon (HUD): Figur in der Seitenfarbe `accent` (oder `portrait`) im Metallrahmen, darunter eine Plakette mit den Lebenspunkten `life`. Ist `active` gesetzt (Spieler am Zug), dreht sich ein goldener Strahlenkranz dahinter; Lebensänderungen blitzen kurz rot (Schaden) bzw. grün (Heilung). Wird vom `TurnHud` jedes Frame über `set_state()` aktualisiert und mit der Unterkante (Spieler) bzw. Oberkante (Gegner) an den Anker `HeroAnchor` des Sitzplatzes gesetzt.
 
 ### Eigenschaften
 
 | Name | Typ | Beschreibung |
 |---|---|---|
-| `seat_name` | `String` | Name der Seite; sein Anfangsbuchstabe steht im Wappen. |
+| `seat_name` | `String` | Name der Seite (für Lebensänderungen: erst ab dem ersten Zustand blitzt die Plakette). |
 | `life` | `int` | Angezeigte Lebenspunkte. |
-| `active` | `bool` | Ist diese Seite am Zug? (pulsierender Schein) |
-| `accent` | `Color` | Farbe des Wappens (Seitenfarbe, z. B. blau für den Spieler, rot für den Gegner). |
+| `active` | `bool` | Ist diese Seite am Zug? (goldener Strahlenkranz) |
+| `accent` | `Color` | Farbe der Figur (Seitenfarbe, z. B. blau für den Spieler, rot für den Gegner). |
+| `portrait` | `Texture2D` | Eigenes Porträt (rund zugeschnitten) statt der gezeichneten Figur; leer = Figur. |
 | `targetable` | `bool` | Ist dieser Spieler gerade ein gültiges Ziel? Dann pulsiert ein goldener Ring und ein Klick löst [signal clicked] aus (sonst lässt das Medaillon Mausklicks durch). |
 | `target_selected` | `bool` | Ist dieser Spieler als Ziel gewählt? (heller, ruhiger Ring) |
 
@@ -411,7 +412,7 @@ Rautenförmiges Spieler-Medaillon (HUD): Wappen in der Seitenfarbe `accent`, dar
 |---|---|---|
 | `is_targetable()` | `bool` | Getter für `targetable`. |
 | `set_targetable(value: bool)` | `void` | Setter für `targetable`: nur ein wählbares Medaillon fängt Mausklicks ab. |
-| `set_state(seat_name: String, life: int, active: bool)` | `void` | Setzt Name, Lebenspunkte und „am Zug“ auf einmal. Weicht `life` vom bisherigen Wert ab, blitzt der Edelstein kurz auf (rot bei Schaden, grün bei Heilung). |
+| `set_state(seat_name: String, life: int, active: bool)` | `void` | Setzt Name, Lebenspunkte und „am Zug“ auf einmal. Weicht `life` vom bisherigen Wert ab, blitzt die Plakette kurz auf (rot bei Schaden, grün bei Heilung). |
 
 ### Signale
 

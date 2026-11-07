@@ -3915,12 +3915,12 @@ impl ForgeTable {
                 *t = (*t + dt).min(SEAT_TOKEN_POP);
                 let at = if crate::table::cost_symbols::is_seat_designation(kind) {
                     d += 1;
-                    center + Vector2::new((122.0 + (d - 1) as f32 * 88.0) * px, -4.0 * px)
+                    center + Vector2::new((150.0 + (d - 1) as f32 * 88.0) * px, -4.0 * px)
                 } else {
                     m += 1;
                     let (col, row) = ((m - 1) % 3, (m - 1) / 3);
                     let y0 = if designations > 0 { 78.0 } else { 0.0 };
-                    center + Vector2::new((136.0 + col as f32 * 104.0) * px, (y0 + row as f32 * 54.0) * px)
+                    center + Vector2::new((164.0 + col as f32 * 104.0) * px, (y0 + row as f32 * 54.0) * px)
                 };
                 let origin = cam.project_ray_origin(at);
                 let dir = cam.project_ray_normal(at);
