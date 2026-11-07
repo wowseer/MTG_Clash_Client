@@ -551,7 +551,8 @@ impl ForgeTable {
 
     /// Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand
     /// ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die
-    /// Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört.
+    /// Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört. Bei
+    /// einer offenen Bühne (z. B. Kicker) wirkt Escape wie ihr „Abbrechen“, wo erlaubt.
     #[func]
     pub fn cancel_cast(&mut self) {
         if self.viewer_open {
@@ -563,7 +564,11 @@ impl ForgeTable {
             return;
         }
         if self.stage_covers() {
-            return; // die Bühne hat ihre eigenen Knöpfe
+            // Bühne: Escape wirkt wie ihr „Abbrechen“, wo die Frage abgebrochen werden darf
+            if self.pending.as_ref().is_some_and(|r| r.cancelable) {
+                self.answer(Choice::Cancel);
+            }
+            return;
         }
         if let Some(c) = self.cast_cancel() {
             self.answer(c);

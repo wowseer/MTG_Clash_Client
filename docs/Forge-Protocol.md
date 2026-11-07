@@ -96,6 +96,7 @@ NeoForge). The Java bridge translates Forge's `PlayerController` calls into `Dec
 | `chooseSingleReplacementEffect` (CR 616.1) | `ChooseOption { options: [{text, card}], purpose: "ReplacementEffect" }`: per replacement effect its text and the card ID of its source, whose data is in the envelope's `cards` | `Number(index)` |
 | `chooseOptionalCosts`, `chooseColors` (several), `chooseDiceToReroll` | `ChooseOptions` (**extension**) | `Modes([…])` |
 | `addKeywordCost` (keyword additional costs when casting, CR 601.2b: Casualty, Conspire, Offspring, tapping for Harmonize) | `ChooseOptions { options: ["Casualty"] (keyword without number; pure mana costs with amount, e.g. "Offspring {2}"), min: 0, max: 1, purpose: "OptionalCost" }` (like kicker; without the override Forge asked via `chooseNumberForKeywordCost` with maximum 1) | `Modes([0])` = pay, `Modes([])` = normal |
+| `Cancel` on `OptionalCost` (cancelable while casting through the human flow) | `chooseOptionalCosts` (kicker …, asked before the spell goes onto the stack): the cast ends at once (nothing has changed). `addKeywordCost` (casualty, offspring …, asked while casting): the bridge refuses the next target choice or cost payment, so Forge rolls the cast back completely. Either way `rejected` follows and the player gets priority again |
 | `chooseNumber`, `chooseNumberForCostReduction`, `chooseNumberForKeywordCost` (Multikicker, Replicate, Squad, "pay any amount of mana"), announced values ≠ X | `ChooseNumber` (**extension**) | `Number(n)` |
 | `declareAttackers` | `DeclareAttackers { candidates, defenders }` | `Attackers([[card, target], …])`; empty = no attack |
 | `declareBlockers` | `DeclareBlockers { candidates, attackers }` | `Blocks([[blocker, attacker], …])`; empty = no blocks |
@@ -405,7 +406,7 @@ HUD). The `ForgeTable` node (`rust/src/forge/table.rs`) translates:
 | `ChooseCards`, all options in the player's own hand (discard, `DiscardToHandSize`, costs …) | hand stage like `MulliganBottom` (`ForgeTable.show_hand_pick`): click cards, "Done" (active once the number is valid) → `Cards`, "Cancel" → `Cancel` (only if `cancelable`) |
 | `ChooseModes` | 3D stage: one card copy per mode with only that mode as rules text → `Modes` |
 | `Confirm`, `OptionalTrigger`, `PayUnlessCost`, `PayLifeForPhyrexian`, `ChooseOption` with 2 options | 3D stage: source card large, two buttons stacked (orange = first answer, blue = second) → `Yes`/`No` or `Number` |
-| `ChooseOptions` with `purpose` `OptionalCost` | 3D stage: card large, orange "Kicker – {R}" → `Modes([0])`, grey "Normal" → `Modes([])` |
+| `ChooseOptions` with `purpose` `OptionalCost` | 3D stage: card large, orange "Kicker – {R}" → `Modes([0])`, grey "Normal" → `Modes([])`, blue "Cancel" (or Escape) → `Cancel` |
 | `Scry` | 3D stage: box with "BOTTOM"/"GRAVEYARD" and "TOP", drag cards → `Arrange { top, bottom }` (rightmost card on top) |
 | `ChooseCards` (not hand, not table) | 3D stage with a card fan and a slider; click → `Cards([id])` for one card, otherwise selection + "Done"; "Decline" → `Cards([])` |
 | `OrderTriggers` | 3D stage "Set order": one card per entry (copy of the source from `sources`, text = description), a click assigns 1, 2, …, clicking again takes it back; "Done" → `Order` |

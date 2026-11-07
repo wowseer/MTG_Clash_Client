@@ -125,7 +125,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 |---|---|---|
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
 | `pass_priority()` | `void` | Phasen-Knopf / Leertaste: beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. Im Kampf bestätigt er den Plan auf dem Tisch; ist bei der Angriffserklärung noch keine Kreatur gewählt, wählt er alle möglichen Angreifer („Alle greifen an“), bestätigt wird dann mit dem nächsten Druck („2 Angreifer“). |
-| `cancel_cast()` | `void` | Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört. |
+| `cancel_cast()` | `void` | Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört. Bei einer offenen Bühne (z. B. Kicker) wirkt Escape wie ihr „Abbrechen“, wo erlaubt. |
 | `on_zone_clicked(zone: Zone)` | `void` | Anklickbare Zonen-Fläche angeklickt (vom `TableController`): Exil-Strudel → Exil-Ansicht. |
 | `close_zone_viewer()` | `void` | Friedhof-/Exil-Ansicht schließen; die offene Entscheidung zeigt wieder ihre Bedienung. |
 | `on_wheel_multi_done()` | `void` | „Fertig“ der Mehrfachwahl im Farbrad: gewählte Farben an Forge (`Modes`). |

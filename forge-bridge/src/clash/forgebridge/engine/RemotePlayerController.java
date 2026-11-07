@@ -228,6 +228,35 @@ public class RemotePlayerController extends PlayerControllerAi {
      */
     private int humanFlow;
 
+    /**
+     * Der Spieler hat das Wirken bei einer Zusatzkosten-Frage mitten im Ablauf abgebrochen
+     * (Casualty, Offspring …, {@link #addKeywordCost}): die nächste Zielwahl bzw. das Bezahlen
+     * lehnt ab, Forge nimmt das Wirken dann vollständig zurück.
+     */
+    private boolean cancelCasting;
+
+    /** Abbruch vor dem Stack (optionale Kosten wie Kicker): beendet {@link #playHuman} sofort. */
+    private static final class CastCancelled extends RuntimeException {
+        CastCancelled() {
+            super(null, null, false, false);
+        }
+    }
+
+    /**
+     * Spielt {@code sa} über Forges menschlichen Ablauf; ein Abbruch des Spielers (vor dem Stack
+     * oder mitten im Ablauf) ergibt {@code false}.
+     */
+    private boolean playHuman(SpellAbility sa) {
+        cancelCasting = false;
+        try {
+            return human(() -> PlaySpellAbility.playSpellAbility(this, getPlayer(), sa));
+        } catch (CastCancelled e) {
+            return false;
+        } finally {
+            cancelCasting = false;
+        }
+    }
+
     private <T> T human(java.util.function.Supplier<T> body) {
         humanFlow++;
         try {
@@ -340,7 +369,7 @@ public class RemotePlayerController extends PlayerControllerAi {
      */
     @Override
     public boolean playChosenSpellAbility(SpellAbility sa) {
-        boolean ok = human(() -> PlaySpellAbility.playSpellAbility(this, getPlayer(), sa));
+        boolean ok = playHuman(sa);
         if (!ok) {
             sendRejected(lastChoice, lastAction, "Abgebrochen oder kein gültiges Ziel");
         }
@@ -354,7 +383,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public CostDecisionMakerBase getCostDecisionMaker(Player player, SpellAbility ability, boolean effect,
             String prompt) {
-        return new RemoteCostDecision(seat, player, ability, effect);
+        return new RemoteCostDecision(seat, player, ability, effect, cancelCasting);
     }
 
     /** Manakosten: Forges Ablauf für menschliche Spieler, der {@link #applyManaToCost} fragt. */
@@ -373,6 +402,9 @@ public class RemotePlayerController extends PlayerControllerAi {
     @Override
     public boolean applyManaToCost(ManaCostBeingPaid toPay, SpellAbility sa, String prompt,
             ManaConversionMatrix matrix, boolean effect) {
+        if (cancelCasting) {
+            return false; // Wirken wurde bei den Zusatzkosten abgebrochen
+        }
         Player me = getPlayer();
         // Phyrexianisches Mana (CR 107.4f): je Symbol fragen, ob es mit 2 Leben bezahlt wird
         while (toPay.containsPhyrexianMana() && me.canPayLife(2, false, sa)) {
@@ -524,6 +556,9 @@ public class RemotePlayerController extends PlayerControllerAi {
      */
     @Override
     public boolean chooseTargetsFor(SpellAbility cur) {
+        if (cancelCasting) {
+            return false; // Wirken wurde bei den Zusatzkosten abgebrochen
+        }
         cur.resetTargets();
         List<GameObject> candidates = targetCandidates(cur, null);
         int min = cur.getMinTargets();
@@ -762,7 +797,7 @@ public class RemotePlayerController extends PlayerControllerAi {
      */
     @Override
     public boolean playSaFromPlayEffect(SpellAbility tgtSA) {
-        return human(() -> PlaySpellAbility.playSpellAbility(this, getPlayer(), tgtSA));
+        return playHuman(tgtSA);
     }
 
     /**
@@ -1564,7 +1599,7 @@ public class RemotePlayerController extends PlayerControllerAi {
     public void orderAndPlaySimultaneousSa(List<SpellAbility> activePlayerSAs) {
         for (SpellAbility sa : orderSimultaneousSa(activePlayerSAs)) {
             if (sa.isTrigger() && !sa.isCopied()) {
-                human(() -> PlaySpellAbility.playSpellAbility(this, getPlayer(), sa));
+                playHuman(sa);
             } else if (sa.isCopied()) {
                 // Kopie (CR 707.10): wie Forges menschlicher Controller auf den Stack legen; darf
                 // der Spieler neue Ziele wählen, fragt setupNewTargets → chooseNewTargetsFor
@@ -1704,9 +1739,16 @@ public class RemotePlayerController extends PlayerControllerAi {
             // andere Kosten: nur das Schlüsselwort ohne Zahl („Casualty“ statt „Casualty 1“)
             text = text.replaceFirst("\\s+(\\d+|X)$", "");
         }
+        boolean cancelable = humanFlow > 0;
         List<Integer> chosen = Decisions.options(g(), seat, prompt, sa, null,
-                List.of(new Decisions.Opt(text, null)), 0, 1, false, "OptionalCost");
+                List.of(new Decisions.Opt(text, null)), 0, 1, cancelable, "OptionalCost");
         if (chosen == null) {
+            if (cancelable) {
+                // Abbrechen: die Karte liegt schon am Stack – die nächste Zielwahl bzw. das
+                // Bezahlen lehnt ab, Forge nimmt das Wirken zurück
+                cancelCasting = true;
+                return false;
+            }
             return super.addKeywordCost(sa, cost, keyword, prompt);
         }
         return !chosen.isEmpty();
@@ -1715,9 +1757,14 @@ public class RemotePlayerController extends PlayerControllerAi {
     /** Optionale Zusatzkosten (Kicker, Verstärkung …). */
     @Override
     public List<OptionalCostValue> chooseOptionalCosts(SpellAbility sa, List<OptionalCostValue> optionalCost) {
+        boolean cancelable = humanFlow > 0;
         List<Integer> chosen = Decisions.options(g(), seat, "Optionale Kosten zahlen?", sa, null,
-                Decisions.opts(optionalCost), 0, optionalCost.size(), false, "OptionalCost");
+                Decisions.opts(optionalCost), 0, optionalCost.size(), cancelable, "OptionalCost");
         if (chosen == null) {
+            if (cancelable) {
+                // Abbrechen vor dem Stack: nichts ist passiert, das Wirken endet hier
+                throw new CastCancelled();
+            }
             return super.chooseOptionalCosts(sa, optionalCost);
         }
         List<OptionalCostValue> result = new ArrayList<>();

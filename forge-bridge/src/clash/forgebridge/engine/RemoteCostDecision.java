@@ -32,10 +32,13 @@ import forge.game.zone.ZoneType;
  */
 final class RemoteCostDecision extends AiCostDecision {
     private final int seat;
+    /** Wirken wurde abgebrochen: jede Kosten-Wahl lehnt ab, Forge nimmt das Wirken zurück. */
+    private final boolean refuse;
 
-    RemoteCostDecision(int seat, Player player, SpellAbility sa, boolean effect) {
+    RemoteCostDecision(int seat, Player player, SpellAbility sa, boolean effect, boolean refuse) {
         super(player, sa, effect);
         this.seat = seat;
+        this.refuse = refuse;
     }
 
     /** Fragt {@code amount} Karten aus {@code valid}; null = KI soll entscheiden. */
@@ -65,6 +68,9 @@ final class RemoteCostDecision extends AiCostDecision {
      */
     @Override
     public PaymentDecision visit(forge.game.cost.CostRemoveAnyCounter cost) {
+        if (refuse) {
+            return null;
+        }
         int amount = cost.getAbilityAmount(ability);
         if (amount != 1) {
             return super.visit(cost);
@@ -125,6 +131,9 @@ final class RemoteCostDecision extends AiCostDecision {
 
     @Override
     public PaymentDecision visit(CostSacrifice cost) {
+        if (refuse) {
+            return null;
+        }
         if (cost.payCostFromSource() || "OriginalHost".equals(cost.getType()) || "All".equals(cost.getAmount())) {
             return super.visit(cost);
         }
@@ -136,6 +145,9 @@ final class RemoteCostDecision extends AiCostDecision {
 
     @Override
     public PaymentDecision visit(CostDiscard cost) {
+        if (refuse) {
+            return null;
+        }
         String type = cost.getType();
         if (cost.payCostFromSource() || type.equals("LastDrawn") || type.equals("Hand") || type.equals("Random")
                 || type.contains("WithSameName") || type.contains("WithDifferentNames")) {
@@ -148,6 +160,9 @@ final class RemoteCostDecision extends AiCostDecision {
 
     @Override
     public PaymentDecision visit(CostTapType cost) {
+        if (refuse) {
+            return null;
+        }
         String type = cost.getType();
         if (type.contains("+withTotalPowerGE")) {
             PaymentDecision d = crew(cost, type);
@@ -170,6 +185,9 @@ final class RemoteCostDecision extends AiCostDecision {
      */
     @Override
     public PaymentDecision visit(CostExile cost) {
+        if (refuse) {
+            return null;
+        }
         String type = cost.getType();
         boolean libraryOnly = cost.getFrom().size() == 1 && cost.getFrom().get(0) == ZoneType.Library;
         if (cost.payCostFromSource() || type.equals("All") || type.contains("FromTopGrave")
@@ -229,6 +247,9 @@ final class RemoteCostDecision extends AiCostDecision {
 
     @Override
     public PaymentDecision visit(CostReturn cost) {
+        if (refuse) {
+            return null;
+        }
         if (cost.payCostFromSource()) {
             return super.visit(cost);
         }

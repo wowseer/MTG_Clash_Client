@@ -111,6 +111,7 @@ pub fn clear_printed() {
     CLOSED.with(|c| c.set(true));
     PRINTED.with(|c| c.borrow_mut().clear());
     TILES.with(|c| c.borrow_mut().clear());
+    super::card3d::clear_stats_plate_cache();
 }
 
 /// Zwischenspeicher wieder öffnen (der Tisch wird neu aufgebaut).

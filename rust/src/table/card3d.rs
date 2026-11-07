@@ -1811,6 +1811,12 @@ thread_local! {
     static STATS_PLATE_TEXTURE: std::cell::RefCell<Option<Gd<Texture2D>>> = const { std::cell::RefCell::new(None) };
 }
 
+/// Zwischenspeicher des Wertefeld-Bilds leeren (Tisch wird abgebaut; sonst bliebe die Textur
+/// beim Beenden liegen).
+pub fn clear_stats_plate_cache() {
+    STATS_PLATE_TEXTURE.with(|t| *t.borrow_mut() = None);
+}
+
 /// Eigenes Wertefeld (Pergament mit dunklem Rand und abgerundeten Ecken wie das gedruckte),
 /// flach über der Vorderseite; anfangs unsichtbar.
 fn stats_plate(parent: &mut Gd<Node3D>) -> Gd<MeshInstance3D> {
