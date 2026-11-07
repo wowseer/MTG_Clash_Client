@@ -4620,7 +4620,10 @@ impl ForgeTable {
     fn update_inspector(&mut self) {
         let Some(controller) = self.controller.clone() else { return };
         let Some(mut inspector) = self.inspector.as_ref().filter(|i| i.is_instance_valid()).cloned() else { return };
-        let busy = controller.bind().get_dragged_card().is_some() || controller.bind().get_aiming_card().is_some();
+        // beim Ziehen und Zielen (auch Pfeil am angeklickten Blocker) verdeckte die Vorschau den Pfeil
+        let blocker_armed = self.combat_armed.is_some()
+            && matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::DeclareBlockers { .. }));
+        let busy = controller.bind().get_dragged_card().is_some() || controller.bind().get_aiming_card().is_some() || blocker_armed;
         let hovered = self.inspect_override.as_ref().filter(|c| c.is_instance_valid()).cloned().or_else(|| {
             if busy { None } else { controller.bind().get_hovered_card().filter(|c| c.is_instance_valid()) }
         });
