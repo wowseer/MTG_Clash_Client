@@ -124,7 +124,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `start_match()` | `bool` | Startet die Partie mit `player_deck` gegen `opponent_deck` (Brücke muss bereit sein). Gibt false zurück, wenn das nicht ging. |
-| `pass_priority()` | `void` | Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. |
+| `pass_priority()` | `void` | Phasen-Knopf / Leertaste: beantwortet eine offene `Priority`-Entscheidung mit `Action::Pass`. Im Kampf bestätigt er den Plan auf dem Tisch; ist bei der Angriffserklärung noch keine Kreatur gewählt, wählt er alle möglichen Angreifer („Alle greifen an“), bestätigt wird dann mit dem nächsten Druck („2 Angreifer“). |
 | `cancel_cast()` | `void` | Wirken bzw. Aktivieren abbrechen (✕ an der Karte, Escape, Karte zurück auf die Hand ziehen): beantwortet die offene Frage mit Abbrechen, wenn die Engine das erlaubt und die Frage zum Wirken einer eigenen Karte bzw. Aktivieren einer eigenen Fähigkeit gehört. |
 | `on_zone_clicked(zone: Zone)` | `void` | Anklickbare Zonen-Fläche angeklickt (vom `TableController`): Exil-Strudel → Exil-Ansicht. |
 | `close_zone_viewer()` | `void` | Friedhof-/Exil-Ansicht schließen; die offene Entscheidung zeigt wieder ihre Bedienung. |
@@ -132,6 +132,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_wheel_picked(index: int)` | `void` | Segment `index` des Farbrads angeklickt: die zugehörige Antwort an Forge. |
 | `end_turn()` | `void` | Knopf „»»“ (Sofort beenden, nur im eigenen Zug): bis zum Ende dieser Runde automatisch passen; es wird ohne Angreifer weitergegangen. Andere Entscheidungen (Blocker, Auswahl, Ziele) fragt die UI weiter. Legt ein anderer Spieler etwas auf den Stack, endet das automatische Passen, damit man antworten kann. |
 | `is_ending_turn()` | `bool` | Ist „Sofort beenden“ gerade aktiv? |
+| `press_secondary()` | `void` | Zweiter Knopf über dem Phasen-Knopf (nur im Kampf): bei der Angriffserklärung ohne gewählte Angreifer „Kein Angriff“ (ohne Angreifer weiter), sonst „Angriff abbrechen“ (Auswahl leeren, zurück zu „Kein Angriff“ / „Alle greifen an“); bei der Blockerklärung „Blocks abbrechen“. Ohne Wirkung, wenn gerade kein zweiter Knopf angeboten wird. |
 | `submit_choice(choice: Variant)` | `void` | Eingabe aus dem Auswahlfenster des HUD für die offene Entscheidung: eine Option = Index, mehrere = Array von Indizes, Ja/Nein und Mulligan = bool (true = erste Option / behalten), Zahl = int, Abbrechen = null. Wird in die passende `Choice` übersetzt; unpassende Eingaben werden ignoriert. Ist das Fähigkeiten-Menü offen, wählt die Eingabe eine Aktion daraus (null = Menü schließen). |
 | `pool_clicked(mana: int)` | `void` | Ein Mana-Symbol der Manapool-Anzeige wurde angeklickt (`mana` = Manaart 0 = Weiß … 5 = Farblos): beim Bezahlen dieses schwebende Mana einsetzen (`PayAction::UsePool`), sonst nichts. |
 | `on_hand_pick_done()` | `void` | „Fertig“ auf der Hand-Bühne: gewählte Karten an die Engine. |
@@ -248,7 +249,7 @@ Sanduhr-Symbol (HUD), z. B. neben der Rundenzahl am linken Bildrand. Größe = `
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen“ / „Blocken“) und darunter „»»“ (Sofort beenden) (beide orange animierte `Button3D`) und ein Auswahlfenster (z. B. Mulligan). Liest den Zustand jedes Frame vom `ForgeTable` (Spiel mit der Forge-Regel-Engine).
+Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Alle greifen an“ / „2 Angreifer“, „Kein Block“ / „1 Blocker“) und darunter „»»“ (Sofort beenden) (beide orange animierte `Button3D`), im Kampf darüber ein zweiter Knopf („Kein Angriff“, „Angriff abbrechen“, „Blocks abbrechen“), und ein Auswahlfenster (z. B. Mulligan). Liest den Zustand jedes Frame vom `ForgeTable` (Spiel mit der Forge-Regel-Engine).
 
 ### Eigenschaften
 
@@ -271,6 +272,7 @@ Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`
 | `on_choice_filter_changed(text: String)` | `void` | Suchfeld des Auswahlfensters geändert: Optionen filtern. |
 | `on_choice_cancel()` | `void` | Knopf „Abbrechen“ im Auswahlfenster: Antwort null. |
 | `on_next_pressed()` | `void` | Phasen-Knopf bzw. Leertaste: ruft `ForgeTable.pass_priority()` auf (passen bzw. im Kampf Angreifer/Blocker bestätigen). |
+| `on_secondary_pressed()` | `void` | Zweiter Knopf über dem Phasen-Knopf: ruft `ForgeTable.press_secondary()` auf („Kein Angriff“, „Angriff abbrechen“, „Blocks abbrechen“). |
 | `on_end_turn_pressed()` | `void` | Knopf „Sofort beenden“: ruft `ForgeTable.end_turn()` auf. |
 
 ## ManaCost
@@ -475,7 +477,7 @@ Anklickbarer Knopf in der 3D-Szene: bewegte Oberfläche und Leuchten im Farbstil
 
 | Name | Typ | Beschreibung |
 |---|---|---|
-| `style` | `ButtonStyle` | Farbstil: 0 = Orange (Feuer), 1 = Blau (Wolken). |
+| `style` | `ButtonStyle` | Farbstil: 0 = Orange (Feuer), 1 = Blau (Wolken), 2 = Grau. Lässt sich jederzeit wechseln (z. B. „Kein Angriff“ blau → „Angriff abbrechen“ grau). |
 | `text` | `String` | Beschriftung auf dem Knopf. |
 | `width` | `float` | Breite der Bildfläche in Welteinheiten (Höhe folgt aus dem Seitenverhältnis). |
 | `face_camera` | `bool` | Knopf immer parallel zur Bildebene der Kamera ausrichten. |
@@ -491,6 +493,7 @@ Anklickbarer Knopf in der 3D-Szene: bewegte Oberfläche und Leuchten im Farbstil
 | `activate()` | `void` | Klick auslösen (vom `TableController` bzw. von Skripten): kurzes Eindrücken und [signal pressed]. Ohne Wirkung, wenn der Knopf nicht `enabled` ist oder gerade verschwindet. |
 | `dismiss()` | `void` | Knopf ausblenden (0,15 s) und danach freigeben; nicht mehr anklickbar. |
 | `pin_to_screen(anchor: Vector2, offset: Vector2, width_px: float)` | `void` | Knopf an eine Bildschirmstelle heften (wie ein HUD-Element, aber in der 3D-Szene): Mitte = `anchor` × Fenstergröße + `offset` (Pixel, z. B. `anchor` (1, 1) = unten rechts), `width_px` = Breite der Bildfläche in Pixeln. Er steht dann jedes Frame kurz vor der Kamera, parallel zur Bildebene, vor allen Karten. |
+| `set_style(style: ButtonStyle)` | `void` | Setter für `style`: Farben des Knopfes sofort umstellen (Oberfläche und Leuchten laufen ohne Neustart weiter). |
 | `set_label_text(text: String)` | `void` | Beschriftung ändern (ohne Wirkung, wenn sie gleich bleibt). |
 
 ### Signale

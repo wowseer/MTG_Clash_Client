@@ -130,8 +130,10 @@ struct ScreenPin {
 #[derive(GodotClass)]
 #[class(base=Area3D)]
 pub struct Button3D {
-    /// Farbstil: 0 = Orange (Feuer), 1 = Blau (Wolken).
+    /// Farbstil: 0 = Orange (Feuer), 1 = Blau (Wolken), 2 = Grau. Lässt sich jederzeit
+    /// wechseln (z. B. „Kein Angriff“ blau → „Angriff abbrechen“ grau).
     #[export]
+    #[var(set = set_style)]
     style: ButtonStyle,
     /// Beschriftung auf dem Knopf.
     #[export]
@@ -311,6 +313,19 @@ impl Button3D {
         face_height_px / FACE_HEIGHT_FRACTION * aspect(body) * face_width_fraction(body)
     }
 
+    /// Setter für [member style]: Farben des Knopfes sofort umstellen (Oberfläche und Leuchten
+    /// laufen ohne Neustart weiter).
+    #[func]
+    pub fn set_style(&mut self, style: ButtonStyle) {
+        if self.style == style {
+            return;
+        }
+        self.style = style;
+        if let Some(m) = self.material.as_mut() {
+            apply_palette(m, style);
+        }
+    }
+
     /// Beschriftung ändern (ohne Wirkung, wenn sie gleich bleibt).
     #[func]
     pub fn set_label_text(&mut self, text: GString) {
@@ -449,14 +464,8 @@ impl Button3D {
     }
 }
 
-/// Fläche mit dem Knopf-Shader im Farbstil `style` (Vorderseite +Z). Jeder Knopf bekommt einen
-/// zufälligen Zeitversatz, damit nebeneinanderliegende Knöpfe nicht im Gleichtakt laufen.
-fn surface(style: ButtonStyle, size: Vector2, body: f32) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
-    let mut shader = Shader::new_gd();
-    shader.set_code(&button_shader());
-    let mut mat = ShaderMaterial::new_gd();
-    mat.set_shader(&shader);
-    mat.set_render_priority(1);
+/// Farben des Stils `style` in das Material des Knopf-Shaders schreiben.
+fn apply_palette(mat: &mut Gd<ShaderMaterial>, style: ButtonStyle) {
     let p = palette(style);
     let v4 = |c: Color| Vector4::new(c.r, c.g, c.b, 1.0);
     for (i, name) in ["ramp0", "ramp1", "ramp2", "ramp3"].iter().enumerate() {
@@ -473,6 +482,17 @@ fn surface(style: ButtonStyle, size: Vector2, body: f32) -> (Gd<MeshInstance3D>,
     ] {
         mat.set_shader_parameter(name, &v4(c).to_variant());
     }
+}
+
+/// Fläche mit dem Knopf-Shader im Farbstil `style` (Vorderseite +Z). Jeder Knopf bekommt einen
+/// zufälligen Zeitversatz, damit nebeneinanderliegende Knöpfe nicht im Gleichtakt laufen.
+fn surface(style: ButtonStyle, size: Vector2, body: f32) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
+    let mut shader = Shader::new_gd();
+    shader.set_code(&button_shader());
+    let mut mat = ShaderMaterial::new_gd();
+    mat.set_shader(&shader);
+    mat.set_render_priority(1);
+    apply_palette(&mut mat, style);
     mat.set_shader_parameter("canvas", &Vector2::new(canvas_width(body), CANVAS_HEIGHT).to_variant());
     mat.set_shader_parameter("body_half", &body.to_variant());
     let offset = godot::global::randf_range(0.0, 4.0) as f32;

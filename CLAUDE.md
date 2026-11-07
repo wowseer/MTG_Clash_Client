@@ -182,7 +182,7 @@ Deckauswahl und Formate übernimmt NeoForge.
 | Crates ohne Godot testen | `cd rust && cargo test -p clash-protocol -p clash-forge-client`; Beispiel `cargo run -p clash-forge-client --example autoplay -- <forge> <bridge.jar> <deck1> <deck2>` |
 | NeoForge-Patch bauen (ohne Maven) | `tools/neoforge_patch.sh` → `forge-bridge/build/neoforge/neoforge-clash-patch.jar` |
 | NeoForge-Partie mit 3D-Tisch | `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` (Testkopie der Installation, eigene Spielstände bleiben unberührt) |
-| Godot | `~/.appimages/Godot_v4.7.2-stable_mono_linux_x86_64/Godot_v4.7.2-stable_mono_linux.x86_64` (nicht im PATH) |
+| Godot | `godot` (`/usr/bin/godot`, 4.7.2 aus dem System, im PATH) |
 | Spiel starten | Godot öffnen, F5 (Hauptszene `godot/table.tscn`) |
 | API-Referenz | `python3 tools/gen_api_doc.py` → muss „ohne Beschreibung: 0“ melden |
 

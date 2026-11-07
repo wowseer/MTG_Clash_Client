@@ -60,6 +60,7 @@ Spiel nie auf.
 | Phasenwechsel | 0,25 s | Cubic-Out | Zeitstrahl (vorhanden) |
 | Auswahlfenster / Kartenfächer öffnen | 0,20 s | Cubic-Out | Hintergrund abdunkeln 0,15 s |
 | 3D-Knopf erscheinen / verschwinden | 0,20 s / 0,15 s | Cubic-Out / linear | wächst aus der Mitte (`Button3D`, `APPEAR_TIME`, `DISMISS_TIME`) |
+| Zweiter Knopf über dem Phasen-Knopf (Kampf: „Kein Angriff“ / „Angriff abbrechen“) | erscheinen / verschwinden wie jeder 3D-Knopf; Zeitstrahl rückt exponentiell (Faktor 14/s, ≈ 0,2 s) | – | `TurnHud::lift_stack` (`STACK_LIFT_SPEED`); Farbwechsel blau → grau sofort an Ort und Stelle (`Button3D::set_style`) |
 | 3D-Knopf Hover / Klick | exponentiell (≈0,12 s) / 0,12 s | – / Sinus | +5 % Größe, Leuchten +45 %; Klick drückt 7 % ein |
 | 3D-Knopf Oberfläche | 8 s Schleife (Blender: 4 s; halbes Tempo, ruhiger) | – | Shader nach den Blender-Treibern (`speed` 0,5): Rauschen kreist in z/w, Leuchten 0,85 + 0,15·sin(2φ); Zeitversatz je Knopf zufällig |
 | Farbrad (`ManaWheel`) aufgehen / schließen | 0,20 s / 0,15 s | Cubic-Out / linear | wächst aus der Mitte der Karte, folgt ihr; Segment-Hover exponentiell (Faktor 18/s), +60 % heller |

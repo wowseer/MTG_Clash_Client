@@ -10,9 +10,11 @@
 //!   Manapool als runde Symbole ([`ManaPoolView`])
 //! - linker Bildrand: Spielername, darüber die Rundenzahl mit Sanduhr ([`HourglassIcon`]) –
 //!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
-//! - unten rechts: Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen“ /
-//!   „Blocken“) und darunter klein „»»“ (Sofort beenden) – beide als orange animierte
-//!   [`Button3D`] in der 3D-Szene, an die Bildschirmstelle geheftet
+//! - unten rechts: Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Alle greifen an“ /
+//!   „2 Angreifer“, „Kein Block“ / „1 Blocker“) und darunter klein „»»“ (Sofort beenden) – beide
+//!   als orange animierte [`Button3D`] in der 3D-Szene, an die Bildschirmstelle geheftet; im
+//!   Kampf darüber ein zweiter Knopf („Kein Angriff“ blau, „Angriff abbrechen“ grau), für den
+//!   der Zeitstrahl nach oben rückt
 //! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
 //!
 //! Das HUD liest den Zustand jedes Frame vom [`ForgeTable`] (keine Signal-Kopplung nötig).
@@ -59,13 +61,17 @@ const BUTTON_MARGIN: f32 = 14.0;
 const BUTTON_GAP_PX: f32 = 8.0;
 /// Abstand des Phasen-Zeitstrahls über dem Phasen-Knopf.
 const TIMELINE_GAP: f32 = 10.0;
+/// Zeitstrahl und Hinweis rücken weich nach oben bzw. unten, wenn der zweite Knopf über dem
+/// Phasen-Knopf erscheint bzw. verschwindet (exponentiell, ≈ 0,2 s wie das Erscheinen des Knopfes).
+const STACK_LIFT_SPEED: f32 = 14.0;
 
 /// Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen ([PhaseTimeline], unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte,
 /// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
 /// sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr
 /// ([HourglassIcon]; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf
-/// „Angreifen“ / „Blocken“) und darunter „»»“ (Sofort beenden) (beide orange animierte [Button3D]) und ein
-/// Auswahlfenster (z. B. Mulligan).
+/// „Alle greifen an“ / „2 Angreifer“, „Kein Block“ / „1 Blocker“) und darunter „»»“ (Sofort beenden) (beide
+/// orange animierte [Button3D]), im Kampf darüber ein zweiter Knopf („Kein Angriff“, „Angriff abbrechen“,
+/// „Blocks abbrechen“), und ein Auswahlfenster (z. B. Mulligan).
 /// Liest den Zustand jedes Frame vom [ForgeTable] (Spiel mit der Forge-Regel-Engine).
 #[derive(GodotClass)]
 #[class(base=CanvasLayer)]
@@ -105,9 +111,19 @@ pub struct TurnHud {
     player_mask: Option<Gd<CardCutout>>,
     /// Meldung „Spielende – X gewinnt!“ in der Bildmitte (sonst leer).
     game_over_label: Option<Gd<Label>>,
-    /// Phasen-Knopf („Passen“, „Angreifen“ …) und „Sofort beenden“ als [Button3D].
+    /// Phasen-Knopf („Passen“, „Alle greifen an“ …) und „Sofort beenden“ als [Button3D].
     button: Option<Gd<Button3D>>,
     end_turn_button: Option<Gd<Button3D>>,
+    /// Zweiter Knopf über dem Phasen-Knopf (im Kampf „Kein Angriff“ / „Angriff abbrechen“);
+    /// entsteht, wenn der [ForgeTable] einen anbietet, und verschwindet animiert.
+    secondary_button: Option<Gd<Button3D>>,
+    /// Bildschirmhöhe (Pixel, von unten) der Mitte des zweiten Knopfes und des Zeitstrahls
+    /// (Unterkante) ohne zweiten Knopf; Höhe, um die der Zeitstrahl für ihn nach oben rückt.
+    secondary_y: f32,
+    timeline_y: f32,
+    secondary_lift: f32,
+    /// Aktuell gerückt (0 = kein zweiter Knopf, `secondary_lift` = ganz oben).
+    stack_lift: f32,
     /// Hinweis der Engine über dem Phasen-Zeitstrahl (z. B. ungültiger Angriff).
     button_hint: Option<Gd<RichTextLabel>>,
     /// Zuletzt gesetzter Hinweistext (nur bei Änderung neu aufbauen).
@@ -143,6 +159,11 @@ impl ICanvasLayer for TurnHud {
             game_over_label: None,
             button: None,
             end_turn_button: None,
+            secondary_button: None,
+            secondary_y: 0.0,
+            timeline_y: 0.0,
+            secondary_lift: 0.0,
+            stack_lift: 0.0,
             button_hint: None,
             shown_hint: String::new(),
             root: None,
@@ -155,8 +176,9 @@ impl ICanvasLayer for TurnHud {
         self.build();
     }
 
-    fn process(&mut self, _delta: f64) {
+    fn process(&mut self, delta: f64) {
         self.refresh();
+        self.lift_stack(delta as f32);
     }
 
     fn unhandled_input(&mut self, event: Gd<InputEvent>) {
@@ -246,6 +268,15 @@ impl TurnHud {
         }
     }
 
+    /// Zweiter Knopf über dem Phasen-Knopf: ruft [method ForgeTable.press_secondary] auf
+    /// („Kein Angriff“, „Angriff abbrechen“, „Blocks abbrechen“).
+    #[func]
+    fn on_secondary_pressed(&mut self) {
+        if let Some(ft) = self.forge_table.as_mut() {
+            ft.bind_mut().press_secondary();
+        }
+    }
+
     /// Knopf „Sofort beenden“: ruft [method ForgeTable.end_turn] auf.
     #[func]
     fn on_end_turn_pressed(&mut self) {
@@ -287,8 +318,12 @@ impl TurnHud {
         let end_y = -BUTTON_MARGIN - end_h * 0.5;
         let main_y = -BUTTON_MARGIN - end_h - BUTTON_GAP_PX - main_h * 0.5;
         let main_top = -BUTTON_MARGIN - end_h - BUTTON_GAP_PX - main_h;
+        // zweiter Knopf (im Kampf) direkt über dem Phasen-Knopf, gleich groß
+        self.secondary_y = main_y - main_h - BUTTON_GAP_PX;
+        self.secondary_lift = main_h + BUTTON_GAP_PX;
+        self.timeline_y = main_top - TIMELINE_GAP;
         let mut timeline = PhaseTimeline::new_alloc();
-        place(&mut timeline, (1.0, 1.0), (-BUTTON_MARGIN, main_top - TIMELINE_GAP), GrowDirection::BEGIN, GrowDirection::BEGIN);
+        place(&mut timeline, (1.0, 1.0), (-BUTTON_MARGIN, self.timeline_y), GrowDirection::BEGIN, GrowDirection::BEGIN);
         root.add_child(&timeline);
         // Hinweis mit eingebetteten Manasymbolen („… {2}{R}{R}“): RichTextLabel
         let mut button_hint = RichTextLabel::new_alloc();
@@ -302,7 +337,7 @@ impl TurnHud {
         button_hint.add_theme_color_override("default_color", GOLD);
         button_hint.add_theme_color_override("font_outline_color", Color::from_rgba(0.0, 0.0, 0.0, 0.8));
         button_hint.add_theme_constant_override("outline_size", 5);
-        place(&mut button_hint, (1.0, 1.0), (-BUTTON_MARGIN, main_top - TIMELINE_GAP - 66.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
+        place(&mut button_hint, (1.0, 1.0), (-BUTTON_MARGIN, self.timeline_y - 66.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
         root.add_child(&button_hint);
 
         // Bildmitte: nur die Meldung zum Spielende
@@ -389,6 +424,60 @@ impl TurnHud {
         self.button = Some(button);
         self.end_turn_button = Some(end_turn);
         self.button_hint = Some(button_hint);
+    }
+
+    /// Zweiter Knopf über dem Phasen-Knopf: entsteht (wächst aus der Mitte), sobald der
+    /// [ForgeTable] einen anbietet, wechselt Text und Farbe an Ort und Stelle und verschwindet
+    /// animiert, wenn keiner mehr gebraucht wird.
+    fn sync_secondary(&mut self, wanted: Option<&(GString, ButtonStyle)>) {
+        match wanted {
+            Some((text, style)) => {
+                if let Some(b) = self.secondary_button.as_mut() {
+                    let mut b = b.bind_mut();
+                    b.set_style(*style);
+                    b.set_label_text(text.clone());
+                    return;
+                }
+                let mut b = Button3D::create(*style, &text.to_string(), 1.0);
+                b.set_name("SecondaryButton");
+                b.bind_mut().pin_to_screen(
+                    Vector2::new(1.0, 1.0),
+                    Vector2::new(-BUTTON_MARGIN - MAIN_FACE_PX * 0.5, self.secondary_y),
+                    Button3D::image_width_for_face(MAIN_FACE_PX, WIDE_BODY),
+                );
+                let cb = Callable::from_object_method(&self.to_gd(), "on_secondary_pressed");
+                b.connect("pressed", &cb);
+                self.base_mut().add_child(&b);
+                self.secondary_button = Some(b);
+            }
+            None => {
+                if let Some(mut b) = self.secondary_button.take() {
+                    b.bind_mut().dismiss();
+                }
+            }
+        }
+    }
+
+    /// Zeitstrahl und Hinweis über dem Knopf-Stapel weich nach oben rücken, solange der zweite
+    /// Knopf sichtbar ist (sonst zurück).
+    fn lift_stack(&mut self, dt: f32) {
+        let shown = self.secondary_button.as_ref().is_some_and(|b| b.is_visible());
+        let target = if shown { self.secondary_lift } else { 0.0 };
+        if (target - self.stack_lift).abs() < 0.01 {
+            if self.stack_lift == target {
+                return;
+            }
+            self.stack_lift = target;
+        } else {
+            self.stack_lift += (target - self.stack_lift) * (1.0 - (-STACK_LIFT_SPEED * dt).exp());
+        }
+        let y = self.timeline_y - self.stack_lift;
+        if let Some(t) = self.timeline.as_mut() {
+            place(t, (1.0, 1.0), (-BUTTON_MARGIN, y), GrowDirection::BEGIN, GrowDirection::BEGIN);
+        }
+        if let Some(h) = self.button_hint.as_mut() {
+            place(h, (1.0, 1.0), (-BUTTON_MARGIN, y - 66.0), GrowDirection::BEGIN, GrowDirection::BEGIN);
+        }
     }
 
     /// Setzt die Medaillon-Zeilen an ihre 3D-Anker (Medaillon mittig über/unter dem Ankerpunkt)
@@ -502,7 +591,8 @@ impl TurnHud {
         }
         // ausgeblendet nur, solange eine Bühne den Tisch abdeckt (sie hat eigene Knöpfe); bei
         // Bühnen am Tisch (z. B. X wählen) bleibt der Phasen-Knopf – beim Wirken „Abbrechen“
-        for b in [self.button.as_mut(), self.end_turn_button.as_mut()].into_iter().flatten() {
+        self.sync_secondary(view.secondary_button.as_ref());
+        for b in [self.button.as_mut(), self.end_turn_button.as_mut(), self.secondary_button.as_mut()].into_iter().flatten() {
             b.set_visible(!view.stage_covers);
         }
         // 3D-Bühne offen (z. B. Starthand beim Mulligan, Abwerfen): Medaillons, Namen und Manapool
@@ -577,6 +667,9 @@ pub struct HudView {
     pub button_text: GString,
     /// Hinweis der Engine unter dem Phasen-Knopf (z. B. ungültiger Angriff; leer = keiner).
     pub button_hint: String,
+    /// Zweiter Knopf über dem Phasen-Knopf (Text, Farbstil), z. B. „Kein Angriff“ (blau) oder
+    /// „Angriff abbrechen“ (grau); None = keiner.
+    pub secondary_button: Option<(GString, ButtonStyle)>,
     /// Knopf „»»“ (Sofort beenden) anklickbar: Partie läuft, eigener Zug, nicht schon aktiv.
     pub end_turn_enabled: bool,
     /// Eine 3D-Bühne (Startspieler, Mulligan) ist offen: Medaillons und Namen ausgrauen.

@@ -482,8 +482,10 @@ impl ForgeTable {
         ok
     }
 
-    /// Passt (Hauptbutton / Leertaste): beantwortet eine offene `Priority`-Entscheidung mit
-    /// `Action::Pass`.
+    /// Phasen-Knopf / Leertaste: beantwortet eine offene `Priority`-Entscheidung mit
+    /// `Action::Pass`. Im Kampf bestätigt er den Plan auf dem Tisch; ist bei der
+    /// Angriffserklärung noch keine Kreatur gewählt, wählt er alle möglichen Angreifer („Alle
+    /// greifen an“), bestätigt wird dann mit dem nächsten Druck („2 Angreifer“).
     #[func]
     pub fn pass_priority(&mut self) {
         if self.viewer_open {
@@ -503,10 +505,17 @@ impl ForgeTable {
                     }
                 }
             }
-            // Kampf: der Phasen-Knopf bestätigt den Plan, der auf dem Tisch gebaut wurde
-            Some(Decision::DeclareAttackers { .. }) => {
-                let plan = self.attack_plan.clone();
-                self.answer(Choice::Attackers(plan));
+            // Kampf: der Phasen-Knopf bestätigt den Plan, der auf dem Tisch gebaut wurde; ohne
+            // gewählte Angreifer heißt er „Alle greifen an“ und wählt jede mögliche Kreatur
+            Some(Decision::DeclareAttackers { candidates, defenders, .. }) => {
+                if self.attack_plan.is_empty() && !candidates.is_empty() {
+                    let (candidates, defenders) = (candidates.clone(), defenders.clone());
+                    self.attack_all(&candidates, &defenders);
+                    self.update_glow();
+                } else {
+                    let plan = self.attack_plan.clone();
+                    self.answer(Choice::Attackers(plan));
+                }
             }
             Some(Decision::DeclareBlockers { .. }) => {
                 let plan = self.block_plan.clone();
@@ -949,6 +958,33 @@ impl ForgeTable {
         self.auto_pass_turn.is_some()
     }
 
+    /// Zweiter Knopf über dem Phasen-Knopf (nur im Kampf): bei der Angriffserklärung ohne
+    /// gewählte Angreifer „Kein Angriff“ (ohne Angreifer weiter), sonst „Angriff abbrechen“
+    /// (Auswahl leeren, zurück zu „Kein Angriff“ / „Alle greifen an“); bei der Blockerklärung
+    /// „Blocks abbrechen“. Ohne Wirkung, wenn gerade kein zweiter Knopf angeboten wird.
+    #[func]
+    pub fn press_secondary(&mut self) {
+        if self.combat_secondary().is_none() {
+            return;
+        }
+        match self.pending.as_ref().map(|r| &r.decision) {
+            Some(Decision::DeclareAttackers { .. }) if self.attack_plan.is_empty() => {
+                self.answer(Choice::Attackers(Vec::new()));
+            }
+            Some(Decision::DeclareAttackers { .. }) => {
+                self.attack_plan.clear();
+                self.combat_armed = None;
+                self.update_glow();
+            }
+            Some(Decision::DeclareBlockers { .. }) => {
+                self.block_plan.clear();
+                self.combat_armed = None;
+                self.update_glow();
+            }
+            _ => {}
+        }
+    }
+
     /// Eine Option wurde auf dem Tisch gewählt (Klick auf ein gültiges Ziel – Karte oder
     /// Medaillon): `index` = Option im Auswahlfenster. Das HUD behandelt das wie einen Klick auf
     /// diese Option (zurückgestellt verbunden).
@@ -1372,7 +1408,7 @@ impl ForgeTable {
                 Decision::DeclareAttackers { candidates, defenders, .. } => {
                     self.attack_intent = None;
                     if candidates.contains(&intent) {
-                        if let Some(def) = defenders.iter().copied().find(|t| matches!(t, Target::Player(_))).or_else(|| defenders.first().copied()) {
+                        if let Some(def) = default_defender(defenders) {
                             self.attack_plan.push((intent, def));
                             self.combat_armed = Some(intent);
                         }
@@ -3794,6 +3830,7 @@ impl ForgeTable {
             button_enabled: my_priority || combat.is_some(),
             button_text: button_text.as_str().into(),
             button_hint: combat.map(|(_, hint)| hint).unwrap_or_default(),
+            secondary_button: self.combat_secondary().map(|(text, style)| (GString::from(text.as_str()), style)),
             stage_open: self.showcase.is_some() || !self.choice_buttons.is_empty(),
             stage_covers: self.stage_covers(),
             end_turn_enabled: self.match_running
@@ -4295,16 +4332,9 @@ impl ForgeTable {
                     if let Some(pos) = self.attack_plan.iter().position(|(c, _)| *c == card) {
                         self.attack_plan.remove(pos);
                         self.combat_armed = None;
-                    } else {
-                        let default = defenders
-                            .iter()
-                            .copied()
-                            .find(|t| matches!(t, Target::Player(_)))
-                            .or_else(|| defenders.first().copied());
-                        if let Some(def) = default {
-                            self.attack_plan.push((card, def));
-                            self.combat_armed = Some(card);
-                        }
+                    } else if let Some(def) = default_defender(&defenders) {
+                        self.attack_plan.push((card, def));
+                        self.combat_armed = Some(card);
                     }
                     return true;
                 }
@@ -4345,6 +4375,37 @@ impl ForgeTable {
         }
     }
 
+    /// „Alle greifen an“: jeder mögliche Angreifer, der noch nicht gewählt ist, greift das
+    /// Standardziel an (erster Gegner, [`default_defender`]). Bestätigt wird erst mit dem
+    /// Phasen-Knopf; Forge prüft den Angriff (z. B. Angriffsbeschränkungen) wie jeden anderen.
+    fn attack_all(&mut self, candidates: &[CardId], defenders: &[Target]) {
+        let Some(def) = default_defender(defenders) else { return };
+        for c in candidates {
+            if !self.attack_plan.iter().any(|(a, _)| a == c) {
+                self.attack_plan.push((*c, def));
+            }
+        }
+        self.combat_armed = None;
+    }
+
+    /// Zweiter Knopf über dem Phasen-Knopf (Text, Farbstil); `None` = keiner. Angriff: ohne
+    /// gewählte Angreifer „Kein Angriff“ (blau, über „Alle greifen an“), sonst „Angriff
+    /// abbrechen“ (grau, über „2 Angreifer“). Block: „Blocks abbrechen“ (grau), sobald ein Blocker
+    /// gewählt ist.
+    fn combat_secondary(&self) -> Option<(String, ButtonStyle)> {
+        match &self.pending.as_ref()?.decision {
+            Decision::DeclareAttackers { candidates, .. } if !candidates.is_empty() => Some(if self.attack_plan.is_empty() {
+                (tr!("Kein Angriff", "No Attacks").to_string(), ButtonStyle::Blue)
+            } else {
+                (tr!("Angriff abbrechen", "Cancel Attacks").to_string(), ButtonStyle::Grey)
+            }),
+            Decision::DeclareBlockers { .. } if !self.block_plan.is_empty() || self.combat_armed.is_some() => {
+                Some((tr!("Blocks abbrechen", "Cancel Blocks").to_string(), ButtonStyle::Grey))
+            }
+            _ => None,
+        }
+    }
+
     /// Angriff: macht `target` (wenn es ein Angriffsziel ist) zum Ziel des zuletzt gewählten
     /// Angreifers. Gibt true zurück, wenn das passiert ist.
     fn retarget_attacker(&mut self, target: Target) -> bool {
@@ -4368,19 +4429,26 @@ impl ForgeTable {
     fn combat_button(&self) -> Option<(String, String)> {
         let req = self.pending.as_ref()?;
         let (label, standard) = match &req.decision {
-            Decision::DeclareAttackers { .. } => {
-                let n = self.attack_plan.len();
-                (
-                    if n == 0 { tr!("Angreifen  »", "Attack  »").to_string() } else { tr!("Angreifen  »", "Attack  »").to_string() },
-                    "Angreifer wählen",
-                )
+            // Angriff: ohne Auswahl „Alle greifen an“ (darüber „Kein Angriff“), sonst bestätigt
+            // der Knopf die gewählten Angreifer („2 Angreifer“, darüber „Angriff abbrechen“)
+            Decision::DeclareAttackers { candidates, .. } => {
+                let label = match self.attack_plan.len() {
+                    0 if candidates.is_empty() => tr!("Kein Angriff  »", "No Attacks  »").to_string(),
+                    0 => tr!("Alle greifen an", "All Attack").to_string(),
+                    1 => tr!("1 Angreifer  »", "1 Attacker  »").to_string(),
+                    n => trf!("{n} Angreifer  »", "{n} Attackers  »"),
+                };
+                (label, "Angreifer wählen")
             }
+            // Block: ohne Blocker „Kein Block“, sonst „2 Blocker“ (darüber „Blocks abbrechen“)
             Decision::DeclareBlockers { .. } => {
-                let n = self.block_plan.len();
-                (
-                    if n == 0 { tr!("Blocken  »", "Block  »").to_string() } else { tr!("Blocken  »", "Block  »").to_string() },
-                    "Blocker wählen",
-                )
+                let blockers: HashSet<CardId> = self.block_plan.iter().map(|(b, _)| *b).collect();
+                let label = match blockers.len() {
+                    0 => tr!("Kein Block  »", "No Blocks  »").to_string(),
+                    1 => tr!("1 Blocker  »", "1 Blocker  »").to_string(),
+                    n => trf!("{n} Blocker  »", "{n} Blockers  »"),
+                };
+                (label, "Blocker wählen")
             }
             // Zielwahl: Hinweis = was die Karte als Ziel verlangt
             Decision::ChooseTargets { min, description, .. } => {
@@ -5590,6 +5658,12 @@ fn arrow(key: u64, from: Vector3, to: Vector3, color: ArrowColor, alpha: f32, gr
     }
     let dir = (to - from).normalized_or_zero();
     ArrowSpec { key, from: from + dir * 0.3, to: to - dir * 0.35, color, alpha, grow, straight: false }
+}
+
+/// Standardziel eines Angreifers: der erste angreifbare Spieler, sonst das erste Angriffsziel
+/// (Planeswalker, Schlacht).
+fn default_defender(defenders: &[Target]) -> Option<Target> {
+    defenders.iter().copied().find(|t| matches!(t, Target::Player(_))).or_else(|| defenders.first().copied())
 }
 
 /// Kampfpfeil (Angriff, Blocker): immer gerade, auch zwischen nah gegenüberliegenden Karten
