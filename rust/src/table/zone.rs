@@ -32,10 +32,11 @@ const STACK_MAX_SHOWN: f32 = 6.0;
 pub const TAP_ANGLE_DEGREES: f32 = 15.0;
 /// Automatische Anordnung (Aufteilung wie `mtg_arena_spielfeld.png`): Abstand zwischen Karten
 /// (Anteil der Kartenbreite), am weitesten links mögliche Lage der hinteren Reihe (Artefakte,
-/// Verzauberungen …) rechts vom Medaillon (lokal x) und kleinste Verkleinerung (Anteil von
-/// [member card_scale]), bevor Karten sich überlappen.
+/// Verzauberungen …) rechts vom Medaillon über der Hand (lokal x; das Medaillon reicht samt
+/// Klingen bis etwa Welt-x 2,2, die Spielfeld-Zone beginnt bei −1,38) und kleinste
+/// Verkleinerung (Anteil von [member card_scale]), bevor Karten sich überlappen.
 const AUTO_GAP: f32 = 0.12;
-const BACK_ROW_START: f32 = 1.75;
+const BACK_ROW_START: f32 = 3.8;
 /// Die hintere Reihe liegt rechtsbündig und reicht so weit über den rechten Rand der Zone
 /// hinaus bis an den Tischrand (lokal x).
 const BACK_ROW_OVERHANG: f32 = 1.9;

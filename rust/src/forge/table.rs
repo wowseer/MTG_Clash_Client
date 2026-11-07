@@ -3929,19 +3929,20 @@ impl ForgeTable {
                 continue;
             }
             let Some(center) = self.badge_center(seat) else { continue };
-            let designations = self.seat_tokens[seat].iter().filter(|(k, ..)| crate::table::cost_symbols::is_seat_designation(k)).count();
-            let (mut d, mut m) = (0usize, 0usize);
-            for (kind, _, sprite, t) in self.seat_tokens[seat].iter_mut() {
+            // eine Reihe rechts neben dem Medaillon auf Höhe der Lebens-Plakette: zuerst die
+            // Marken (Energie, Gift …), dann die Kennzeichen (Monarch, Initiative, Ring …)
+            let is_designation = |k: &str| crate::table::cost_symbols::is_seat_designation(k);
+            let mut order: Vec<usize> = (0..self.seat_tokens[seat].len()).collect();
+            order.sort_by_key(|&i| is_designation(&self.seat_tokens[seat][i].0));
+            let mut slot_x = vec![0.0f32; order.len()];
+            let mut x = SEAT_ROW_START_PX;
+            for &i in &order {
+                slot_x[i] = x;
+                x += if is_designation(&self.seat_tokens[seat][i].0) { SEAT_DESIGNATION_STEP_PX } else { SEAT_COUNTER_STEP_PX };
+            }
+            for (i, (_kind, _, sprite, t)) in self.seat_tokens[seat].iter_mut().enumerate() {
                 *t = (*t + dt).min(SEAT_TOKEN_POP);
-                let at = if crate::table::cost_symbols::is_seat_designation(kind) {
-                    d += 1;
-                    center + Vector2::new((150.0 + (d - 1) as f32 * 88.0) * px, -4.0 * px)
-                } else {
-                    m += 1;
-                    let (col, row) = ((m - 1) % 3, (m - 1) / 3);
-                    let y0 = if designations > 0 { 78.0 } else { 0.0 };
-                    center + Vector2::new((164.0 + col as f32 * 104.0) * px, (y0 + row as f32 * 54.0) * px)
-                };
+                let at = center + Vector2::new(slot_x[i] * px, SEAT_ROW_Y_PX * px);
                 let origin = cam.project_ray_origin(at);
                 let dir = cam.project_ray_normal(at);
                 if dir.y.abs() < 1e-4 {
@@ -5801,6 +5802,13 @@ struct Search {
 
 /// Spielsteine der Spieler-Kennzeichen: Durchmesser, Höhe über dem Tisch, Dauer des Aufspringens.
 const SEAT_TOKEN_SIZE: f32 = 0.8;
+/// Reihe der Kennzeichen und Marken neben dem Medaillon (Pixel bei 1080 Bildhöhe, ab der
+/// Medaillon-Mitte): Mitte des ersten Steins, Abstand je Marke bzw. Kennzeichen und Höhe (auf
+/// Höhe der Lebens-Plakette, unter der Artefakt-Reihe).
+const SEAT_ROW_START_PX: f32 = 160.0;
+const SEAT_COUNTER_STEP_PX: f32 = 104.0;
+const SEAT_DESIGNATION_STEP_PX: f32 = 88.0;
+const SEAT_ROW_Y_PX: f32 = 62.0;
 /// Kantenlänge der Marken-Plaketten (Gift, Energie …) am Medaillon.
 const SEAT_COUNTER_SIZE: f32 = 0.95;
 const SEAT_TOKEN_Y: f32 = 0.04;
