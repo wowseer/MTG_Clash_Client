@@ -3615,7 +3615,7 @@ impl ForgeTable {
         }
     }
 
-    /// Hand-Bühne (wie der Mulligan): die wählbaren Handkarten groß aufgefächert vor der Kamera,
+    /// Hand-Bühne (wie der Mulligan): die wählbaren Handkarten groß auf einer geraden Linie vor der Kamera,
     /// Titel nach dem Grund, Klick wählt (orange) bzw. hebt die Wahl auf, „Fertig“ erst bei
     /// gültiger Anzahl aktiv, „Abbrechen“ wo Forge das erlaubt.
     fn show_hand_pick(&mut self, req: &Request) {
@@ -3661,7 +3661,7 @@ impl ForgeTable {
         }
         showcase.bind_mut().show_cards(&cards);
         // Karten nebeneinander, bei vielen Karten mit Schieberegler
-        showcase.bind_mut().enable_scroll();
+        showcase.bind_mut().enable_line();
         if req.cancelable {
             let mut cancel = Button3D::create(ButtonStyle::Blue, tr!("Abbrechen", "Cancel"), Showcase::button_width());
             let cb = Callable::from_object_method(&self.to_gd(), "on_hand_pick_cancel");

@@ -90,6 +90,9 @@ const CAPTION_GAP: f32 = 0.07;
 /// Überlappung), Bogenradius (fast gerade), sichtbare Breite und Lage/Länge des Schiebereglers.
 const SCROLL_STEP: f32 = 0.7;
 const SCROLL_RADIUS: f32 = 30.0;
+/// Gerade Linie ([`Showcase::enable_line`]): so großer Bogenradius, dass die Karten gerade und
+/// ungedreht nebeneinander liegen.
+const LINE_RADIUS: f32 = 1.0e4;
 const SCROLL_SPAN: f32 = 3.4;
 const SLIDER_Y: f32 = -0.42;
 const SLIDER_WIDTH: f32 = 3.0;
@@ -541,6 +544,13 @@ impl Showcase {
     #[func]
     pub fn enable_scroll(&mut self) {
         self.enable_scroll_with(SCROLL_STEP, SCROLL_RADIUS);
+    }
+
+    /// Wie [method enable_scroll], aber die Karten liegen auf einer geraden Linie (ohne Bogen und
+    /// ohne Drehung), z. B. beim Abwerfen.
+    #[func]
+    pub fn enable_line(&mut self) {
+        self.enable_scroll_with(SCROLL_STEP, LINE_RADIUS);
     }
 
     /// Wie [method enable_scroll], mit eigenem Kartenabstand `step` (kleiner als eine
