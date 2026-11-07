@@ -76,10 +76,10 @@ const READY_STRENGTH: f32 = 1.0;
 /// Verstärkung über die Zeit (Sekunden, Faktor), danach orange bis zum Ende.
 const FLASH_KEYS: [(f32, f32); 5] = [(0.0, 1.0), (0.07, 4.6), (0.27, 2.7), (0.67, 1.7), (1.6, 1.0)];
 /// Angreifer: rückt so weit nach vorn (zum Gegner, lokal −Z), höchstens [`ADVANCE_MAX_WORLD`]
-/// Welteinheiten – so weit ist die Lücke zwischen den Kreaturenreihen beider Seiten, weiter
-/// überlappte er die Karten gegenüber.
+/// Welteinheiten – gut ein Drittel der Lücke zwischen den Kreaturenreihen beider Seiten (0,8,
+/// `zone.rs` `FRONT_GAP`), damit zu den Karten gegenüber deutlich Abstand bleibt.
 const ADVANCE: f32 = 0.22;
-const ADVANCE_MAX_WORLD: f32 = 0.15;
+const ADVANCE_MAX_WORLD: f32 = 0.3;
 /// Schlag im Kampf (wie im Video „Blocken“): Ausholen zum Ziel, Rückweg (Sekunden), Höhe über dem
 /// Ziel beim Treffer (die Karte landet auf ihm statt hindurch) und Drehung in der Tischebene
 /// während des Flugs (Grad).

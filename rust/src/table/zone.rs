@@ -41,6 +41,10 @@ const BACK_ROW_START: f32 = 1.75;
 const BACK_ROW_OVERHANG: f32 = 1.9;
 /// Abstand zwischen Kreaturen-Reihe und hinterer Reihe.
 const BACK_ROW_GAP: f32 = 0.12;
+/// Spielfeld: Abstand der Kreaturen und Planeswalker zur Kante zur Tischmitte (lokal z). Beide
+/// Seiten zusammen ergeben die Lücke zwischen den Kreaturenreihen (etwa 0,6 Kachelhöhen wie im
+/// Video „Blocken“), damit sich Angreifer und Blocker gegenüber nicht fast berühren.
+const FRONT_GAP: f32 = 0.35;
 /// Kleinste Größe der Planeswalker (Anteil von [member card_scale]) bei vielen Planeswalkern.
 const PW_MIN_SCALE: f32 = 0.6;
 /// Ab so vielen Planeswalkern liegen sie in zwei Reihen.
@@ -715,8 +719,8 @@ impl Zone {
         let wall = half_x - 0.1;
         // Die untere Reihe der Zone gehört Ländern (eigene Zone daneben) und Artefakten:
         // Kreaturen und Planeswalker liegen immer darüber, auch mit hohen Stapeln
-        let area_top = -half_z + 0.05;
-        let area_h = (2.0 * half_z - BACK_ROW_DEPTH - 0.05).max(len * self.card_scale * MIN_SHRINK);
+        let area_top = -half_z + FRONT_GAP;
+        let area_h = (2.0 * half_z - BACK_ROW_DEPTH - FRONT_GAP).max(len * self.card_scale * MIN_SHRINK);
         let min_s = self.card_scale * MIN_SHRINK;
 
         // Planeswalker: Größe nur nach ihrer Zahl (bis zwei voll, danach sanft kleiner), ganz
