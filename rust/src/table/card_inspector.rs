@@ -29,6 +29,9 @@ use crate::game::cards::CardDef;
 /// Abstand vor der Kamera und Höhe der Kartenkopie (Welteinheiten).
 const DEPTH: f32 = 3.0;
 const CARD_SHOWN_HEIGHT: f32 = 1.05;
+/// So weit (Welteinheiten) liegt die Ansicht über der Bildmitte: ihre Unterkante endet über dem
+/// Phasen-Zeitstrahl unten rechts (bzw. Friedhof/Manapool unten links).
+const LIFT: f32 = 0.14;
 /// Rand zum Bildschirmrand und Abstand Karte–Tafel (Welteinheiten).
 const EDGE: f32 = 0.06;
 const GAP: f32 = 0.03;
@@ -85,7 +88,7 @@ impl INode3D for CardInspector {
         let card_w = CARD_WIDTH * CARD_SHOWN_HEIGHT / CARD_HEIGHT;
         let x = if self.right_side { half_w - EDGE - card_w * 0.5 } else { -half_w + EDGE + card_w * 0.5 };
         if let Some(c) = self.content.as_mut() {
-            c.set_position(Vector3::new(x, 0.0, 0.0));
+            c.set_position(Vector3::new(x, LIFT, 0.0));
         }
         self.fit_panel(card_w);
     }
