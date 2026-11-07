@@ -2,7 +2,7 @@
 //!
 //! Vier Modi ([`ChoiceMode`]):
 //! - **Eine Option**: je Option ein Knopf, Klick = Antwort (Index).
-//! - **Mehrere Optionen**: Knöpfe zum An-/Abwählen, „Fertig (n)“ wird aktiv, sobald die Anzahl
+//! - **Mehrere Optionen**: Knöpfe zum An-/Abwählen, „Fertig“ wird aktiv, sobald die Anzahl
 //!   zwischen Minimum und Maximum liegt (Antwort: Liste von Indizes). Mit Wiederholung
 //!   ([`HudChoice::repeat`]) zählt jeder Klick die Option erneut („2× …“).
 //! - **Ja/Nein**: zwei Knöpfe mit eigenen Beschriftungen (Antwort: true / false).
@@ -389,7 +389,7 @@ impl ChoicePanel {
         self.refresh_multi();
     }
 
-    /// Mehrfachauswahl: ausgewählte Knöpfe golden umranden, „Fertig (n)“ nur bei gültiger Anzahl.
+    /// Mehrfachauswahl: ausgewählte Knöpfe golden umranden, „Fertig“ nur bei gültiger Anzahl.
     fn refresh_multi(&mut self) {
         let Some(ChoiceMode::Multi { min, max }) = self.current.as_ref().map(|c| c.mode.clone()) else { return };
         let numbered = self.current.as_ref().is_some_and(|c| c.numbered);
@@ -414,8 +414,7 @@ impl ChoicePanel {
         if let Some(done) = self.done.as_mut() {
             let n = self.selected.len();
             done.set_disabled(n < min || n > max);
-            let range = if min == max { format!("{max}") } else { format!("{min}–{max}") };
-            done.set_text(&trf!("Fertig ({n}/{range})", "Done ({n}/{range})"));
+            done.set_text(tr!("Fertig", "Done"));
         }
     }
 }

@@ -47,13 +47,10 @@ const LOCAL_SEAT: i64 = 0;
 /// Schlüssel der Karten für Fähigkeiten auf dem Stack: `ABILITY_KEY_BASE - Stack-ID`
 /// (verdeckte Gegner-Handkarten liegen zwischen −1 und dieser Grenze).
 const ABILITY_KEY_BASE: i64 = -1_000_000;
-/// Beschriftung des Fertig-Knopfes beim Unter-die-Bibliothek-Legen.
-fn pick_label(n: u32, min: u32, max: u32) -> String {
-    if min == max {
-        trf!("Fertig ({n}/{max})", "Done ({n}/{max})")
-    } else {
-        trf!("Fertig ({n}/{min}–{max})", "Done ({n}/{min}–{max})")
-    }
+/// Beschriftung des Fertig-Knopfes jeder Auswahl – ohne Zähler: wie viele gewählt sind, zeigen
+/// die markierten Karten bzw. Knöpfe; der Knopf wird erst bei gültiger Anzahl aktiv.
+fn done_label() -> String {
+    tr!("Fertig", "Done").to_string()
 }
 
 /// Startspieler-Knöpfe: Breite, Abstand untereinander (in Bildschirm-Hochrichtung) und Mitte der
@@ -785,11 +782,11 @@ impl ForgeTable {
     }
 
     /// Mehrfachwahl im Farbrad starten (mehrere Farben, CR 105): Klick wählt bzw. hebt auf,
-    /// darunter orange „Fertig (n/…)“ – erst bei gültiger Anzahl aktiv.
+    /// darunter orange „Fertig“ – erst bei gültiger Anzahl aktiv.
     fn start_wheel_multi(&mut self, min: u32, max: u32) {
         let n = self.wheel.as_ref().map_or(0, |(_, c, _)| c.len());
         self.wheel_multi = Some((vec![false; n], min, max));
-        let mut done = Button3D::create(ButtonStyle::Orange, &pick_label(0, min, max), Showcase::button_width());
+        let mut done = Button3D::create(ButtonStyle::Orange, &done_label(), Showcase::button_width());
         done.bind_mut().set_enabled(min == 0);
         done.bind_mut().pin_to_screen(Vector2::new(0.5, WHEEL_CENTER_Y), Vector2::new(0.0, WHEEL_DONE_OFFSET), WHEEL_DONE_WIDTH);
         let cb = Callable::from_object_method(&self.to_gd(), "on_wheel_multi_done");
@@ -820,7 +817,6 @@ impl ForgeTable {
         }
         let n = sel.iter().filter(|s| **s).count() as u32;
         if let Some(b) = self.wheel_done.as_mut().filter(|b| b.is_instance_valid()) {
-            b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
             b.bind_mut().set_enabled(n >= min && n <= max);
         }
     }
@@ -2691,7 +2687,7 @@ impl ForgeTable {
     }
 
     /// Modus wählen (CR 700.2): je Modus eine Kopie der Karte, auf der nur dieser Modus steht.
-    /// Ein Modus: Klick wählt sofort. Mehrere: Klick wählt (orange) bzw. hebt auf, „Fertig (n/…)“;
+    /// Ein Modus: Klick wählt sofort. Mehrere: Klick wählt (orange) bzw. hebt auf, „Fertig“;
     /// wiederholbare Modi zählen je Klick hoch („×2“), „Zurücksetzen“ leert die Wahl.
     /// Modi mit eigenen Zusatzkosten (Spree CR 702.172, Tiered; Video „Spree und Stack“): Titel =
     /// Schlüsselwort, darunter „Wähle eine oder mehrere Zusatzkosten.“, über jeder Kopie „+ {Kosten}“,
@@ -2758,7 +2754,7 @@ impl ForgeTable {
                 reset.connect("pressed", &cb);
                 showcase.bind_mut().add_button(reset);
             }
-            let mut done = Button3D::create(ButtonStyle::Orange, &pick_label(0, min, max), Showcase::button_width() * 1.2);
+            let mut done = Button3D::create(ButtonStyle::Orange, &done_label(), Showcase::button_width() * 1.2);
             done.bind_mut().set_enabled(min == 0);
             let cb = Callable::from_object_method(&self.to_gd(), "on_modes_done");
             done.connect("pressed", &cb);
@@ -2829,7 +2825,6 @@ impl ForgeTable {
             let n = self.mode_pick.len() as u32;
             for mut b in self.stage_buttons() {
                 if b.bind().get_text().to_string().starts_with(tr!("Fertig", "Done")) {
-                    b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
                     b.bind_mut().set_enabled(n >= min && n <= max);
                 }
             }
@@ -2854,7 +2849,6 @@ impl ForgeTable {
                 b.bind_mut().set_label_text(GString::from(pay_label.as_str()));
                 b.bind_mut().set_enabled(n >= min && n <= max);
             } else if !with_costs && text.starts_with(tr!("Fertig", "Done")) {
-                b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
                 b.bind_mut().set_enabled(n >= min && n <= max);
             }
         }
@@ -2911,7 +2905,7 @@ impl ForgeTable {
     /// wie die Spree-Bühne: je Möglichkeit eine Kopie ihrer Karte mit nur dem Text dieser
     /// Möglichkeit (Ersatzeffekt, statische Fähigkeit, Zauber/Fähigkeit für einen Effekt,
     /// Spielweise; bei Kartenseiten die ganze Seite), Klick wählt (orange) bzw. hebt auf, orange
-    /// „Anwenden“ (Mehrfachwahl: „Fertig (n/…)“) erst mit gültiger Wahl aktiv.
+    /// „Anwenden“ (Mehrfachwahl: „Fertig“) erst mit gültiger Wahl aktiv.
     /// Ersatzeffekte (CR 616.1): Titel „Ersatzeffekt wählen“, darunter „Welcher Ersatzeffekt gilt
     /// zuerst?“; über der Kopie der Kartenname, falls mehrere Möglichkeiten dieselbe Karte haben.
     fn show_card_options(&mut self, req: &Request) {
@@ -2977,10 +2971,7 @@ impl ForgeTable {
         } else {
             showcase.bind_mut().enable_scroll();
         }
-        let label = match multi {
-            Some((min, max)) => pick_label(0, min, max),
-            None => tr!("Anwenden", "Apply").to_string(),
-        };
+        let label = if multi.is_some() { done_label() } else { tr!("Anwenden", "Apply").to_string() };
         let mut apply = Button3D::create(ButtonStyle::Orange, &label, Showcase::button_width() * 1.2);
         apply.bind_mut().set_enabled(multi.is_some_and(|(min, _)| min == 0));
         let cb = Callable::from_object_method(&self.to_gd(), "on_modes_done");
@@ -3270,8 +3261,7 @@ impl ForgeTable {
         let mut reset = Button3D::create(ButtonStyle::Blue, tr!("Zurücksetzen", "Reset"), Showcase::button_width());
         reset.connect("pressed", &Callable::from_object_method(&me, "on_order_reset"));
         showcase.bind_mut().add_button(reset);
-        let n = descriptions.len() as u32;
-        let mut done = Button3D::create(ButtonStyle::Orange, &pick_label(0, n, n), Showcase::button_width() * 1.2);
+        let mut done = Button3D::create(ButtonStyle::Orange, &done_label(), Showcase::button_width() * 1.2);
         done.bind_mut().set_enabled(false);
         done.connect("pressed", &Callable::from_object_method(&me, "on_order_done"));
         showcase.bind_mut().add_button(done);
@@ -3287,7 +3277,7 @@ impl ForgeTable {
         self.refresh_order_cards();
     }
 
-    /// Nummern auf den Karten (groß, orange markiert) und „Fertig (n/N)“ aktualisieren.
+    /// Nummern auf den Karten (groß, orange markiert) und „Fertig“ aktualisieren.
     fn refresh_order_cards(&mut self) {
         let Some(Decision::OrderTriggers { descriptions, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
         for (card, i) in self.order_cards.iter_mut() {
@@ -3298,7 +3288,6 @@ impl ForgeTable {
         let (n, total) = (self.order_pick.len() as u32, descriptions.len() as u32);
         for mut b in self.stage_buttons() {
             if b.bind().get_text().to_string().starts_with(tr!("Fertig", "Done")) {
-                b.bind_mut().set_label_text(GString::from(pick_label(n, total, total).as_str()));
                 b.bind_mut().set_enabled(n == total);
             }
         }
@@ -3377,7 +3366,7 @@ impl ForgeTable {
     /// Bibliotheksstapel auf. Titel („Wähle bis zu einer“ …) mit Quelle und Text, die Karten groß
     /// als Cover-Flow (blau = wählbar; die Karte unter der Maus kommt groß und gerade nach vorn),
     /// Schieberegler bei vielen Karten, oben rechts „Schlachtfeld ansehen“. Eine Karte: Klick
-    /// wählt sofort; mehrere: Klick wählt (orange), „Fertig (n/…)“. Darf man keine nehmen, steht
+    /// wählt sofort; mehrere: Klick wählt (orange), „Fertig“. Darf man keine nehmen, steht
     /// blau „Ablehnen“ unten rechts. Nur ansehen (max 0): „Fertig“.
     fn show_library_pick(&mut self, req: &Request) {
         let Decision::ChooseCards { options, min, max, reason, player } = &req.decision else { return };
@@ -3423,7 +3412,7 @@ impl ForgeTable {
         if max == 0 {
             button(ButtonStyle::Orange, tr!("Fertig", "Done"), None, true);
         } else if max > 1 {
-            button(ButtonStyle::Orange, &pick_label(0, min, max), None, false);
+            button(ButtonStyle::Orange, &done_label(), None, false);
         }
         if min == 0 && max > 0 {
             button(ButtonStyle::Blue, tr!("Ablehnen", "Decline"), Some(LIB_DECLINE_POS), true);
@@ -3456,7 +3445,7 @@ impl ForgeTable {
         self.refresh_pick_buttons();
     }
 
-    /// „Fertig (n/…)“ der Kartenwahl-Bühne aktualisieren.
+    /// „Fertig“ der Kartenwahl-Bühne aktualisieren.
     fn refresh_pick_buttons(&mut self) {
         let Some(Decision::ChooseCards { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) else { return };
         if max <= 1 {
@@ -3465,7 +3454,6 @@ impl ForgeTable {
         let n = self.pick_chosen.len() as u32;
         for mut b in self.stage_buttons() {
             if b.bind().get_text().to_string().starts_with(tr!("Fertig", "Done")) {
-                b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
                 b.bind_mut().set_enabled(n >= min && n <= max);
             }
         }
@@ -3590,7 +3578,7 @@ impl ForgeTable {
     }
 
     /// Hand-Bühne (wie der Mulligan): die wählbaren Handkarten groß aufgefächert vor der Kamera,
-    /// Titel nach dem Grund, Klick wählt (orange) bzw. hebt die Wahl auf, „Fertig (n/…)“ erst bei
+    /// Titel nach dem Grund, Klick wählt (orange) bzw. hebt die Wahl auf, „Fertig“ erst bei
     /// gültiger Anzahl aktiv, „Abbrechen“ wo Forge das erlaubt.
     fn show_hand_pick(&mut self, req: &Request) {
         let Some((options, min, max)) = self.hand_choice(&req.decision) else { return };
@@ -3642,7 +3630,7 @@ impl ForgeTable {
             cancel.connect("pressed", &cb);
             showcase.bind_mut().add_button(cancel);
         }
-        let mut button = Button3D::create(ButtonStyle::Orange, &pick_label(0, min, max), Showcase::button_width() * 1.2);
+        let mut button = Button3D::create(ButtonStyle::Orange, &done_label(), Showcase::button_width() * 1.2);
         button.bind_mut().set_enabled(min == 0);
         let cb = Callable::from_object_method(&self.to_gd(), "on_hand_pick_done");
         button.connect("pressed", &cb);
@@ -3676,7 +3664,6 @@ impl ForgeTable {
         }
         let n = self.hand_pick.len() as u32;
         if let Some(mut b) = self.hand_pick_button.as_ref().filter(|b| b.is_instance_valid()).cloned() {
-            b.bind_mut().set_label_text(GString::from(pick_label(n, min, max).as_str()));
             b.bind_mut().set_enabled(n >= min && n <= max);
         }
         true
@@ -4382,14 +4369,14 @@ impl ForgeTable {
             Decision::DeclareAttackers { .. } => {
                 let n = self.attack_plan.len();
                 (
-                    if n == 0 { tr!("Angreifen  »", "Attack  »").to_string() } else { trf!("Angreifen ({n})  »", "Attack ({n})  »") },
+                    if n == 0 { tr!("Angreifen  »", "Attack  »").to_string() } else { tr!("Angreifen  »", "Attack  »").to_string() },
                     "Angreifer wählen",
                 )
             }
             Decision::DeclareBlockers { .. } => {
                 let n = self.block_plan.len();
                 (
-                    if n == 0 { tr!("Blocken  »", "Block  »").to_string() } else { trf!("Blocken ({n})  »", "Block ({n})  »") },
+                    if n == 0 { tr!("Blocken  »", "Block  »").to_string() } else { tr!("Blocken  »", "Block  »").to_string() },
                     "Blocker wählen",
                 )
             }
@@ -4397,7 +4384,7 @@ impl ForgeTable {
             Decision::ChooseTargets { min, description, .. } => {
                 let n = self.selection.len();
                 let label = if n >= *min as usize && n > 0 {
-                    trf!("Ziele bestätigen ({n})  »", "Confirm targets ({n})  »")
+                    tr!("Ziele bestätigen  »", "Confirm targets  »").to_string()
                 } else if *min == 0 {
                     tr!("Ohne Ziel weiter  »", "No target  »").to_string()
                 } else if req.cancelable {
@@ -4420,11 +4407,11 @@ impl ForgeTable {
             d @ Decision::ChooseCards { min, max, .. } if self.table_pick(d).is_some() => {
                 let n = self.selection.len() as u32;
                 let label = if n >= *min && (n > 0 || *min == 0) {
-                    format!("{}  »", pick_label(n, *min, *max))
+                    format!("{}  »", done_label())
                 } else if req.cancelable {
                     tr!("Abbrechen", "Cancel").to_string()
                 } else {
-                    format!("{} …", pick_label(n, *min, *max))
+                    format!("{} …", done_label())
                 };
                 let what = if req.prompt.is_empty() { tr!("Klicke die Karten auf dem Tisch an.", "Click the cards on the table.").to_string() } else { req.prompt.clone() };
                 return Some((label, what));
@@ -4441,7 +4428,7 @@ impl ForgeTable {
     /// sofort an Forge. Kartenwahl auf dem Tisch: weiter an das Auswahlfenster.
     fn pick_candidate(&mut self, index: usize) {
         // Kartenwahl auf dem Tisch (opfern, tappen, Convoke …): Klick wählt bzw. hebt auf; genau
-        // eine Karte verlangt → sofort; sonst bestätigt der Phasen-Knopf „Fertig (n/…)“
+        // eine Karte verlangt → sofort; sonst bestätigt der Phasen-Knopf „Fertig“
         if let Some(d @ Decision::ChooseCards { min, max, .. }) = self.pending.as_ref().map(|r| r.decision.clone()) {
             let Some(options) = self.table_pick(&d) else {
                 self.signals().choice_option_clicked().emit(index as i64);

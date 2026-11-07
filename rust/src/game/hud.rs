@@ -10,8 +10,8 @@
 //!   Manapool als runde Symbole ([`ManaPoolView`])
 //! - linker Bildrand: Spielername, darüber die Rundenzahl mit Sanduhr ([`HourglassIcon`]) –
 //!   Gegner oben links, Spieler unten links; der Name der Seite am Zug ist golden
-//! - unten rechts: Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen (n)“ /
-//!   „Blocken (n)“) und darunter klein „»»“ (Sofort beenden) – beide als orange animierte
+//! - unten rechts: Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen“ /
+//!   „Blocken“) und darunter klein „»»“ (Sofort beenden) – beide als orange animierte
 //!   [`Button3D`] in der 3D-Szene, an die Bildschirmstelle geheftet
 //! - Bildschirmmitte: Auswahlfenster (z. B. Mulligan)
 //!
@@ -63,7 +63,7 @@ const TIMELINE_GAP: f32 = 10.0;
 /// je ein [SeatBadge]-Medaillon mit Leben (an [member player_hero_anchor] / [member opponent_hero_anchor],
 /// sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr
 /// ([HourglassIcon]; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf
-/// „Angreifen (n)“ / „Blocken (n)“) und darunter „»»“ (Sofort beenden) (beide orange animierte [Button3D]) und ein
+/// „Angreifen“ / „Blocken“) und darunter „»»“ (Sofort beenden) (beide orange animierte [Button3D]) und ein
 /// Auswahlfenster (z. B. Mulligan).
 /// Liest den Zustand jedes Frame vom [ForgeTable] (Spiel mit der Forge-Regel-Engine).
 #[derive(GodotClass)]
@@ -104,7 +104,7 @@ pub struct TurnHud {
     player_mask: Option<Gd<CardCutout>>,
     /// Meldung „Spielende – X gewinnt!“ in der Bildmitte (sonst leer).
     game_over_label: Option<Gd<Label>>,
-    /// Phasen-Knopf („Passen“, „Angreifen (n)“ …) und „Sofort beenden“ als [Button3D].
+    /// Phasen-Knopf („Passen“, „Angreifen“ …) und „Sofort beenden“ als [Button3D].
     button: Option<Gd<Button3D>>,
     end_turn_button: Option<Gd<Button3D>>,
     /// Hinweis der Engine über dem Phasen-Zeitstrahl (z. B. ungültiger Angriff).

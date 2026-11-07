@@ -248,7 +248,7 @@ Sanduhr-Symbol (HUD), z. B. neben der Rundenzahl am linken Bildrand. Größe = `
 
 *Erbt von `CanvasLayer` · Quelle: `rust/src/game/hud.rs`*
 
-Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen (n)“ / „Blocken (n)“) und darunter „»»“ (Sofort beenden) (beide orange animierte `Button3D`) und ein Auswahlfenster (z. B. Mulligan). Liest den Zustand jedes Frame vom `ForgeTable` (Spiel mit der Forge-Regel-Engine).
+Bildschirm-Overlay für den Rundenablauf: Zeitstrahl der Phasen (`PhaseTimeline`, unten rechts über dem Hauptbutton), Spielende-Meldung in der Bildmitte, je ein `SeatBadge`-Medaillon mit Leben (an `player_hero_anchor` / `opponent_hero_anchor`, sonst links oben / unten), am linken Bildrand Spielername und darüber Rundenzahl mit Sanduhr (`HourglassIcon`; Gegner oben, Spieler unten), unten rechts der Phasen-Knopf „Passen“ (auch Leertaste; im Kampf „Angreifen“ / „Blocken“) und darunter „»»“ (Sofort beenden) (beide orange animierte `Button3D`) und ein Auswahlfenster (z. B. Mulligan). Liest den Zustand jedes Frame vom `ForgeTable` (Spiel mit der Forge-Regel-Engine).
 
 ### Eigenschaften
 
