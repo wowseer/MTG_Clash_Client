@@ -14,8 +14,8 @@
 //!   Karte) mit Beschriftung darüber, die die Bühne beim Schließen freigibt,
 //! - **Cover-Flow** ([`Showcase::enable_coverflow`]): großer Fächer zum Durchsuchen vieler Karten
 //!   (Bibliothek), die Karte unter der Maus kommt groß und gerade nach vorn,
-//! - **Schlachtfeld ansehen** ([`Showcase::enable_peek`]): Knopf oben rechts, der die Bühne
-//!   ausblendet, bis man ihn noch einmal drückt,
+//! - **Schlachtfeld ansehen** ([`Showcase::enable_peek`]): Knopf oben rechts an jeder Bühne vor
+//!   der Kamera, der die Bühne ausblendet, bis man ihn noch einmal drückt,
 //! - **Sperre**: solange abgedunkelt ist, lassen sich Karten auf dem Tisch dahinter nicht hovern.
 //!
 //! Zeiten nach `docs/claude/ANIMATION.md`: Öffnen 0,20 s (Abdunkeln 0,15 s), Schließen 0,15 s.
@@ -65,8 +65,9 @@ const COVERFLOW_CENTER_Y: f32 = 0.1;
 const COVERFLOW_SLIDER_Y: f32 = -0.66;
 const COVERFLOW_SCROLL_MIN: f32 = 3.0;
 const COVERFLOW_ZOOM_HEIGHT: f32 = 0.56;
-/// „Schlachtfeld ansehen“: Lage und Breite des Knopfes (oben rechts neben dem Titel).
-const PEEK_POS: Vector2 = Vector2::new(1.62, 0.93);
+/// „Schlachtfeld ansehen“: Lage und Breite des Knopfes (Ecke oben rechts, über der Titelzeile,
+/// damit auch lange Titel frei bleiben).
+const PEEK_POS: Vector2 = Vector2::new(1.66, 1.11);
 const PEEK_WIDTH: f32 = 0.86;
 /// Flug der Karten beim Schließen ([`Showcase::set_fly_target`]): Gesamtdauer bis zum Freigeben
 /// und Versatz je Karte (Sekunden).
@@ -282,7 +283,8 @@ impl Showcase {
         self.base_mut().set_global_transform(moved);
     }
 
-    /// Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene).
+    /// Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene) und zeigt
+    /// oben rechts „Schlachtfeld ansehen“ ([method enable_peek]).
     #[func]
     pub fn open(&mut self) {
         let Some(cam) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else { return };
@@ -292,6 +294,8 @@ impl Showcase {
         self.base_mut().set_global_transform(Transform3D::new(basis, xf.origin + forward * DISTANCE));
         self.t = 0.0;
         self.closing = false;
+        // jede Bühne, die den Tisch abdeckt, lässt den Blick aufs Schlachtfeld zu
+        self.enable_peek();
     }
 
     /// Titel, Untertitel und Hinweis setzen (leer = ausblenden). Wie in Arena bleibt der Titel

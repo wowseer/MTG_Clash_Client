@@ -620,7 +620,6 @@ impl ForgeTable {
         }
         showcase.bind_mut().show_options(copies);
         showcase.bind_mut().enable_coverflow(LIB_STEP, LIB_SCALE);
-        showcase.bind_mut().enable_peek();
         let mut done = Button3D::create(ButtonStyle::Orange, tr!("Fertig", "Done"), Showcase::button_width());
         done.connect("pressed", &Callable::from_object_method(&self.to_gd(), "close_zone_viewer"));
         showcase.bind_mut().add_button(done);
@@ -1677,15 +1676,17 @@ impl ForgeTable {
     /// Kartennamen nennen (CR 201.3) bzw. Typ wählen (z. B. Kreaturtyp, CR 205.3) wie in Arena:
     /// Bühne mit Überschrift „(Quelle) Wähle einen Kreaturtyp.“, darunter eine [`SearchList`] mit
     /// Filterfeld (einfach lostippen; Rücktaste löscht, Pfeiltasten wählen, Enter bestätigt,
-    /// Escape bricht ab, wo erlaubt). Ohne Eingabe stehen zuerst die Vorschläge der Engine
-    /// (Typen der eigenen Karten bzw. bekannte Kartennamen), „Alle zeigen“ blendet alle Optionen
-    /// ein; mit Eingabe wird in allen Optionen gesucht. Klick wählt eine Zeile, „Fertig“ (oder ein
+    /// Escape bricht ab, wo erlaubt). Kartennamen: immer alle Namen alphabetisch (keine
+    /// Vorauswahl). Typen: ohne Eingabe zuerst die Vorschläge der Engine (Typen der eigenen
+    /// Karten), „Alle zeigen“ blendet alle Optionen ein; mit Eingabe wird in allen Optionen gesucht. Klick wählt eine Zeile, „Fertig“ (oder ein
     /// zweiter Klick) bestätigt. Bei Kartennamen steht die Karte der Zeile unter der Maus bzw. der
     /// gewählten Zeile groß neben der Liste.
     fn show_search(&mut self, req: &Request) {
         self.clear_choice_objects();
         let (names, options, suggested) = match &req.decision {
-            Decision::NameCard { options, suggested, .. } => (true, options.clone(), suggested.clone()),
+            // Kartennamen: immer alle Karten, ohne Vorauswahl aus dem eigenen Deck – genannt wird
+            // meist eine Karte des Gegners (z. B. Pithing Needle)
+            Decision::NameCard { options, .. } => (true, options.clone(), Vec::new()),
             Decision::ChooseType { options, suggested, .. } => (false, options.clone(), suggested.clone()),
             _ => return,
         };
@@ -3360,7 +3361,6 @@ impl ForgeTable {
         let cb = Callable::from_object_method(&self.to_gd(), "on_scry_done");
         done.connect("pressed", &cb);
         showcase.bind_mut().add_button(done);
-        showcase.bind_mut().enable_peek();
     }
 
     /// Klick auf eine Karte der Hellsicht-Bühne: auf die andere Seite (oben ↔ unten/Friedhof).
@@ -3410,7 +3410,6 @@ impl ForgeTable {
             showcase.bind_mut().add_owned_cards(zone, copies);
         }
         showcase.bind_mut().enable_coverflow(LIB_STEP, LIB_SCALE);
-        showcase.bind_mut().enable_peek();
         let me = self.to_gd();
         let mut button = |style: ButtonStyle, text: &str, pos: Option<Vector2>, decline: bool| {
             let mut b = Button3D::create(style, text, Showcase::button_width());

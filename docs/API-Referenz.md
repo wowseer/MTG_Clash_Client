@@ -700,7 +700,7 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `open_at(point: Vector3, scale: float, lift: float)` | `void` | Die Bühne an einer Stelle auf dem Tisch statt vor der Kamera (z. B. am Stack), parallel zur Bildebene, um `scale` vergrößert, ohne Abdunkelung: `point` = Weltpunkt der Bühnenmitte, die Bühne rückt `lift` zur Kamera hin (vor die Karten dort). |
-| `open()` | `void` | Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene). |
+| `open()` | `void` | Stellt die Bühne vor die aktuelle Kamera (Abstand fest, parallel zur Bildebene) und zeigt oben rechts „Schlachtfeld ansehen“ (`enable_peek()`). |
 | `set_texts(title: String, subtitle: String, note: String)` | `void` | Titel, Untertitel und Hinweis setzen (leer = ausblenden). Wie in Arena bleibt der Titel kurz: Ist er breiter als der Bildschirm ([`TITLE_MAX_WIDTH`]), wird er geteilt ([`split_title`]) – der Rest kommt vor den Untertitel. Der Untertitel bricht in Zeilen um und wird bei langem Text kleiner. |
 | `set_focus_layout()` | `void` | Fokus-Anordnung für Fragen zu einer Karte (Kicker, Ja/Nein …): die Karte groß und hell in der Mitte, die Knöpfe untereinander darunter, der Titel direkt über der Karte, kein Untertitel (er läge auf der Karte). Vor `add_button()` aufrufen. |
 | `set_title_card(card: Card3D)` | `void` | Karte am Stack, zu der die Frage gehört (der gewirkte Zauber): Der Untertitel der Fokus-Anordnung steht dann immer mittig als Überschrift über dieser Karte statt rechts neben der großen Karte (dort läge er auf dem Stack) und folgt ihr jedes Bild. Nach `set_focus_layout()` aufrufen. |
