@@ -1323,10 +1323,19 @@ impl Card3D {
         l.cost.set_visible(!tile && !printed && !t.cost.is_empty());
         // Planeswalker-Kachel: Loyalität steht im Schild, nicht im Wertefeld
         l.stats.set_visible((!printed || tiled || t.stats_color != Color::WHITE) && !shield);
+        // echtes Kartenbild mit veränderten Werten: eigenes Wertefeld über dem gedruckten
+        let plate = printed && !tile && !tiled && t.stats_color != Color::WHITE && !shield;
+        l.stats_plate.set_visible(plate);
         l.kind.set_position(px(128.0, zs[0]));
         l.text.set_position(px(128.0, zs[1]));
         l.badges.set_position(px(128.0, zs[2]));
-        l.stats.set_position(if tile { px(212.0, len * 0.5 - 0.045) } else { px(206.0, (333.0 / 358.0 - 0.5) * CARD_HEIGHT) });
+        l.stats.set_position(if tile {
+            px(212.0, len * 0.5 - 0.045)
+        } else if plate {
+            px(STATS_PLATE_CENTER.x, (STATS_PLATE_CENTER.y / 358.0 - 0.5) * CARD_HEIGHT)
+        } else {
+            px(206.0, (333.0 / 358.0 - 0.5) * CARD_HEIGHT)
+        });
         let ty = zs[3];
         // Schriftgrößen an die Textlänge anpassen. Umrechnung: 1 Schriftpunkt = PIXEL m,
         // 1 Texturpixel = CARD_WIDTH / 256 m.
@@ -1379,6 +1388,14 @@ impl Card3D {
             l.stats.set_modulate(c * tint);
             l.stats.set_outline_size(0);
             l.name.set_modulate(l.colors[0] * tint);
+        } else if plate {
+            // auf dem eigenen Wertefeld: dunkle Schrift wie gedruckt, verändert blau bzw. rot
+            let c = if t.stats_color.g > t.stats_color.r { Color::from_rgb(0.12, 0.28, 0.9) } else { Color::from_rgb(0.8, 0.12, 0.1) };
+            l.colors[4] = c;
+            l.stats.set_font_size(card_text::fit_line(&t.stats, (STATS_PLATE_SIZE.x - 10.0) * per_px, 20, 46));
+            l.stats.set_outline_size(0);
+            l.stats.set_modulate(c * tint);
+            l.colors[0] = Color::from_rgb(0.97, 0.93, 0.85);
         } else {
             l.stats.set_font_size(44);
             l.colors[0] = Color::from_rgb(0.97, 0.93, 0.85);
@@ -1465,6 +1482,7 @@ impl Card3D {
             kind: card_label(visual, px(128.0, 219.0), 34, light, 0.0),
             text: card_label(visual, px(128.0, TEXT_BOX_CENTER), 30, dark, 0.52),
             stats: card_label(visual, px(206.0, 333.0), 44, Color::WHITE, 0.0),
+            stats_plate: stats_plate(visual),
             badges: card_label(visual, px(128.0, 130.0), 52, Color::WHITE, 0.6),
             colors: [light, dark, light, dark, Color::WHITE, Color::WHITE],
         };
@@ -1766,6 +1784,9 @@ struct CardLabels {
     kind: Gd<Label3D>,
     text: Gd<Label3D>,
     stats: Gd<Label3D>,
+    /// Eigenes Wertefeld über dem gedruckten (echtes Kartenbild, Werte verändert): deckt das
+    /// gedruckte Feld ganz ab, die Werte stehen mittig darauf.
+    stats_plate: Gd<MeshInstance3D>,
     /// Plaketten über dem Bildfeld: Marken, „Spielstein“ (siehe [`Card3D::set_badges`]).
     badges: Gd<Label3D>,
     /// Grundfarbe je Beschriftung (Reihenfolge wie [`CardLabels::all`]); das Ausgrauen
@@ -1777,6 +1798,75 @@ impl CardLabels {
     fn all(&mut self) -> [&mut Gd<Label3D>; 6] {
         [&mut self.name, &mut self.cost, &mut self.kind, &mut self.text, &mut self.stats, &mut self.badges]
     }
+}
+
+/// Eigenes Wertefeld auf echten Kartenbildern: Mitte und Größe in Pixeln der Kartentextur
+/// (256 × 358) – gemessen an Scryfall-Bildern alter und neuer Rahmen (gedrucktes Feld etwa
+/// x 190…242, y 317…340), etwas größer, damit es das gedruckte Feld ganz abdeckt.
+const STATS_PLATE_CENTER: Vector2 = Vector2::new(216.0, 328.5);
+const STATS_PLATE_SIZE: Vector2 = Vector2::new(56.0, 27.0);
+
+thread_local! {
+    /// Textur des eigenen Wertefelds (einmal gezeichnet).
+    static STATS_PLATE_TEXTURE: std::cell::RefCell<Option<Gd<Texture2D>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Eigenes Wertefeld (Pergament mit dunklem Rand und abgerundeten Ecken wie das gedruckte),
+/// flach über der Vorderseite; anfangs unsichtbar.
+fn stats_plate(parent: &mut Gd<Node3D>) -> Gd<MeshInstance3D> {
+    let tex = STATS_PLATE_TEXTURE.with(|t| t.borrow_mut().get_or_insert_with(stats_plate_texture).clone());
+    let mut mat = StandardMaterial3D::new_gd();
+    mat.set_texture(godot::classes::base_material_3d::TextureParam::ALBEDO, &tex);
+    mat.set_transparency(godot::classes::base_material_3d::Transparency::ALPHA_SCISSOR);
+    // unbeleuchtet wie das gedruckte Feld im Kartenbild (sonst dunkler als die Karte)
+    mat.set_shading_mode(godot::classes::base_material_3d::ShadingMode::UNSHADED);
+    let mut mesh = PlaneMesh::new_gd();
+    mesh.set_size(Vector2::new(STATS_PLATE_SIZE.x / 256.0 * CARD_WIDTH, STATS_PLATE_SIZE.y / 358.0 * CARD_HEIGHT));
+    mesh.set_material(&mat);
+    let mut mi = MeshInstance3D::new_alloc();
+    mi.set_mesh(&mesh);
+    mi.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+    mi.set_position(Vector3::new(
+        (STATS_PLATE_CENTER.x / 256.0 - 0.5) * CARD_WIDTH,
+        CARD_THICKNESS * 0.5 + 0.0012,
+        (STATS_PLATE_CENTER.y / 358.0 - 0.5) * CARD_HEIGHT,
+    ));
+    mi.set_visible(false);
+    parent.add_child(&mi);
+    mi
+}
+
+/// Bild des Wertefelds: abgerundetes Pergament-Rechteck, oben heller, mit dunklem Rand.
+fn stats_plate_texture() -> Gd<Texture2D> {
+    use godot::classes::image::Format;
+    use godot::classes::{Image, ImageTexture};
+    let (w, h) = (224i32, 108i32);
+    let mut img = Image::create_empty(w, h, false, Format::RGBA8).expect("Bild");
+    let r = 30.0f32;
+    let border = 7.0f32;
+    let sdf = |x: f32, y: f32| {
+        // Abstand zum Rand des abgerundeten Rechtecks (negativ = innen)
+        let (hx, hy) = (w as f32 * 0.5 - r - 1.0, h as f32 * 0.5 - r - 1.0);
+        let (qx, qy) = ((x - w as f32 * 0.5).abs() - hx, (y - h as f32 * 0.5).abs() - hy);
+        (qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0)) - r
+    };
+    let edge = Color::from_rgb(0.33, 0.24, 0.17);
+    for y in 0..h {
+        let t = y as f32 / h as f32;
+        let fill = Color::from_rgb(0.96, 0.9, 0.82).lerp(Color::from_rgb(0.86, 0.76, 0.66), t as f64);
+        for x in 0..w {
+            let d = sdf(x as f32 + 0.5, y as f32 + 0.5);
+            let c = if d > 0.0 {
+                Color::from_rgba(0.0, 0.0, 0.0, 0.0)
+            } else if d > -border {
+                edge
+            } else {
+                fill
+            };
+            img.set_pixel(x, y, c);
+        }
+    }
+    ImageTexture::create_from_image(&img).expect("Textur").upcast()
 }
 
 /// Textfeld für den Regeltext: Mitte und Höhe in Pixeln der Kartentextur (unten bleibt das

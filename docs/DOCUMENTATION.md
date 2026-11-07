@@ -97,7 +97,7 @@ a tile of its own – frame in the card's colour, name bar at the top (dark font
 value box (power/toughness dark, boosted blue, weakened red; loyalty or defense) and at the bottom
 left a round black button with a white symbol (↷ for a tap ability, otherwise ◎); counters as
 coins at the top right (`placeholder::tile_face`). Without an image crop (not loaded yet, face
-down) the upper part of the front. **Shape and size**: cards on the battlefield and in the land
+down) the upper part of the front. On a **full card with its real image** (card view, hand, stages) changed power/toughness get an **own value box** drawn over the printed one (light parchment with a dark rim, covering the printed box of old and new frames completely; boosted blue, weakened red; `STATS_PLATE_*` in `card3d.rs`), so the printed numbers no longer show through. **Shape and size**: cards on the battlefield and in the land
 row are **tiles** (`Zone.tile_cards`, `Card3D.set_tile`): only name and image, power/toughness at
 the bottom right, slightly wider than tall; while dragging the full card appears, while hovering
 the card view (see below). Tapped cards (lands too) are grey and stand slightly tilted as soon as
