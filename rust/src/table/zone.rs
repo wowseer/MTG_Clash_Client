@@ -40,9 +40,6 @@ const BACK_ROW_START: f32 = 3.8;
 /// Die hintere Reihe liegt rechtsbündig und reicht so weit über den rechten Rand der Zone
 /// hinaus bis an den Tischrand (lokal x).
 const BACK_ROW_OVERHANG: f32 = 1.9;
-/// Hintere Reihe: so weit dürfen sich ihre Karten überlappen (sichtbarer Anteil der Breite; der
-/// Name links oben bleibt lesbar), bevor die Reihe kleiner wird.
-const BACK_ROW_MIN_SPACING: f32 = 0.6;
 /// Abstand zwischen Kreaturen-Reihe und hinterer Reihe.
 const BACK_ROW_GAP: f32 = 0.12;
 /// Spielfeld: Abstand der Kreaturen und Planeswalker zur Kante zur Tischmitte (lokal z). Beide
@@ -797,8 +794,9 @@ impl Zone {
         let w = CARD_WIDTH * s;
 
         // hintere Reihe (Artefakte, Verzauberungen …): nach Kategorie geordnet (Artefakte, dann
-        // Verzauberungen, dann der Rest), rechtsbündig bis an den Tischrand; eine zweite Reihe, sobald
-        // sie größere Karten erlaubt – bevorzugt an einer Kategorie-Grenze geteilt
+        // Verzauberungen, dann der Rest), rechtsbündig bis an den Tischrand, nie überlappend; eine
+        // zweite Reihe darüber (rechts neben den Kreaturen), sobald sie größere Karten erlaubt –
+        // bevorzugt an einer Kategorie-Grenze geteilt; kleiner erst, wenn auch das nicht reicht
         let category = |g: usize| -> u8 {
             let i = keys.iter().zip(&front).position(|(k, f)| *k == groups[g].0 && *f == groups[g].1).unwrap_or(0);
             // nach der Typzeile: Embleme, Dungeons, „The Ring“ (CR 408) gelten nicht als Artefakt
@@ -819,41 +817,6 @@ impl Zone {
         let units_of = |r: &[usize]| -> f32 {
             (r.iter().map(|&g| group_units(groups[g].2, 1) + AUTO_GAP).sum::<f32>() - AUTO_GAP).max(0.0)
         };
-        let back_scale = |rows: &[Vec<usize>]| -> f32 {
-            let n = rows.len() as f32;
-            let by_depth = (BACK_ROW_DEPTH - 0.1 - BACK_ROW_TAP_ROOM - BACK_ROW_GAP * (n - 1.0)) / (n * len);
-            let widest = rows.iter().map(|r| units_of(r)).fold(0.0f32, f32::max).max(0.001);
-            // erst überlappen (bis BACK_ROW_MIN_SPACING der Breite sichtbar bleibt), dann verkleinern
-            self.card_scale.min(by_depth).min(back_avail / (widest * CARD_WIDTH * BACK_ROW_MIN_SPACING)).max(min_s)
-        };
-        // Kandidaten: eine Reihe, zwei Reihen an jeder Kategorie-Grenze, zwei gleich breite Reihen
-        let mut layouts: Vec<Vec<Vec<usize>>> = vec![vec![back.clone()]];
-        for cut in 1..back.len() {
-            if category(back[cut]) != category(back[cut - 1]) {
-                layouts.push(vec![back[..cut].to_vec(), back[cut..].to_vec()]);
-            }
-        }
-        if back.len() >= 2 {
-            let total = units_of(&back);
-            let cut = (1..back.len())
-                .min_by(|&a, &b| {
-                    let d = |c: usize| (units_of(&back[..c]) - total * 0.5).abs();
-                    d(a).total_cmp(&d(b))
-                })
-                .unwrap_or(1);
-            layouts.push(vec![back[..cut].to_vec(), back[cut..].to_vec()]);
-        }
-        let mut back_rows = layouts[0].clone();
-        let mut back_s = back_scale(&back_rows);
-        for l in &layouts[1..] {
-            let sc = back_scale(l);
-            // zweite Reihe nur, wenn die Karten dadurch spürbar größer werden
-            if sc > back_s * 1.05 {
-                back_rows = l.clone();
-                back_s = sc;
-            }
-        }
-        let back_w = CARD_WIDTH * back_s;
 
         // Lage (x, z, Größe) der ersten Karte jeder Gruppe
         let mut slot = vec![(0.0f32, 0.0f32, s); groups.len()];
@@ -900,11 +863,58 @@ impl Zone {
             }
             z_row += row_h(r, s) + BACK_ROW_GAP;
         }
+        // rechter Rand der Kreaturen (samt angelegter Karten): obere hintere Reihen liegen erst
+        // rechts davon, weil sie in die Höhe der Kreaturen-Reihe reichen
+        let attach_x = if max_attached == 0 { 0.0 } else { (ATTACH_X + (max_attached - 1) as f32 * ATTACH_STEP) * s };
+        let creature_right = cre.iter().map(|&g| slot[g].0 + CARD_WIDTH * slot[g].2 * 0.5 + attach_x).fold(f32::NEG_INFINITY, f32::max);
+        let upper_start = BACK_ROW_START.max(creature_right + AUTO_GAP * CARD_WIDTH * self.card_scale);
+        let upper_avail = (back_right - upper_start).max(0.0);
+        // Größe einer Aufteilung: Karten liegen nebeneinander (ohne Überlappen); eine Reihe hat die
+        // untere Reihe, mehrere Reihen reichen nach oben bis an den Kreaturen-Bereich
+        let back_scale = |rows: &[Vec<usize>]| -> f32 {
+            let n = rows.len();
+            let depth = if n == 1 { BACK_ROW_DEPTH } else { 2.0 * half_z - FRONT_GAP };
+            let mut sc = self.card_scale.min((depth - 0.1 - BACK_ROW_TAP_ROOM - BACK_ROW_GAP * (n as f32 - 1.0)) / (n as f32 * len));
+            for (r, row) in rows.iter().enumerate() {
+                let avail = if r + 1 == n { back_avail } else { upper_avail };
+                sc = sc.min(avail / (units_of(row).max(0.001) * CARD_WIDTH));
+            }
+            sc.max(min_s)
+        };
+        // Kandidaten: eine Reihe, zwei Reihen an jeder Kategorie-Grenze, zwei gleich breite Reihen
+        let mut layouts: Vec<Vec<Vec<usize>>> = vec![vec![back.clone()]];
+        for cut in 1..back.len() {
+            if category(back[cut]) != category(back[cut - 1]) {
+                layouts.push(vec![back[..cut].to_vec(), back[cut..].to_vec()]);
+            }
+        }
+        if back.len() >= 2 {
+            let total = units_of(&back);
+            let cut = (1..back.len())
+                .min_by(|&a, &b| {
+                    let d = |c: usize| (units_of(&back[..c]) - total * 0.5).abs();
+                    d(a).total_cmp(&d(b))
+                })
+                .unwrap_or(1);
+            layouts.push(vec![back[..cut].to_vec(), back[cut..].to_vec()]);
+        }
+        let mut back_rows = layouts[0].clone();
+        let mut back_s = back_scale(&back_rows);
+        for l in &layouts[1..] {
+            let sc = back_scale(l);
+            // zweite Reihe nur, wenn die Karten dadurch spürbar größer werden
+            if sc > back_s * 1.05 {
+                back_rows = l.clone();
+                back_s = sc;
+            }
+        }
+        let back_w = CARD_WIDTH * back_s;
         // jede Reihe endet am Tischrand; die untere Reihe liegt an der Kante zum Spieler
         let mut squeeze_of = vec![1.0f32; groups.len()];
         let n_back = back_rows.len();
         for (r, row) in back_rows.iter().enumerate() {
-            let squeeze = (back_avail / (units_of(row) * back_w).max(0.001)).min(1.0);
+            let avail = if r + 1 == n_back { back_avail } else { upper_avail };
+            let squeeze = (avail / (units_of(row) * back_w).max(0.001)).min(1.0);
             let z = half_z - 0.05 - len * back_s * 0.5 - (n_back - 1 - r) as f32 * (len * back_s + BACK_ROW_GAP);
             let mut xb = back_right - units_of(row) * back_w * squeeze + back_w * 0.5;
             for &g in row {
