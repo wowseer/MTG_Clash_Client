@@ -128,7 +128,8 @@ void fragment() {
 /// `key` kennzeichnet den Pfeil über Frames hinweg (gleicher Schlüssel = derselbe Pfeil: Biegung
 /// läuft weiter, Wachsen nur beim ersten Erscheinen), `alpha` dämpft ihn (z. B. Vorschau unter
 /// der Maus), `grow` = beim Erscheinen vom Start zum Ziel wachsen (aus bei Pfeilen, die der
-/// Spieler gerade selbst gezogen hat).
+/// Spieler gerade selbst gezogen hat), `straight` = nie zum Bogen werden, auch wenn die Enden
+/// nah beieinander liegen (Kampfpfeile zwischen gegenüberliegenden Karten).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ArrowSpec {
     pub key: u64,
@@ -137,6 +138,7 @@ pub struct ArrowSpec {
     pub color: ArrowColor,
     pub alpha: f32,
     pub grow: bool,
+    pub straight: bool,
 }
 
 /// Laufender Zustand eines Pfeils (je Schlüssel).
@@ -211,6 +213,7 @@ impl TargetArrows {
                 color: colors.as_slice().get(i).map_or(ArrowColor::Gold, |c| color_from_index(*c)),
                 alpha: 1.0,
                 grow: true,
+                straight: false,
             })
             .collect();
         self.set_arrows(&specs);
@@ -235,7 +238,7 @@ impl TargetArrows {
             let (mut from, mut to) = (lift(a.from), lift(a.to));
             let flat = Vector3::new(to.x - from.x, 0.0, to.z - from.z).length();
             // Bogen bei übereinanderliegenden Karten, sonst gerader/dynamisch gebogener Pfeil
-            let arch = (flat < LOOP_DISTANCE).then(|| {
+            let arch = (!a.straight && flat < LOOP_DISTANCE).then(|| {
                 let dir = LOOP_DIR.normalized();
                 let side = dir.cross(Vector3::UP).normalized();
                 // beide Enden über der oberen Karte, sonst verdeckt sie den Bogen

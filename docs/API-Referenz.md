@@ -545,6 +545,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_attacking(attacking: bool)` | `void` | Angreifer im Kampf: Karte rückt etwas zum Gegner vor und trägt die rote Angriffsspitze an der Oberkante (`false` = zurück an ihren Platz). |
 | `set_turned(turned: bool)` | `void` | Kartenbild um 180° gedreht zeigen (setzt die Zone, `Zone.turn_cards`): Karten des Gegners liegen in seiner um 180° gedrehten Zone und wären sonst von unserer Seite aus kopfüber. Nur das Bild dreht sich; Vorrücken und Schlag im Kampf bleiben zum Gegner gerichtet. |
 | `set_combat_alone(alone: bool)` | `bool` | Im Kampf geblockt bzw. blockend (`true`): die Karte bildet auf dem Spielfeld einen eigenen Stapel, statt mit gleichen Karten zusammenzuliegen. Gibt zurück, ob sich etwas geändert hat. |
+| `set_combat_x(x: float, on: bool)` | `bool` | Geblockter Angreifer: liegt seinem Blocker auf dem Spielfeld genau gegenüber (`x` = Welt-x des Blockers bzw. die Mitte mehrerer Blocker; `on = false` = wieder normal einreihen). Gibt zurück, ob sich die Lage spürbar geändert hat (dann muss die Zone neu anordnen). |
 | `set_tile(tile: bool)` | `void` | Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen und Ziehen wird die ganze Karte gezeigt. Setzt die Zone beim Anordnen. |
 | `set_bright(bright: bool)` | `void` | Immer hell in Originalfarben zeigen (Karten auf einer 3D-Bühne vor der Kamera). |
 | `set_zoom(zoom: bool)` | `void` | Beim Hovern selbst groß vor die Kamera holen (Hand) – setzt die Zone beim Anordnen. |

@@ -71,8 +71,11 @@ const READY_STRENGTH: f32 = 1.0;
 /// Aufleuchten beim Aktivieren ([`Card3D::flash`]; Blender: Einschlag Frame 30 → 80):
 /// Verstärkung über die Zeit (Sekunden, Faktor), danach orange bis zum Ende.
 const FLASH_KEYS: [(f32, f32); 5] = [(0.0, 1.0), (0.07, 4.6), (0.27, 2.7), (0.67, 1.7), (1.6, 1.0)];
-/// Angreifer: rückt so weit nach vorn (zum Gegner, lokal −Z).
+/// Angreifer: rückt so weit nach vorn (zum Gegner, lokal −Z), höchstens [`ADVANCE_MAX_WORLD`]
+/// Welteinheiten – so weit ist die Lücke zwischen den Kreaturenreihen beider Seiten, weiter
+/// überlappte er die Karten gegenüber.
 const ADVANCE: f32 = 0.22;
+const ADVANCE_MAX_WORLD: f32 = 0.15;
 /// Schlag im Kampf (wie im Video „Blocken“): Ausholen zum Ziel, Rückweg (Sekunden), Höhe über dem
 /// Ziel beim Treffer (die Karte landet auf ihm statt hindurch) und Drehung in der Tischebene
 /// während des Flugs (Grad).
@@ -236,6 +239,8 @@ pub struct Card3D {
     turned: bool,
     /// Im Kampf geblockt bzw. blockend: liegt auf dem Spielfeld in einem eigenen Stapel.
     combat_alone: bool,
+    /// Geblockter Angreifer: Welt-x seines Blockers (die Zone legt ihn genau gegenüber).
+    combat_x: Option<f32>,
     /// Rahmenfarbe: gezeigt und Ziel (weicher Übergang, [`GLOW_FADE_SPEED`]).
     glow_shown: Color,
     glow_goal: Color,
@@ -324,6 +329,7 @@ impl IArea3D for Card3D {
             hold_left: 0.0,
             turned: false,
             combat_alone: false,
+            combat_x: None,
             glow_shown: PLAYABLE_GLOW,
             glow_goal: PLAYABLE_GLOW,
             tile: false,
@@ -437,10 +443,13 @@ impl IArea3D for Card3D {
             self.apply_glow();
         }
         // Angreifer rückt vor (nicht beim Ziehen/Zoomen)
-        let adv_goal = if self.advanced && !self.dragging && !zoomed { 1.0 } else { 0.0 };
+        // einem Blocker gegenüber ([method set_combat_x]) bleibt der Angreifer in seiner Reihe: der
+        // Abstand zum Blocker bleibt wie zwischen den Reihen, die Karten überlappen nicht
+        let adv_goal = if self.advanced && self.combat_x.is_none() && !self.dragging && !zoomed { 1.0 } else { 0.0 };
         self.advance_amount += (adv_goal - self.advance_amount) * (1.0 - (-10.0 * dt).exp());
         let mut target = target;
-        target.origin.z -= ADVANCE * self.advance_amount;
+        let scale = self.base().get_global_transform().basis.col_a().length().max(0.01);
+        target.origin.z -= ADVANCE.min(ADVANCE_MAX_WORLD / scale) * self.advance_amount;
         let (lunge, turn) = self.lunge_offset(dt);
 
         let w = 1.0 - (-self.tilt_speed * dt).exp();
@@ -637,6 +646,27 @@ impl Card3D {
         let changed = self.combat_alone != alone;
         self.combat_alone = alone;
         changed
+    }
+
+    /// Geblockter Angreifer: liegt seinem Blocker auf dem Spielfeld genau gegenüber (`x` = Welt-x
+    /// des Blockers bzw. die Mitte mehrerer Blocker; `on = false` = wieder normal einreihen).
+    /// Gibt zurück, ob sich die Lage spürbar geändert hat (dann muss die Zone neu anordnen).
+    #[func]
+    pub fn set_combat_x(&mut self, x: f32, on: bool) -> bool {
+        let new = on.then_some(x);
+        let changed = match (self.combat_x, new) {
+            (Some(a), Some(b)) => (a - b).abs() > 0.03,
+            (a, b) => a.is_some() != b.is_some(),
+        };
+        if changed {
+            self.combat_x = new;
+        }
+        changed
+    }
+
+    /// Welt-x des Blockers, dem diese Karte gegenüberliegt ([method set_combat_x]).
+    pub fn combat_x(&self) -> Option<f32> {
+        self.combat_x
     }
 
     /// Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen

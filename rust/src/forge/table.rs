@@ -4538,7 +4538,7 @@ impl ForgeTable {
             }
             if let (Some(a), Some(b)) = (pos(from), self.target_position(to)) {
                 let key = arrow_key(color as u64, i64::from(from), to);
-                arrows.push(arrow(key, a, b, color, alpha, !self.drawn_arrows.contains(&key)));
+                arrows.push(combat_arrow(key, a, b, color, alpha, !self.drawn_arrows.contains(&key)));
             }
         };
         match self.pending.as_ref().map(|r| &r.decision) {
@@ -4723,9 +4723,12 @@ impl ForgeTable {
     fn update_combat_look(&mut self) {
         let mut attacking: HashSet<i64> = self.attack_plan.iter().map(|(c, _)| i64::from(*c)).collect();
         let mut paired: HashSet<i64> = HashSet::new();
+        // Angreifer → seine Blocker (geplant oder erklärt)
+        let mut blockers_of: HashMap<i64, Vec<i64>> = HashMap::new();
         if matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::DeclareBlockers { .. })) {
             for (b, a) in &self.block_plan {
                 paired.extend([i64::from(*b), i64::from(*a)]);
+                blockers_of.entry(i64::from(*a)).or_default().push(i64::from(*b));
             }
         }
         if let Some(combat) = self.state.as_ref().and_then(|s| s.get("combat")).and_then(|v| v.try_to::<VarDictionary>().ok()) {
@@ -4736,16 +4739,37 @@ impl ForgeTable {
             }
             for pair in get_array(&combat, "blocks").unwrap_or_default().iter_shared() {
                 if let Ok(pair) = pair.try_to::<VarArray>() {
-                    paired.extend(pair.iter_shared().filter_map(|v| v.try_to::<i64>().ok()));
+                    let ids: Vec<i64> = pair.iter_shared().filter_map(|v| v.try_to::<i64>().ok()).collect();
+                    paired.extend(ids.iter().copied());
+                    if let [b, a] = ids[..] {
+                        let list = blockers_of.entry(a).or_default();
+                        if !list.contains(&b) {
+                            list.push(b);
+                        }
+                    }
                 }
             }
         }
+        // geblockter Angreifer liegt seinem Blocker gegenüber (Mitte mehrerer Blocker)
+        let facing: HashMap<i64, f32> = blockers_of
+            .iter()
+            .filter_map(|(a, bs)| {
+                let xs: Vec<f32> = bs
+                    .iter()
+                    .filter_map(|b| self.cards.get(b).filter(|c| c.is_instance_valid()))
+                    .map(|c| c.get_global_position().x)
+                    .collect();
+                (!xs.is_empty()).then(|| (*a, xs.iter().sum::<f32>() / xs.len() as f32))
+            })
+            .collect();
         // Angreifer bilden einen eigenen Stapel: Zone neu anordnen, wenn sich etwas ändert
         let mut relayout: Vec<Gd<Zone>> = Vec::new();
         for (id, card) in self.cards.iter_mut() {
             let on = attacking.contains(id);
             let alone_changed = card.bind_mut().set_combat_alone(paired.contains(id));
-            if card.bind().is_attacking() != on || alone_changed {
+            let face = facing.get(id).copied();
+            let face_changed = card.bind_mut().set_combat_x(face.unwrap_or(0.0), face.is_some());
+            if card.bind().is_attacking() != on || alone_changed || face_changed {
                 card.bind_mut().set_attacking(on);
                 if let Some(z) = card.bind().get_zone() {
                     if !relayout.contains(&z) {
@@ -4888,7 +4912,10 @@ impl ForgeTable {
         let from = card.get_global_position();
         // fester Schlüssel während des Ziehens: die Biegung läuft ohne Sprung weiter
         let key = arrow_key(99, i64::from(id), Target::Player(u8::MAX));
-        let mut spec = arrow(key, from, to, color, alpha, false);
+        let mut spec = match kind {
+            AimKind::Attack | AimKind::Block => combat_arrow(key, from, to, color, alpha, false),
+            AimKind::Target => arrow(key, from, to, color, alpha, false),
+        };
         if target.is_none() {
             spec.to = to; // frei an der Maus: bis zum Mauspunkt
         }
@@ -5544,10 +5571,19 @@ mod tests {
 fn arrow(key: u64, from: Vector3, to: Vector3, color: ArrowColor, alpha: f32, grow: bool) -> ArrowSpec {
     // übereinanderliegende Karten: Bogen, den baut TargetArrows (Enden nicht verschieben)
     if Vector3::new(to.x - from.x, 0.0, to.z - from.z).length() < LOOP_DISTANCE {
-        return ArrowSpec { key, from, to, color, alpha, grow };
+        return ArrowSpec { key, from, to, color, alpha, grow, straight: false };
     }
     let dir = (to - from).normalized_or_zero();
-    ArrowSpec { key, from: from + dir * 0.3, to: to - dir * 0.35, color, alpha, grow }
+    ArrowSpec { key, from: from + dir * 0.3, to: to - dir * 0.35, color, alpha, grow, straight: false }
+}
+
+/// Kampfpfeil (Angriff, Blocker): immer gerade, auch zwischen nah gegenüberliegenden Karten
+/// (geblockter Angreifer liegt seinem Blocker gegenüber); die Enden rücken bei kurzem Abstand
+/// weniger ein, damit der Pfeil sichtbar bleibt.
+fn combat_arrow(key: u64, from: Vector3, to: Vector3, color: ArrowColor, alpha: f32, grow: bool) -> ArrowSpec {
+    let flat = Vector3::new(to.x - from.x, 0.0, to.z - from.z).length();
+    let dir = (to - from).normalized_or_zero();
+    ArrowSpec { key, from: from + dir * (flat * 0.18).min(0.3), to: to - dir * (flat * 0.22).min(0.35), color, alpha, grow, straight: true }
 }
 
 /// Art eines Pfeils, den der Spieler zieht.

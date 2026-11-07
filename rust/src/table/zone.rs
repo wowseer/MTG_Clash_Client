@@ -838,16 +838,39 @@ impl Zone {
             slot[g] = (x, z, pw_s);
         }
         let left_end = -wall + left_w;
+        // Kampf: geblockte Angreifer liegen ihrem Blocker genau gegenüber ([method Card3D.set_combat_x],
+        // Weltposition → lokal vor dem Spiegeln), die übrigen Angreifer direkt daneben
+        let zone_xf = self.base().get_global_transform();
+        let zone_inv = zone_xf.affine_inverse();
+        let mirror = self.mirror_x;
+        let first_card = |g: usize| -> Option<&Gd<Card3D>> {
+            keys.iter().zip(&front).position(|(k, f)| *k == groups[g].0 && *f == groups[g].1).map(|i| &self.cards[base[i]])
+        };
+        let pinned = |g: usize| -> Option<f32> {
+            let card = first_card(g)?;
+            let wx = card.bind().combat_x()?;
+            let lx = (zone_inv * Vector3::new(wx, zone_xf.origin.y, zone_xf.origin.z)).x;
+            Some(if mirror { -lx } else { lx })
+        };
+        let attacking = |g: usize| first_card(g).is_some_and(|c| c.bind().is_attacking());
         let mut z_row = area_top + len * s * 0.5;
         for r in &rows {
             let full = w * (1.0 + AUTO_GAP);
             let step = if r.len() as f32 * full <= avail_w { full } else { avail_w / r.len().max(1) as f32 };
             let width = r.len() as f32 * step;
-            // mittig; reicht der Platz nicht, rechts neben den Planeswalkern beginnen
-            let mut x = (-width * 0.5).max(left_end).min(wall - width) + step * 0.5;
-            for &g in r {
-                slot[g] = (x, z_row, s);
-                x += step;
+            let pins: Vec<(usize, f32)> = r.iter().filter_map(|&g| pinned(g).map(|x| (g, x))).collect();
+            if pins.is_empty() {
+                // mittig; reicht der Platz nicht, rechts neben den Planeswalkern beginnen
+                let mut x = (-width * 0.5).max(left_end).min(wall - width) + step * 0.5;
+                for &g in r {
+                    slot[g] = (x, z_row, s);
+                    x += step;
+                }
+            } else {
+                let xs = combat_row(r, &pins, &attacking, step, left_end, wall);
+                for (&g, x) in r.iter().zip(xs) {
+                    slot[g] = (x, z_row, s);
+                }
             }
             z_row += row_h(r, s) + BACK_ROW_GAP;
         }
@@ -1044,6 +1067,45 @@ impl Zone {
 /// Versatz je Karte in einem Kreaturen-Stapel aus `n` Karten (Anteil der Kartenlänge): normal
 /// [`CREATURE_STACK_STEP`], bei hohen Stapeln enger, damit ein Stapel höchstens
 /// 1 + [`CREATURE_STACK_MAX_EXTRA`] Kartenlängen hoch ist (die Kopfzeilen bleiben sichtbar).
+/// Lage (lokal x) der Gruppen einer Kreaturenreihe im Kampf, in der Reihenfolge von `row`:
+/// geblockte Angreifer (`pins`: Gruppe → x ihres Blockers) liegen dort, die übrigen Angreifer
+/// rechts direkt daneben, alle anderen Kreaturen links davor; mindestens `step` Abstand, innerhalb
+/// `left_end` … `wall` (reicht der Platz nicht, rücken auch die ausgerichteten Gruppen).
+fn combat_row(row: &[usize], pins: &[(usize, f32)], attacking: &dyn Fn(usize) -> bool, step: f32, left_end: f32, wall: f32) -> Vec<f32> {
+    let pin_of = |g: usize| pins.iter().find(|(p, _)| *p == g).map(|(_, x)| *x);
+    // Reihenfolge: andere Kreaturen, ausgerichtete Angreifer (nach x), übrige Angreifer
+    let mut sorted_pins: Vec<(usize, f32)> = pins.to_vec();
+    sorted_pins.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let others: Vec<usize> = row.iter().copied().filter(|&g| pin_of(g).is_none() && !attacking(g)).collect();
+    let free_attackers: Vec<usize> = row.iter().copied().filter(|&g| pin_of(g).is_none() && attacking(g)).collect();
+    let order: Vec<usize> = others.iter().copied().chain(sorted_pins.iter().map(|p| p.0)).chain(free_attackers.iter().copied()).collect();
+    let first_pin = others.len();
+    let last_pin = first_pin + sorted_pins.len() - 1;
+    let mut xs: Vec<f32> = vec![0.0; order.len()];
+    for (i, &g) in order.iter().enumerate() {
+        xs[i] = pin_of(g).unwrap_or(0.0);
+    }
+    // ausgerichtete Gruppen nicht überlappen lassen, dann die anderen links bzw. rechts anreihen
+    for i in first_pin + 1..=last_pin {
+        xs[i] = xs[i].max(xs[i - 1] + step);
+    }
+    for i in last_pin + 1..order.len() {
+        xs[i] = xs[i - 1] + step;
+    }
+    for i in (0..first_pin).rev() {
+        xs[i] = xs[i + 1] - step;
+    }
+    // in die Reihe schieben
+    let (lo, hi) = (left_end + step * 0.5, wall - step * 0.5);
+    if let (Some(&first), Some(&last)) = (xs.first(), xs.last()) {
+        let shift = if last > hi { hi - last } else if first < lo { lo - first } else { 0.0 };
+        for x in xs.iter_mut() {
+            *x += shift;
+        }
+    }
+    row.iter().map(|g| xs[order.iter().position(|o| o == g).unwrap_or(0)]).collect()
+}
+
 fn stack_step(n: usize) -> f32 {
     if n <= 1 {
         return CREATURE_STACK_STEP;
