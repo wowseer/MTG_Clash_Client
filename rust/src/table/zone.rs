@@ -46,6 +46,12 @@ const BACK_ROW_GAP: f32 = 0.12;
 /// Seiten zusammen ergeben die Lücke zwischen den Kreaturenreihen (etwa 0,6 Kachelhöhen wie im
 /// Video „Blocken“), damit sich Angreifer und Blocker gegenüber nicht fast berühren.
 const FRONT_GAP: f32 = 0.35;
+/// Angelegte Karten (Ausrüstung, Auren) unter ihrem Träger: Versatz nach rechts und zur
+/// Tischmitte (Kartenkoordinaten des Trägers, vor der Skalierung) und zusätzlicher Versatz je
+/// weiterer Karte. Den Überstand zur Tischmitte hält die automatische Anordnung frei.
+const ATTACH_X: f32 = 0.12;
+const ATTACH_Z: f32 = 0.10;
+const ATTACH_STEP: f32 = 0.07;
 /// Kleinste Größe der Planeswalker (Anteil von [member card_scale]) bei vielen Planeswalkern.
 const PW_MIN_SCALE: f32 = 0.6;
 /// Ab so vielen Planeswalkern liegen sie in zwei Reihen.
@@ -629,7 +635,7 @@ impl Zone {
                     continue; // Träger noch nicht platziert -> nächster Durchlauf
                 };
                 let k = per_host.entry(host.instance_id()).or_insert(0);
-                let offset = Vector3::new(0.12 + *k as f32 * 0.09, -0.004, -0.16 - *k as f32 * 0.09);
+                let offset = Vector3::new(ATTACH_X + *k as f32 * ATTACH_STEP, -0.004, -ATTACH_Z - *k as f32 * ATTACH_STEP);
                 *k += 1;
                 targets.insert(id, host_xf * Transform3D::new(Basis::IDENTITY, offset));
             }
@@ -723,8 +729,16 @@ impl Zone {
         let wall = half_x - 0.1;
         // Die untere Reihe der Zone gehört Ländern (eigene Zone daneben) und Artefakten:
         // Kreaturen und Planeswalker liegen immer darüber, auch mit hohen Stapeln
-        let area_top = -half_z + FRONT_GAP;
-        let area_h = (2.0 * half_z - BACK_ROW_DEPTH - FRONT_GAP).max(len * self.card_scale * MIN_SHRINK);
+        // angelegte Karten ragen über ihren Träger zur Tischmitte hinaus: die Reihe rückt um den
+        // größten Überstand nach hinten, damit keine Karte die Mittellinie überschreitet
+        let max_attached = base
+            .iter()
+            .map(|&i| self.attachments.values().filter(|h| **h == self.cards[i]).count())
+            .max()
+            .unwrap_or(0);
+        let overhang = if max_attached == 0 { 0.0 } else { (ATTACH_Z + (max_attached - 1) as f32 * ATTACH_STEP) * self.card_scale };
+        let area_top = -half_z + FRONT_GAP + overhang;
+        let area_h = (2.0 * half_z - BACK_ROW_DEPTH - FRONT_GAP - overhang).max(len * self.card_scale * MIN_SHRINK);
         let min_s = self.card_scale * MIN_SHRINK;
 
         // Planeswalker: Größe nur nach ihrer Zahl (bis zwei voll, danach sanft kleiner), ganz
