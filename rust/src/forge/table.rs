@@ -3513,7 +3513,9 @@ impl ForgeTable {
             copy.bind_mut().set_marker(CardMarker::Selected);
             showcase.bind_mut().show_options(vec![(copy, String::new())]);
         }
-        showcase.bind_mut().set_focus_layout();
+        // Karte groß (größer als in den übrigen Fokus-Bühnen), Unterkante knapp über der Knopfreihe
+        let half = X_CARD_SCALE * crate::table::card3d::CARD_HEIGHT * 0.5;
+        showcase.bind_mut().set_focus_layout_sized(X_CARD_SCALE, X_ROW_Y + X_CARD_GAP + half);
         self.title_over_stack_card(&mut showcase, req);
         // darunter die Knopfreihe −5 / − / Bestätigen / + / +5, darunter Abbrechen
         let me = self.to_gd();
@@ -5686,7 +5688,7 @@ const CARD_OPTION_RADIUS: f32 = 60.0;
 const STACK_STAGE_SCALE: f32 = 1.1;
 /// So weit (Bühnen-Einheiten) rückt die Auswahlreihe nach links, wenn der Zauber am Stack steht.
 const STACK_STAGE_ROW_SHIFT: f32 = 0.5;
-const X_STAGE_LOCAL: Vector3 = Vector3::new(-0.45, 0.2, 0.15);
+const X_STAGE_LOCAL: Vector3 = Vector3::new(-0.45, 0.2, 0.4);
 const X_STAGE_SCALE: f32 = 2.8;
 const X_STAGE_LIFT: f32 = 2.0;
 /// X-Bühne (Koordinaten der Bühne, Karte groß darüber): Höhe der Knopfreihe, Abstände der
@@ -5697,6 +5699,10 @@ const X_OUTER: f32 = 1.22;
 const X_SMALL_WIDTH: f32 = 0.6;
 const X_PAY_WIDTH: f32 = 1.35;
 const X_CANCEL_Y: f32 = -0.84;
+/// X-Bühne: Größe der Karte (Anteil der Kartengröße) und Abstand ihrer Unterkante über der Mitte
+/// der Knopfreihe.
+const X_CARD_SCALE: f32 = 2.0;
+const X_CARD_GAP: f32 = 0.2;
 
 /// Welche 3D-Bühne eine Entscheidung bekommt.
 /// Offene Suche: Kartennamen (Treffer als Karten) oder Typen (Treffer als Knöpfe), alle

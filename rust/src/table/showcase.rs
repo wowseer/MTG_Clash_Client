@@ -126,6 +126,9 @@ pub struct Showcase {
     slider: Option<Gd<Slider3D>>,
     /// Fokus-Anordnung: Karte groß, Knöpfe untereinander darunter statt in einer Reihe.
     focus: bool,
+    /// Größe und Mitte der großen Karte in der Fokus-Anordnung.
+    focus_scale: f32,
+    focus_center: Vector3,
     /// Tischkarte, zu der die Frage gehört (der gewirkte Zauber am Stack, [method
     /// set_title_card]): Der Untertitel der Fokus-Anordnung steht dann immer als Überschrift
     /// über ihr und folgt ihr, solange sie noch an ihren Platz gleitet.
@@ -174,6 +177,8 @@ impl INode3D for Showcase {
             scroll_extra: 0.0,
             slider: None,
             focus: false,
+            focus_scale: FOCUS_SCALE,
+            focus_center: FOCUS_CENTER,
             title_card: None,
             coverflow: false,
             blocker: None,
@@ -249,6 +254,10 @@ impl Showcase {
         }
         if let Some(mut n) = self.base().get_node_or_null("Dimmer").and_then(|n| n.try_cast::<Node3D>().ok()) {
             n.set_visible(false);
+        }
+        // kein „Schlachtfeld ansehen“: der Tisch bleibt ohnehin sichtbar
+        if let Some(mut b) = self.peek_button.take().filter(|b| b.is_instance_valid()) {
+            b.queue_free();
         }
         self.t = 0.0;
         self.closing = false;
@@ -465,9 +474,9 @@ impl Showcase {
         self.focus = true;
         if let Some(mut zone) = self.zone.clone() {
             let mut xf = zone.get_transform();
-            xf.origin = FOCUS_CENTER;
+            xf.origin = self.focus_center;
             zone.set_transform(xf);
-            zone.set("card_scale", &FOCUS_SCALE.to_variant());
+            zone.set("card_scale", &self.focus_scale.to_variant());
             zone.bind_mut().layout();
         }
         // Untertitel (Einzelheiten der Frage) rechts neben die große Karte: Texte neu setzen
@@ -475,8 +484,17 @@ impl Showcase {
         self.set_texts(t, sub, n);
         // Titel über die große Karte rücken (sonst läge er hinter ihr)
         if let Some(l) = self.title.as_mut() {
-            l.set_position(Vector3::new(0.0, FOCUS_CENTER.y + CARD_HEIGHT * FOCUS_SCALE * 0.5 + FOCUS_TITLE_GAP, 0.05));
+            l.set_position(Vector3::new(0.0, self.focus_center.y + CARD_HEIGHT * self.focus_scale * 0.5 + FOCUS_TITLE_GAP, 0.05));
         }
+    }
+
+    /// Fokus-Anordnung mit eigener Kartengröße `scale` (Anteil der Kartengröße) und Höhe der
+    /// Kartenmitte `center_y` (Bühnen-Einheiten), z. B. größer für die X-Bühne.
+    #[func]
+    pub fn set_focus_layout_sized(&mut self, scale: f32, center_y: f32) {
+        self.focus_scale = scale;
+        self.focus_center = Vector3::new(0.0, center_y, 0.0);
+        self.set_focus_layout();
     }
 
     /// Karte am Stack, zu der die Frage gehört (der gewirkte Zauber): Der Untertitel der
@@ -918,6 +936,7 @@ impl Showcase {
     /// Fokus-Anordnung linksbündig rechts neben der großen Karte, mittig zu ihr.
     fn place_subtitle(&mut self) {
         let focus = self.focus;
+        let (focus_scale, focus_center) = (self.focus_scale, self.focus_center);
         let above = self.subtitle_above();
         let Some(l) = self.subtitle.as_mut() else { return };
         let pixel = l.get_pixel_size();
@@ -929,11 +948,11 @@ impl Showcase {
             l.set_vertical_alignment(VerticalAlignment::BOTTOM);
             l.set_position(Vector3::new(x, rect.end().y + AVOID_GAP, 0.05));
         } else if focus {
-            let x0 = CARD_WIDTH * FOCUS_SCALE * 0.5 + FOCUS_SIDE_GAP;
+            let x0 = CARD_WIDTH * focus_scale * 0.5 + FOCUS_SIDE_GAP;
             l.set_width(FOCUS_SIDE_WIDTH / pixel);
             l.set_horizontal_alignment(HorizontalAlignment::LEFT);
             l.set_vertical_alignment(VerticalAlignment::CENTER);
-            l.set_position(Vector3::new(x0 + FOCUS_SIDE_WIDTH * 0.5, FOCUS_CENTER.y, 0.05));
+            l.set_position(Vector3::new(x0 + FOCUS_SIDE_WIDTH * 0.5, focus_center.y, 0.05));
         } else {
             l.set_width(SUBTITLE_MAX_WIDTH / pixel);
             l.set_horizontal_alignment(HorizontalAlignment::CENTER);
