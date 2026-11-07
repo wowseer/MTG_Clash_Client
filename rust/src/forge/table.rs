@@ -138,6 +138,9 @@ pub struct ForgeTable {
     attack_plan: Vec<(CardId, Target)>,
     /// Blockplan bei `DeclareBlockers`: (Blocker, Angreifer).
     block_plan: Vec<(CardId, CardId)>,
+    /// Eben erklärte Blocks (Antwort gesendet, der Zustand mit `combat.blocks` steht noch aus):
+    /// gelten bis dahin schon als erklärt, damit Blocker und Angreifer nicht kurz umspringen.
+    sent_blocks: Vec<(CardId, CardId)>,
     /// Zuletzt gewählte Kreatur im Kampf: Angreifer, dessen Ziel ein Klick auf ein anderes
     /// Angriffsziel ändert, bzw. Blocker, der auf seinen Angreifer wartet.
     combat_armed: Option<CardId>,
@@ -276,6 +279,7 @@ impl INode for ForgeTable {
             arrows: None,
             attack_plan: Vec::new(),
             block_plan: Vec::new(),
+            sent_blocks: Vec::new(),
             combat_armed: None,
             choice_buttons: Vec::new(),
             choice_prompt: None,
@@ -2332,7 +2336,7 @@ impl ForgeTable {
                 self.block_plan.retain(|(b, _)| *b != id);
                 if let Some(Target::Card(a)) = target {
                     self.assign_blocker(id, a);
-                    self.drawn_arrows.insert(arrow_key(ArrowColor::Blue as u64, i64::from(id), Target::Card(a)));
+                    self.drawn_arrows.insert(arrow_key(BLOCK_ARROW_KIND, i64::from(id), Target::Card(a)));
                 }
                 self.combat_armed = None;
             }
@@ -3975,6 +3979,9 @@ impl ForgeTable {
                 self.remove_hand_proxy(c);
             }
         }
+        if let Choice::Blocks(blocks) = &choice {
+            self.sent_blocks = blocks.clone();
+        }
         self.viewer_open = false;
         self.clear_choice_objects();
         self.menu = None;
@@ -4271,7 +4278,7 @@ impl ForgeTable {
                 old.bind_mut().set_marker(CardMarker::None);
             }
         }
-        // Markierungen: gewählte Ziele (gold), Angreifer (rot), Blocker (blau), gewählte Kreatur (gold)
+        // Markierungen (Rahmen orange): gewählte Ziele, Angreifer, Blocker, gewählte Kreatur
         let mut marks: Vec<(i64, CardMarker)> = chosen.into_iter().map(|id| (id, CardMarker::Selected)).collect();
         marks.extend(self.attack_plan.iter().map(|(c, _)| (i64::from(*c), CardMarker::Attacking)));
         marks.extend(self.block_plan.iter().map(|(b, _)| (i64::from(*b), CardMarker::Blocking)));
@@ -4525,19 +4532,21 @@ impl ForgeTable {
         }
     }
 
-    /// Kampfpfeile: während der eigenen Erklärung der Plan (Angreifer rot → Ziel, Blocker blau →
-    /// Angreifer, gewählter Blocker gold → Angreifer unter der Maus), sonst der laufende Kampf aus
-    /// dem Engine-Zustand (`combat`).
+    /// Kampfpfeile: während der eigenen Erklärung der Plan (Angreifer orange → Ziel, Blocker orange
+    /// → Angreifer, gewählter Blocker gold → Angreifer unter der Maus), sonst der laufende Kampf aus
+    /// dem Engine-Zustand (`combat`; erklärte Blocks gelb).
     fn combat_arrows(&self) -> Vec<ArrowSpec> {
         let pos = |c: CardId| self.target_position(Target::Card(c));
         let mut arrows = Vec::new();
         let aiming = self.live_arrow().map(|(id, _)| id);
-        let mut push = |from: CardId, to: Target, color: ArrowColor, alpha: f32| {
+        // Schlüssel: Blockpfeile behalten ihn beim Wechsel geplant (orange) → erklärt (gelb), damit
+        // sie nicht noch einmal wachsen
+        let mut push = |from: CardId, to: Target, color: ArrowColor, alpha: f32, block: bool| {
             if aiming == Some(from) {
                 return; // wird gerade neu gezogen
             }
             if let (Some(a), Some(b)) = (pos(from), self.target_position(to)) {
-                let key = arrow_key(color as u64, i64::from(from), to);
+                let key = arrow_key(if block { BLOCK_ARROW_KIND } else { color as u64 }, i64::from(from), to);
                 arrows.push(combat_arrow(key, a, b, color, alpha, !self.drawn_arrows.contains(&key)));
             }
         };
@@ -4546,13 +4555,13 @@ impl ForgeTable {
             // er, wen der Angreifer angreift. Sonst reicht die Kampfansicht (Karte rückt vor).
             Some(Decision::DeclareAttackers { defenders, .. }) if defenders.len() > 1 => {
                 for (c, t) in &self.attack_plan {
-                    push(*c, *t, ArrowColor::Orange, 1.0);
+                    push(*c, *t, ArrowColor::Orange, 1.0, false);
                 }
             }
             Some(Decision::DeclareAttackers { .. }) => {}
             Some(Decision::DeclareBlockers { attackers, .. }) => {
                 for (b, a) in &self.block_plan {
-                    push(*b, Target::Card(*a), ArrowColor::Blue, 1.0);
+                    push(*b, Target::Card(*a), ArrowColor::Orange, 1.0, true);
                 }
                 if let Some(armed) = self.combat_armed {
                     let hovered = self
@@ -4563,7 +4572,7 @@ impl ForgeTable {
                         .and_then(|id| u32::try_from(id).ok())
                         .filter(|id| attackers.contains(id));
                     if let Some(a) = hovered {
-                        push(armed, Target::Card(a), ArrowColor::Gold, 0.5);
+                        push(armed, Target::Card(a), ArrowColor::Gold, 0.5, false);
                     }
                 }
             }
@@ -4577,16 +4586,13 @@ impl ForgeTable {
                         let target = a.get("target").and_then(|t| crate::rules::target_from_var(&t));
                         // Angriff auf einen Spieler: Kampfansicht genügt; auf Planeswalker/Schlacht: Pfeil
                         if let (Some(c), Some(t @ Target::Card(_))) = (attacker, target) {
-                            push(c, t, ArrowColor::Orange, 1.0);
+                            push(c, t, ArrowColor::Orange, 1.0, false);
                         }
                     }
-                    for pair in get_array(&combat, "blocks").unwrap_or_default().iter_shared() {
-                        let Ok(pair) = pair.try_to::<VarArray>() else { continue };
-                        let id = |i: usize| pair.get(i).and_then(|v| v.try_to::<i64>().ok()).and_then(|v| u32::try_from(v).ok());
-                        if let (Some(b), Some(a)) = (id(0), id(1)) {
-                            push(b, Target::Card(a), ArrowColor::Blue, 1.0);
-                        }
-                    }
+                }
+                // erklärte Blocks: gelb (Video „Blocken“)
+                for (b, a) in self.declared_blocks() {
+                    push(b, Target::Card(a), ArrowColor::Yellow, 1.0, true);
                 }
             }
         }
@@ -4717,9 +4723,27 @@ impl ForgeTable {
         self.known_stack = ids;
     }
 
+    /// Erklärte Blocks (Blocker, Angreifer) aus dem Zustand (`combat.blocks`), solange der noch
+    /// aussteht, auch die eben gesendeten (`sent_blocks`).
+    fn declared_blocks(&self) -> Vec<(CardId, CardId)> {
+        let mut blocks = self.sent_blocks.clone();
+        let combat = self.state.as_ref().and_then(|s| s.get("combat")).and_then(|v| v.try_to::<VarDictionary>().ok());
+        for pair in combat.and_then(|c| get_array(&c, "blocks")).unwrap_or_default().iter_shared() {
+            let Ok(pair) = pair.try_to::<VarArray>() else { continue };
+            let id = |i: usize| pair.get(i).and_then(|v| v.try_to::<i64>().ok()).and_then(|v| u32::try_from(v).ok());
+            if let (Some(b), Some(a)) = (id(0), id(1)) {
+                if !blocks.contains(&(b, a)) {
+                    blocks.push((b, a));
+                }
+            }
+        }
+        blocks
+    }
+
     /// Kampfansicht: geplante (eigene Erklärung) und erklärte Angreifer (Zustand `combat`) rücken
     /// vor und tragen die Angriffsspitze; alle anderen nicht. Jeder geblockte Angreifer und jeder
-    /// Blocker (geplant oder erklärt) liegt in einem eigenen Stapel.
+    /// Blocker (geplant oder erklärt) liegt in einem eigenen Stapel. Blocker tragen den Blockschweif
+    /// (Video „Blocken“); Angreifer und Blocker eines erklärten Blocks werden gelb.
     fn update_combat_look(&mut self) {
         let mut attacking: HashSet<i64> = self.attack_plan.iter().map(|(c, _)| i64::from(*c)).collect();
         let mut paired: HashSet<i64> = HashSet::new();
@@ -4737,17 +4761,18 @@ impl ForgeTable {
                     attacking.insert(get_int(&a, "card"));
                 }
             }
-            for pair in get_array(&combat, "blocks").unwrap_or_default().iter_shared() {
-                if let Ok(pair) = pair.try_to::<VarArray>() {
-                    let ids: Vec<i64> = pair.iter_shared().filter_map(|v| v.try_to::<i64>().ok()).collect();
-                    paired.extend(ids.iter().copied());
-                    if let [b, a] = ids[..] {
-                        let list = blockers_of.entry(a).or_default();
-                        if !list.contains(&b) {
-                            list.push(b);
-                        }
-                    }
-                }
+        }
+        // erklärte Blocks: Angreifer und Blocker gelb, Blocker mit Schweif
+        let mut declared: HashSet<i64> = HashSet::new();
+        let mut trail: HashSet<i64> = blockers_of.values().flatten().copied().collect();
+        for (b, a) in self.declared_blocks() {
+            let (b, a) = (i64::from(b), i64::from(a));
+            paired.extend([b, a]);
+            declared.extend([b, a]);
+            trail.insert(b);
+            let list = blockers_of.entry(a).or_default();
+            if !list.contains(&b) {
+                list.push(b);
             }
         }
         // geblockter Angreifer liegt seinem Blocker gegenüber (Mitte mehrerer Blocker)
@@ -4766,6 +4791,8 @@ impl ForgeTable {
         let mut relayout: Vec<Gd<Zone>> = Vec::new();
         for (id, card) in self.cards.iter_mut() {
             let on = attacking.contains(id);
+            card.bind_mut().set_block_trail(trail.contains(id));
+            card.bind_mut().set_block_declared(declared.contains(id));
             let alone_changed = card.bind_mut().set_combat_alone(paired.contains(id));
             let face = facing.get(id).copied();
             let face_changed = card.bind_mut().set_combat_x(face.unwrap_or(0.0), face.is_some());
@@ -5066,6 +5093,8 @@ impl ForgeTable {
 
     /// Gleicht den Tisch mit dem Forge-Zustand ab: Karten anlegen, verschieben, tappen, entfernen.
     fn apply_state(&mut self, state: VarDictionary) {
+        // der Zustand zeigt jetzt die erklärten Blocks selbst (`combat.blocks`)
+        self.sent_blocks.clear();
         self.sync_seat_tokens(&state);
         let players: Vec<VarDictionary> = get_array(&state, "players")
             .map(|a| a.iter_shared().filter_map(|v| v.try_to::<VarDictionary>().ok()).collect())
@@ -5602,6 +5631,9 @@ const AIM_PLAYER_RADIUS: f32 = 90.0;
 const PLAYER_TARGET_INSET: f32 = 1.0;
 
 /// Schlüssel eines Pfeils über Frames hinweg: Art, Quelle, Ziel.
+/// Schlüssel-Art der Blockpfeile (geplant orange und erklärt gelb derselbe Pfeil).
+const BLOCK_ARROW_KIND: u64 = 21;
+
 fn arrow_key(kind: u64, source: i64, target: Target) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();

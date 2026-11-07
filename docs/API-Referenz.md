@@ -543,6 +543,8 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_ready_glow(on: bool)` | `void` | Dezenter goldener Rand „diese Karte kann eine Fähigkeit aktivieren“ an/aus (für Skripte; Rot/Blau setzt das Spiel selbst). Eine Markierung hat Vorrang. |
 | `flash()` | `void` | Rahmen leuchtet kurz hell und orange auf (etwas wurde aktiviert: gespielt, Fähigkeit, Mana-Einschlag, Angriff …), danach zurück zum normalen Leuchten. |
 | `set_attacking(attacking: bool)` | `void` | Angreifer im Kampf: Karte rückt etwas zum Gegner vor und trägt die rote Angriffsspitze an der Oberkante (`false` = zurück an ihren Platz). |
+| `set_block_trail(on: bool)` | `void` | Blocker im Kampf (Video „Blocken“): über der Kante zum Angreifer steigt ein flackernder Schweif als Bogen auf – orange, solange der Block geplant ist, gelb, sobald er erklärt ist (`set_block_declared()`). Blendet in ≈ 0,25 s ein und aus. |
+| `set_block_declared(on: bool)` | `void` | In einem erklärten Block (Angreifer und Blocker, CR 509.1): Rahmen, Angriffsspitze und Blockschweif werden gelb ([`BLOCKED_GLOW`]), bis der Kampf endet (`false`). |
 | `set_turned(turned: bool)` | `void` | Kartenbild um 180° gedreht zeigen (setzt die Zone, `Zone.turn_cards`): Karten des Gegners liegen in seiner um 180° gedrehten Zone und wären sonst von unserer Seite aus kopfüber. Nur das Bild dreht sich; Vorrücken und Schlag im Kampf bleiben zum Gegner gerichtet. |
 | `set_combat_alone(alone: bool)` | `bool` | Im Kampf geblockt bzw. blockend (`true`): die Karte bildet auf dem Spielfeld einen eigenen Stapel, statt mit gleichen Karten zusammenzuliegen. Gibt zurück, ob sich etwas geändert hat. |
 | `set_combat_x(x: float, on: bool)` | `bool` | Geblockter Angreifer: liegt seinem Blocker auf dem Spielfeld genau gegenüber (`x` = Welt-x des Blockers bzw. die Mitte mehrerer Blocker; `on = false` = wieder normal einreihen). Gibt zurück, ob sich die Lage spürbar geändert hat (dann muss die Zone neu anordnen). |
@@ -817,7 +819,7 @@ Zeichnet die leuchtenden Pfeile aus `Assets/Pfeil/MTG_Pfeil.blend` auf dem Tisch
 
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
-| `set_arrow_pairs(points: PackedVector3Array, colors: PackedInt32Array)` | `void` | Setzt Pfeile aus Skripten: `points` enthält je zwei Punkte (Start, Ziel; Welt) pro Pfeil, `colors` einen Farbindex pro Pfeil (0 Gold, 1 Blau, 2 Schwarz, 3 Rot, 4 Grün, 5 Grau, 6 Orange; fehlt er: Gold). Der `ForgeTable` überschreibt die Pfeile jedes Frame, solange er läuft. |
+| `set_arrow_pairs(points: PackedVector3Array, colors: PackedInt32Array)` | `void` | Setzt Pfeile aus Skripten: `points` enthält je zwei Punkte (Start, Ziel; Welt) pro Pfeil, `colors` einen Farbindex pro Pfeil (0 Gold, 1 Blau, 2 Schwarz, 3 Rot, 4 Grün, 5 Grau, 6 Orange, 7 Gelb; fehlt er: Gold). Der `ForgeTable` überschreibt die Pfeile jedes Frame, solange er läuft. |
 
 ## FlickerLight
 

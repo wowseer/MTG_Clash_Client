@@ -88,7 +88,10 @@ pub enum ArrowColor {
     Green = 4,
     /// Grau (farblos).
     Gray = 5,
+    /// Orange – geplanter Block (Blocker → Angreifer).
     Orange = 6,
+    /// Gelb – erklärter Block (Video „Blocken“).
+    Yellow = 7,
 }
 
 /// Pfeil-Shader (Nachbau von „MTG_Pfeil_Mat“). UV.x = Länge ab Start (Welteinheiten),
@@ -97,20 +100,20 @@ const SHADER: &str = r#"
 shader_type spatial;
 render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_never;
 
-// Farbpalette (Color Ramp / Color Ramp.001, konstant, 7 Einträge; linear wie in Blender)
-const vec3 BASE[7] = vec3[7](
+// Farbpalette (Color Ramp / Color Ramp.001, konstant, 7 Einträge wie in Blender, linear; dazu Gelb für erklärte Blocks)
+const vec3 BASE[8] = vec3[8](
     vec3(1.0, 0.86, 0.5), vec3(0.0, 0.5, 1.0), vec3(0.32, 0.0, 0.5), vec3(1.0, 0.008, 0.004),
-    vec3(0.05, 0.85, 0.12), vec3(0.45, 0.47, 0.52), vec3(1.0, 0.11, 0.0));
-const vec3 HIGH[7] = vec3[7](
+    vec3(0.05, 0.85, 0.12), vec3(0.45, 0.47, 0.52), vec3(1.0, 0.11, 0.0), vec3(1.0, 0.6, 0.0));
+const vec3 HIGH[8] = vec3[8](
     vec3(1.0, 1.0, 0.92), vec3(0.65, 0.95, 1.0), vec3(0.0, 0.0, 0.0), vec3(1.0, 0.55, 0.45),
-    vec3(0.8, 1.0, 0.75), vec3(1.0, 1.0, 1.0), vec3(1.0, 0.88, 0.6));
+    vec3(0.8, 1.0, 0.75), vec3(1.0, 1.0, 1.0), vec3(1.0, 0.88, 0.6), vec3(1.0, 0.97, 0.62));
 
 %NOISE%
 
 void fragment() {
     float laenge = UV.x;
     float quer = UV.y;
-    int idx = clamp(int(UV2.x + 0.5), 0, 6);
+    int idx = clamp(int(UV2.x + 0.5), 0, 7);
     float q = abs(quer - 0.5) * 2.0;
     float core = 1.0 - smoothstep(0.2, 0.262, q);
     float center = 1.0 - smoothstep(0.0, 0.075, q);
@@ -198,7 +201,7 @@ impl INode3D for TargetArrows {
 impl TargetArrows {
     /// Setzt Pfeile aus Skripten: `points` enthält je zwei Punkte (Start, Ziel; Welt) pro Pfeil,
     /// `colors` einen Farbindex pro Pfeil (0 Gold, 1 Blau, 2 Schwarz, 3 Rot, 4 Grün, 5 Grau,
-    /// 6 Orange; fehlt er: Gold). Der [ForgeTable] überschreibt die Pfeile jedes Frame, solange
+    /// 6 Orange, 7 Gelb; fehlt er: Gold). Der [ForgeTable] überschreibt die Pfeile jedes Frame, solange
     /// er läuft.
     #[func]
     pub fn set_arrow_pairs(&mut self, points: PackedVector3Array, colors: PackedInt32Array) {
@@ -296,6 +299,7 @@ fn color_from_index(i: i32) -> ArrowColor {
         4 => ArrowColor::Green,
         5 => ArrowColor::Gray,
         6 => ArrowColor::Orange,
+        7 => ArrowColor::Yellow,
         _ => ArrowColor::Gold,
     }
 }

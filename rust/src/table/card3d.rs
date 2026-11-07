@@ -41,6 +41,7 @@ use crate::game::cards::{CardDef, CardKind};
 use crate::game::mana::ManaType;
 use super::placeholder;
 use super::layers::CARD_LAYER;
+use super::shader_noise::PERLIN_FBM;
 use super::cost_symbols;
 use super::zone::Zone;
 
@@ -66,6 +67,9 @@ pub const TILE_HEIGHT: f32 = CARD_HEIGHT * TILE_FRACTION;
 /// oder gespielt, Fähigkeit aktiviert, als Angreifer/Blocker/Ziel gewählt, Land für Mana getappt).
 pub const PLAYABLE_GLOW: Color = Color::from_rgb(0.02, 0.28, 1.0);
 pub const ACTIVE_GLOW: Color = Color::from_rgb(1.0, 0.22, 0.0);
+/// **Gelb** = in einem erklärten Block (Video „Blocken“): Angreifer und Blocker, sobald die
+/// Blocker feststehen (CR 509.1), bis zum Ende des Kampfes.
+pub const BLOCKED_GLOW: Color = Color::from_rgb(1.0, 0.62, 0.02);
 /// Helligkeit des Rahmens: spielbar (ruhig) bzw. aktiviert (kräftiger).
 const READY_STRENGTH: f32 = 1.0;
 /// Aufleuchten beim Aktivieren ([`Card3D::flash`]; Blender: Einschlag Frame 30 → 80):
@@ -102,6 +106,12 @@ const GLOW_MARGIN: f32 = 0.16;
 
 /// Größe der Angriffsspitze (Breite, Höhe) über der Oberkante der Karte.
 const BANNER_SIZE: Vector2 = Vector2::new(0.36, 0.15);
+/// Blockschweif ([method Card3D.set_block_trail]): Höhe über der Kante zum Angreifer (Einheiten),
+/// Breite = Karte plus [`TRAIL_MARGIN`] je Seite.
+const TRAIL_HEIGHT: f32 = 0.24;
+const TRAIL_MARGIN: f32 = 0.05;
+/// Ein-/Ausblenden des Blockschweifs und Übergang Orange → Gelb (Faktor je Sekunde, ≈ 0,25 s).
+const TRAIL_FADE_SPEED: f32 = 12.0;
 
 /// Angriffsspitze: Fünfeck als Dach (unten breit, oben Spitze), rot mit hellem Rand und Schein.
 const BANNER_SHADER: &str = r#"
@@ -114,15 +124,47 @@ float sd_roof(vec2 p) {
     float bottom = -p.y + 0.02;
     return max(max(side, roof), bottom);
 }
+// 0 = rot (Angriff), 1 = gelb (geblockt, erklärter Block)
+uniform float yellow = 0.0;
 void fragment() {
     vec2 p = vec2(UV.x * 2.0 - 1.0, 1.0 - UV.y);
     float d = sd_roof(p);
     float fill = 1.0 - smoothstep(-0.01, 0.02, d);
     float rim = 1.0 - smoothstep(0.0, 0.06, abs(d + 0.05));
     float glow = exp(-max(d, 0.0) / 0.08) * 0.6;
-    vec3 col = mix(vec3(0.75, 0.08, 0.04), vec3(1.0, 0.55, 0.3), rim * fill);
+    vec3 base = mix(vec3(0.75, 0.08, 0.04), vec3(1.0, 0.58, 0.02), yellow);
+    vec3 light = mix(vec3(1.0, 0.55, 0.3), vec3(1.0, 0.95, 0.6), yellow);
+    vec3 col = mix(base, light, rim * fill);
     ALBEDO = col;
     ALPHA = clamp(fill + glow * (1.0 - fill), 0.0, 1.0);
+}
+"#;
+
+/// Blockschweif: flackernde Lichtzungen, die als Bogen aus der Kante des Blockers zum Angreifer
+/// aufsteigen (in der Mitte am höchsten). `amount` blendet ein und aus, `yellow` wechselt von
+/// Orange (geplanter Block) zu Gelb (erklärter Block, ruhiger). Additiv, unbeleuchtet.
+const TRAIL_SHADER: &str = r#"
+shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+uniform float amount = 0.0;
+uniform float yellow = 0.0;
+uniform float seed = 0.0;
+%NOISE%
+void fragment() {
+    float x = UV.x * 2.0 - 1.0;
+    // h: 0 an der Kartenkante (+z des Quads), 1 am äußeren Ende (zum Angreifer)
+    float h = 1.0 - UV.y;
+    float arc = sqrt(max(1.0 - x * x, 0.0));
+    float n = clamp(fbm(vec4(x * 2.2 + seed, h * 1.4 - TIME * 1.7, seed, TIME * 0.35), 3, 0.5), 0.0, 1.0);
+    // geplant: lebhafte Zungen; erklärt: ruhiger, gleichmäßiger Bogen
+    float flick = mix(0.35 + n * 1.0, 0.8 + n * 0.3, yellow);
+    float reach = max(arc * flick * amount, 0.001);
+    float body = (1.0 - smoothstep(reach * 0.35, reach, h)) * (1.0 - h * 0.6);
+    float edge = exp(-h / 0.07) * arc;
+    vec3 c = mix(vec3(1.0, 0.22, 0.0), vec3(1.0, 0.62, 0.02), yellow);
+    vec3 col = mix(c, vec3(1.0, 0.93, 0.7), clamp(edge * 0.7 + body * 0.15, 0.0, 1.0));
+    float side = 1.0 - smoothstep(0.85, 1.0, abs(x));
+    ALBEDO = col * (body * 1.5 + edge * 0.9) * amount * side;
 }
 "#;
 
@@ -227,6 +269,17 @@ pub struct Card3D {
     advanced: bool,
     advance_amount: f32,
     attack_banner: Option<Gd<MeshInstance3D>>,
+    banner_material: Option<Gd<ShaderMaterial>>,
+    /// Blocker im Kampf: Schweif über der Kante zum Angreifer ([method set_block_trail]), gezeigte
+    /// Stärke 0 … 1.
+    block_trail: bool,
+    trail_amount: f32,
+    trail_mesh: Option<Gd<MeshInstance3D>>,
+    trail_material: Option<Gd<ShaderMaterial>>,
+    /// In einem erklärten Block ([method set_block_declared]): Rahmen, Angriffsspitze und Schweif
+    /// gelb; gezeigter Anteil Gelb 0 … 1.
+    block_declared: bool,
+    yellow_amount: f32,
     /// Schlag zum Ziel (Welt), Zeit, Reichweite (Anteil des Wegs), Verzögerung.
     lunge: Option<(Vector3, f32, f32, f32)>,
     lunge_applied: Vector3,
@@ -323,6 +376,13 @@ impl IArea3D for Card3D {
             advanced: false,
             advance_amount: 0.0,
             attack_banner: None,
+            banner_material: None,
+            block_trail: false,
+            trail_amount: 0.0,
+            trail_mesh: None,
+            trail_material: None,
+            block_declared: false,
+            yellow_amount: 0.0,
             lunge: None,
             lunge_applied: Vector3::ZERO,
             lunge_turn_applied: 0.0,
@@ -434,6 +494,7 @@ impl IArea3D for Card3D {
                 mat.set_shader_parameter("glow_color", &Vector3::new(shown.r, shown.g, shown.b).to_variant());
             }
         }
+        self.update_block_look(dt);
         // Aufleuchten abklingen lassen
         if let Some(t) = self.flash_t.as_mut() {
             *t += dt;
@@ -625,6 +686,24 @@ impl Card3D {
         self.advanced = attacking;
         if let Some(b) = self.attack_banner.as_mut() {
             b.set_visible(attacking);
+        }
+    }
+
+    /// Blocker im Kampf (Video „Blocken“): über der Kante zum Angreifer steigt ein flackernder
+    /// Schweif als Bogen auf – orange, solange der Block geplant ist, gelb, sobald er erklärt ist
+    /// ([method set_block_declared]). Blendet in ≈ 0,25 s ein und aus.
+    #[func]
+    pub fn set_block_trail(&mut self, on: bool) {
+        self.block_trail = on;
+    }
+
+    /// In einem erklärten Block (Angreifer und Blocker, CR 509.1): Rahmen, Angriffsspitze und
+    /// Blockschweif werden gelb ([`BLOCKED_GLOW`]), bis der Kampf endet (`false`).
+    #[func]
+    pub fn set_block_declared(&mut self, on: bool) {
+        if self.block_declared != on {
+            self.block_declared = on;
+            self.apply_glow();
         }
     }
 
@@ -1007,10 +1086,37 @@ impl Card3D {
     fn place_banner(&mut self) {
         let len = if self.tile_shown { TILE_HEIGHT } else { CARD_HEIGHT };
         let turned = self.turned;
+        let basis = if turned { Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI) } else { Basis::IDENTITY };
+        let side = if turned { -1.0 } else { 1.0 };
         if let Some(b) = self.attack_banner.as_mut() {
             let z = -len * 0.5 - BANNER_SIZE.y * 0.5 + 0.02;
-            let (z, basis) = if turned { (-z, Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI)) } else { (z, Basis::IDENTITY) };
-            b.set_transform(Transform3D::new(basis, Vector3::new(0.0, CARD_THICKNESS, z)));
+            b.set_transform(Transform3D::new(basis, Vector3::new(0.0, CARD_THICKNESS, z * side)));
+        }
+        if let Some(t) = self.trail_mesh.as_mut() {
+            let z = -len * 0.5 - TRAIL_HEIGHT * 0.5 + 0.015;
+            t.set_transform(Transform3D::new(basis, Vector3::new(0.0, CARD_THICKNESS * 1.5, z * side)));
+        }
+    }
+
+    /// Blockschweif ein-/ausblenden und Orange → Gelb überblenden (Angriffsspitze und Schweif);
+    /// der Rahmen blendet über [`GLOW_FADE_SPEED`] selbst über.
+    fn update_block_look(&mut self, dt: f32) {
+        let w = 1.0 - (-TRAIL_FADE_SPEED * dt).exp();
+        let trail_goal = if self.block_trail && !self.dragging { 1.0 } else { 0.0 };
+        let yellow_goal = if self.block_declared { 1.0 } else { 0.0 };
+        let step = |v: f32, goal: f32| if (goal - v).abs() < 0.005 { goal } else { v + (goal - v) * w };
+        let (trail, yellow) = (step(self.trail_amount, trail_goal), step(self.yellow_amount, yellow_goal));
+        if trail != self.trail_amount || yellow != self.yellow_amount {
+            self.trail_amount = trail;
+            self.yellow_amount = yellow;
+            if let (Some(mesh), Some(mat)) = (self.trail_mesh.as_mut(), self.trail_material.as_mut()) {
+                mesh.set_visible(trail > 0.0);
+                mat.set_shader_parameter("amount", &trail.to_variant());
+                mat.set_shader_parameter("yellow", &yellow.to_variant());
+            }
+            if let Some(mat) = self.banner_material.as_mut() {
+                mat.set_shader_parameter("yellow", &yellow.to_variant());
+            }
         }
     }
 
@@ -1019,9 +1125,12 @@ impl Card3D {
         let active = self.marker != CardMarker::None || self.dragging || flash.is_some();
         let glow = if active {
             Some((ACTIVE_GLOW, MARK_STRENGTH * flash.unwrap_or(1.0)))
+        } else if self.block_declared {
+            Some((BLOCKED_GLOW, MARK_STRENGTH))
         } else {
             self.ready_glow.map(|c| (c, READY_STRENGTH))
         };
+        let active = active || self.block_declared;
         if let (Some(mesh), Some(mat)) = (self.marker_mesh.as_mut(), self.marker_material.as_mut()) {
             let was_visible = mesh.is_visible();
             mesh.set_visible(glow.is_some());
@@ -1564,6 +1673,26 @@ impl Card3D {
         banner.set_visible(self.advanced);
         visual.add_child(&banner);
         self.attack_banner = Some(banner);
+        self.banner_material = Some(banner_mat);
+
+        // Blockschweif: Bogen aus Licht über der Kante zum Angreifer, nur bei Blockern
+        let mut trail_shader = Shader::new_gd();
+        trail_shader.set_code(&TRAIL_SHADER.replace("%NOISE%", PERLIN_FBM));
+        let mut trail_mat = ShaderMaterial::new_gd();
+        trail_mat.set_shader(&trail_shader);
+        trail_mat.set_shader_parameter("seed", &(self.base().instance_id().to_i64().rem_euclid(97) as f32 * 0.37).to_variant());
+        let mut trail_mesh = PlaneMesh::new_gd();
+        trail_mesh.set_size(Vector2::new(CARD_WIDTH + 2.0 * TRAIL_MARGIN, TRAIL_HEIGHT));
+        trail_mesh.set_material(&trail_mat);
+        let mut trail = MeshInstance3D::new_alloc();
+        trail.set_name("BlockTrail");
+        trail.set_mesh(&trail_mesh);
+        trail.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+        trail.set_visible(false);
+        visual.add_child(&trail);
+        self.trail_mesh = Some(trail);
+        self.trail_material = Some(trail_mat);
+        self.place_banner();
 
         // Tapp-Symbol: knapp über der Vorderseite, mittig im Bildfeld, nur wenn getappt sichtbar
         let mut icon_mat = StandardMaterial3D::new_gd();
