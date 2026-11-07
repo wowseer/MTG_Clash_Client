@@ -142,10 +142,11 @@ void fragment() {
 
 /// Blockschweif: flackernde Lichtzungen, die als Bogen aus der Kante des Blockers zum Angreifer
 /// aufsteigen (in der Mitte am höchsten). `amount` blendet ein und aus, `yellow` wechselt von
-/// Orange (geplanter Block) zu Gelb (erklärter Block, ruhiger). Additiv, unbeleuchtet.
+/// Orange (geplanter Block) zu Gelb (erklärter Block, ruhiger). Additiv (vormultipliziert,
+/// Deckkraft 0 – siehe `fx.rs`), unbeleuchtet.
 const TRAIL_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+render_mode unshaded, blend_premul_alpha, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 uniform float amount = 0.0;
 uniform float yellow = 0.0;
 uniform float seed = 0.0;
@@ -165,16 +166,17 @@ void fragment() {
     vec3 col = mix(c, vec3(1.0, 0.93, 0.7), clamp(edge * 0.7 + body * 0.15, 0.0, 1.0));
     float side = 1.0 - smoothstep(0.85, 1.0, abs(x));
     ALBEDO = col * (body * 1.5 + edge * 0.9) * amount * side;
+    ALPHA = 0.0;
 }
 "#;
 
 /// Rahmen-Glow (Nachbau von „Rahmen_Kern“ und „Rahmen_Schein“ der Mana-Glow-Assets): dünne,
 /// fast weiße Kernlinie genau an der Kartenkante (Blender: Bevel 0,035 bei Karte 2,5 breit), darum
-/// ein breiter Schein (Bevel 0,14) und ein weicher Halo als Ersatz für Blenders Bloom. Additiv,
-/// unbeleuchtet. `strength` = Kern, `schein` = Schein; ruhiges Pulsieren wie das Idle der Datei.
+/// ein breiter Schein (Bevel 0,14) und ein weicher Halo als Ersatz für Blenders Bloom. Additiv
+/// (vormultipliziert, Deckkraft 0), unbeleuchtet. `strength` = Kern, `schein` = Schein; ruhiges Pulsieren wie das Idle der Datei.
 const GLOW_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+render_mode unshaded, blend_premul_alpha, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 uniform vec3 glow_color = vec3(0.02, 0.28, 1.0);
 uniform float strength = 1.0;
 uniform float schein = 0.3;
@@ -197,6 +199,7 @@ void fragment() {
     float fade = smoothstep(margin, margin * 0.55, max(edge, 0.0));
     vec3 col = mix(glow_color, vec3(1.0), core * 0.35);
     ALBEDO = col * (core * strength * 1.4 + (sch + halo) * schein * strength) * pulse * fade;
+    ALPHA = 0.0;
 }
 "#;
 

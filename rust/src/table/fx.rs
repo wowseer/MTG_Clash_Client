@@ -12,6 +12,8 @@
 //! Mit [`ManaFx::impact`] nur der Einschlag (z. B. Kampfschaden, rot). Alle Teile sind additive,
 //! unbeleuchtete Flächen in einer zur Kamera parallelen Ebene (wie die orthografische Kamera der
 //! Blender-Datei); Größen in Blender-Einheiten × [`UNIT`].
+//! Additiv heißt hier: vormultiplizierte Mischung mit Deckkraft 0 (`blend_premul_alpha`, `ALPHA = 0`),
+//! damit die Flächen auch in der durchsichtigen Vordergrund-Ebene nur Licht addieren.
 //! Farben: [`mana_color`] (die sieben Farben des Generators).
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
@@ -72,7 +74,7 @@ fn keys(f: f32, k: &[(f32, f32)]) -> f32 {
 /// Kugelförmiger Glanz (Blender: Spherical Gradient → Potenz, Kern weiß gemischt).
 const BLOB_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+render_mode unshaded, blend_premul_alpha, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 instance uniform vec3 color = vec3(1.0);
 instance uniform float strength = 0.0;
 instance uniform float falloff = 2.0;
@@ -83,13 +85,14 @@ void fragment() {
     float fac = max(1.0 - length(UV * 2.0 - 1.0), 0.0);
     vec3 c = mix(color, vec3(1.0), clamp(pow(fac, core_pow) * core, 0.0, 1.0));
     ALBEDO = c * strength * gain * pow(fac, falloff);
+    ALPHA = 0.0;
 }
 "#;
 
 /// Ring (Schockwelle): Kurve mit Radius 1 und Dicke `width` (Bildfläche = Radius 1,25).
 const RING_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+render_mode unshaded, blend_premul_alpha, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 instance uniform vec3 color = vec3(1.0);
 instance uniform float strength = 0.0;
 instance uniform float width = 0.03;
@@ -104,6 +107,7 @@ void fragment() {
     float edge = 1.0 - smoothstep(1.1, 1.24, r);
     vec3 c = mix(color, vec3(1.0), core * tube);
     ALBEDO = c * strength * gain * (tube + halo) * edge;
+    ALPHA = 0.0;
 }
 "#;
 
@@ -111,7 +115,7 @@ void fragment() {
 /// Pentagramm mit `rot_inner` (Bildfläche = Radius 1,3).
 const RUNE_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+render_mode unshaded, blend_premul_alpha, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 instance uniform vec3 color = vec3(1.0);
 instance uniform float strength = 0.0;
 instance uniform float rot_outer = 0.0;
@@ -145,13 +149,14 @@ void fragment() {
     }
     v = clamp(v, 0.0, 1.0) * (1.0 - smoothstep(1.24, 1.29, r));
     ALBEDO = mix(color, vec3(1.0), 0.15) * strength * gain * v;
+    ALPHA = 0.0;
 }
 "#;
 
 /// Kometenschweif: Band mit UV.x = Lage im Schweif (0 Ende … 1 Kopf), UV.y quer.
 const TAIL_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+render_mode unshaded, blend_premul_alpha, cull_disabled, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 instance uniform vec3 color = vec3(1.0);
 instance uniform float strength = 0.0;
 instance uniform float core = 0.0;
@@ -161,6 +166,7 @@ void fragment() {
     float tube = 1.0 - smoothstep(0.55, 1.0, q);
     vec3 c = mix(color, vec3(1.0), core * (1.0 - q));
     ALBEDO = c * strength * gain * tube * smoothstep(0.0, 0.25, UV.x);
+    ALPHA = 0.0;
 }
 "#;
 

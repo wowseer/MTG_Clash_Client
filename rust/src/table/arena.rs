@@ -156,6 +156,8 @@ impl Arena {
         self.build_surroundings(&m);
         self.build_ruins(&m);
         self.build_wall(&m);
+        // Kulisse auf den Hintergrund-Layer: die Medaillons liegen über ihr, Karten darüber
+        super::layers::mark_background(&self.base().clone().upcast());
     }
 }
 

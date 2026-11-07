@@ -38,6 +38,7 @@ use super::choice_panel::ChoicePanel;
 pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
 use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY, WIDE_BODY};
+use crate::table::layers::{HUD_CANVAS_LAYER, SEAT_CANVAS_LAYER};
 use crate::table::table_controller::TableController;
 
 const GOLD: Color = Color::from_rgb(0.95, 0.78, 0.4);
@@ -263,10 +264,21 @@ impl TurnHud {
     }
 
     fn build(&mut self) {
+        // Das HUD liegt vor dem 3D-Vordergrund; Medaillons, Namen und Manapool liegen auf einer
+        // eigenen Bildebene dahinter (über der Kulisse, unter Karten, Bühnen und Knöpfen)
+        self.base_mut().set_layer(HUD_CANVAS_LAYER);
         let mut root = Control::new_alloc();
         root.set_name("Root");
         root.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
         root.set_mouse_filter(MouseFilter::IGNORE);
+        let mut seat_layer = CanvasLayer::new_alloc();
+        seat_layer.set_name("SeatLayer");
+        seat_layer.set_layer(SEAT_CANVAS_LAYER);
+        let mut seat_root = Control::new_alloc();
+        seat_root.set_name("SeatRoot");
+        seat_root.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
+        seat_root.set_mouse_filter(MouseFilter::IGNORE);
+        seat_layer.add_child(&seat_root);
 
         // Unten rechts übereinander: Zeitstrahl der Phasen, Phasen-Knopf, „Sofort beenden“
         let end_w = Button3D::face_width_for_height(END_FACE_HEIGHT_PX, COMPACT_BODY);
@@ -303,16 +315,16 @@ impl TurnHud {
         root.add_child(&hint);
 
         // Linker Bildrand: Rundenzahl mit Sanduhr, darunter der Name (Gegner oben, Spieler unten)
-        let (opp_turn, opp_name) = name_block(&mut root, (0.0, 0.0), (14.0, 10.0), GrowDirection::END);
-        let (me_turn, me_name) = name_block(&mut root, (0.0, 1.0), (14.0, -12.0), GrowDirection::BEGIN);
+        let (opp_turn, opp_name) = name_block(&mut seat_root, (0.0, 0.0), (14.0, 10.0), GrowDirection::END);
+        let (me_turn, me_name) = name_block(&mut seat_root, (0.0, 1.0), (14.0, -12.0), GrowDirection::BEGIN);
 
 
         // Medaillons mit Leben – je unter einer Maske, die schwebende Karten ausspart
         // (Karten liegen so sichtbar über den Medaillons)
         let opp_mask = CardCutout::new_alloc();
-        root.add_child(&opp_mask);
+        seat_root.add_child(&opp_mask);
         let me_mask = CardCutout::new_alloc();
-        root.add_child(&me_mask);
+        seat_root.add_child(&me_mask);
         let (opp_row, opp_badge) =
             seat_row(&mut opp_mask.clone().upcast(), OPPONENT_ACCENT, (0.0, 0.0), (8.0, 8.0), GrowDirection::END);
         let (me_row, me_badge) =
@@ -359,6 +371,7 @@ impl TurnHud {
             let cb = Callable::from_object_method(&self.to_gd(), "on_choice_option");
             ft.connect_flags("choice_option_clicked", &cb, ConnectFlags::DEFERRED);
         }
+        self.base_mut().add_child(&seat_layer);
         self.base_mut().add_child(&root);
         self.root = Some(root.clone());
         self.timeline = Some(timeline);
