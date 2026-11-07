@@ -54,7 +54,10 @@ const PW_TWO_ROWS_FROM: usize = 3;
 const PW_REGION_WIDTH: f32 = 2.9;
 /// Tiefe der unteren Reihe (Länder in ihrer Zone, Artefakte im Spielfeld) – Kreaturen und
 /// Planeswalker bleiben darüber.
-const BACK_ROW_DEPTH: f32 = 1.5;
+const BACK_ROW_DEPTH: f32 = 1.7;
+/// Platz in der unteren Reihe zur Kreaturen-Reihe hin, den getappte (schräg gestellte)
+/// Artefakte brauchen, ohne die Kreaturen zu berühren.
+const BACK_ROW_TAP_ROOM: f32 = 0.3;
 /// Zweite Kreaturen-Reihe, sobald eine Reihe unter diesen Anteil von [member card_scale] schrumpfen müsste.
 const TWO_ROWS_BELOW: f32 = 0.6;
 const MIN_SHRINK: f32 = 0.32;
@@ -800,7 +803,7 @@ impl Zone {
         };
         let back_scale = |rows: &[Vec<usize>]| -> f32 {
             let n = rows.len() as f32;
-            let by_depth = (BACK_ROW_DEPTH - 0.1 - BACK_ROW_GAP * (n - 1.0)) / (n * len);
+            let by_depth = (BACK_ROW_DEPTH - 0.1 - BACK_ROW_TAP_ROOM - BACK_ROW_GAP * (n - 1.0)) / (n * len);
             let widest = rows.iter().map(|r| units_of(r)).fold(0.0f32, f32::max).max(0.001);
             self.card_scale.min(by_depth).min(back_avail / (widest * CARD_WIDTH)).max(min_s)
         };

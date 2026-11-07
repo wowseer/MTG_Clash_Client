@@ -75,7 +75,10 @@ The **stack** stands upright at the right edge. There is **no command zone** on 
 commander lies in its owner's hand fan, emblems and dungeons at the end of the back row. If creatures
 and the back row do not fit into the depth of the battlefield, or the creatures do not fit into
 its width, all tiles shrink together (the row behind only counts if the creatures reach over it);
-with few creatures the tiles are large (`card_scale` 2.7).
+with few creatures the tiles are large (`card_scale` 2.7). The creature area is deep enough for
+a full-size creature and a pile of two (1.65 units); only taller piles or a crowded row make the
+creatures smaller. The back row (lands, artifacts) keeps room towards the creatures for tapped,
+tilted cards (`BACK_ROW_TAP_ROOM`).
 
 **Battlefield layout** (`Zone.auto_arrange`, both battlefields): cards are placed automatically by
 type, each from the point of view of its side ("up" = towards the table centre):
@@ -139,7 +142,7 @@ are only created when the game starts (F5). After a new Rust build, reload the s
 distance `focus_distance` 2.4. The player's own hand lies enlarged (scale 2.8) just above the
 board in front of its front edge at the bottom of the screen (the lower half of the cards is cut
 off, hovering zooms the whole card), the opponent's hand at the top edge. Both battlefields are
-3.0 units deep (middle line to z = ±3.2), leaving room for the medallions in front of them.
+3.7 units deep (z = ±0.05 to ±3.75; land rows at z = ±3.0, graveyard/deck/exile at z = ±4.45).
 Whoever moves the camera or the hand must move the `HeroAnchor` markers along.
 
 **HUD (`TurnHud`)** – reads the display structure `HudView` from the `ForgeTable` every frame
