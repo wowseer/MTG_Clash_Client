@@ -60,11 +60,16 @@ pub fn hud_choice(req: &Request) -> Option<HudChoice> {
         // Kartennamen / Typ: Bühne mit Suchfeld (ForgeTable::show_search), kein Fenster
         Decision::NameCard { .. } | Decision::ChooseType { .. } => return None,
         Decision::Confirm { prompt, .. } => (prompt.clone(), ChoiceMode::Confirm, yes_no()),
-        Decision::PayUnlessCost { cost, .. } => (
-            trf!("Zahlen, um den Effekt zu verhindern: {cost}?", "Pay {cost} to prevent the effect?"),
-            ChoiceMode::Confirm,
-            plain(vec![tr!("Zahlen", "Pay").into(), tr!("Nicht zahlen", "Don't pay").into()]),
-        ),
+        // kurzer Titel (nur die Mechanik), die Kosten stehen auf dem Knopf („Zahlen {2}“)
+        Decision::PayUnlessCost { cost, .. } => {
+            let cost = cost.trim().trim_start_matches("Pay ").trim();
+            let pay = if cost.is_empty() { tr!("Zahlen", "Pay").to_string() } else { trf!("Zahlen {cost}", "Pay {cost}") };
+            (
+                tr!("Effekt verhindern?", "Prevent the effect?").into(),
+                ChoiceMode::Confirm,
+                plain(vec![pay, tr!("Nicht zahlen", "Don't pay").into()]),
+            )
+        }
         Decision::PayLifeForPhyrexian { symbol, .. } => (
             trf!("{symbol} mit 2 Leben bezahlen?", "Pay {symbol} with 2 life?"),
             ChoiceMode::Confirm,

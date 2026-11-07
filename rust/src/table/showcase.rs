@@ -48,6 +48,13 @@ const DIM_SIZE: Vector2 = Vector2::new(16.0, 9.0);
 /// Größte Breite des Titels bzw. eines Untertitels in einer Zeile (Welteinheiten auf der Bühne,
 /// etwa zwei Drittel der Bildbreite).
 const TITLE_MAX_WIDTH: f32 = 4.2;
+/// Fokus-Anordnung: der Titel steht höher (über der großen Karte), auf Höhe von „Schlachtfeld
+/// ansehen“ oben rechts – höchstens so breit, dass er links davon endet.
+const FOCUS_TITLE_MAX_WIDTH: f32 = 2.3;
+/// Schriftgröße des Titels und kleinste Größe, auf die er in der Fokus-Anordnung schrumpft,
+/// bevor er geteilt wird.
+const TITLE_FONT: i32 = 96;
+const TITLE_MIN_FONT: i32 = 52;
 const SUBTITLE_MAX_WIDTH: f32 = 4.6;
 /// Oberkante des Untertitels und seine Schriftgrößen (normal, kleinste bei langem Text).
 const SUBTITLE_TOP: f32 = 0.8;
@@ -107,8 +114,8 @@ const FOCUS_CENTER: Vector3 = Vector3::new(0.0, 0.3, 0.0);
 const FOCUS_BUTTON_TOP: f32 = -0.5;
 const FOCUS_STEP: f32 = 0.3;
 const FOCUS_BUTTON_WIDTH: f32 = 1.3;
-/// Abstand der Titelmitte über der Oberkante der großen Karte (Fokus-Anordnung).
-const FOCUS_TITLE_GAP: f32 = 0.2;
+/// Abstand der Titel-Unterkante über der Oberkante der großen Karte (Fokus-Anordnung).
+const FOCUS_TITLE_GAP: f32 = 0.06;
 /// Abstand des Untertitels über der Karte am Stack ([method Showcase.set_title_card]).
 const AVOID_GAP: f32 = 0.06;
 
@@ -320,15 +327,38 @@ impl Showcase {
     }
 
     /// Titel, Untertitel und Hinweis setzen (leer = ausblenden). Wie in Arena bleibt der Titel
-    /// kurz: Ist er breiter als der Bildschirm ([`TITLE_MAX_WIDTH`]), wird er geteilt
+    /// kurz: Ist er breiter als der Bildschirm ([`TITLE_MAX_WIDTH`]; in der Fokus-Anordnung
+    /// [`FOCUS_TITLE_MAX_WIDTH`], dort schrumpft er zuerst bis [`TITLE_MIN_FONT`]), wird er geteilt
     /// ([`split_title`]) – der Rest kommt vor den Untertitel. Der Untertitel bricht in Zeilen um
     /// und wird bei langem Text kleiner.
     #[func]
     pub fn set_texts(&mut self, title: GString, subtitle: GString, note: GString) {
         self.texts = (title.clone(), subtitle.clone(), note.clone());
         let (title, subtitle) = {
-            let (font, pixel) = self.title.as_ref().map_or((96, 0.0019), |l| (l.get_font_size(), l.get_pixel_size()));
-            let (t, rest) = split_title(&title.to_string(), |t| cost_symbols::rich_width(t, font, pixel) <= TITLE_MAX_WIDTH);
+            let pixel = self.title.as_ref().map_or(0.0019, |l| l.get_pixel_size());
+            let max_w = if self.focus { FOCUS_TITLE_MAX_WIDTH } else { TITLE_MAX_WIDTH };
+            // Fokus-Anordnung (schmaler Platz): erst die Schrift verkleinern, dann teilen
+            let mut font = TITLE_FONT;
+            if self.focus {
+                let whole = title.to_string();
+                while font > TITLE_MIN_FONT && cost_symbols::rich_width(&whole, font, pixel) > max_w {
+                    font -= 4;
+                }
+            }
+            // passt eine Frage (ohne Symbole) auch klein nicht in eine Zeile: zweizeilig über der
+            // Karte statt geteilt (der Rest stünde sonst über der Karte am Stack)
+            let whole = title.to_string();
+            let wrap = self.focus && !cost_symbols::has_cost(&whole) && cost_symbols::rich_width(&whole, font, pixel) > max_w;
+            if let Some(l) = self.title.as_mut() {
+                l.set_font_size(font);
+                l.set_autowrap_mode(if wrap { AutowrapMode::WORD_SMART } else { AutowrapMode::OFF });
+                l.set_width(if wrap { max_w / pixel } else { 500.0 });
+            }
+            let (t, rest) = if wrap {
+                (whole, String::new())
+            } else {
+                split_title(&whole, |t| cost_symbols::rich_width(t, font, pixel) <= max_w)
+            };
             let sub = subtitle.to_string();
             let sub = match (rest.is_empty(), sub.is_empty()) {
                 (true, _) => sub,
@@ -374,7 +404,17 @@ impl Showcase {
                 } else if cost_symbols::has_cost(&text) {
                     // Kosten im Text („Zahlen: {2}?“) als Manasymbole: Zeile mit Symbolen statt Schrift
                     l.set_text("");
+                    // Titel der Fokus-Anordnung ist unten bündig: die Symbolzeile mittig bauen und
+                    // um eine halbe Zeile anheben
+                    let bottom = l.get_vertical_alignment() == VerticalAlignment::BOTTOM;
+                    if bottom {
+                        l.set_vertical_alignment(VerticalAlignment::CENTER);
+                    }
                     let mut rich = cost_symbols::rich_label(&text, l);
+                    if bottom {
+                        l.set_vertical_alignment(VerticalAlignment::BOTTOM);
+                        rich.set_position(Vector3::new(0.0, font as f32 * pixel * 0.6, 0.0));
+                    }
                     rich.set_name("RichLabel");
                     l.add_child(&rich);
                     l.set_visible(true);
@@ -500,8 +540,10 @@ impl Showcase {
         // Untertitel (Einzelheiten der Frage) rechts neben die große Karte: Texte neu setzen
         let (t, sub, n) = self.texts.clone();
         self.set_texts(t, sub, n);
-        // Titel über die große Karte rücken (sonst läge er hinter ihr)
+        // Titel über die große Karte rücken (sonst läge er hinter ihr); unten bündig, damit ein
+        // zweizeiliger Titel nach oben wächst
         if let Some(l) = self.title.as_mut() {
+            l.set_vertical_alignment(VerticalAlignment::BOTTOM);
             l.set_position(Vector3::new(0.0, self.focus_center.y + CARD_HEIGHT * self.focus_scale * 0.5 + FOCUS_TITLE_GAP, 0.05));
         }
     }
@@ -960,7 +1002,7 @@ impl Showcase {
         let zone = self.add_zone("Fan", FAN_CENTER, Vector3::new(4.4, 0.1, 1.2), FAN_RADIUS, FAN_STEP, 40.0, false);
         self.zone = Some(zone);
 
-        self.title = Some(self.label(0.92, 96, 0.0019, Color::from_rgb(0.98, 0.86, 0.55)));
+        self.title = Some(self.label(0.92, TITLE_FONT, 0.0019, Color::from_rgb(0.98, 0.86, 0.55)));
         self.subtitle = Some(self.label(SUBTITLE_TOP, SUBTITLE_FONT, 0.0013, Color::from_rgb(0.9, 0.86, 0.78)));
         self.note = Some(self.label(-0.93, 56, 0.0012, Color::from_rgb(0.9, 0.86, 0.78)));
     }
