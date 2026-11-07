@@ -2336,7 +2336,6 @@ impl ForgeTable {
                 self.block_plan.retain(|(b, _)| *b != id);
                 if let Some(Target::Card(a)) = target {
                     self.assign_blocker(id, a);
-                    self.drawn_arrows.insert(arrow_key(BLOCK_ARROW_KIND, i64::from(id), Target::Card(a)));
                 }
                 self.combat_armed = None;
             }
@@ -4351,6 +4350,8 @@ impl ForgeTable {
     /// des Blockers wechselt weich von Blau zu Orange und blitzt dabei auf (`Card3D::flash`).
     fn assign_blocker(&mut self, blocker: CardId, attacker: CardId) {
         self.block_plan.push((blocker, attacker));
+        // der Pfeil hing schon an der Maus bzw. wurde gezogen: nicht noch einmal wachsen
+        self.drawn_arrows.insert(arrow_key(BLOCK_ARROW_KIND, i64::from(blocker), Target::Card(attacker)));
         if let Some(mut card) = self.cards.get(&i64::from(blocker)).filter(|c| c.is_instance_valid()).cloned() {
             card.bind_mut().flash();
         }
@@ -4533,7 +4534,7 @@ impl ForgeTable {
     }
 
     /// Kampfpfeile: während der eigenen Erklärung der Plan (Angreifer orange → Ziel, Blocker orange
-    /// → Angreifer, gewählter Blocker gold → Angreifer unter der Maus), sonst der laufende Kampf aus
+    /// → Angreifer; den Pfeil des gewählten Blockers zur Maus zeichnet [`Self::live_arrow`]), sonst der laufende Kampf aus
     /// dem Engine-Zustand (`combat`; erklärte Blocks gelb).
     fn combat_arrows(&self) -> Vec<ArrowSpec> {
         let pos = |c: CardId| self.target_position(Target::Card(c));
@@ -4559,21 +4560,9 @@ impl ForgeTable {
                 }
             }
             Some(Decision::DeclareAttackers { .. }) => {}
-            Some(Decision::DeclareBlockers { attackers, .. }) => {
+            Some(Decision::DeclareBlockers { .. }) => {
                 for (b, a) in &self.block_plan {
                     push(*b, Target::Card(*a), ArrowColor::Orange, 1.0, true);
-                }
-                if let Some(armed) = self.combat_armed {
-                    let hovered = self
-                        .controller
-                        .as_ref()
-                        .and_then(|c| c.bind().get_hovered_card())
-                        .and_then(|h| self.forge_id(&h))
-                        .and_then(|id| u32::try_from(id).ok())
-                        .filter(|id| attackers.contains(id));
-                    if let Some(a) = hovered {
-                        push(armed, Target::Card(a), ArrowColor::Gold, 0.5, false);
-                    }
                 }
             }
             _ => {
@@ -4909,13 +4898,19 @@ impl ForgeTable {
 
     /// Pfeil, den der Spieler gerade zieht: von der Karte zur Maus bzw. zum gültigen Ziel
     /// darunter (rastet ein). Bei der Zielwahl hängt er ohne Drücken an der Quelle (Zauber auf dem
-    /// Stack bzw. Karte der Fähigkeit). `None` = kein Pfeil.
+    /// Stack bzw. Karte der Fähigkeit), beim Blocken am angeklickten Blocker, bis ein Angreifer
+    /// gewählt ist. `None` = kein Pfeil.
     fn live_arrow(&self) -> Option<(CardId, ArrowSpec)> {
         let controller = self.controller.as_ref()?;
         // Zielwahl: der Pfeil hängt ohne Drücken an der Quelle und folgt der Maus
         let target_source = match self.pending.as_ref() {
             Some(Request { decision: Decision::ChooseTargets { .. }, source: Some(s), .. }) => {
                 self.cards.get(&i64::from(*s)).filter(|c| c.is_instance_valid()).cloned()
+            }
+            // Blocken per Klick: der gewählte Blocker zeigt auf den Angreifer, den der nächste Klick
+            // blockt
+            Some(Request { decision: Decision::DeclareBlockers { .. }, .. }) => {
+                self.combat_armed.and_then(|b| self.cards.get(&i64::from(b))).filter(|c| c.is_instance_valid()).cloned()
             }
             _ => None,
         };
@@ -4933,7 +4928,7 @@ impl ForgeTable {
         };
         let color = match kind {
             AimKind::Attack => ArrowColor::Orange,
-            AimKind::Block => ArrowColor::Blue,
+            AimKind::Block => ArrowColor::Orange,
             AimKind::Target => self.arrow_color_of(i64::from(id)),
         };
         let from = card.get_global_position();
