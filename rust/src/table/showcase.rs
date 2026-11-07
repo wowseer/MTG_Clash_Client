@@ -84,6 +84,9 @@ const FAN_STEP: f32 = 0.58;
 const BUTTON_ROW_Y: f32 = -0.72;
 const BUTTON_WIDTH: f32 = 0.95;
 const BUTTON_GAP: f32 = 0.92;
+/// So weit (Bühnen-Einheiten) rückt die Kartenreihe tiefer, wenn über den Karten Beschriftungen
+/// stehen („Modus 1“, Kosten), damit sie Abstand zum Untertitel haben.
+const CAPTION_ROW_DROP: f32 = 0.2;
 /// Abstand der Options-Beschriftung über der Kartenoberkante.
 const CAPTION_GAP: f32 = 0.07;
 /// Schiebbarer Fächer ([`Showcase::enable_scroll`]): Kartenabstand (nebeneinander, ohne
@@ -129,6 +132,8 @@ pub struct Showcase {
     slider: Option<Gd<Slider3D>>,
     /// Mitte des Hauptfächers (lokal; [method shift_fan] verschiebt sie).
     fan_center: Vector3,
+    /// Die Reihe ist wegen Beschriftungen über den Karten schon tiefer gerückt.
+    caption_drop: bool,
     /// Fokus-Anordnung: Karte groß, Knöpfe untereinander darunter statt in einer Reihe.
     focus: bool,
     /// Größe und Mitte der großen Karte in der Fokus-Anordnung.
@@ -182,6 +187,7 @@ impl INode3D for Showcase {
             scroll_extra: 0.0,
             slider: None,
             fan_center: FAN_CENTER,
+            caption_drop: false,
             focus: false,
             focus_scale: FOCUS_SCALE,
             focus_center: FOCUS_CENTER,
@@ -399,6 +405,12 @@ impl Showcase {
     /// Eigene Karten als Optionen in den Fächer legen (z. B. Kopien einer Karte je Spielweise),
     /// je mit Beschriftung darüber (leer = keine). Die Bühne gibt sie beim Schließen frei.
     pub fn show_options(&mut self, options: Vec<(Gd<Card3D>, String)>) {
+        // Beschriftungen über den Karten („Modus 1“, Kosten …): Reihe tiefer, damit sie nicht an
+        // den Untertitel stoßen (einmal je Bühne)
+        if !self.caption_drop && options.iter().any(|(_, c)| !c.is_empty()) {
+            self.caption_drop = true;
+            self.shift_fan(Vector3::new(0.0, -CAPTION_ROW_DROP, 0.0));
+        }
         let Some(mut zone) = self.zone.clone() else { return };
         let start = zone.get_global_transform();
         for (mut card, caption) in options {

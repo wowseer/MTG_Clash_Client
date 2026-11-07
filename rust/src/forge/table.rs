@@ -2734,7 +2734,7 @@ impl ForgeTable {
     /// wiederholbare Modi zählen je Klick hoch („×2“), „Zurücksetzen“ leert die Wahl.
     /// Modi mit eigenen Zusatzkosten (Spree CR 702.172, Tiered; Video „Spree und Stack“): Titel =
     /// Schlüsselwort, darunter „Wähle eine oder mehrere Zusatzkosten.“, über jeder Kopie die Kosten „{Kosten}“
-    /// (Reihe um [`MODE_COST_ROW_DROP`] tiefer),
+    /// (die Reihe rückt wegen der Beschriftungen tiefer, [method Showcase.show_options]),
     /// orange „Bezahlen {Grundkosten + gewählte}“ (erst bei gültiger Wahl aktiv) und „Abbrechen“.
     fn show_modes(&mut self, req: &Request) {
         let Decision::ChooseModes { modes, min, max, can_repeat, costs, keyword, .. } = &req.decision else { return };
@@ -2777,8 +2777,6 @@ impl ForgeTable {
         showcase.bind_mut().show_options(cards);
         showcase.bind_mut().enable_scroll();
         if with_costs {
-            // Kosten über den Karten nicht direkt unter dem Untertitel: Reihe etwas tiefer
-            showcase.bind_mut().shift_fan(Vector3::new(0.0, -MODE_COST_ROW_DROP, 0.0));
             // wie im Video „Spree und Stack“: orange „Bezahlen {Gesamtkosten}“, daneben „Abbrechen“
             let mut pay = Button3D::create(ButtonStyle::Orange, &self.mode_pay_label(), Showcase::button_width() * 1.2);
             pay.bind_mut().set_enabled(min == 0);
@@ -5772,9 +5770,6 @@ const CARD_OPTION_RADIUS: f32 = 60.0;
 const STACK_STAGE_SCALE: f32 = 1.1;
 /// So weit (Bühnen-Einheiten) rückt die Auswahlreihe nach links, wenn der Zauber am Stack steht.
 const STACK_STAGE_ROW_SHIFT: f32 = 0.5;
-/// Modus-Bühne mit Zusatzkosten (Spree): so weit (Bühnen-Einheiten) liegt die Kartenreihe tiefer,
-/// damit die Kosten über den Karten Abstand zum Untertitel haben.
-const MODE_COST_ROW_DROP: f32 = 0.2;
 const X_STAGE_LOCAL: Vector3 = Vector3::new(-0.45, 0.2, 0.4);
 const X_STAGE_SCALE: f32 = 2.8;
 const X_STAGE_LIFT: f32 = 2.0;
