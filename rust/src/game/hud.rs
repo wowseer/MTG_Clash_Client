@@ -88,7 +88,7 @@ pub struct TurnHud {
     /// Leer = Medaillon oben links.
     #[export]
     opponent_hero_anchor: Option<Gd<Node3D>>,
-    /// 3D-Punkt, an dem die Mana-Symbole des Spielers sitzen (Oberkante mittig, z. B. direkt unter
+    /// 3D-Punkt, an dem die Mana-Symbole des Spielers enden (rechte obere Ecke, z. B. direkt unter
     /// der Ressourcen-Reihe). Leer = rechts neben dem Spieler-Medaillon.
     #[export]
     player_mana_anchor: Option<Gd<Node3D>>,
@@ -518,14 +518,15 @@ impl TurnHud {
                 }
             }
         }
-        // Mana-Anker (z. B. unter der Ressourcen-Reihe): Symbole mittig darunter
+        // Mana-Anker (unter der Ressourcen-Reihe): Symbole rechtsbündig links vom Anker – mehr
+        // Manaarten wachsen nach links, weg vom Medaillon und den Giftmarken daneben
         if let (Some(anchor), Some(mana)) = (self.player_mana_anchor.clone(), self.player_mana.as_mut()) {
             let world = anchor.get_global_position();
             if !cam.is_position_behind(world) {
                 let p = cam.unproject_position(world);
                 let min = mana.get_combined_minimum_size();
                 mana.set_size(min);
-                mana.set_position(Vector2::new(p.x - min.x * 0.5, p.y));
+                mana.set_position(Vector2::new(p.x - min.x, p.y));
             }
         }
     }

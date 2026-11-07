@@ -53,7 +53,7 @@ Table (TableController)          root: mouse input, drag and drop, camera focus
 │   ├── Resources (Zone)         land row
 │   ├── ManaPool (ManaPool)      mana pool (display)
 │   ├── HeroAnchor (Marker3D)    position of the medallion (directly above the hand)
-│   ├── ManaAnchor (Marker3D)    position of the mana symbols (below the land row)
+│   ├── ManaAnchor (Marker3D)    right end of the mana symbols (below the land row; more mana types grow to the left)
 │   └── Hand (Zone)              hand cards (fan, close to the camera at the bottom edge)
 ├── Opponent (PlayerSeat)        opponent at the top (Forge AI, seat 1), same structure, rotated
 │                                by 180°; hand at the top edge, medallion directly below it
