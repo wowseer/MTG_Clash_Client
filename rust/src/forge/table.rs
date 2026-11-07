@@ -3550,8 +3550,11 @@ impl ForgeTable {
             showcase.bind_mut().show_options(vec![(copy, String::new())]);
         }
         // Karte groß (größer als in den übrigen Fokus-Bühnen), Unterkante knapp über der Knopfreihe
-        let half = X_CARD_SCALE * crate::table::card3d::CARD_HEIGHT * 0.5;
-        showcase.bind_mut().set_focus_layout_sized(X_CARD_SCALE, X_ROW_Y + X_CARD_GAP + half);
+        // am Stack ist die ganze Bühne vergrößert, vor der Kamera nicht: dort kleiner, damit die
+        // Karte auf dem Bildschirm gleich groß erscheint
+        let scale = if on_stack { X_CARD_SCALE } else { X_CARD_SCALE_FRONT };
+        let half = scale * crate::table::card3d::CARD_HEIGHT * 0.5;
+        showcase.bind_mut().set_focus_layout_sized(scale, X_ROW_Y + X_CARD_GAP + half);
         self.title_over_stack_card(&mut showcase, req);
         // darunter die Knopfreihe −5 / − / Bestätigen / + / +5, darunter Abbrechen
         let me = self.to_gd();
@@ -5776,9 +5779,10 @@ const X_OUTER: f32 = 1.22;
 const X_SMALL_WIDTH: f32 = 0.6;
 const X_PAY_WIDTH: f32 = 1.35;
 const X_CANCEL_Y: f32 = -0.84;
-/// X-Bühne: Größe der Karte (Anteil der Kartengröße) und Abstand ihrer Unterkante über der Mitte
-/// der Knopfreihe.
+/// X-Bühne: Größe der Karte (Anteil der Kartengröße) am Stack bzw. vor der Kamera (dort ist die
+/// Bühne nicht vergrößert) und Abstand ihrer Unterkante über der Mitte der Knopfreihe.
 const X_CARD_SCALE: f32 = 2.0;
+const X_CARD_SCALE_FRONT: f32 = 1.2;
 const X_CARD_GAP: f32 = 0.2;
 
 /// Welche 3D-Bühne eine Entscheidung bekommt.
