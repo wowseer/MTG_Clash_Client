@@ -3929,16 +3929,25 @@ impl ForgeTable {
                 continue;
             }
             let Some(center) = self.badge_center(seat) else { continue };
-            // eine Reihe rechts neben dem Medaillon auf Höhe der Lebens-Plakette: zuerst die
-            // Marken (Energie, Gift …), dann die Kennzeichen (Monarch, Initiative, Ring …)
+            // eine Reihe auf Höhe der Lebens-Plakette: Gift links neben dem Medaillon, rechts
+            // daneben zuerst die übrigen Marken (Energie, Erfahrung …), dann die Kennzeichen
+            // (Monarch, Initiative, Ring …)
             let is_designation = |k: &str| crate::table::cost_symbols::is_seat_designation(k);
+            let left_side = |k: &str| SEAT_LEFT_KINDS.contains(&k);
             let mut order: Vec<usize> = (0..self.seat_tokens[seat].len()).collect();
             order.sort_by_key(|&i| is_designation(&self.seat_tokens[seat][i].0));
             let mut slot_x = vec![0.0f32; order.len()];
-            let mut x = SEAT_ROW_START_PX;
+            let (mut right, mut left) = (SEAT_ROW_START_PX, -SEAT_ROW_START_PX);
             for &i in &order {
-                slot_x[i] = x;
-                x += if is_designation(&self.seat_tokens[seat][i].0) { SEAT_DESIGNATION_STEP_PX } else { SEAT_COUNTER_STEP_PX };
+                let kind = &self.seat_tokens[seat][i].0;
+                let step = if is_designation(kind) { SEAT_DESIGNATION_STEP_PX } else { SEAT_COUNTER_STEP_PX };
+                if left_side(kind) {
+                    slot_x[i] = left;
+                    left -= step;
+                } else {
+                    slot_x[i] = right;
+                    right += step;
+                }
             }
             for (i, (_kind, _, sprite, t)) in self.seat_tokens[seat].iter_mut().enumerate() {
                 *t = (*t + dt).min(SEAT_TOKEN_POP);
@@ -5809,6 +5818,8 @@ const SEAT_ROW_START_PX: f32 = 160.0;
 const SEAT_COUNTER_STEP_PX: f32 = 104.0;
 const SEAT_DESIGNATION_STEP_PX: f32 = 88.0;
 const SEAT_ROW_Y_PX: f32 = 62.0;
+/// Marken, die links neben dem Medaillon liegen (Gift); alle übrigen liegen rechts.
+const SEAT_LEFT_KINDS: [&str; 1] = ["poison"];
 /// Kantenlänge der Marken-Plaketten (Gift, Energie …) am Medaillon.
 const SEAT_COUNTER_SIZE: f32 = 0.95;
 const SEAT_TOKEN_Y: f32 = 0.04;
