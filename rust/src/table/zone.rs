@@ -40,6 +40,9 @@ const BACK_ROW_START: f32 = 3.8;
 /// Die hintere Reihe liegt rechtsbündig und reicht so weit über den rechten Rand der Zone
 /// hinaus bis an den Tischrand (lokal x).
 const BACK_ROW_OVERHANG: f32 = 1.9;
+/// Hintere Reihe: so weit dürfen sich ihre Karten überlappen (sichtbarer Anteil der Breite; der
+/// Name links oben bleibt lesbar), bevor die Reihe kleiner wird.
+const BACK_ROW_MIN_SPACING: f32 = 0.6;
 /// Abstand zwischen Kreaturen-Reihe und hinterer Reihe.
 const BACK_ROW_GAP: f32 = 0.12;
 /// Spielfeld: Abstand der Kreaturen und Planeswalker zur Kante zur Tischmitte (lokal z). Beide
@@ -820,7 +823,8 @@ impl Zone {
             let n = rows.len() as f32;
             let by_depth = (BACK_ROW_DEPTH - 0.1 - BACK_ROW_TAP_ROOM - BACK_ROW_GAP * (n - 1.0)) / (n * len);
             let widest = rows.iter().map(|r| units_of(r)).fold(0.0f32, f32::max).max(0.001);
-            self.card_scale.min(by_depth).min(back_avail / (widest * CARD_WIDTH)).max(min_s)
+            // erst überlappen (bis BACK_ROW_MIN_SPACING der Breite sichtbar bleibt), dann verkleinern
+            self.card_scale.min(by_depth).min(back_avail / (widest * CARD_WIDTH * BACK_ROW_MIN_SPACING)).max(min_s)
         };
         // Kandidaten: eine Reihe, zwei Reihen an jeder Kategorie-Grenze, zwei gleich breite Reihen
         let mut layouts: Vec<Vec<Vec<usize>>> = vec![vec![back.clone()]];
